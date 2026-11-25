@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "description": "Structured per-run Recursive Self-Improvement (RSI) telemetry & 6-dimension audit log for daily-gold-deep-research.",
+  "meta_review_interval_runs": 10,
+  "playbook_max_lines": 180,
+  "score_dimensions": [
+    "data_freshness_and_zero_hallucination",
+    "prior_forecast_calibration",
+    "plain_language_and_strict_readability",
+    "visual_layout_and_pagination",
+    "research_efficiency_and_source_quality",
+    "engine_and_guardrail_reliability"
+  ],
+  "runs": [
+    {
+      "run_id": "2026-11-24_1630",
+      "edition_type": "weekday_afternoon",
+      "report_path": "daily/2026-11-24_1630_午报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-24T19:05:00+08:00",
+      "first_pass_strict": true,
+      "strict_retries": 0,
+      "strict_errors_fixed": [],
+      "pdf_pages": 12,
+      "master_updated": true,
+      "master_pdf_pages": 22,
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 5,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 5
+      },
+      "total_score": 29,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/24 07:30 早报预判：3,690 美元天花板压制 + A 股矿股非跌日背离防高开低走",
+          "outcome": "hit",
+          "evidence": "亚盘冲 $3,681 未破 $3,690 回落至 $3,625，A 股金矿股官收跌 2.5%–5.0%"
+        },
+        {
+          "claim": "11/24 07:30 早报预警：品牌金店早九点涨快跌慢易拉宽剪刀差",
+          "outcome": "hit",
+          "evidence": "周大福逆势涨至 1,103 元/克而午盘料价跌回 778 元，差价扩至 283 元/克（41.8% 溢价）"
+        }
+      ],
+      "tier_a_improvements": [
+        "建立 RSI_PLAYBOOK.md 初始高杠杆检索/避坑/排版规则基线（≤180 行上限）",
+        "固化同时间戳 14:15 溢价算法、COMEX 官方结算价区分及 008142/008143 精确费率核验清单"
+      ],
+      "tier_b_patches": [
+        "V2.2/V7.2 全栈重构：双快照锁、原生 OOXML settings.xml、图 2 显式 highlight、状态胶囊去尾星号、L1 琥珀菱形与 12 页零孤页收敛"
+      ],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "验真明晨 02:00 美国 5Y 国债拍卖与 02:30 OGZ26 期权到期解锁后金价方向",
+        "补录 11/24 SHFE 龙虎榜与 A 股黄金 ETF 11/24 资金流",
+        "评估无人值守 07:30 首跑中 RSI 盲审闭环的时效与一次过门禁率"
+      ]
+    },
+    {
+      "run_id": "2026-11-24_1800",
+      "edition_type": "weekday_evening",
+      "report_path": "daily/2026-11-24_1800_晚报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-24T21:00:00+08:00",
+      "first_pass_strict": false,
+      "strict_retries": 2,
+      "strict_errors_fixed": [
+        "首编因凭记忆写错 8 类 DAILY_* 嵌套键名导致 build_daily.py 抛 AttributeError，已对照 DAILY_FORMAT_SPEC.md 全面修正",
+        "首次 PDF 抽检抓出图 2 左侧高亮标签超宽（10.75–11.40 字）碰撞琥珀竖条，精简至 <=8.0 字重编消除",
+        "盲审后顺手修复 AUDIT_LOG 第二节同步至 20:20、正文二次上冲/VIX冲破30/花旗昨日日期与 Layer 0–1 降密去行话"
+      ],
+      "pdf_pages": 11,
+      "master_updated": false,
+      "master_pdf_pages": 22,
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 4,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 3,
+        "engine_and_guardrail_reliability": 3
+      },
+      "total_score": 22,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/24 16:30 追踪：明晨 02:00 美国 700 亿 5Y 国债拍卖尾部与利率反应",
+          "outcome": "pending_tonight",
+          "evidence": "20:20 距开标尚余 5h40m；已补 WI 4.74%–4.75% 与摩根大通尾部预警，并拦截聚合站误把上月 4.708% 当今晚结果的脏数据"
+        },
+        {
+          "claim": "11/24 16:30 追踪：明晨 02:30 OGZ26 期权到期解锁后现货金是否突破 3,690 或跌破 3,600",
+          "outcome": "pending_tonight",
+          "evidence": "20:20 距到期尚余 6h10m；现货金仍被期权磁铁锁在 $3,619–$3,637 窄震，留待明晨 07:30 终判"
+        },
+        {
+          "claim": "11/24 16:30 追踪：今晚 23:00 美国 11 月消费者信心是否触发反抽 790 元/克",
+          "outcome": "pending_tonight",
+          "evidence": "20:20 距公布尚余 2h40m（SHFE 21:00 夜盘未开）；已更新预期至 92.1–92.2 并警示美股盘前纳指期 -1.75%"
+        },
+        {
+          "claim": "11/24 16:30 追踪：11/24 上期所龙虎榜与 518880/518660 11/24 资金流补录",
+          "outcome": "partial",
+          "evidence": "已补齐 SGE 官方日终表（Au99.99 777.72/-0.47%）及 SHFE au2612/au2702 合约分账；席位龙虎榜与国内 ETF 11/24 净值流向 20:20 仍待披露"
+        }
+      ],
+      "tier_a_improvements": [
+        "在 RSI_PLAYBOOK.md 固化组件 JSON 强制速查铁律与先 lint 后编译流程，消除凭记忆盲写错键崩溃",
+        "固化图 2（DAILY_CHART_CROSS）左标签 <=8.5 汉字当量红线、窄表头 <=7 汉字防孤字规则与 AUDIT_LOG 双区同步铁律",
+        "新增 Layer 0–1 单条 <=3 锚点数字与禁用未译行话（平水/扫盘/双向扫损/割韭菜）及 VIX 方向规范"
+      ],
+      "tier_b_patches": [
+        "lint_readability.py Gate 0 _validate_directive_schema 加固（+30 行）：新增 7 类组件嵌套键名深检与图 2 左标签物理宽度防撞门禁（>9.5 error / >9.0 warn），历史 3 份日报与主报告 V7.2 验证 0 误报"
+      ],
+      "tier_c_proposals": [
+        "提案 #1（已于 2026-11-24 21:15 获用户批准并全链路升级落地）：在 lint_readability.py 增设 --precheck 模式并将发刊流程升级为 MD -> --precheck --strict -> build_daily.py -> --strict"
+      ],
+      "next_run_watch": [
+        "验真 11/25 02:00 美国 $700 亿 5Y 国债拍卖结果（对比 WI 4.74%–4.75% 是否出正尾部，防误抓上月 4.708%）及对 US2Y/DFII10 冲击",
+        "验真 11/25 02:30 OGZ26 期权到期解锁后 06:00 NY 终盘是否突破 $3,690 或跌破 $3,600，以及美股开盘后 VIX 是否冲破 30 致红绿灯退回 0/4 关",
+        "补录 11/24 23:00 美消费者信心（预期 92.1–92.2）、11/24 SHFE au2612/au2702 席位龙虎榜、518880/518660 净值资金流、11/23 SOFR/OAS、11/24 ON RRP 及 LBMA 定盘终值",
+        "验真 Tier A 速查铁律 + Tier B Gate 0 深化门禁落地后，2026-11-25_0730 首编 0 崩溃、图 2 0 撞栏、--strict 一次通过（strict_retries=0）"
+      ]
+    },
+    {
+      "run_id": "2026-11-25_0730",
+      "edition_type": "weekday_morning",
+      "report_path": "daily/2026-11-25_0730_早报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-25T08:15:00+08:00",
+      "first_pass_strict": true,
+      "strict_retries": 0,
+      "strict_errors_fixed": [],
+      "pdf_pages": 11,
+      "master_updated": false,
+      "master_pdf_pages": 22,
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 4,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 3,
+        "engine_and_guardrail_reliability": 5
+      },
+      "total_score": 25,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/24 18:00 追踪：11/25 02:00 美国 $700 亿 5Y 国债拍卖结果（防误抓上月 4.708%）及利率冲击",
+          "outcome": "hit",
+          "evidence": "得标 4.719%（明确区分上月 4.708%），vs WI 4.716% 录正尾部 +0.3bp（连续第 13 次出尾纪录），倍数 2.37x，外资间接骤降至 54.3% vs 本土直接史高 36.7%，US2Y 粘于 4.668%（+79bp）"
+        },
+        {
+          "claim": "11/24 18:00 追踪：11/25 02:30 OGZ26 到期解锁后 NY 终盘是否破 $3,690 或跌破 $3,600，及 VIX 是否冲破 30",
+          "outcome": "hit",
+          "evidence": "亚盘冲 $3,678.15 未破 $3,690，随后在 CME 26-389 提保生效与 OGZ26 到期解锁下失守 $3,600 收 $3,554.77 (-2.21%)；VIX Cboe 官收 26.36–26.43（另源 28.88 / 日高 29.41）双口径严格 <30，红绿灯守住 1/4 未退 0/4"
+        },
+        {
+          "claim": "11/24 18:00 追踪：补录 11/24 美消费者信心、SHFE 龙虎榜、国内 ETF 净值流向、11/23 SOFR/OAS、11/24 ON RRP 与 LBMA 定盘",
+          "outcome": "partial",
+          "evidence": "6 项实收 3.5 项：已补消费信心 103.3（+里士满 +3）、11/23 SOFR 3.92%/CCC OAS 1,387bp、11/24 ON RRP $3.01 亿及国内 ETF 11/24 单位净值；SHFE 席位龙虎榜、国内 ETF 11/24 份额流与 11/24 LBMA 定盘截至 07:30 仍待披露"
+        },
+        {
+          "claim": "11/24 18:00 追踪：Tier A 速查 + Tier B Gate 0 落地后实现首编 0 崩溃、图 2 0 撞栏、--strict 一次通过",
+          "outcome": "hit",
+          "evidence": "首次 --precheck --strict 0 错 0 警，首次 build_daily.py 0 崩溃，图 2 13 条标签全 ≤6.2 字 0 撞栏，全量 7 门禁 --strict 一次通过（strict_retries=0）"
+        }
+      ],
+      "tier_a_improvements": [
+        "固化 07:30 官收信源白名单（StockAnalysis/Investing/VanEck）、禁用 Barchart 远月滞后价、跨日分母核对、site:shfe/lbma 补录词与北美冬令时（EST -13h / CST -14h）硬锁",
+        "强化 Layer 0–1 单条 <=3 核心锚点数字与隐性卖方词清扫（杠杆去化错杀/金融微结构/宏观二阶拔河），统一明确期银 vs 现货银与“概率持稳”措辞",
+        "固化首稿一次满版三项字数预算（summary 62–78 字、A/B/D/C 四卡收束第 3 页、Layer 3+徽章顺排收束 11–13 页）"
+      ],
+      "tier_b_patches": [
+        "build_daily.py _ATOMIC_NW_RE 加固（+3/-2 行）：补齐数字后独立单位“元(?![/旦])”与“欧元”及区间后置单位黏连，经 --check + 重编 + --strict + PDF 目检确认第 2 页 5 处孤字“元”100% 清零且稳守满版 11 页"
+      ],
+      "tier_c_proposals": [
+        "提案 #2（待用户审批）：将 07:30 官收白名单/黑名单、site:shfe/lbma 定向补录词与北美冬令时换算硬校验写入 sidecar.json 提示词与全局 Skill，根治连续两刊调研信噪比停在 3/5 的瓶颈"
+      ],
+      "next_run_watch": [
+        "验真今早 09:00–10:00 国内四大行金条（昨均 802）与品牌金店（昨 1,098–1,103）是否随夜盘（765–767）补跌 10–15 元/克并重算婚庆省钱差额，同步核验 15:30 SGE 官收溢价、老铺股东大会与周大福绩后大行点评",
+        "验真今日 09:20 PBOC 8,000 亿 MLF+5,000 亿逆回购、11:35 日本 3,000 亿日元 40Y 国债续发（拍前 4.12%）及 USD/JPY 是否触 160、15:00 德国 Q3 GDP 终值",
+        "定向清零 11/24 遗留补录项（GLD 吨数、GDX 官收 NAV、LBMA 定盘、MCX 终结、11/24 SOFR/HY OAS）并收割 11/25 SGE 日终表、SHFE 席位龙虎榜与国内 ETF 11/24–25 份额流",
+        "18:00 临门锁定今晚 21:30 美核心 PCE/Q3 GDP 与 22:15 英央行作证前瞻锚（盯现货是否守 $3,550 或逼近主报告 -3% 触发线 $3,526），验真本轮 Tier A/B 落地后上游脏快照压降、Layer 0–1 单条 <=3 数字、首编零稀疏页且 --strict 一次过"
+      ]
+    }
+  ]
+}

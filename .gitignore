@@ -1,0 +1,25 @@
+# Compiled binary deliverables (kept locally for reading & linters; published via GitHub Releases)
+*.pdf
+*.docx
+
+# Generated static site & standalone mobile HTML snapshots
+_site/
+equity/daily/latest_*.html
+gold/daily/latest_gold.html
+
+# Temporary build files
+*.tmp
+*.tmp.*
+.tmp_*
+
+# Python bytecode & caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# macOS metadata
+.DS_Store
+
+# Legacy generated HTML archive
+equity/archive/legacy_combined/*.html

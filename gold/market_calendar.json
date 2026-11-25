@@ -1,0 +1,299 @@
+{
+  "schema_version": "1.0",
+  "as_of": "2026-11-25",
+  "timezone": "Asia/Shanghai",
+  "description": "60+ day cross-market holiday, half-day, DST transition, and gold-specific macro/mechanical calendar for gold_research_2026 (2026-11-26 through 2027-03-14 + 2027-Q1 structural watch).",
+  "dst_schedule": {
+    "current_regime": "north_america_winter_standard",
+    "winter_standard": {
+      "effective_from": "2026-11-01",
+      "effective_to": "2027-03-13",
+      "est_rule": "EST = BJT - 13h",
+      "cst_rule": "CST = BJT - 14h",
+      "est_offset_from_bjt_hours": -13,
+      "cst_offset_from_bjt_hours": -14,
+      "comex_official_settle_local": "13:30 EST",
+      "comex_official_settle_bjt": "02:30",
+      "ny_spot_close_local": "17:00 EST",
+      "ny_spot_close_bjt": "06:00",
+      "us_equity_close_local": "16:00 EST",
+      "us_equity_close_bjt": "05:00",
+      "lbma_am_fix_bjt": "18:30",
+      "lbma_pm_fix_bjt": "23:00",
+      "notes": "Winter 02:30 BJT COMEX official settlement coincides identically with SHFE/SGE 02:30 night session close, enabling exact same-minute domestic premium calculation."
+    },
+    "next_switch_date": "2027-03-14",
+    "summer_dst": {
+      "effective_from": "2027-03-14",
+      "effective_to": "2027-11-06",
+      "edt_rule": "EDT = BJT - 12h",
+      "cdt_rule": "CDT = BJT - 13h",
+      "edt_offset_from_bjt_hours": -12,
+      "cdt_offset_from_bjt_hours": -13,
+      "comex_official_settle_local": "13:30 EDT",
+      "comex_official_settle_bjt": "01:30",
+      "ny_spot_close_local": "17:00 EDT",
+      "ny_spot_close_bjt": "05:00",
+      "us_equity_close_local": "16:00 EDT",
+      "us_equity_close_bjt": "04:00",
+      "uk_eu_dst_switch_date": "2027-03-28",
+      "notes": "From 2027-03-14 onward, all US market closes and COMEX settlement shift 1 hour earlier in BJT; UK/LBMA shifts 1 hour earlier on 2027-03-28."
+    }
+  },
+  "overlay_mode_rules": {
+    "A": "美盘休市或提前收盘：美股/美债/CFTC 明标休市或推迟、沿用上一 NY 终盘（标精确时点），聚焦伦敦/上金所/上期所实盘与节假薄量防插针。",
+    "B": "中国内地休市：A 股、上金所（SGE）、上期所（SHFE）及在岸人民币明标休市且严禁编造内盘新价，聚焦 COMEX/伦敦现货/离岸 CNH 与海外 ETF。",
+    "C": "欧/英/日/港/印单边休市或半日市：局部标注休市市场与恢复时刻，其余正常市场按标准流程编译。",
+    "GLOBAL": "全球主要金融市场同步休市：自动切入周末/节假日专项版，严禁伪造盘口，聚焦 7x24 链上黄金（XAUT/PAXG）、BTC、线下客流与中长期专题。"
+  },
+  "calendar_overrides": [
+    {
+      "id": "us_thanksgiving_2026",
+      "date": "2026-11-26",
+      "end_date": "2026-11-26",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+      "event": "美国感恩节全天休市（美股/美债休市，CME 贵金属无周四官结）",
+      "overlay_mode": "A",
+      "affected_editions": ["2026-11-26_1800", "2026-11-27_0730"],
+      "trading_hours_bjt": {
+        "us_equity": "全天休市",
+        "us_bond": "全天休市",
+        "cme_metals_electronic": "周五 03:30–07:00 BJT 停盘（冬令时 13:30–17:00 CST），周四无 COMEX 官方结算价",
+        "cftc_cot": "推迟至 2026-12-01 04:30 BJT 发布"
+      },
+      "gold_impact_note": "11/26 07:30 早报仍正常收割 11/25 完整美盘（含核心 PCE/GDP/7Y 拍卖）；自 11/26 18:00 晚报起切入 A 类局部休市模式，重点警惕低流动性急拉急砸。"
+    },
+    {
+      "id": "us_black_friday_2026",
+      "date": "2026-11-27",
+      "end_date": "2026-11-27",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+      "event": "美国黑色星期五提前收盘（半日市）",
+      "overlay_mode": "A",
+      "affected_editions": ["2026-11-27_1800", "2026-11-28_0730"],
+      "trading_hours_bjt": {
+        "us_equity_close": "周六 02:00 BJT（13:00 EST 提前收）",
+        "us_bond_close": "周六 03:00 BJT（14:00 EST 提前收）",
+        "cme_metals_close": "周六 03:45 BJT（13:45 CST / 14:45 EST 提前收）"
+      },
+      "gold_impact_note": "欧美机构休假导致交投清淡，叠加周六 13:00 BJT 美联储缄默期启动与周日 11/29 第 42 届 OPEC+ 会议，严防尾盘薄量插针。"
+    },
+    {
+      "id": "opec_plus_42nd_2026",
+      "date": "2026-11-29",
+      "end_date": "2026-11-29",
+      "markets": ["OIL_ENERGY", "GOLD_MACRO"],
+      "event": "第 42 届 OPEC+ 部长级会议（维也纳 · 7 国核心自愿减产组，不含已于 2026-05-01 退出的阿联酋）",
+      "overlay_mode": "NONE",
+      "affected_editions": ["2026-11-29_1800", "2026-11-30_0730"],
+      "trading_hours_bjt": {
+        "window": "周日 11/29 全天至周一 11/30 07:00 BJT 亚洲开盘消化"
+      },
+      "gold_impact_note": "敲定 2027 产量基线与年底到期 200 万桶/日减产去留；若油价大跌击穿布油 $80 且叠加 DFII10 > 2.95%，须立即复核尾部深熊升级红线。"
+    },
+    {
+      "id": "fomc_dec_2026",
+      "date": "2026-12-09",
+      "end_date": "2026-12-10",
+      "markets": ["US_MACRO", "GLOBAL_GOLD"],
+      "event": "美联储（FOMC）12 月议息会议与利率决议 + 经济预测（SEP）",
+      "overlay_mode": "NONE",
+      "affected_editions": ["2026-12-09_1800", "2026-12-10_0730"],
+      "trading_hours_bjt": {
+        "rate_decision": "2026-12-10 03:00 BJT",
+        "press_conference": "2026-12-10 03:30 BJT"
+      },
+      "gold_impact_note": "G4 央行密集加息潮首枪；核验加息幅度、2027 点阵图与鲍威尔/沃什表态是否引发 US2Y 与 DFII10 见顶回落（Tier 1 红绿灯关键变盘窗）。"
+    },
+    {
+      "id": "ecb_boe_boj_dec_2026",
+      "date": "2026-12-17",
+      "end_date": "2026-12-18",
+      "markets": ["EU_MACRO", "UK_MACRO", "JP_MACRO", "GLOBAL_GOLD"],
+      "event": "欧洲央行（12/17）、英国央行（12/17）、日本央行（12/18）三连议息决议",
+      "overlay_mode": "NONE",
+      "affected_editions": ["2026-12-17_1800", "2026-12-18_0730", "2026-12-18_1800"],
+      "trading_hours_bjt": {
+        "boe_decision": "2026-12-17 20:00 BJT",
+        "ecb_decision": "2026-12-17 21:15 BJT",
+        "boj_decision": "2026-12-18 约 11:00–12:00 BJT"
+      },
+      "gold_impact_note": "10 天内四大央行同步加息预期全部落锤，标志着 12 月最大宏观逆风落地，随后进入欧美税损抛售收尾与跨年右侧窗口观察期。"
+    },
+    {
+      "id": "christmas_eve_2026",
+      "date": "2026-12-24",
+      "end_date": "2026-12-24",
+      "markets": ["HK_EQUITY", "UK_LSE_LBMA", "EU_EQUITY", "US_EQUITY", "US_BOND", "COMEX_CME"],
+      "event": "平安夜港股/欧洲/英国/美盘集体半日市提前收盘",
+      "overlay_mode": "A",
+      "affected_editions": ["2026-12-24_1800", "2026-12-25_0730"],
+      "trading_hours_bjt": {
+        "hkex": "12:00 BJT 午间休市（半日市）",
+        "uk_lse_lbma": "LSE 20:30 BJT 提前收，LBMA 仅上午定盘、无下午定盘",
+        "us_equity_close": "周五 02:00 BJT（13:00 EST 提前收）",
+        "us_bond_close": "周五 03:00 BJT（14:00 EST 提前收）",
+        "cme_metals_close": "周五 02:45 BJT（12:45 CST 提前收）"
+      },
+      "gold_impact_note": "叠加 A 类+C 类半日休市，欧美交易桌进入圣诞休假，严防极薄流动性异常跳点；中国内地 SGE/SHFE 正常交易。"
+    },
+    {
+      "id": "christmas_day_2026",
+      "date": "2026-12-25",
+      "end_date": "2026-12-25",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME", "UK_LSE_LBMA", "EU_EQUITY", "HK_EQUITY", "IN_MCX"],
+      "event": "圣诞节欧美港及印度全天休市（中国内地 SGE/SHFE/A 股正常开市）",
+      "overlay_mode": "A",
+      "affected_editions": ["2026-12-25_1800", "2026-12-26_0730"],
+      "trading_hours_bjt": {
+        "us_eu_uk_hk_in": "全天休市（COMEX/LBMA 无报价）",
+        "cn_a_share_sge_shfe": "正常开市（晚间内盘流动性受外盘缺席影响）"
+      },
+      "gold_impact_note": "国际外盘全休、沿用平安夜提前收盘价，严禁把中国内盘孤立涨跌当作全球趋势外推。"
+    },
+    {
+      "id": "uk_hk_post_christmas_2026",
+      "date": "2026-12-28",
+      "end_date": "2026-12-28",
+      "markets": ["UK_LSE_LBMA", "HK_EQUITY"],
+      "event": "英国节礼日补休与香港圣诞后首个工作日休市（美/中正常交易）",
+      "overlay_mode": "C",
+      "affected_editions": ["2026-12-28_1800"],
+      "trading_hours_bjt": {
+        "uk_lbma_hkex": "全天休市（无 LBMA 伦敦定盘）",
+        "us_cn": "正常开市"
+      },
+      "gold_impact_note": "局部标注伦敦定盘与港股黄金股（周大福/老铺等）休市，其余 COMEX 与国内市场正常编译。"
+    },
+    {
+      "id": "new_years_eve_2026",
+      "date": "2026-12-31",
+      "end_date": "2026-12-31",
+      "markets": ["HK_EQUITY", "UK_LSE_LBMA", "JP_TSE", "US_BOND", "CN_SHFE_SGE"],
+      "event": "跨年夜港股/英国半日市 + 日本休市 + 美债提前收 + 中国内盘无夜盘",
+      "overlay_mode": "C",
+      "affected_editions": ["2026-12-31_1800", "2027-01-01_0730"],
+      "trading_hours_bjt": {
+        "hkex": "12:00 BJT 半日收",
+        "uk_lse_lbma": "20:30 BJT 提前收，无 LBMA 下午定盘",
+        "jp_tse": "12/31–01/03 元旦假期休市",
+        "us_bond_close": "次日 03:00 BJT（14:00 EST 提前收）",
+        "cn_sge_shfe": "日盘正常，当晚无夜盘交易"
+      },
+      "gold_impact_note": "欧美机构年度税损抛售（Tax-Loss Harvesting）最终收官日；注意当晚无国内夜盘，严禁次晨错用陈旧夜盘价。"
+    },
+    {
+      "id": "global_new_year_2027",
+      "date": "2027-01-01",
+      "end_date": "2027-01-01",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME", "UK_LSE_LBMA", "EU_EQUITY", "HK_EQUITY", "CN_A_SHARE", "CN_SHFE_SGE", "JP_TSE"],
+      "event": "全球元旦法定休市（中国内地 A 股/SGE/SHFE 元旦连休 01/01–01/03）",
+      "overlay_mode": "GLOBAL",
+      "affected_editions": ["2027-01-01_0730", "2027-01-01_1800", "2027-01-02_0730"],
+      "trading_hours_bjt": {
+        "global_markets": "美/中/港/欧/英/日全天休市（沿用 2026-12-31 年终官方收盘）"
+      },
+      "gold_impact_note": "自动切换节假日专项版，聚焦 2026 全年复盘、7x24 链上黄金与 1 月 8 日大宗商品指数再平衡倒计时。"
+    },
+    {
+      "id": "bcom_gsci_rebalance_2027",
+      "date": "2027-01-08",
+      "end_date": "2027-01-15",
+      "markets": ["COMEX_CME", "GLOBAL_GOLD", "GLOBAL_SILVER"],
+      "event": "BCOM 与 S&P GSCI 两大全球大宗商品指数年度权重再平衡启动（连续 5 个交易日）",
+      "overlay_mode": "NONE",
+      "affected_editions": ["2027-01-08_0730", "2027-01-15_1800"],
+      "trading_hours_bjt": {
+        "window": "2027-01-08 美盘开盘至 2027-01-15 COMEX 收盘"
+      },
+      "gold_impact_note": "核心机械利好窗：预计触发被动指数基金强制净买入约 33–48 亿美元黄金及 25 亿美元白银，重点核验是否与四步红绿灯右侧信号共振。"
+    },
+    {
+      "id": "us_mlk_day_2027",
+      "date": "2027-01-18",
+      "end_date": "2027-01-18",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+      "event": "美国马丁·路德·金纪念日全天休市（美股/美债休市，CME 提前停盘）",
+      "overlay_mode": "A",
+      "affected_editions": ["2027-01-18_1800", "2027-01-19_0730"],
+      "trading_hours_bjt": {
+        "us_equity_bond": "全天休市",
+        "cme_metals_electronic": "次日 03:30 BJT 提前停盘（13:30 CST），无当日美债官收与常规 NY 17:00 终盘"
+      },
+      "gold_impact_note": "切入 A 类局部休市模式，美债与现货 NY 终盘沿用 01/15 周五收盘并明标时点，聚焦伦敦定盘与国内 SGE/SHFE 实盘。"
+    },
+    {
+      "id": "india_republic_day_2027",
+      "date": "2027-01-26",
+      "end_date": "2027-01-26",
+      "markets": ["IN_MCX"],
+      "event": "印度共和国日（MCX 贵金属休市）",
+      "overlay_mode": "C",
+      "affected_editions": ["2027-01-26_1800"],
+      "trading_hours_bjt": {
+        "india_mcx": "休市（待次日复盘刷新印度实物溢价与 MCX 报价）"
+      },
+      "gold_impact_note": "C 类单边局部休市，仅在印度市场栏目明标休市，不影响欧美与中国核心盘口。"
+    },
+    {
+      "id": "china_spring_festival_2027",
+      "date": "2027-02-05",
+      "end_date": "2027-02-14",
+      "markets": ["CN_A_SHARE", "CN_SHFE_SGE", "CN_ONSHORE_FX"],
+      "event": "中国春节假期（A 股、上金所 SGE、上期所 SHFE 与在岸人民币连休 10 天）",
+      "overlay_mode": "B",
+      "affected_editions": ["2027-02-05_0730", "2027-02-14_1800"],
+      "trading_hours_bjt": {
+        "cn_a_share_sge_shfe": "2027-02-05 至 2027-02-14 全天休市（2027-02-04 晚起无夜盘，2027-02-15 恢复交易）",
+        "hkex": "春节期间局部休市（以港交所 2027 官方日历为准，约 02/06–02/09 休市）",
+        "us_eu_uk": "正常交易"
+      },
+      "gold_impact_note": "严格切入 B 类局部休市模式：国内 SGE/SHFE/在岸汇率与国内黄金 ETF 净值全部明标休市、沿用 02/04 收盘，全面聚焦 COMEX/LBMA/离岸人民币（CNH）与海外 GLD 资金流，并逐日测算节后复市补涨/补跌幅度。"
+    },
+    {
+      "id": "us_presidents_day_cn_reopen_2027",
+      "date": "2027-02-15",
+      "end_date": "2027-02-15",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME", "CN_A_SHARE", "CN_SHFE_SGE"],
+      "event": "美国总统日休市 + 中国春节后首个交易日复市（A 股/SGE/SHFE 重开）",
+      "overlay_mode": "A",
+      "affected_editions": ["2027-02-15_0730", "2027-02-15_1800", "2027-02-16_0730"],
+      "trading_hours_bjt": {
+        "cn_a_share_sge_shfe": "09:00/09:30 BJT 春节后首个交易日开盘（重点补算 10 天外盘累积涨跌幅）",
+        "us_equity_bond": "美国总统日全天休市",
+        "cme_metals_electronic": "次日 03:30 BJT 提前停盘（13:30 CST）"
+      },
+      "gold_impact_note": "双重关键节点：白盘紧盯中国复市跳空缺口、银行金条/金店节后调价与国内 ETF 溢价修复；晚间转入 A 类美盘休市模式，美股美债沿用 02/12 周五终盘。"
+    },
+    {
+      "id": "na_dst_switch_2027",
+      "date": "2027-03-14",
+      "end_date": "2027-03-14",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+      "event": "北美正式切换夏令时（EST→EDT / CST→CDT，所有美盘时刻提前 1 小时）",
+      "overlay_mode": "NONE",
+      "affected_editions": ["2027-03-15_0730", "2027-03-15_1800"],
+      "trading_hours_bjt": {
+        "edt_rule": "EDT = BJT - 12h",
+        "cdt_rule": "CDT = BJT - 13h",
+        "comex_official_settle_bjt": "01:30 BJT（13:30 EDT）",
+        "ny_spot_close_bjt": "05:00 BJT（17:00 EDT）",
+        "us_equity_close_bjt": "04:00 BJT（16:00 EDT）"
+      },
+      "gold_impact_note": "自 2027-03-15 起，COMEX 官结变为 01:30 BJT（不再与国内 02:30 夜盘收盘重合，同时间戳溢价须改按 02:30 实时国际现货价折算），美国宏观数据发布提前至 20:30/22:00 BJT。"
+    },
+    {
+      "id": "hk_precious_metals_clearing_2027q1",
+      "date": "2027-Q1",
+      "end_date": "2027-03-31",
+      "markets": ["HK_GOLD", "ASIA_PHYSICAL_GOLD"],
+      "event": "香港贵金属中央清算系统正式启动监测项",
+      "overlay_mode": "NONE",
+      "affected_editions": ["2027-Q1_ongoing"],
+      "trading_hours_bjt": {
+        "window": "2027 年第一季度官方落地公告与试运行窗口"
+      },
+      "gold_impact_note": "结构性中长期催化追踪：核验香港特区政府财库局/港交所/本地金库联盟关于中央黄金清算、实物交割扩容与离岸人民币计价黄金互联互通的落地进展，评估对亚洲定价权与国内溢价中枢的中期影响。"
+    }
+  ]
+}

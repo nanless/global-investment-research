@@ -1,0 +1,227 @@
+{
+  "schema_version": "1.0",
+  "description": "Structured per-run Recursive Self-Improvement (RSI) telemetry & 6-dimension blind-audit log for daily A-share, HK-stock & US-stock equity research (07:55 morning / _0730_ & 18:25 evening / _1800_ CST).",
+  "meta_review_interval_runs": 10,
+  "playbook_max_lines": 180,
+  "score_dimensions": [
+    "data_freshness_and_zero_hallucination",
+    "prior_forecast_calibration",
+    "plain_language_and_strict_readability",
+    "visual_layout_and_pagination",
+    "research_efficiency_and_source_quality",
+    "engine_and_guardrail_reliability"
+  ],
+  "runs": [
+    {
+      "run_id": "2026-11-24_1800",
+      "edition_type": "weekday_evening",
+      "reports": [
+        "daily/2026-11-24_1800_a_share.md",
+        "daily/2026-11-24_1800_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-24T23:18:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 0,
+      "lint_errors_fixed": [
+        "首编命令行 Linter 0 错 0 警，但首轮 PDF 视觉抽检触发 1 次返工重编（visual_retries=1）：美股轻刊第 2 页末溢出 1 行至第 3 页、A 股图 2 将热点板块通信误标黄色“逆势抄底!”",
+        "独立盲审（21/30）后顺手修复读者版晚刊 2 处事实笔误与排版瑕疵：拆清 RSP（0.20%）/VTV（0.03%）费率、黑五半日市修正为北京 11/28 02:00 收、修正“超 3,496 股”与科创板“200 股起步”措辞、补齐裸英文缩写中文前置并将 11/24 两融挂账顺延至 11/25 18:00 晚刊"
+      ],
+      "pdf_pages": {
+        "a_share": 5,
+        "us_stock": 2
+      },
+      "flagship_updated": {
+        "a_share": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 3,
+        "prior_forecast_calibration": 4,
+        "plain_language_and_strict_readability": 3,
+        "visual_layout_and_pagination": 3,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 21,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "基线项 #1：2026-11-24_1800 晚刊回补当日中金所（IF/IH/IC/IM）正式结算单与前 20 席位、申万全量资金及晚间重磅公告",
+          "outcome": "partial",
+          "evidence": "成功补齐 11/24 申万 14 行业主力资金终值、中证红利 000922 官收 5,447.88（-0.81%）、62 股龙虎榜与晚间公告（万华注销回购、159509/513100 停牌），并确认 IM2612 收盘 5,720.0；但 IF/IH/IC 结算单与四品种 11/24 前 20 持仓 22:25 公网仍为 11/23 缓存，已拦截并续挂次日 0730"
+        },
+        {
+          "claim": "基线项 #2：18:00 晚刊美股哨兵及时且零错误覆盖 20:00 ADI/BBY 财报、正规盘前走势与排雷时刻表",
+          "outcome": "partial",
+          "evidence": "高鲜度捕捉 ADI -10%、BBY +5.3%、BIS 7 实体清单与 22:25 盘前并辟谣 5Y 拍卖未开标，但盲审揪出压字引发的 RSP/VTV（0.03%）费率混标、黑五 11/27 02:00 跨日日期误标及多处裸缩写（已于盲审后修复）"
+        },
+        {
+          "claim": "基线项 #3：build_daily.py 新增 RSI 状态体检门禁与双市日报一次达成 0 硬错、0 警告且视觉零返工",
+          "outcome": "partial",
+          "evidence": "命令行 Linter 与 _check_rsi_state() 首次即 0 错 0 警，但首版视觉抽检检出美股 1 行溢页与 A 股图 2 通信误标黄，经历 1 次脚本修复与重编（visual_retries=1）"
+        }
+      ],
+      "tier_a_improvements": [
+        "固化中金所直连检索规则（site:cffex.com.cn 强制核验当日 YYYYMMDD 日期戳）及 T 日两融因 08:00–09:00 披露默认归属次日 18:00 晚刊",
+        "固化轻刊“控页不损事实、缩字不丢白话”铁律：禁合并不同费率 ETF 括号、禁裸写 FHFA/Ifo/CBI/QII/10Y/5Y、跨午夜半日市必写次日 CST 日期、变化条必含上期预判追踪",
+        "固化精数防病句（禁“超+精确数”）、科创板统一写“200 股起步”、列表/提示块严控 <=160 字防 5 行密墙",
+        "固化首稿版面硬预算（冲刺 visual_retries=0）：封面主标题 <=27 字防 2 字孤行、美股轻刊首稿 <=50 行 Markdown、A 股尾页填充 >=55% 或收敛至 4 页"
+      ],
+      "tier_b_patches": [
+        "build_a_share_pdf.py L623 CHART_A6 高亮逻辑修复（发版前最小化补丁，+1 行）：仅对 camp=='def' 且 pct<0、flow>=5 或显式 highlight 标黄“逆势抄底!”，根治热点板块通信误标；盲审评估本轮 Step 5 无需追加新脚本补丁（列表长度/10Y Linter 加固与 c1-min 扩宽留待下班次新稿协同验证）"
+      ],
+      "tier_c_proposals": [
+        "提案 C1：请审批同步修正 GEMINI.md 第四节、DAILY_REPORT_SPEC.md 及双 Skill 中“A 股 T 日两融余额归属次日 07:30 早刊”的时点冲突，统一调整为次日 18:00 晚刊封账（因交易所固定次晨 08:00–09:00 披露）",
+        "提案 C2：请用户在 Automations Dashboard 启用新建的每日 18:00 晚刊定时任务（daily-a-us-equity-research-evening），并审批在早/晚刊 sidecar.json 补充“cffex.com.cn 日期戳直查”与“美股轻刊首稿 <=50 行”2 句精简护栏"
+      ],
+      "next_run_watch": [
+        "【美股 07:30 核验】客观回填 SCORECARD.md 到期 3 项预判（COST 除息首日、02:00 700 亿 5Y 美债拍卖对比 WI 4.72%–4.76%、05:00 DELL/HPQ 财报初报）+ 核验 23:00 消费信心；严禁提前写 09:00 CST 盘后终盘",
+        "【A 股 07:30 核验】直查 cffex.com.cn 2026-11-24 日期戳清零 IF/IH/IC 结算单、IM 官方结算价与四品种前 20 会员持仓队列；11/24 两融终值诚实留给当日 18:00 晚刊封账",
+        "【双市 07:30 排雷】盯紧 09:20 央行双操作（补清隔夜到期全口径）、10:30 159509/513100 复牌防溢价双杀、明晚 21:30 美国 10 月核心 PCE 及 11/26 感恩节单边休市守望预案",
+        "【质量门禁冲刺】验证 Tier A 新规落地后 2026-11-25_0730 达成 0 错 0 警 + visual_retries=0（A 股 2–3 页、美股 4–5 页、零裸缩写、零 5 行列表密墙、封面主标题零 2 字孤行）"
+      ]
+    },
+    {
+      "run_id": "2026-11-25_0730",
+      "edition_type": "weekday_morning",
+      "reports": [
+        "daily/2026-11-25_0730_a_share.md",
+        "daily/2026-11-25_0730_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-25T07:58:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "lint_errors_fixed": [
+        "首编 Linter 拦截 1 次（lint_retries=1）：美股早刊小标题写“不含 09:00 盘后终盘”未带豁免词触发 _US_0730_AFTERHOURS_RE；已清理该措辞并移除时间反引号后重编 0 错 0 警",
+        "首次 PDF 逐页目检发现 CHART_U4（图 3）第 2、4 张阶段卡片各 1 条 bullet 贴边轻微溢框（visual_retries=1），已缩短并复检修净",
+        "独立盲审（24/30）后热修复读者版 3 处瑕疵：美股“明晚 21:30”→“今晚 21:30”、“戴尔盘前先砸”→“戴尔正盘先砸”、统一美元单位（美股及 SCORECARD 清除“元”混写）、缩短 CHART_U4 第 3 张卡片偏紧条目及 CHANGELOG 单段至 <=130 字"
+      ],
+      "pdf_pages": {
+        "a_share": 3,
+        "us_stock": 5
+      },
+      "flagship_updated": {
+        "a_share": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 4,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 3
+      },
+      "total_score": 24,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "【美股 07:30 核验】回填 SCORECARD.md 到期 3 项预判（COST 除息、02:00 5Y 拍卖、05:00 DELL/HPQ 初报）+ 23:00 消费信心；禁写 09:00 CST 盘后终盘",
+          "outcome": "hit",
+          "evidence": "3 项均以 11/24 官收（COST $1,091.82 / +2.24% vs 除息参考价；5Y 拍卖 4.719%、2.37x；DELL 正盘 -11.75% 印证避赌）客观回填为 ✅ 兑现，消费信心 103.3 准确落地，09:00 CST 终盘与 BTC ETF 官流合规挂入 18:00 晚刊"
+        },
+        {
+          "claim": "【A 股 07:30 核验】直查 cffex.com.cn 2026-11-24 清零 IF/IH/IC 结算单、IM 官结与前 20 席位；11/24 两融留 18:00 晚刊",
+          "outcome": "partial",
+          "evidence": "核出 IM2612（5,720.0）与 IH2612（2,744.60 / +0.47%）11/24 官数，11/24 两融合规挂至 18:00；但 IF2612/IC2612 与四品种前 20 席位公网仍滞留 11/23 缓存，已拦截拒用并续挂 18:00"
+        },
+        {
+          "claim": "【双市 07:30 排雷】盯紧 09:20 央行全口径到期、10:30 159509/513100 复牌防双杀、今晚 21:30 核心 PCE 及 11/26 感恩节守望预案",
+          "outcome": "hit",
+          "evidence": "补全 15,960 亿全口径到期拆解（10,000+5,160+800），159509/513100 停牌双杀置顶提醒，同步标明今晚 21:30 PCE 与 11/26 感恩节休市守望预案"
+        },
+        {
+          "claim": "【质量门禁冲刺】验证新规后 2026-11-25_0730 达成 0 错 0 警 + visual_retries=0（A 股 2–3p、美股 4–5p、零裸缩写、零密墙、零孤行）",
+          "outcome": "partial",
+          "evidence": "终版页数精准落于 3p/5p 且单行封面、零裸缩写、0 错 0 警，但过程触发 1 次 Linter 重试与 1 次 CHART_U4 视觉返工，且存在部分 5–6 行列表密墙"
+        }
+      ],
+      "tier_a_improvements": [
+        "07:30 美股早刊禁用“09:00 盘后终盘”裸串：如需声明口径不含盘后终盘，统一写“不含美东盘后终盘”或必带“由今日 18:00 晚刊封账”豁免语境，杜绝 Linter 误触发",
+        "固化 CHART_U4 阶段卡片硬字数预算：u4.cards 单卡每条 bullet 扣除圆点后严控 <=18 汉字等宽，直接确保右框留白 >=8px 消除 visual_retries",
+        "跨日复用时态与货币单位双核：早刊必查“明晚/昨晚”残留及“正盘/盘前/盘后”归属；美股及记分卡美元金额统一写“美元”禁混写“元”",
+        "严控列表项 <=160 字与 CHANGELOG 单段 <=130 字（Linter 未覆盖列表密墙，须发版前主动拆短至 <=4 行）"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【A 股 18:00 晚刊封账与验真】封账 11/25 15:00 官收、16:30 人民币、11/24 全市场两融余额终值（今晨 08:00–09:00 公布）及 16:30–17:30 中金所四品种官方结算单与前 20 席位（强核日期戳，彻底清零缓存队列）；核验今日 09:20 央行 15,960 亿全口径实际对冲与 DR007 并回填 SCORECARD 到期项，追踪 10:30 159509/513100 复牌表现",
+        "【美股 18:00 晚刊哨兵与休市预案】封账今日 09:00 CST 美股完整盘后终盘（含 DELL/HPQ 终盘）与 11/24 美国现货比特币/以太坊 ETF 官流；覆盖 17:00–18:00 欧洲宏观与美东正规盘前首 1 小时（EST 04:00–05:00），前瞻今晚 21:30 CST 核心 PCE + Q3 GDP 二修 + 初请/耐用品及明晨 00:30 7Y 美债拍卖，预置明日 11/26 感恩节休市守望提示",
+        "【零重试质量门禁冲刺（first_pass_clean=true）】美股晚刊轻版首稿严控 <=50 行 Markdown 稳落 2 页满版，A 股收盘主刊稳落 4–5 页；发版前清零“明晚/今晚”跨日残留、“元/美元”混写及 >160 字列表密墙，实现 lint_retries=0 且 visual_retries=0"
+      ]
+    },
+    {
+      "run_id": "2026-11-25_1330_deep_review_v2",
+      "edition_type": "flagship_and_system_deep_review",
+      "reports": [
+        "a_share_market_report_2026_11.md",
+        "hk_stock_market_report_2026_11.md",
+        "us_stock_market_report_2026_11.md",
+        "daily/2026-11-25_0730_a_share.md",
+        "daily/2026-11-25_0730_hk_stock.md",
+        "daily/2026-11-25_0730_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-25T13:30:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 0,
+      "lint_errors_fixed": [
+        "9 路一手源调研 + 系统红队法证在既有 lint_equity.py 0 错 0 警假绿灯下揪出 27 项硬伤与 15 项事实纠偏：含 A4 SVG 绕过黄金红灯锁、U7 NEM 标绿打架、小米净利误作股价跌幅、A/H 同股 PE 3 倍违背物理、汇丰建行误入恒科扩容、美元配比加总 102%、VIX 30 vs 35 冲突、hkma_agg_bal_hkd_b 10 倍单位 Bug、lint_equity.py brent_close_usd 幽灵键失效、退市股 00011 及 513260/513010 QDII 误标",
+        "全量完成 11 份规则/Skill/参考/模板去重与三市 21 图 135 股架构同步，并升级 4 份 sidecar.json（股研 07:55/18:25 25 分钟错峰 + 阶段 2B 发前 5+1 红队 + 黄金锁定 brent_settle_usd/cfets_cny_fixing 跨项目契约）"
+      ],
+      "pdf_pages": {
+        "a_share": 3,
+        "hk_stock": 3,
+        "us_stock": 5
+      },
+      "flagship_updated": {
+        "a_share": true,
+        "hk_stock": true,
+        "us_stock": true
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 4,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 5
+      },
+      "total_score": 27,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/25 09:20 央行 15,960 亿全口径到期对冲力度与 11/24 两融终值核实",
+          "outcome": "hit",
+          "evidence": "11/25 09:20 央行实操落地净投放 +3,210 亿（总量 1.917 万亿）；11/24 两融官数核实为 21,717.77 亿；11/25 午盘实况与 11:15 HIBOR 2.88% / 总结余 540.78 亿同步对齐"
+        },
+        {
+          "claim": "美股 DELL/HPQ 09:00 CST 盘后终盘反转与 CMS 药价谈判节点核查",
+          "outcome": "hit",
+          "evidence": "核实 09:00 终盘 DELL 吐回至 ~$297.91 (+0.89%)、HPQ 倒跌至 $27.13 (-2.90%)；并纠偏 CMS 第三轮已于 11/23 提前落地（ABBV Botox 豁免），11/30 核心仅剩财政部 $2,180 亿美债集中交割"
+        },
+        {
+          "claim": "既有 lint_equity.py 对跨项目黄金 SSOT 与三市内容质量的零盲区覆盖能力",
+          "outcome": "miss",
+          "evidence": "红队法证实锤既有 Gate C1 brent_close_usd 幽灵键致布油检验永久跳过、Gate C2 漏扫 SVG/JSON 放行 A4 买金硬编码、Gate 3B 缺失致超字结论/102% 配比/11 点进度条未拦；已全面升级加固"
+        }
+      ],
+      "tier_a_improvements": [
+        "固化全载体黄金红灯锁教训：SVG 与 JSON（a4.cards/kpis/u7.points）与正文同等受 Gate C2 硬拦，严禁金矿股在黄金红灯期标绿",
+        "固化 A/H 同股 PE 物理学锁（PE_A/PE_H ≈ 1 + AH 溢价率）、10 倍显式单位键 hkma_agg_bal_hkd_100m（废止 hkma_agg_bal_hkd_b）及配置 100% / 10 点进度条守恒",
+        "固化退市股（禁 00011 恒生银行，替补 02888 渣打）、QDII 属性（513260/513010 属 QDII，159545/159792 非 QDII 零溢价；03067 替 03033；01378 红筹 28% 税；03968 AH 倒挂）及可转债 6 年到期兑付二级卖出免 20% 税核查",
+        "固化 25 分钟错峰（07:55/18:25）+ 黄金快照 4 小时新鲜度校验 + 阶段 2B 发前独立红队（5+1）专查 6 大硬伤"
+      ],
+      "tier_b_patches": [
+        "同步升级 11 份规则/Skill/参考/模板文档：清零双市/14 图/3 条预授权残余，立 dual_account_tax_and_rules.md 与 rsi_self_review_protocol.md 为单一详规，扩容旗舰 16–24 页与弹性池 35–48 只/市（当前 135 只），固化 7 维度大盘与周日 6 维龙头解剖"
+      ],
+      "tier_c_proposals": [
+        "已获批落地：4 份 sidecar.json 全面升级（股研错峰 07:55/18:25 + 5+1 发前红队 + 7 类一手源白名单 + 细粒度 lint_equity.py 参数授权；黄金锁定 brent_settle_usd、cfets_cny_fixing 与 cfets_fixing_date 跨项目只读契约）"
+      ],
+      "next_run_watch": [
+        "【25 分钟错峰 + 黄金 SSOT 新鲜度实测（18:25 CST）】核验黄金 18:00 晚报已落盘最新 data_snapshot.json（含 brent_settle_usd、cfets_cny_fixing 与 cfets_fixing_date，年龄 <=4h），验证 Gate C1–C3 与 Stage 2B 发前红队零漏网",
+        "【三市 18:00 晚刊封账（18:25 跑）】A 股封账 11/25 官收、11/24 两融 21,717.77 亿、中金所 11/25 结算与席位及 113610/123080 到期转债免税卖法提醒；港股封账 16:10 官收、南向终值、沽空比、HIBOR 2.88%、总结余 540.78 亿与老铺黄金股东会；美股封账 DELL/HPQ 盘后与 T+1 BTC ETF 官流并前瞻 21:30 PCE 与明 11/26 感恩节休市",
+        "【新门禁一次过冲刺（first_pass_clean=true）】验证升级后的 lint_equity.py --precheck --strict 与 --strict（Gate 3B + Gate C1–C3 + Gate 6 页数红线）实现 lint_retries=0 且 visual_retries=0"
+      ]
+    }
+  ]
+}
