@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "equity"))
+from build_daily import extract_daily_meta, load_optional_charts
 from lint_equity import MARKETS, _check_rsi_metrics, _scan_text_for_gold_buy
 
 KPI_CARDS = [{"label": "数据", "val": "1", "sub": "测试"} for _ in range(4)]
@@ -246,6 +247,46 @@ class EquityWorkflowTests(unittest.TestCase):
         self.issue("us_stock", "light")
         result = self.lint("--precheck", "--strict")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_h6_requires_current_chart_data_for_new_reports(self):
+        self.advance("2026-11-25_1800_r3")
+        self.issue("a_share", "main")
+        hk_report = self.issue("hk_stock", "main")
+        self.issue("us_stock", "light")
+        meta, body = extract_daily_meta(hk_report.read_text(encoding="utf-8"), hk_report)
+        items = [["本期样本", -17.57, "本期价差"]]
+        sector_strip = "本期板块数据"
+        for h6, invalid_field in (
+            ({"title": "本期两地价差"}, "items"),
+            ({"items": []}, "items"),
+            ({"items": [["本期样本", 1]]}, "items"),
+            ({"items": [[" ", 1, "本期价差"]]}, "items"),
+            ({"items": [["本期样本", True, "本期价差"]]}, "items"),
+            ({"items": [["本期样本", float("nan"), "本期价差"]]}, "items"),
+            ({"items": [["本期样本", float("inf"), "本期价差"]]}, "items"),
+            ({"items": [["本期样本", 10**400, "本期价差"]]}, "items"),
+            ({"items": [["本期样本", 1, " "]]}, "items"),
+            ({"items": items}, "sector_strip"),
+            ({"items": items, "sector_strip": " "}, "sector_strip"),
+            ({"items": items, "sector_strip": sector_strip}, None),
+        ):
+            with self.subTest(h6=h6):
+                meta["chart_live"]["h6"] = h6
+                hk_report.write_text(
+                    f"{body}\n\n<!-- CHART_H6 -->\n\n<!-- DAILY_META_JSON {json.dumps(meta, ensure_ascii=False)} -->\n",
+                    encoding="utf-8",
+                )
+                result = self.lint("--precheck", "--strict")
+                self.assertEqual(result.returncode, 1 if invalid_field else 0, result.stdout + result.stderr)
+                if invalid_field:
+                    self.assertIn(f"图 H6 的 chart_live.h6.{invalid_field}", result.stdout)
+
+        chart = load_optional_charts("hk_stock", meta)["<!-- CHART_H6 -->"]
+        svg = chart.partition("<svg")[2].partition("</svg>")[0]
+        self.assertIn("本期样本", svg)
+        self.assertIn("-17.6%", svg)
+        self.assertIn(sector_strip, svg)
+        self.assertNotIn("-21.1%", svg)
 
     def test_vix_missing_both_sides_requires_no_stale_quote(self):
         self.advance("2026-11-29_1800")

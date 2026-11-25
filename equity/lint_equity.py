@@ -99,6 +99,20 @@ def check_daily_contract(path: Path, meta: dict | None, md_text: str, *, as_of_c
                     errors.append(f"{path.name}: 图 {key} 不属于该市场")
                 elif key not in ("A1", "A5") and not (isinstance(chart.get(key.lower()), dict) and chart[key.lower()]):
                     errors.append(f"{path.name}: 图 {key} 缺少本期 chart_live.{key.lower()} 数据")
+                elif key == "H6" and sort_key > EDITION_CUTOVER:
+                    h6 = chart["h6"]
+                    items = h6.get("items")
+                    if not isinstance(items, list) or not items or any(
+                        not isinstance(row, list) or len(row) != 3
+                        or not isinstance(row[0], str) or not row[0].strip()
+                        or type(row[1]) not in (int, float) or not -sys.float_info.max <= row[1] <= sys.float_info.max
+                        or not isinstance(row[2], str) or not row[2].strip()
+                        for row in items
+                    ):
+                        errors.append(f"{path.name}: 图 H6 的 chart_live.h6.items 须提供本期非空的 [名称, 有限百分比, 说明] 行")
+                    sector_strip = h6.get("sector_strip")
+                    if not isinstance(sector_strip, str) or not sector_strip.strip():
+                        errors.append(f"{path.name}: 图 H6 的 chart_live.h6.sector_strip 须提供本期板块说明")
             raw = chart.get("as_of_full")
             cutoff = _REPORT_CUTOFF_RE.match(raw) if isinstance(raw, str) else None
             try:
