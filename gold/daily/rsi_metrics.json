@@ -184,6 +184,64 @@
         "定向清零 11/24 遗留补录项（GLD 吨数、GDX 官收 NAV、LBMA 定盘、MCX 终结、11/24 SOFR/HY OAS）并收割 11/25 SGE 日终表、SHFE 席位龙虎榜与国内 ETF 11/24–25 份额流",
         "18:00 临门锁定今晚 21:30 美核心 PCE/Q3 GDP 与 22:15 英央行作证前瞻锚（盯现货是否守 $3,550 或逼近主报告 -3% 触发线 $3,526），验真本轮 Tier A/B 落地后上游脏快照压降、Layer 0–1 单条 <=3 数字、首编零稀疏页且 --strict 一次过"
       ]
+    },
+    {
+      "run_id": "2026-11-25_1800",
+      "edition_type": "weekday_evening",
+      "report_file": "daily/2026-11-25_1800_晚报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-25 21:25",
+      "first_pass_strict": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "pdf_pages": 11,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "预检 Gate 1 在 Layer 0–1 DAILY_SIGNAL_NOISE 拦下 1 处禁词“提保”，立即改为白话“提高保证金”后一次通过 --precheck --strict、build_daily.py 与全量 7 门禁 --strict（0 错 0 警，满版 11 页零孤页，末页 2,396 字）"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 28,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/25 07:30 追踪：四大行金条与品牌金店 09:00–10:00 补跌 10–15 元/克窗口、SGE 15:30 溢价、老铺股东会与周大福大行点评",
+          "outcome": "hit",
+          "evidence": "四大行均价大跌 -24.09 元至 778.16、周大福大降 -35 元破千一至 1,068（婚庆 50g 省 13,592 元/约 272 元/克），SGE Au99.99 收 757.35（同刻溢价 +1.53 元），老铺 EGM 99.9954% 通过派息仍跌 -2.64%，周大福跌 -3.05% 遭四家大行降目标"
+        },
+        {
+          "claim": "11/25 07:30 追踪：PBOC 09:20 MLF+逆回购、日本 11:35 40Y 国债续发及日元是否触 160、德国 Q3 GDP 终值",
+          "outcome": "hit",
+          "evidence": "PBOC 净投放 +3,210 亿（DR007 1.374%）；日本 40Y 中标 4.090% 但倍数 2.63x 偏弱致二级冲 4.194%（BOJ 截尾通胀 2.63%），USD/JPY 高见 159.50 未破 160；德国 Q3 GDP 终值下修至 +0.1%"
+        },
+        {
+          "claim": "11/25 07:30 追踪：清零 11/24 遗留补录项（GLD 吨数、GDX NAV、LBMA、MCX、SOFR/HY OAS）并收割 11/25 SGE/SHFE 龙虎榜与国内 ETF 流",
+          "outcome": "hit",
+          "evidence": "100% 清零 11/24 遗留表（GLD 1,031.299t 平、GDX 校准 $71.37/NAV $71.50、LBMA $3,622.55/$3,623.50、MCX、SOFR 3.94%、HY OAS 363bp、SHFE pm20261124/25.dat、国内 ETF 11/24 份额流）"
+        },
+        {
+          "claim": "11/25 07:30 追踪：锁定 21:30 PCE/22:15 英央行与 $3,526 警戒线，且 Layer 0–1 单条 <=3 数字并首编 --strict 一次过",
+          "outcome": "partial",
+          "evidence": "锚点、0/5 官收锁、0 脏快照与 0 视觉重试全部达成，但初稿 Layer 0–1 出现 1 处禁词“提保”触发 lint_retries=1 且数字密度略超 <=3 预算"
+        }
+      ],
+      "tier_a_improvements": [
+        "固化 Layer 0–1 落盘前 5 秒禁词/密度双扫：严防“提保”滑入组件（一律改“提高保证金/押金”），VERDICT 与 SIGNAL_NOISE 严格压回单条 <=3 核心数字、summary 62–78 字、PERSONA 单条 <=95 字冲刺 first_pass_strict=true",
+        "固化高波动日“纽约官收 vs 盘中实时”双口径隔离纪律：同时服务 Gate 5 cross_ratios 与 $3,526 主报告触发线，并在 11/26 07:30 正常早报后无缝切入 11/26 18:00 / 11/27 07:30 感恩节 A 类局部休市模式"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【核心决断】收割 11/26 06:00 纽约现货官收与 02:30 COMEX 官结，正式裁定是否跌破 $3,526（较主报告 V7.2 基线 $3,635.24 跌 >=3%）——若官收确破即刻触发全景主报告联动修订；同时以 NY 官收 VIX 终值判定第 3 关仍灭（0/4）或回归（1/4）",
+        "【美英四连考结案与记分卡验真】封账 11/25 21:30 美 10 月核心 PCE / Q3 GDP 二修 / 初请 / 耐用品、22:15 英央行 4 人议会作证、00:30 $440 亿 7Y 美债拍卖与 03:00 褐皮书，客观回填 SCORECARD 三情景预案",
+        "【滞后表回补 + 感恩节切换预置】补录 11/25 LBMA AM/PM、GLD 持仓变化、国内黄金 ETF 11/25 份额流、11/25 ON RRP 与 11/24 FRED HY/CCC OAS；在 11/26 07:30 完整早报内预告 11/26 18:00 与 11/27 07:30 切入美国感恩节 A 类局部休市模式",
+        "【零重试冲刺】Layer 0–1 严扫“提保”等 68 禁词、单条 <=3 数字、summary 62–78 字，冲刺 first_pass_strict=true（lint_retries=0, visual_retries=0）"
+      ]
     }
   ]
 }

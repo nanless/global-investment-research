@@ -222,6 +222,71 @@
         "【A/港收盘双主刊 + 美股 18:00 哨兵实盘封账】A 股封账 11/25 官收、11/24 两融 21,717.77 亿、中金所 11/25 结算与前 20 席位、09:20 央行 +3,210 亿净投放效果及 113610/123080 到期卖出提示；港股封账 16:10 官收、南向终值、沽空比、HIBOR 2.88%、总结余 540.78 亿与老铺黄金股东会；美股封账 DELL/HPQ 09:00 盘后终盘、T+1 加密 ETF 官流与今晚 21:30 核心 PCE + 明 11/26 感恩节休市预案",
         "【新门禁零重试冲刺（first_pass_clean=true）】验证升级后的 lint_equity.py --precheck --strict 与 --strict（Gate C1–C3 + Gate 3B + Gate 6 页数红线）实现 lint_retries=0 且 visual_retries=0"
       ]
+    },
+    {
+      "run_id": "2026-11-25_1800",
+      "edition_type": "weekday_evening_unified",
+      "reports": [
+        "daily/2026-11-25_1800_a_share.md",
+        "daily/2026-11-25_1800_hk_stock.md",
+        "daily/2026-11-25_1800_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-25T21:25:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "lint_errors_fixed": [
+        "预检 --precheck --strict 零硬错误一次通过跨项目 Gate C1–C3，仅拦下 1 处数字反引号与 11 条 >210 字列表项，拆分收短后一次通过 build_daily.py 与全量 lint_equity.py --strict（0 错 0 警）",
+        "采纳独立盲审微修：补全港股晚刊 L20 “H 股 20% 税”漏字，清除 INDEX.md 2 处裸英文缩写（DR007/VIX）并收短 CHANGELOG 港股条目至 <=130 字"
+      ],
+      "pdf_pages": {
+        "a_share": 5,
+        "hk_stock": 5,
+        "us_stock": 2
+      },
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 27,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/25 13:30 追踪：一体化顺序执行 + 黄金 SSOT 零延迟新鲜度实测 + Stage 2B 拦截 6 大硬伤",
+          "outcome": "hit",
+          "evidence": "Step 3 黄金落盘 2026-11-25 21:25 后 Step 4 零延迟（0 分钟）同步全部 18 项共享键，brent_settle_usd=91.40 与 cfets_cny_fixing=6.7088 (2026-11-25) 精准一致，黄金 0/4 红灯互斥锁全载体无绕过"
+        },
+        {
+          "claim": "11/25 13:30 追踪：A/港收盘双主刊 + 美股 18:00 哨兵全量实盘封账",
+          "outcome": "hit",
+          "evidence": "全量封账 11/25 A 股官收/11/24 两融 21,717.77 亿/中金所 20261125 官结与前 20 减空 +8,051 手/央行 +3,210 亿兑现 SCORECARD；港股 16:10 官收/南向 +64.34 亿结构/22.66% 沽空拆解/金管局 540.83 亿校准/老铺股东会；美股 DELL $297.98 与 HPQ $28.50 盘后校准 + Farside BTC -$231.4M/-$4.94B MTD"
+        },
+        {
+          "claim": "11/25 13:30 追踪：新门禁零重试冲刺（first_pass_clean=true, lint_retries=0, visual_retries=0）",
+          "outcome": "partial",
+          "evidence": "visual_retries=0 且全量 --strict 0 错 0 警，但预检 4 项超长列表与反引号警告触发 lint_retries=1，且港股 p5 尾页偏轻（523 字）"
+        }
+      ],
+      "tier_a_improvements": [
+        "主刊尾页与字数硬预算：若 5 页主刊尾页低于 ~700 字（如今晚港股 523 字）主动收短 4–6 行压入紧凑 4 页；首稿即严控一句话结论 <=50 字、正文 <=130 字、列表 <=160 字、CHANGELOG <=130 字冲刺 lint_retries=0",
+        "发前裸缩写与单字漏字巡检延伸至 INDEX.md：清除 INDEX.md 中裸 VIX/DR007，并在清扫裸英文字母时防误删“H 股”前缀",
+        "严守感恩节场次边界：11/26 07:30 必出美股 11/25 完整隔夜主刊（4–5 页，封账 PCE/英央行/7Y 拍卖），仅从 11/26 18:00 与 11/27 07:30 起将美股切入感恩节模式 2 休市守望简报"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【美股 07:30 完整主刊封账（禁提前切休市简报！）】完整复盘 11/25 美股全天官收与 21:30 核心 PCE + Q3 GDP 二修 + 初请/耐用品、22:15 英央行作证、00:30 7Y 拍卖、03:00 褐皮书；核验 VIX 官收是否站上 30（熔断 2 日计数第 1 天）并回填 SCORECARD 11/25 早报油价/通胀预判，预告 11/26 18:00 与 11/27 07:30 切模式 2 休市简报",
+        "【A/港 07:30 轻刊与跨市同步】零延迟消费黄金最新 SSOT（含 06:00 NY 官收是否破 $3,526 及红绿灯状态）；以 05:00–05:15 A50/金龙/ADR 校正港股 03:00 夜期盲窗；盘前置顶提醒 10:30 159509/513100 停牌溢价坑、123080 海波转债最后交易日免税卖出窗及港股美盘休市薄盘 + 21,800–21,915 牛证重货区",
+        "【零重试 + 零稀疏页冲刺（first_pass_clean=true）】严守一句话结论 <=50 字、正文 <=130 字、列表 <=160 字、主刊尾页 >=700 字（或紧凑 4 页），达成 lint_retries=0 且 visual_retries=0"
+      ]
     }
   ]
 }
