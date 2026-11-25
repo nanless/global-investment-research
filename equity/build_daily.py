@@ -8,7 +8,7 @@ Features:
   - Shared pdf_common engine (SkPDF emoji guard, 3-market themes, embedded pre-render redline linter)
   - Pure-Python native ECMA-376 OOXML .docx (replaces macOS textutil completely; zero table/border stripping)
   - Self-contained SVG chart rendering via DAILY_META_JSON (A1-A7, H1-H7, U1-U7)
-  - Default mode builds latest a_share, hk_stock & us_stock snapshots + newer same-day snapshots
+  - Default mode builds only the reports required by the active edition plan
   - Outputs responsive 3-market mobile HTML (daily/latest_{a_share,hk_stock,us_stock}.html) alongside A4 PDF & DOCX
   - Delegates workspace/RSI/ledger hygiene audit cleanly to lint_equity.check_workspace_state() (single source)
 """
@@ -22,18 +22,20 @@ import re
 import sys
 from pathlib import Path
 
-from lint_equity import check_daily_contract, check_workspace_state, parse_daily_sort_key
+from lint_equity import check_daily_contract, check_workspace_state, load_current_edition_plan, parse_daily_sort_key
 from pdf_common import (
     BASE_DIR,
     CHROME_BIN,
     DAILY_DIR,
     build_theme_css,
     clean_plain_text,
+    freeze_equity_inputs,
     render_cover_banner,
     render_docx_atomic,
     render_md_body,
     render_pdf_atomic,
     run_lint_gate,
+    write_equity_receipt,
 )
 
 ALL_MARKETS = ("a_share", "hk_stock", "us_stock")
@@ -111,6 +113,7 @@ def build_one(
     write_mobile_latest: bool = False,
 ) -> None:
     market = detect_market(md_path)
+    frozen = freeze_equity_inputs(md_path, Path(__file__), BASE_DIR / f"build_{market}_pdf.py") if export_docx else None
     raw_text = md_path.read_text(encoding="utf-8")
     meta, md_body = extract_daily_meta(raw_text, md_path)
     if not no_lint:
@@ -160,6 +163,7 @@ def build_one(
 
     if export_docx:
         render_docx_atomic(full_html, docx_path, market=market, footer_title=page_footer)
+        write_equity_receipt(frozen, pdf_path, docx_path)
         print(f"Built native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
 
 
@@ -199,6 +203,10 @@ def main() -> None:
         )
     latest_set = {files[-1].resolve() for files in market_files.values() if files}
 
+    try:
+        plan = load_current_edition_plan() if not positional and not build_all else None
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Cannot build equity edition: {exc}") from exc
     targets: list[Path] = []
     if positional:
         targets = [Path(p).resolve() for p in positional]
@@ -212,6 +220,17 @@ def main() -> None:
                 print(f"Skipping legacy snapshot (no DAILY_META_JSON): {c.name}")
                 continue
             targets.append(c)
+    elif plan is not None:
+        targets = [
+            (BASE_DIR / item["required_file"]).resolve()
+            for item in plan["markets"].values() if item["action"] == "publish"
+        ]
+        missing = [target.name for target in targets if not target.is_file()]
+        if missing:
+            raise SystemExit(f"Missing required reports for {plan['edition_id']}: {', '.join(missing)}")
+        if not targets:
+            print(f"{plan['edition_id']}: all markets reuse the previous issue.")
+            return
     else:
         latest_dates = {parse_daily_sort_key(f)[0] for f in latest_set}
         all_candidates = sorted(

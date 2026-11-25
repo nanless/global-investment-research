@@ -134,4 +134,4 @@
 
 ### Meta-RSI 周期总复盘（每累计满 10 刊自动触发）
 - 当 `daily/rsi_metrics.json` 中 `len(runs) % 10 == 0` 时，盲审子代理额外对比近 10 刊的 6 维均值趋势、一次过 `--strict` 比率、高频扣分项与预判命中率，输出 1–3 条系统级 Tier C 进化提案供用户在下一次交互中集中审批。
-- **终检全绿与站点单次发布**：Tier A/B 落盘并复跑 `python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊黄金文件名>.md`（一体化单会话流程 `daily-global-investment-research` / `daily-global-investment-research-evening` 中同步确认第 4 步股研 `python3 <REPO_ROOT>/equity/lint_equity.py --strict` 及统一 RSI 全绿）后，统一运行一次 `python3 <REPO_ROOT>/scripts/publish_site.py` 构建静态门户、通过内部严格站点门禁（`python3 <REPO_ROOT>/scripts/lint_site.py _site --strict`）并推送至 GitHub Pages 与滚动 Release。
+- **终检全绿与站点单次发布**：Tier A/B 落盘后复跑黄金与权益的严格门禁。一体化流程按根契约登记进入 `publish`，用同一班次 token 执行一次 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`，验证 Pages 与滚动 Release 后再结束。

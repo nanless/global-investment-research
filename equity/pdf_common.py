@@ -11,12 +11,36 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from scripts.artifact_receipt import FrozenInputs
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
 CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def freeze_equity_inputs(source: Path, *inputs: Path) -> FrozenInputs | None:
+    root = BASE_DIR.parent
+    if not source.resolve().is_relative_to(root):
+        return None
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts.artifact_receipt import freeze_inputs
+
+    return freeze_inputs(source, inputs=(*inputs, Path(__file__), BASE_DIR / "docx_embed.py"))
+
+
+def write_equity_receipt(frozen: FrozenInputs | None, pdf: Path, docx: Path) -> None:
+    if frozen is not None:
+        from scripts.artifact_receipt import write_receipt
+
+        write_receipt(frozen, pdf, docx)
+
 
 # Strip color-emoji ranges that trigger Apple Color Emoji sbix failures in macOS Chrome SkPDF.
 # Deliberately preserves U+2610 (☐ ballot box) for printable checklists.

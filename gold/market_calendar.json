@@ -1,8 +1,24 @@
 {
   "schema_version": "1.0",
-  "as_of": "2026-11-25",
+  "as_of": "2026-11-26",
   "timezone": "Asia/Shanghai",
-  "description": "60+ day cross-market holiday, half-day, DST transition, and gold-specific macro/mechanical calendar for global-investment-research/gold (2026-11-26 through 2027-03-14 + 2027-Q1 structural watch).",
+  "coverage": {
+    "start_date": "2026-11-01",
+    "end_date": "2027-03-31",
+    "verified_on": "2026-11-26",
+    "vix_schedule_source": "https://www.cboe.com/about/hours/us-options/"
+  },
+  "vix_session_exceptions": {
+    "2026-11-26": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"},
+    "2026-11-27": {"windows_et": [["03:15", "09:25"], ["09:31", "13:00"]], "official_close_et": null, "daily_row_check_after_et": "13:15"},
+    "2026-12-24": {"windows_et": [["03:15", "09:25"], ["09:31", "13:00"]], "official_close_et": null, "daily_row_check_after_et": "13:15"},
+    "2026-12-25": {"windows_et": [], "official_close_et": null},
+    "2027-01-01": {"windows_et": [], "official_close_et": null},
+    "2027-01-18": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"},
+    "2027-02-15": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"},
+    "2027-03-26": {"windows_et": [], "official_close_et": null}
+  },
+  "description": "Cross-market holidays, limited sessions, DST and research events, with independently recorded Cboe spot VIX sessions through 2027-03-31.",
   "dst_schedule": {
     "current_regime": "north_america_winter_standard",
     "winter_standard": {

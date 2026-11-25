@@ -132,10 +132,26 @@
   }
 
   const tocBackdrop = document.getElementById("toc-backdrop");
+  let modalReturnFocus = null;
+  const modalFocusable = "button:not([disabled]), a[href], [tabindex='0']";
+  function showDialog(dialog) {
+    modalReturnFocus = document.activeElement;
+    dialog.classList.add("open");
+    document.body.style.overflow = "hidden";
+    const target = dialog.querySelector(modalFocusable);
+    if (target) target.focus();
+  }
+  function hideDialog(dialog) {
+    if (!dialog.classList.contains("open")) return;
+    dialog.classList.remove("open");
+    document.body.style.overflow = "";
+    if (modalReturnFocus && modalReturnFocus.isConnected) modalReturnFocus.focus();
+    modalReturnFocus = null;
+  }
   function setTocDrawer(open) {
     if (!tocBackdrop) return;
-    tocBackdrop.classList.toggle("open", open);
-    document.body.style.overflow = open ? "hidden" : "";
+    if (open) showDialog(tocBackdrop);
+    else hideDialog(tocBackdrop);
   }
   document.querySelectorAll("[data-action='open-toc']").forEach(function (btn) {
     btn.addEventListener("click", function () { setTocDrawer(true); });
@@ -186,14 +202,12 @@
     clone.removeAttribute("style");
     chartModalCanvas.appendChild(clone);
     applyChartZoom(window.innerWidth < 720 ? 115 : 100);
-    chartModal.classList.add("open");
-    document.body.style.overflow = "hidden";
+    showDialog(chartModal);
   }
 
   function closeChartModal() {
     if (!chartModal) return;
-    chartModal.classList.remove("open");
-    document.body.style.overflow = "";
+    hideDialog(chartModal);
   }
 
   document.querySelectorAll(".chart-box").forEach(function (box) {
@@ -231,9 +245,21 @@
   }
 
   document.addEventListener("keydown", function (e) {
+    const dialog = document.querySelector('[aria-modal="true"].open');
+    if (!dialog) return;
     if (e.key === "Escape") {
       closeChartModal();
       setTocDrawer(false);
+    } else if (e.key === "Tab") {
+      const targets = dialog.querySelectorAll(modalFocusable);
+      const first = targets[0];
+      const last = targets[targets.length - 1];
+      if (!first) return;
+      if (!dialog.contains(document.activeElement) || (e.shiftKey && document.activeElement === first)
+          || (!e.shiftKey && document.activeElement === last)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      }
     }
   });
 
@@ -266,11 +292,13 @@
     const tbody = document.getElementById("scr-tbody");
     const cardsEl = document.getElementById("scr-cards");
     const resetBtn = document.getElementById("scr-reset");
+    const hasData = Array.isArray(allStocks) && allStocks.length > 0;
 
     const COLOR_ORDER = { g: 1, b: 2, y: 3, r: 4 };
     const COLOR_MARK = { g: "●", b: "◆", y: "▲", r: "×" };
     const sortHeaders = Array.from(document.querySelectorAll("table.screener-table th.sortable"));
     sortHeaders.forEach(function (th) {
+      th.querySelector("button").disabled = !hasData;
       if (!th.dataset.baseLabel) {
         th.dataset.baseLabel = (th.textContent || "").replace(/\s*[⇅▲▼]\s*$/, "").trim();
       }
@@ -284,11 +312,11 @@
           const dirStr = state.sortDir === 1 ? "asc" : "desc";
           th.setAttribute("data-sort-dir", dirStr);
           th.setAttribute("aria-sort", state.sortDir === 1 ? "ascending" : "descending");
-          th.textContent = base + (state.sortDir === 1 ? " ▲" : " ▼");
+          th.querySelector("button").textContent = base + (state.sortDir === 1 ? " ▲" : " ▼");
         } else {
           th.removeAttribute("data-sort-dir");
-          th.setAttribute("aria-sort", "none");
-          th.textContent = base + " ⇅";
+          th.removeAttribute("aria-sort");
+          th.querySelector("button").textContent = base + " ⇅";
         }
       });
     }
@@ -330,6 +358,7 @@
     }
 
     function renderScreener() {
+      if (!hasData) return;
       const q = state.q.trim().toLowerCase();
       let rows = allStocks.filter(function (st) {
         if (state.market !== "all" && st.market !== state.market) return false;
@@ -452,8 +481,8 @@
         renderScreener();
       });
     });
-    document.querySelectorAll("table.screener-table th.sortable").forEach(function (th) {
-      th.addEventListener("click", function () {
+    sortHeaders.forEach(function (th) {
+      th.querySelector("button").addEventListener("click", function () {
         const key = th.getAttribute("data-sort");
         if (state.sortKey === key) {
           state.sortDir *= -1;
@@ -480,8 +509,11 @@
       });
     }
 
-    populateSectors();
-    renderScreener();
+    if (hasData) {
+      populateSectors();
+      renderScreener();
+      document.documentElement.classList.add("screener-enhanced");
+    }
   }
 
   /* ------------------------------------------------------------------------

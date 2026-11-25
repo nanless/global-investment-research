@@ -1524,7 +1524,15 @@ table.screener-table th {
   white-space: nowrap;
   user-select: none;
 }
-table.screener-table th.sortable { cursor: pointer; }
+table.screener-table th.sortable button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+table.screener-table th.sortable button:focus-visible { outline: 2px solid #fbbf24; outline-offset: 3px; }
 table.screener-table th.sortable:hover { background: #334155; }
 table.screener-table th.sortable[data-sort-dir="asc"],
 table.screener-table th.sortable[data-sort-dir="desc"] {
@@ -1834,7 +1842,7 @@ table.screener-table tbody tr:hover { background: var(--surface-subtle); }
   .chip-grid { grid-template-columns: repeat(2, 1fr); }
   .article-card { padding: 18px 15px 26px 15px; border-radius: 10px; }
   .kpi-strip, .kpi-strip.cols-3, body[data-market] .kpi-strip:not(.cols-3) { grid-template-columns: repeat(2, 1fr); }
-  .screener-table-wrap { display: none; }
+  .screener-enhanced .screener-table-wrap { display: none; }
   .screener-cards { display: flex; }
   .screener-stats { grid-template-columns: repeat(2, 1fr); }
   .page-main { padding: 14px 12px 72px 12px; }

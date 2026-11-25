@@ -210,7 +210,7 @@ def load_renderers() -> Renderers:
     """Load gold & equity Python renderers in completely isolated module namespaces."""
     saved = {
         k: sys.modules.get(k)
-        for k in ("docx_embed", "build_daily", "pdf_common", "lint_equity")
+        for k in ("docx_embed", "build_daily", "pdf_common", "lint_equity", "chart_input", "edition_plan")
     }
     try:
         # 1. Stub docx_embed so gold/build_daily.py & gold/build_report.py need ZERO bs4/PIL
@@ -218,6 +218,7 @@ def load_renderers() -> Renderers:
         stub_docx.build_native_docx = lambda *a, **kw: None  # type: ignore[attr-defined]
         stub_docx.render_chart_to_png = lambda *a, **kw: None  # type: ignore[attr-defined]
         sys.modules["docx_embed"] = stub_docx
+        _load_module_from_path("chart_input", GOLD_DIR / "chart_input.py")
 
         gold_daily = _load_module_from_path("_gir_gold_daily", GOLD_DIR / "build_daily.py")
         sys.modules["build_daily"] = gold_daily
@@ -228,6 +229,7 @@ def load_renderers() -> Renderers:
         sys.modules.pop("docx_embed", None)
 
         # 2. Load equity modules cleanly
+        _load_module_from_path("edition_plan", EQUITY_DIR / "edition_plan.py")
         eq_pdf_common = _load_module_from_path("_gir_eq_pdf_common", EQUITY_DIR / "pdf_common.py")
         sys.modules["pdf_common"] = eq_pdf_common
         eq_lint = _load_module_from_path("_gir_eq_lint", EQUITY_DIR / "lint_equity.py")
@@ -322,20 +324,22 @@ class DailyItem:
 
 
 def discover_dailies() -> tuple[list[DailyItem], dict[str, str]]:
-    """Discover all non-archived gold and equity daily markdowns and build lookup map."""
+    """Keep scheduled editions addressable after a monthly archive move."""
     items: list[DailyItem] = []
     slug_map: dict[str, str] = {}
 
     # Gold dailies: YYYY-MM-DD_HHMM_...md
     gold_daily_dir = GOLD_DIR / "daily"
     if gold_daily_dir.exists():
-        for p in sorted(gold_daily_dir.glob("*.md")):
+        for p in sorted((*gold_daily_dir.glob("*.md"), *gold_daily_dir.glob("archive/*/*.md"))):
             if p.stem.upper() in SKIP_DAILY_STEMS:
                 continue
             m = re.match(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_(?:.*?)(?:_r(\d+))?\.md$", p.name)
             if not m:
                 continue
             dt, hhmm, rev_s = m.group(1), m.group(2), m.group(3)
+            if p.parent != gold_daily_dir and hhmm not in {"0730", "1800"}:
+                continue
             rev = int(rev_s) if rev_s else 1
             slug = f"gold-{dt}-{hhmm}" + (f"-r{rev}" if rev_s else "")
             s_key, s_lbl = session_label_from_hhmm(hhmm)
@@ -357,7 +361,7 @@ def discover_dailies() -> tuple[list[DailyItem], dict[str, str]]:
     eq_daily_dir = EQUITY_DIR / "daily"
     mk_to_slug = {"a_share": "a-share", "hk_stock": "hk-stock", "us_stock": "us-stock"}
     if eq_daily_dir.exists():
-        for p in sorted(eq_daily_dir.glob("*.md")):
+        for p in sorted((*eq_daily_dir.glob("*.md"), *eq_daily_dir.glob("archive/*/*.md"))):
             if p.stem.upper() in SKIP_DAILY_STEMS:
                 continue
             m = re.match(
@@ -367,6 +371,8 @@ def discover_dailies() -> tuple[list[DailyItem], dict[str, str]]:
             if not m:
                 continue
             dt, hhmm, mk, rev_s = m.group(1), m.group(2), m.group(3), m.group(4)
+            if p.parent != eq_daily_dir and hhmm not in {"0730", "1800"}:
+                continue
             rev = int(rev_s) if rev_s else 1
             mslug = mk_to_slug[mk]
             slug = f"{mslug}-{dt}-{hhmm}" + (f"-r{rev}" if rev_s else "")
@@ -385,6 +391,14 @@ def discover_dailies() -> tuple[list[DailyItem], dict[str, str]]:
             slug_map[p.stem] = slug
             slug_map[p.name] = slug
 
+    first_paths = {}
+    for item in items:
+        if item.slug in first_paths:
+            raise ValueError(
+                f"Duplicate public edition URL {item.rel_url}: "
+                f"{first_paths[item.slug].name} and {item.source_path.name}"
+            )
+        first_paths[item.slug] = item.source_path
     items.sort(key=lambda x: x.sort_key)
     return items, slug_map
 
@@ -1389,9 +1403,14 @@ def build_cockpit_page(
 
     # 3+1 Global Crisis Circuit Breakers
     vix_close = float(brake.get("vix_close", gold_snap.get("vix_close", 0)))
-    vix_high = float(brake.get("vix_intraday_high", vix_close))
+    raw_vix_high = brake.get("vix_intraday_high")
+    vix_high = float(raw_vix_high) if raw_vix_high is not None else None
+    vix_high_label = f"盘中峰 {vix_high:.2f}" if vix_high is not None else "盘中峰待核"
     vix_thr = float(brake.get("vix_brake_threshold", 30.0))
-    vix_chip = ("chip-danger", "已触红线") if vix_close >= vix_thr else (("chip-warn", "逼近警戒") if vix_high >= vix_thr or vix_close >= 24 else ("chip-ok", "安全区间"))
+    vix_caution = (vix_high is not None and vix_high >= vix_thr) or vix_close >= 24
+    vix_chip = ("chip-danger", "已触红线") if vix_close >= vix_thr else (
+        ("chip-warn", "逼近警戒") if vix_caution else ("chip-ok", "安全区间")
+    )
 
     usdjpy = float(brake.get("usdjpy_level", rates.get("usd_jpy", 0)))
     jpy_drop_thr = abs(float(brake.get("usdjpy_3d_drop_brake_pct", -3.0)))
@@ -1694,7 +1713,7 @@ def build_cockpit_page(
               <span class="status-chip {vix_chip[0]}">{vix_chip[1]}</span>
             </div>
             <div class="breaker-val">{vix_close:.2f}</div>
-            <div class="breaker-thr">盘中峰 {vix_high:.2f} ｜ 熔断线：连2日 &gt; {vix_thr:.0f}</div>
+            <div class="breaker-thr">{vix_high_label} ｜ 熔断线：连2日 &gt; {vix_thr:.0f}</div>
           </div>
           <div class="breaker-item">
             <div class="breaker-top">
@@ -1893,6 +1912,15 @@ def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]
 
     # Escape </script> safely inside embedded JSON
     safe_json = json.dumps(stocks, ensure_ascii=False).replace("</", "<\\/")
+    static_rows = "".join(
+        f'<tr class="row-{esc(stock["color"])}" data-market="{esc(stock["market"])}">'
+        f'<td>{esc(stock["market_label"])}</td><td>{esc(stock["sector"])}</td>'
+        f'<td><strong>{esc(stock["name"])}</strong> <span class="code-tag">{esc(stock["code"])}</span></td>'
+        f'<td>{esc(stock["price"])}</td><td>{esc(stock["valuation"])}</td>'
+        f'<td>{esc(stock["action_label"])}</td>'
+        f'<td>{esc(stock["summary"])} <a href="{esc(stock["report_url"])}">手册 →</a></td></tr>'
+        for stock in stocks
+    )
 
     return f"""
     <div class="sec-head" style="margin-top:4px;">
@@ -1945,24 +1973,23 @@ def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]
     </section>
 
     <div class="screener-bar">
-      <strong id="scr-count">显示 {total} / {total} 家龙头公司</strong>
-      <span>点击桌面表头可排序 · 手机端自动切换卡片视图</span>
+      <strong id="scr-count" role="status">显示 {total} / {total} 家龙头公司</strong>
     </div>
 
     <div class="screener-table-wrap">
       <table class="screener-table">
         <thead>
           <tr>
-            <th class="sortable" data-sort="market">市场 ⇅</th>
-            <th class="sortable" data-sort="sector">赛道 ⇅</th>
-            <th class="sortable" data-sort="name">公司与代码 ⇅</th>
+            <th class="sortable" data-sort="market"><button type="button" disabled>市场 ⇅</button></th>
+            <th class="sortable" data-sort="sector"><button type="button" disabled>赛道 ⇅</button></th>
+            <th class="sortable" data-sort="name"><button type="button" disabled>公司与代码 ⇅</button></th>
             <th>最新价 / 一手</th>
             <th>估值 / 股息 / AH</th>
-            <th class="sortable" data-sort="color">四色阵营 ⇅</th>
+            <th class="sortable" data-sort="color"><button type="button" disabled>四色阵营 ⇅</button></th>
             <th>核心诊断与安全锚摘要</th>
           </tr>
         </thead>
-        <tbody id="scr-tbody"></tbody>
+        <tbody id="scr-tbody">{static_rows}</tbody>
       </table>
     </div>
 
@@ -2080,12 +2107,14 @@ def build_archive_page(
         for it in day_items:
             mm = MARKET_META[it.market]
             chart_badge = f'<span class="session-pill">{it.chart_count} 图</span>' if it.chart_count else ""
+            revision_badge = f'<span class="session-pill">修订 {it.rev}</span>' if it.rev > 1 else ""
             cards.append(
                 f'<a class="feed-card" href="{it.rel_url}" data-arc-item="1" '
                 f'data-market="{it.market}" data-session="{it.session_key}">'
                 f'<div class="feed-meta">'
                 f'<span class="mkt-badge mkt-{it.market}">{mm["emoji"]} {mm["short"]}</span>'
-                f'<span class="session-pill">{esc(it.session_label)}</span>'
+        f'<span class="session-pill">{esc(it.session_label)}</span>'
+                f"{revision_badge}"
                 f"{chart_badge}"
                 f"</div>"
                 f'<div class="feed-title">{esc(it.title)}</div>'
@@ -2109,7 +2138,7 @@ def build_archive_page(
     <section class="flagship-shelf">{shelf_html}</section>
 
     <div class="sec-head">
-      <h2>🗂️ 历史早晚报完整时间轴</h2>
+      <h2>🗂️ 历史早晚报</h2>
       <strong id="arc-count" class="sec-sub">共展示 {len(dailies)} 期历史日报</strong>
     </div>
 
@@ -2133,7 +2162,7 @@ def build_archive_page(
 
     <section class="downloads-box">
       <div class="panel-title">
-        <span>📦 GitHub Releases 原版 PDF / Word 离线归档</span>
+        <span>📦 最新 PDF / Word 下载</span>
         <a class="btn btn-sm" href="{RELEASES_TAG_URL}" target="_blank" rel="noopener">前往 Releases 页面 ↗</a>
       </div>
       <div class="downloads-grid">

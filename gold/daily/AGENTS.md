@@ -30,6 +30,7 @@
 ## 3. 本目录公开记分卡、双账本与 RSI 自进化资产细则（叠加仓库根规则 `../../AGENTS.md` 与子轨规则 `../AGENTS.md`）
 
 1. **`SCORECARD.md`（公开可证伪预测记分卡）**：面向普通投资者完全公开透明，每刊发刊同步回验到期预判（`✅ 兑现` / `⚠️ 部分兑现` / `❌ 证伪`）并追加新追踪项，**历史记录零篡改**；全文严禁出现任何内部工程/RSI 词汇（如 `Subagent`/`RSI`/`Tier A/B/C`/`V2.2`），由 `lint_readability.py` 强制校验。
+   - 新刊与同场修订分别在公开记分卡、变更簿、核验账本留同期编号。结案以原刊锁定的时点、区间和证据口径为准。写明互斥区间、边界和未覆盖的结果如何处理，待披露项继续挂账并交下一班。台账格式见[黄金快照契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)。
 2. **`CHANGELOG.md`**：每发一刊，在文件最顶部置顶写入本刊完整相对路径（如 `daily/YYYY-MM-DD_1800_晚报_黄金深度研报.md`）及红队四张清单【新增 / 更新 / 修正 / 删除】。
 3. **`AUDIT_LOG.md`**：持续维护「三大信任资产」（拦截谣言/误区清单、模型与策略升级清单、细节校准清单及 `0/N` 核心结论影响说明）与一手官方数据库索引；**严禁将版本 Diff 表、子代理调研路数或分析师人名消歧塞入日报正文（尤禁 Layer 0–1）**。
-4. **`RSI_PLAYBOOK.md` 与 `rsi_metrics.json`**：每班次待双轨（Step 3 黄金 + Step 4 权益）均通过编译与 `--strict` 严检后进入 **Step 5**，由 **1 路统一独立只读盲审子代理**联合复盘黄金与三地权益（独立单跑黄金轨时单独盲审），完成 6 维打分（`/30`）与上期预判验真，自动执行 Tier A 追加 `rsi_metrics.json` 并滚动精炼 `RSI_PLAYBOOK.md`（硬上限 ≤180 行防膨胀，由 `lint_readability.py` 强制校验）及按需慎改 Tier B（Tier C 含 `../../AGENTS.md` 与 `../AGENTS.md` 仅写提案）；随后复跑双轨 `--strict` 全绿，**每班次仅运行一次** `scripts/publish_site.py` 统一发布静态门户与增量 Release；每满 10 刊汇总 Meta-RSI 趋势并向用户呈报 Tier C 升级提案。
+4. **`RSI_PLAYBOOK.md` 与 `rsi_metrics.json`**：每班次待双轨（Step 3 黄金 + Step 4 权益）均通过编译与 `--strict` 严检后进入 **Step 5**，由 **1 路统一独立只读盲审子代理**联合复盘黄金与三地权益（独立单跑黄金轨时单独盲审），完成 6 维打分（`/30`）与上期预判验真，自动执行 Tier A 追加 `rsi_metrics.json` 并滚动精炼 `RSI_PLAYBOOK.md`（硬上限 ≤180 行防膨胀，由 `lint_readability.py` 强制校验）及按需慎改 Tier B（Tier C 含 `../../AGENTS.md` 与 `../AGENTS.md` 仅写提案）。随后复跑双轨 `--strict`，按根契约登记发布阶段并由 `scripts/publish_site.py --edition-token <token>` 统一发布本班次。每满 10 刊汇总 Meta-RSI 趋势并向用户呈报 Tier C 升级提案。

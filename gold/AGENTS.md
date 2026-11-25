@@ -9,6 +9,7 @@
 - **双快照防撕裂数据源与跨项目 SSOT 宣言**：
   - **跨项目单一权威源（SSOT）**：在每日 **`07:30` / `18:00` CST** 一体化单会话流水线中，黄金深度研报在 **Step 3** 率先落盘、编译并严检通过，拥有 `data_snapshot.json`（涵盖国际现货金、COMEX 期金、SHFE 沪金、SGE 现货、COMEX 期铜、`DFII10` 实际利率、以及买金四步红绿灯 `tier_code` 与新买开关 `new_buy_allowed` 等核心裁决字段）的**唯一写入权**；紧随其后的全球股研模块（`../equity/`）在 **Step 4** 对刚刷新的本快照执行**零延迟只读校验**（详见仓库根规则 `../AGENTS.md`），严禁逆向修改黄金快照，亦严禁输出与黄金红绿灯指令冲突的买金建议；
   - 日报唯一实时数据源：`data_snapshot.json`（涵盖版本号、L0/L1/L2 警报、四步红绿灯 `tier1_gates[4]`、`tier_code`/`new_buy_allowed`、全球金银铜/沪金/上金所实盘、美债/汇率/估值锚、油气/风险资产/金矿/信用、四大央行与 12 大行 2027 中位、`rmb_channels`、`cross_ratios`、`monthly_candles`、`mechanical_calendar`、`institutional_targets`、`trust_assets`）；
+  - 新刊的四关均由快照精确输入值复算。滚动维护 `market_calendar.json` 的核证日、前十个 Cboe 完整交易日所需的回看覆盖与未来至少 60 天的覆盖。现货指数发布窗口独立于美股与 COMEX 期金，休市或未核得盘口时用最近官收，盘中值和时间同时留空。字段、临界值和三账本标记见 [DAILY_FORMAT_SPEC.md](daily/DAILY_FORMAT_SPEC.md) 与[黄金快照契约](../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)。
   - 主报告独立锁定数据源：`master_snapshot.json`（由主报告顶部 `<!-- MASTER_BASELINE {"as_of_short": "...", "snapshot": "master_snapshot.json"} -->` 原子锁定，`build_report.py` 与 `lint_readability.py` 强制校验一致，彻底根除跨日更新日报导致主报告 `--strict` 死锁或图表/正文撕裂）；
   - 外置跨市场休市与时令日历：`market_calendar.json`（覆盖 60+ 天美/中/港/欧/英/日/印休市、半日市、四大央行议息、BCOM/GSCI 调仓及北美冬/夏令时切换规则，取代硬编码节假日）。
 - **全景主报告（21–24 页 · 7 图顺排 `图 1`–`图 7`）**：`黄金跨世纪周期与2026-2030终审研究报告.{md,pdf,docx}`（现为 V7.2）。
@@ -99,4 +100,4 @@
    - 在每日 `07:30` / `18:00` 一体化班次中，黄金 Step 3 全绿后先交棒 Step 4 全球权益串行出刊，再由 **Step 5 的 1 路统一只读 `research` 盲审子代理**联合复盘黄金与三地权益（单跑黄金轨时单独启动 1 路盲审），按 6 维定量量表（数据零幻觉 / 上期预判回验 / 白话可读性 / 视觉排版 / 检索效率 / 工具稳健性，每维 1–5 分、满分 30）严苛自审本刊；
    - **Tier A 必做**：追加结构化记录至 `daily/rsi_metrics.json`，提炼 1–3 条高杠杆规则滚动精炼写入 `daily/RSI_PLAYBOOK.md`（严格保持 ≤180 行，合并旧项防膨胀；每满 10 刊自动执行一次 Meta-RSI 趋势总复盘）；
    - **Tier B 慎做 / Tier C 仅提案**：如有确凿确定性小 Bug 且改后能通过 `--check` + 重编 + `--strict` + 视觉复核，最多安全落地 1 处补丁（失败立即回滚）；宪法级策略与配置变更一律记入 `RSI_PLAYBOOK.md` 提案区；最后补跑一次 `lint_readability.py --strict` 确保 RSI 账本与手册全绿，并在快报末尾汇报本轮 RSI 得分与优化动作。
-7. **双轨门禁全绿后单次发布网站（Web Publish）**：在一体化班次中待 Step 3 黄金、Step 4 权益与 Step 5 统一 RSI 复检全部绿灯后（单跑黄金轨则在本轨全绿后），**仅运行一次** `python3 <REPO_ROOT>/scripts/publish_site.py`（自动编译静态站 `_site`、通过 `lint_site.py --strict`、提交推送至 GitHub Pages 并滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）。
+7. **双轨门禁全绿后单次发布网站**：一体化班次待两轨和统一 RSI 复检全绿后，按根契约登记进入 `publish`，运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`，再用同一 token 验证对应 Pages 部署及 Release 附件。独立手动发布遵循根文档的发布条件。仅本地预演时用 `publish_site.py --dry-run`，不传班次 token。

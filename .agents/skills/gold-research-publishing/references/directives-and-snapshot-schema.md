@@ -2,6 +2,38 @@
 
 本文档是 `build_daily.py`、`build_report.py` 与 `lint_readability.py` 共享的精确数据结构说明书。所有字段名、必填键与类型均与现网 Python 源码逐字节对齐。
 
+## 新刊数据时点与台账
+
+`2026-11-25_1800_r2` 为沿用旧字段的最后已刊版本。后续新增日报及同场修订按 [日报规格](../../../../gold/daily/DAILY_FORMAT_SPEC.md) 记录北京 `edition_id`、`as_of_short` 及显示时间，四关使用 `real_yield`、`rate_spread`、`vix`、`ny_close` 的固定顺序，含图 3 的对应 `id`。
+
+`market_calendar.json` 的 `coverage` 含 `start_date`、`end_date`、`verified_on`、`vix_schedule_source`。核证日用北京时间日期，随维护更新，距本刊数据截点最多 60 日。开始日期须能覆盖截点前最新十个 Cboe 现货指数完整交易日，结束日期须覆盖刊期后至少 60 天。月底与跨年时重核并滚动展期。每个美国休市或半日市的非周末日期，都需在 `vix_session_exceptions` 留独立记录。日期及 `windows_et`、`official_close_et` 都按美国东部时间，程序按 IANA 时区换算夏令时。
+
+- 普通工作日的现货指数发布时段为 03:15–09:25 和 09:31–16:15 ET。截点所属连续发布时段与报价时点相同，且相差不超过 30 分钟，方可用盘中数值。
+- `windows_et` 只登记已核实、可采用的现货指数发布窗。“无 RTH”和“没有现货盘中发布窗”均不能推导出“没有日线”。2023、2024、2025 年感恩节以及 2026 年 MLK 日、总统日的 Cboe 官方 CSV 均有独立 OHLC。对假日或半日市，只掌握期权或参考交易时段而尚无现货指数精确终盘证据时，设 `official_close_et: null`，以 `daily_row_check_after_et` 记录保守的核验起点。例 `{"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"}`。这个时刻不声称为指数终盘、更不承诺 CSV 已发布。指数期权或期货可交易，也须证实现货指数实际发布才能填写盘中值。
+- `vix_10d_session_closes` 逐日保留最近十个已收盘交易日的 `date` 与 `close`，略过没有完整日收的日期，保留有完整日收的半日市。`vix_daily_source` 必须为 Cboe 现货指数官方历史表。留空 `vix_live`、`vix_live_as_of` 时按最近官收复算第三关，不丢弃官收及其日期。 [Cboe 现货指数方法](https://cdn.cboe.com/resources/indices/Volatility_Index_Methodology_Cboe_Volatility_Index.pdf) · [Cboe 假日时刻](https://www.cboe.com/about/hours/us-options/) · [Cboe 日线表](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv)
+- 核验起点已到且该日可能进入十日窗口时，在黄金快照 `vix_daily_row_checks` 以美国东部交易日期为键留记录。值写 `status`、北京时间 `checked_at`（须在核验起点至本刊截点之间）、`source`（Cboe 官方历史 CSV URL）、`note`（核对结果与缺口）。官方 CSV 有该日行时用 `published` 并纳入回看。查到末行仍停在此前交易日时用 `pending`，本刊按已见的最近官收复算并披露缺口，下一班在截点前一小时内重查。只有另有 Cboe 原始依据确认无当日行时才用 `no_row_confirmed`，并附 `confirmation_source`。感恩节 18:00 北京时间在美国东部 05:00，11:30 ET 的核验点尚未到。次日 07:30 早报须核 CSV 日期及当日实际行状态。 [Cboe 假日分段说明](https://www.cboe.com/document/tech-spec/document/technical-specifications/cboe-options-exchange-245-faq) · [Cboe 半日市技术规范](https://www.cboe.com/document/tech-spec/document/technical-specifications/cboe-titanium-u.s.-options-fix-specification)
+
+发刊前在 `daily/CHANGELOG.md` 和 `daily/SCORECARD.md` 的当期记录旁分别写一条 `<!-- GOLD_EDITION_CHANGELOG 2026-11-26_0730 -->`、`<!-- GOLD_EDITION_SCORECARD 2026-11-26_0730 -->`。在 `daily/AUDIT_LOG.md` 的同一期写下本次核验结论与原始证据。以下链接只演示结构，发刊时替换为能追溯相应读数、时点、精确价格和前高的具体页面。没有当期到期预测时用 `none_due`，到期但缺一手结案证据时用 `pending_evidence` 并说明缺何材料。`settled` 须提供结案证据链接。
+
+```markdown
+<!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-26_0730",
+  "as_of_short": "2026-11-26 07:30",
+  "note": "列明四关核验、盘口来源与跨时区争议的处理结果。",
+  "sources": {
+    "real_yield": ["https://fred.stlouisfed.org/series/DFII10"],
+    "rate_spread": ["https://fred.stlouisfed.org/series/DGS2", "https://www.newyorkfed.org/markets/reference-rates/effr"],
+    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"],
+    "ny_close": ["https://example.com/replace-with-the-original-ny-session-record"]
+  },
+  "forecast_review": {
+    "status": "pending_evidence",
+    "note": "写明未披露的数据、原刊锁定标准及下次核验点。",
+    "sources": []
+  }
+} -->
+```
+
 ---
 
 ## 1. 10 个 `DAILY_*` 组件 JSON Schema 规范
@@ -201,7 +233,7 @@
 
 ## 3. 双快照数据域（`data_snapshot.json` & `master_snapshot.json`）、跨项目 SSOT 与 Gate 5 算术契约
 
-日报使用 `data_snapshot.json`，主报告使用独立锁定的 `master_snapshot.json`（两者结构同源，常规班次仅惰性读取 `master_snapshot.json` 核验 5 大触发条件，命中时方原子同步）。**跨项目单一权威源（SSOT）与一体化 0 分钟零滞后顺序锁**：在 `07:30` / `18:00` BJT 一体化单会话定时任务（`daily-global-investment-research` / `daily-global-investment-research-evening`）中，第 3 步先由黄金模块出版并拥有 `data_snapshot.json`（现货金/COMEX/SHFE/SGE/铜/`DFII10`、`brent_settle_usd`、`cfets_cny_fixing`、`cfets_fixing_date`、`as_of_short`、`tier_code` 与 `new_buy_allowed`）的唯一写入权；第 4 步股研模块（`global-investment-research/equity`）以 **0 分钟零滞后**立即只读校验刚落盘的本快照，严禁与黄金红绿灯指令冲突，最终于第 5 步统一 RSI 后单次发布站点。快照包含 9 大核心域及结构化图表配置数组：
+日报使用 `data_snapshot.json`，主报告使用独立锁定的 `master_snapshot.json`（两者结构同源，常规班次仅惰性读取 `master_snapshot.json` 核验 5 大触发条件，命中时方原子同步）。**跨项目单一权威源（SSOT）与同刊期顺序交接**：在 `07:30` / `18:00` BJT 一体化单会话定时任务（`daily-global-investment-research` / `daily-global-investment-research-evening`）中，第 3 步先由黄金模块出版并拥有 `data_snapshot.json`（现货金/COMEX/SHFE/SGE/铜/`DFII10`、`brent_settle_usd`、`cfets_cny_fixing`、`cfets_fixing_date`、`as_of_short`、`tier_code` 与 `new_buy_allowed`）的唯一写入权；第 4 步股研模块（`global-investment-research/equity`）只读校验同刊期黄金快照，镜像保留黄金的原始截点，严禁与黄金红绿灯指令冲突，最终于第 5 步统一 RSI 后单次发布站点。快照包含 9 大核心域及结构化图表配置数组：
 
 1. **版本、紧迫度与 SSOT 裁决元信息**：`as_of_bjt`, `as_of_short`, `master_version`, `daily_alert_level` (`L0`/`L1`/`L2`), `daily_alert_label`, `tier_code` (`Tier 0`/`Tier 1`/`Tier 2`/`Tier 3`), **`new_buy_allowed` (bool，与 `tier_code != "Tier 0"` 强制一致)**, `tier_label`, `tier_status_sub`, `tier_cover_sub`, `tier1_passed`, `tier1_total`, `a_class_tranche_split` (`"30% + 45% + 25%"`), `tier1_gate4_threshold_usd`。
 2. **四步红绿灯明细 (`tier1_gates`)**：严格长度 4 的数组，每项含 `name`, `passed` (bool), `reading`, `threshold`, `detail`。

@@ -14,7 +14,7 @@ global-investment-research/
 │   ├── gold-research-publishing/    # 黄金 7 门禁、OOXML 引擎、组件 Schema 与调研红队手册
 │   ├── equity-report-publishing/    # 权益出版编译、21 张矢量图与三市休市/跨月 SOP
 │   └── equity-research-editorial-qa/# 权益 7 维大盘、10 项门禁、双账户税费与 RSI 协议
-├── automations/sidecars/            # 脱敏版 07:30/18:00 一体化定时任务模板（Tier C 只读）
+├── automations/                     # 一个共用提示词、同一份授权声明和两个定时模板（Tier C 只读）
 ├── gold/                            # 黄金深度研报体系（跨轨 SSOT 唯一写入源）
 │   ├── AGENTS.md                    # 黄金子轨永久规则
 │   ├── data_snapshot.json           # 日报实时数据源 & 跨项目红绿灯裁决 SSOT
@@ -36,7 +36,7 @@ global-investment-research/
 │   ├── edition_run.py               # 两个班次共用的运行记录、阶段锁与 Pages 验收
 │   └── web_assets/                  # 站点样式与交互脚本
 └── .github/workflows/
-    └── deploy-pages.yml             # push main 自动构建、严检并部署至 GitHub Pages
+    └── deploy-pages.yml             # 回归测试和双轨预检后构建，核准提交再部署至 GitHub Pages
 ```
 
 ---
@@ -50,7 +50,7 @@ global-investment-research/
 | **`daily-global-investment-research`** | **每日 `07:30`** | **一体化早报** | ① 黄金 `0730_早报`（刷新 `gold/data_snapshot.json` SSOT） → ② 美股隔夜复盘主刊（周一轻刊；周六仅发美股）+ A 股/港股盘前快报（`_0730_`） → ③ 统一 RSI + 单次网站发布 |
 | **`daily-global-investment-research-evening`** | **每日 `18:00`** | **一体化晚报** | ① 黄金 `1800_晚报`（刷新 `gold/data_snapshot.json` SSOT） → ② A 股/港股收盘主刊 + 美股欧亚盘与盘前哨兵轻刊（`_1800_`） → ③ 统一 RSI + 单次网站发布 |
 
-> **周末与局部休市**：周六 `07:30` 发黄金周末专项版 + 美股周五复盘主刊；周六 `18:00` 与周日双场按黄金周末专项版 + 权益模式 3（周日刷新 `SCORECARD.md` 并推进 2–3 只核心龙头 6 维深度解剖轮换）执行；工作日局部休市由 `gold/market_calendar.json` 与 `equity/state/market_state.json` 驱动。
+> **周末与局部休市**：周六 `07:30` 只发权益美股线，常规交易日用周五复盘主刊，半日市或休市按出刊计划执行。周六晚和周日默认沿用三市旧稿，周日推进记分卡和深度轮换。每班都用 `python3 equity/lint_equity.py --plan <edition_id>` 获取具体市场、刊型和沿用安排。黄金日历负责交易时点，权益计划负责验收该期交付和月度旗舰。
 
 ---
 
@@ -58,15 +58,15 @@ global-investment-research/
 
 每次 `07:30` 或 `18:00` 一体化班次必须严格按以下顺序在同一会话内串行推进，严禁跳步或乱序：
 
-- 启动研究前运行 `scripts/edition_run.py begin <edition_id>`，当且仅当命令成功返回 token 才继续。班次 ID 用北京时间日期与 `0730` 或 `1800`，同场修订追加 `_r2`、`_r3` 等。两个任务共用同一把锁。依次以 token 登记 `gold`、`equity`、`publish` 阶段。最终发布命令成功后再用 `complete` 核验当前提交的 Pages 部署。中途退出用 `fail` 记录失败阶段。会话意外退出时，由维护者确认旧会话结束后用 `recover` 释放锁，历史记录仍保留。
+- 定时入口运行 `scripts/edition_run.py begin --scheduled 0730` 或 `--scheduled 1800`，由脚本确定北京时间期号。人工发刊明确指定 `begin <edition_id>`，同场修订追加 `_r2`、`_r3` 等。收到 token 后才进入调研。两班共用运行锁，依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 留下时间。恢复按尝试编号定位，操作见 README。
 - 当班黄金快照、黄金日报 `DAILY_META`、权益状态和新权益稿 `DAILY_META_JSON` 记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。班次 ID 表示同一次交接，数据的交易日、观测时刻与披露时刻另行注明。休市沿用旧稿时保留旧稿期号和时间，状态先刷新至当前班次。
 
 1. **Step 0｜双轨 RSI 经验库冷启动**：
    - 读取 `gold/daily/RSI_PLAYBOOK.md`（≤180 行）、`equity/state/RSI_PLAYBOOK.md`（≤180 行）及两轨 `rsi_metrics.json` 最近记录，继承高杠杆检索词、Linter 避坑清单与上期 `next_run_watch`。
 2. **Step 1｜跨市场日历、基线快照与账本冷启动**：
-   - 读取 `gold/market_calendar.json`、前序基线 `gold/data_snapshot.json`（冷启动锚点；最新 0 分钟新鲜 SSOT 与 Tier-0 互斥锁校验于 Step 3 黄金落盘后的 **Step 4 入口**强制执行）、`gold/master_snapshot.json`（惰性判断主报告触发）、`equity/state/market_state.json`、两轨 `SCORECARD.md`、`gold/daily/CHANGELOG.md`（前 150 行）与 `equity/daily/INDEX.md`（前 60 行）。
+   - 读取 `gold/market_calendar.json`、前序基线 `gold/data_snapshot.json`、独立主报告基线 `gold/master_snapshot.json`、`equity/state/market_state.json`、两轨 `SCORECARD.md`、`gold/daily/CHANGELOG.md` 与 `equity/daily/INDEX.md`。核对日历有效期和出刊计划，按官方品种交易日、实际观测时间、披露时间和来源记录数据。
 3. **Step 2A｜共享 6 路并行 `research` 深度调研**：
-   - 一次并发启动 **6 路只读 `research` 子代理** 覆盖双轨全部 7 类一手官方信源，消除重复抓取：
+   - 启动 **6 路只读 `research` 子代理**，容量不足时分组完成，覆盖双轨全部 7 类一手官方信源。各路最多重试一次，关键证据仍缺或无法启动独立核查时停止并记录阻塞：
      1. **黄金与贵金属专线**（现货/COMEX 官结、SGE/SHFE 日终与龙虎榜、GLD/GDX 官收白名单、实物金店/水贝与央行动向）；
      2. **中国 A 股专线**（宽基/申万资金、中金所 `cffex.com.cn` 结算与前 20 席位、T-1 两融终值、央行操作与政策雷达）；
      3. **中国香港股市专线**（恒指/恒科/南向终值、沽空比、HIBOR 与金管局总结余 `hkma_agg_bal_hkd_100m`、AH 溢价与夜期盲窗校正）；
@@ -76,15 +76,15 @@ global-investment-research/
 4. **Step 2B｜1 路统一发前红队对抗核验（6+1 架构）**：
    - 待全部 6 路返回后，启动 **1 路统一红队 `research` 子代理** 跨轨交叉审计：校验两轨共享宏观数字（现货金、10Y 美债、`DFII10`、DXY、`brent_settle_usd`、`cfets_cny_fixing`、VIX、ON RRP、COMEX 铜）完全一致；拦截 6 大权益硬伤（A/H PE 物理学一致、100% 配置闭环、买点锚 < 现价、黄金红灯全载体锁、冬夏令时与 07:30 禁写盘后终盘、零退市股 `00011` 与 QDII 误标）及黄金跨时区因果倒置，输出统一【新增 / 更新 / 修正 / 删除】核验清单。
 5. **Step 3｜黄金 SSOT 优先落盘、编译与 7 门禁严检**：
-   - 先更新 `gold/data_snapshot.json`（写入权威 `tier_code`、`new_buy_allowed` 与全量共享宏观键），用 `write_file` 全量落盘黄金日报、`CHANGELOG.md`、`AUDIT_LOG.md`、`SCORECARD.md`（仅命中 5 大阈值时同步主报告与 `master_snapshot.json`）；
+   - 先更新 `gold/data_snapshot.json`，写入四关结构化原始读数、观测交易日、权威档位与开仓布尔值。使用 `write_file` 全量落盘黄金日报和三账本。首轮预检前记录 `GOLD_EDITION_REVIEW` 及变更日志和公开记分卡的本期标记。仅命中 5 大阈值时同步主报告与 `master_snapshot.json`。
    - 串行执行：`python3 gold/lint_readability.py --precheck --strict <本刊路径>` → `python3 gold/build_daily.py <本刊路径>`（按需 `build_report.py`）→ `python3 gold/lint_readability.py --strict <本刊路径>`（必须 `0 errors, 0 warnings`）+ `read_file` 抽检 PDF。
-6. **Step 4｜全球权益三市（A/港/美）接力落盘、编译与全量严检（0 分钟新鲜 SSOT）**：
-   - 紧接 Step 3 完成后，在 **Step 4 入口**强制只读校验刚刚刷新的 `gold/data_snapshot.json`（**0 分钟新鲜，远优于 ≤4 小时门禁**）与 Tier-0 行动互斥锁（独立单跑权益轨时于 Step 1 执行），随后用 `write_file` 全量落盘三市日报、`INDEX.md`、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`（仅命中 5 条阈值时更新旗舰与 `report_meta_*.json`）；
+6. **Step 4｜全球权益三市（A/港/美）接力落盘、编译与全量严检**：
+   - Step 4 入口只读校验本期黄金快照、其观测截点和 Tier-0 行动互斥锁。权益引用的黄金镜像须使用和黄金快照相同的期号、时间和数值，权益自己的观测时间与班次窗口另查。按计划写本期日报、`INDEX.md`、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`，明确沿用市场、出版例外和跨月旗舰处理。
    - 串行执行：`python3 equity/lint_equity.py --precheck --strict` → `python3 equity/build_daily.py`（按需串行 `build_{a_share,hk_stock,us_stock}_pdf.py`）→ `python3 equity/lint_equity.py --strict`（必须 `0 errors, 0 warnings`）+ `read_file` 抽检 PDF。
 7. **Step 5｜统一 RSI 盲审闭环 + 单次静态站与 Release 发布**：
    - 启动 **1 路独立只读 `research` 盲审子代理** 联合复盘黄金与三地权益本班次产出（各按 6 维 `/30` 独立打分与预判验真）；
-   - 按 Tier A/B/C 安全权限分别更新 `gold/daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 与 `equity/state/{rsi_metrics.json,RSI_PLAYBOOK.md}`（**两份手册严格 ≤180 行**，Tier B 单次 ≤1 处 ≤40 行且验证失败即回滚，Tier C 含本文件 `AGENTS.md` 仅写提案待批）；
-   - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict` 确认全绿后，**每班次仅运行一次** `python3 scripts/publish_site.py`（以最终待推送的提交树构建、严检，推送 `main` 并核对 GitHub Release PDF/DOCX 的 SHA256）。发布命令和 `edition_run.py complete` 均通过后，才汇报网页与附件发布成功。
+   - 按 Tier A/B/C 安全权限分别更新 `gold/daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 与 `equity/state/{rsi_metrics.json,RSI_PLAYBOOK.md}`。两轨的复盘记录各用本期完整 `edition_id` 作 `run_id`。两份手册各 ≤180 行，Tier B 单次 ≤1 处 ≤40 行且验证失败即回滚，Tier C 含本文件 `AGENTS.md`，只写提案待批。
+   - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict`。进入发布阶段后运行 `python3 scripts/publish_site.py --edition-token <token>`。发布器用最终提交校验两轨稿件、构建站点，将 PDF/Word 与编译输入对账后发布。同班只允许发布一个提交。推送及附件核验都有记录，`complete` 通过实际 Pages 部署步骤和在线附件复验后才算完成。遇到暂时性故障，可续同一 token 和提交。
 
 ---
 
@@ -114,4 +114,4 @@ global-investment-research/
   - 黄金 7 门禁、OOXML 引擎、组件 Schema 与调研红队：[.agents/skills/gold-research-publishing/SKILL.md](.agents/skills/gold-research-publishing/SKILL.md)
   - 权益出版编译、21 张矢量图与休市/跨月 SOP：[.agents/skills/equity-report-publishing/SKILL.md](.agents/skills/equity-report-publishing/SKILL.md)
   - 权益 7 维大盘、10 项门禁、双账户税费与 RSI 盲审：[.agents/skills/equity-research-editorial-qa/SKILL.md](.agents/skills/equity-research-editorial-qa/SKILL.md)
-- **脱敏定时任务模板与安装器（Tier C 只读）**：`automations/sidecars/*.template.json` · [scripts/install_sidecars.py](scripts/install_sidecars.py)
+- **共享提示词、授权和定时安装（Tier C 只读）**：[定时提示词](automations/unified-edition.prompt.md) · [授权配置](automations/permissions.json) · `automations/sidecars/*.template.json` · [安装器](scripts/install_sidecars.py)

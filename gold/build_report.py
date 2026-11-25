@@ -903,8 +903,20 @@ def main():
         )
         return
 
+    root = str(OUT_DIR.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from scripts.artifact_receipt import freeze_inputs, write_receipt
+
+    frozen = freeze_inputs(
+        MD_PATH,
+        inputs=(
+            DEFAULT_MASTER_SNAPSHOT, OUT_DIR / "build_report.py", OUT_DIR / "build_daily.py",
+            OUT_DIR / "docx_embed.py", OUT_DIR / "chart_input.py",
+        ),
+    )
     report_md = MD_PATH.read_text(encoding="utf-8")
-    SNAP, snap_path = load_master_snapshot(report_md, args.snapshot, allow_drift=args.allow_drift)
+    SNAP, snap_path = load_master_snapshot(report_md)
     REPORT_VERSION = str(SNAP.get("master_version", "V7.2 零门槛·真深度普通人终审定版"))
     REPORT_TIMESTAMP = str(SNAP.get("as_of_bjt", "2026年11月24日（周二）16:30"))
     REPORT_SHORT_DATE = str(SNAP.get("as_of_short", "2026-11-24 16:30"))
@@ -1004,6 +1016,8 @@ def main():
     finally:
         tmp_pdf_out.unlink(missing_ok=True)
         shutil.rmtree(work_tmp, ignore_errors=True)
+
+    write_receipt(frozen, PDF_PATH, DOCX_PATH)
 
 
 if __name__ == "__main__":

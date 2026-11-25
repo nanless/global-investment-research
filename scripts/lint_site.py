@@ -316,9 +316,11 @@ GOLD_CTA_BUY_RE = re.compile(
     re.IGNORECASE,
 )
 GOLD_DEFER_GUARD_RE = re.compile(
-    r"(?:暂不|严禁|禁止|不新买|不动|不买|切忌|勿|停止|锁定|红灯停|新仓\s*0%|0%\s*新仓|"
-    r"待.{0,12}(?:黄灯|绿灯|解锁)|等.{0,12}(?:黄灯|绿灯|解锁)|解锁后|12/18|存量底仓|预算暂泊|"
-    r"原稿曾建议|门控校正|历史实证|no\s+new\s+buy|do\s+not\s+buy|hold\s+off|tier\s*0)",
+    r"(?:暂不|严禁|禁止|切忌|勿|停止|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|不)"
+    r"(?:现在|今天|今日|当下|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|进行|尝试|建议|允许|任何|新增|直接|冲动)*"
+    r"\s*(?:补|买|加|建|抄|配置|低吸|开启|启动)"
+    r"|(?:待|等).{0,18}(?:黄灯|绿灯|解锁)|(?:黄灯|绿灯|解锁|过四关|全部过关)(?:亮起|确认)?后|"
+    r"\b(?:do\s+not|never|should\s+not|must\s+not|hold\s+off)\s+(?:buy|add|accumulat)",
     re.IGNORECASE,
 )
 GOLD_TIER0_LOCK_INDICATORS_RE = re.compile(
@@ -1242,25 +1244,32 @@ def _check_gold_tier0_mutex(doc: ParsedHtml, errors: list[str]) -> None:
 
     # 2. Check all buttons / links for unguarded active buy-gold CTAs.
     for cta in doc.ctas:
-        if GOLD_CTA_BUY_RE.search(cta.text) and not GOLD_DEFER_GUARD_RE.search(cta.text):
+        if any(not _gold_action_is_guarded(cta.text, match) for match in GOLD_CTA_BUY_RE.finditer(cta.text)):
             errors.append(
                 f"[S6] {page}:{cta.lineno}: Gold Tier 0 mutex violation — active buy-gold "
                 f"CTA <{cta.tag}>: {cta.text!r}"
             )
 
     # 3. Scan visible prose line-by-line for unguarded buy-gold directives.
-    for raw_line in re.split(r"[\n。！？；]+", vis):
+    for raw_line in re.split(r"[\n。！？；，,]+", vis):
         line = " ".join(raw_line.split())
         if not line:
             continue
         for m in GOLD_ACTIVE_BUY_RE.finditer(line):
             win = line[max(0, m.start() - 45) : min(len(line), m.end() + 45)]
-            if not GOLD_DEFER_GUARD_RE.search(win):
+            if not _gold_action_is_guarded(line, m):
                 errors.append(
                     f"[S6] {page}: Gold Tier 0 mutex violation — unguarded buy-gold directive "
                     f"in visible text: {win!r}"
                 )
                 return
+
+
+def _gold_action_is_guarded(text: str, action: re.Match) -> bool:
+    """A nearby mention of the red light or past holdings cannot excuse an action."""
+    before = re.split(r"[。！？；，,\n]", text[:action.start()])[-1]
+    scoped = before[-28:] + action.group()
+    return bool(GOLD_DEFER_GUARD_RE.search(scoped))
 
 
 def _validate_screener_json(
@@ -1578,7 +1587,7 @@ def run_gate_s6(
                         f"[S6] screener.html: missing expected total stock pool count "
                         f"{expected_total} in visible text"
                     )
-                if screener_doc.stock_row_count >= 20 and screener_doc.stock_row_count != expected_total:
+                if screener_doc.stock_row_count != expected_total:
                     errors.append(
                         f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) "
                         f"!= expected total ({expected_total})"

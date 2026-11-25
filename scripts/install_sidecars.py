@@ -32,7 +32,9 @@ TEMPLATE_DIR = REPO_ROOT / "automations" / "sidecars"
 TEMPLATE_SUFFIX = ".template.json"
 DEFAULT_TARGET_DIR = Path.home() / ".gemini" / "config" / "sidecars"
 
-PLACEHOLDER_TOKENS = ("__REPO_ROOT__", "__PYTHON_BIN__")
+PLACEHOLDER_TOKENS = (
+    "__REPO_ROOT__", "__PYTHON_BIN__", "__RUN_SLOT__", "__UNIFIED_PROMPT__", "__SHARED_GRANTS__",
+)
 FORBIDDEN_GLOBAL_TOKENS = ("--permission-mode",)
 SCHEDULES = {
     "daily-global-investment-research": "CRON_TZ=Asia/Shanghai 30 7 * * *",
@@ -63,8 +65,8 @@ def discover_templates(template_dir: Path) -> list[tuple[str, Path]]:
             if not sidecar_id:
                 raise ValueError(f"Empty sidecar id for template: {path}")
             templates.append((sidecar_id, path))
-    if not templates:
-        raise FileNotFoundError(f"No *{TEMPLATE_SUFFIX} files found in {template_dir}")
+    if {sidecar_id for sidecar_id, _ in templates} != set(SCHEDULES):
+        raise ValueError("The automation directory must contain exactly the two unified templates.")
     return templates
 
 
@@ -80,15 +82,8 @@ def _dedupe_preserve_order(items: list[str]) -> list[str]:
 
 def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tuple[str, dict[str, Any]]:
     """Render a sidecar template, deduplicate grants, and validate invariants."""
-    raw = template_path.read_text(encoding="utf-8")
-    rendered_raw = raw.replace("__REPO_ROOT__", str(repo_root)).replace("__PYTHON_BIN__", python_bin)
-
-    for token in PLACEHOLDER_TOKENS:
-        if token in rendered_raw:
-            raise ValueError(f"{template_path.name}: unresolved placeholder {token!r}")
-
     try:
-        data = json.loads(rendered_raw)
+        data = json.loads(template_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"{template_path.name}: rendered output is not valid JSON: {exc}") from exc
 
@@ -102,16 +97,28 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
             or args[0] != SCHEDULES.get(sidecar_id) or args[1:3] != ["agentapi", "new-conversation"]
             or not args[3].startswith("--model=") or args[4] != "--"):
         raise ValueError(f"{template_path.name}: invalid Antigravity schedule or new-conversation arguments")
+    if args[5] != "__UNIFIED_PROMPT__":
+        raise ValueError(f"{template_path.name}: use the shared automation prompt")
+    prompt = (template_path.parent.parent / "unified-edition.prompt.md").read_text(encoding="utf-8")
+    if "__RUN_SLOT__" not in prompt:
+        raise ValueError("The shared prompt does not select its scheduled slot.")
+    slot = "0730" if sidecar_id == "daily-global-investment-research" else "1800"
+    args[5] = (prompt.replace("__RUN_SLOT__", slot).replace("__REPO_ROOT__", str(repo_root))
+               .replace("__PYTHON_BIN__", python_bin))
 
     perms = data.get("agent_permissions")
     if not isinstance(perms, dict):
         raise ValueError(f"{template_path.name}: missing or invalid 'agent_permissions' object")
 
-    grants = perms.get("access_grants")
+    if perms.get("access_grants") != ["__SHARED_GRANTS__"]:
+        raise ValueError(f"{template_path.name}: use the shared permission configuration")
+    grants = json.loads((template_path.parent.parent / "permissions.json").read_text(encoding="utf-8"))
     if not isinstance(grants, list) or not all(isinstance(g, str) for g in grants):
         raise ValueError(f"{template_path.name}: 'agent_permissions.access_grants' must be a list of strings")
 
-    deduped_grants = _dedupe_preserve_order(grants)
+    deduped_grants = _dedupe_preserve_order([
+        grant.replace("__REPO_ROOT__", str(repo_root)).replace("__PYTHON_BIN__", python_bin) for grant in grants
+    ])
     for grant in deduped_grants:
         if "*" in grant:
             raise ValueError(f"{template_path.name}: wildcard '*' forbidden in access_grant: {grant!r}")
@@ -123,8 +130,20 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
     for uri in uris:
         if "*" in uri:
             raise ValueError(f"{template_path.name}: wildcard '*' forbidden in workspace_uri: {uri!r}")
+    uris = [uri.replace("__REPO_ROOT__", str(repo_root)) for uri in uris]
     if uris != [repo_root.as_uri()]:
         raise ValueError(f"{template_path.name}: workspace URI must match the repository")
+    perms["workspace_uris"] = uris
+
+    command_grants = [
+        entry[len("command("):-1] for entry in deduped_grants
+        if entry.startswith("command(") and entry.endswith(")")
+    ]
+    for command in re.findall(r"`([^\n`]+)`", args[5]):
+        if command.startswith(f"{python_bin} ") and not any(
+            command == grant or command.startswith(grant + " ") for grant in command_grants
+        ):
+            raise ValueError(f"{template_path.name}: shared prompt uses an unlisted command")
 
     final_text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
@@ -165,8 +184,16 @@ def find_stale_sidecar_dirs(target_dir: Path) -> list[str]:
     return stale
 
 
-def check_registry(registry_path: Path, rendered: dict[str, tuple[str, dict[str, Any]]]) -> list[str]:
-    """Check that Antigravity has enabled and resolved the installed definitions."""
+def _string_list(value: Any) -> list[str] | None:
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return sorted(value)
+    return None
+
+
+def check_registry(
+    registry_path: Path, rendered: dict[str, tuple[str, dict[str, Any]]], notes: list[str] | None = None,
+) -> list[str]:
+    """Check both Antigravity's registration and the referenced project files."""
     try:
         entries = json.loads(registry_path.read_text(encoding="utf-8"))["sidecars"]
         if not isinstance(entries, dict):
@@ -175,16 +202,43 @@ def check_registry(registry_path: Path, rendered: dict[str, tuple[str, dict[str,
         return [f"Cannot read Antigravity registry: {exc}"]
 
     problems = []
+    projects_seen = set()
     for sidecar_id, (_, definition) in rendered.items():
         entry = entries.get(sidecar_id, {})
-        if not isinstance(entry, dict) or entry.get("enabled") is not True or not entry.get("projectId"):
+        project_id = entry.get("projectId") if isinstance(entry, dict) else None
+        if (not isinstance(project_id, str) or not re.fullmatch(r"[\w-]+", project_id, re.ASCII)
+                or entry.get("enabled") is not True):
             problems.append(f"{sidecar_id}: register and enable this task in Antigravity")
             continue
         resolved = entry.get("resolvedPermissions") or {}
         expected = definition["agent_permissions"]
         if (not isinstance(resolved, dict) or resolved.get("workspaceUris") != expected["workspace_uris"]
-                or sorted(resolved.get("accessGrants") or []) != sorted(expected["access_grants"])):
+                or _string_list(resolved.get("accessGrants")) != sorted(expected["access_grants"])
+                or entry.get("argumentValues") not in (None, {})):
             problems.append(f"{sidecar_id}: Antigravity has not resolved the current workspace or command grants")
+        if project_id in projects_seen:
+            problems.append(f"{sidecar_id}: automation must have its own Antigravity project")
+        projects_seen.add(project_id)
+        try:
+            project_path = registry_path.parent / "projects" / f"{project_id}.json"
+            project = json.loads(project_path.read_text(encoding="utf-8"))
+            project_grants = project["permissionGrants"]["permissionGrants"]
+            settings = project["settings"]
+            resources = project["projectResources"]["resources"]
+            locations = {
+                folder_uri for resource in resources
+                for folder_uri in (resource.get("folderUri"), resource.get("gitFolder", {}).get("folderUri"))
+                if folder_uri is not None
+            }
+            if (project["id"] != project_id or project["sidecar"]["sidecarId"] != sidecar_id
+                    or locations != set(expected["workspace_uris"])
+                    or _string_list(project_grants.get("allow")) != sorted(expected["access_grants"])):
+                problems.append(f"{sidecar_id}: project identity, workspace or recorded allow rules differ")
+            if settings.get("sandboxMode") is False and notes is not None:
+                notes.append(f"{sidecar_id}: terminal sandbox disabled under {settings.get('permissionPreset', 'inherited policy')}; "
+                             "recorded grants do not bound effective access")
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            problems.append(f"{sidecar_id}: cannot verify the referenced Antigravity project")
     return problems
 
 
@@ -262,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"[DRIFT] {dest} differs from rendered template", file=sys.stderr)
                 mismatches += 1
             else:
-                print(f"[OK] {sidecar_id}: byte-for-byte match ({grants_count} exact grants)")
+                print(f"[OK] {sidecar_id}: byte-for-byte match ({grants_count} configured grants)")
         if stale_dirs:
             print(
                 f"[STALE] Unexpected sidecar directories in {target_dir}: {', '.join(stale_dirs)}",
@@ -271,9 +325,12 @@ def main(argv: list[str] | None = None) -> int:
             mismatches += 1
         if args.check_runtime:
             registry_path = args.registry or target_dir.parent / "config.json"
-            for problem in check_registry(registry_path, rendered_map):
+            notes: list[str] = []
+            for problem in check_registry(registry_path, rendered_map, notes):
                 print(f"[RUNTIME] {problem}", file=sys.stderr)
                 mismatches += 1
+            for note in notes:
+                print(f"[RUNTIME] {note}")
         if mismatches:
             print(f"[FAIL] Sidecar check failed ({mismatches} issue(s)).", file=sys.stderr)
             return 1
@@ -299,11 +356,27 @@ def main(argv: list[str] | None = None) -> int:
         print("[DRY-RUN] Validation passed; no files modified.")
         return 0
 
-    for sidecar_id, (rendered_text, data) in rendered_map.items():
-        dest = target_dir / sidecar_id / "sidecar.json"
-        grants = data["agent_permissions"]["access_grants"]
-        atomic_write_text(dest, rendered_text)
-        print(f"[INSTALLED] {sidecar_id} -> {dest} ({len(grants)} exact grants)")
+    written: list[tuple[Path, str | None]] = []
+    try:
+        for sidecar_id, (rendered_text, data) in rendered_map.items():
+            dest = target_dir / sidecar_id / "sidecar.json"
+            previous = dest.read_text(encoding="utf-8") if dest.is_file() else None
+            if previous == rendered_text:
+                continue
+            atomic_write_text(dest, rendered_text)
+            written.append((dest, previous))
+            print(f"[INSTALLED] {sidecar_id} -> {dest} ({len(data['agent_permissions']['access_grants'])} grants)")
+    except (OSError, ValueError) as exc:
+        print(f"[FAIL] Cannot install both tasks: {exc}", file=sys.stderr)
+        for path, previous in reversed(written):
+            try:
+                if previous is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    atomic_write_text(path, previous)
+            except OSError as rollback_error:
+                print(f"[FAIL] Cannot roll back {path.name}: {rollback_error}", file=sys.stderr)
+        return 1
 
     if stale_dirs:
         print(

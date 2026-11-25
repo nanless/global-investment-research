@@ -31,6 +31,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from chart_input import normalize_chart
 from docx_embed import build_native_docx, render_chart_to_png
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -453,17 +454,18 @@ def _fmt_axis_val(val: float, span: float, prefix: str = "", suffix: str = "") -
 
 
 def render_chart_timeline(cfg: dict) -> str:
+    cfg = normalize_chart("DAILY_CHART_TIMELINE", cfg)
     title = esc(cfg.get("title", "金价走势核心结论"))
     sub = esc(cfg.get("subtitle", ""))
     note = esc(cfg.get("note", ""))
     pts = cfg.get("points", [])
     if not pts:
         return ""
-    vals = [float(p["val"]) for p in pts]
+    vals = [p["val"] for p in pts]
     v_lo, v_hi = min(vals), max(vals)
     pad = max((v_hi - v_lo) * 0.18, abs(v_hi) * 0.015, 1.0)
-    y_min = float(cfg.get("y_min", v_lo - pad))
-    y_max = float(cfg.get("y_max", v_hi + pad))
+    y_min = cfg.get("y_min", v_lo - pad)
+    y_max = cfg.get("y_max", v_hi + pad)
     if y_max <= y_min:
         mid = y_min
         y_min, y_max = mid - max(abs(mid) * 0.05, 1.0), mid + max(abs(mid) * 0.05, 1.0)
@@ -503,37 +505,37 @@ def render_chart_timeline(cfg: dict) -> str:
 
     grid_svg = ""
     for tv in y_ticks:
-        y = y_w(float(tv))
+        y = y_w(tv)
         grid_svg += f'<line x1="56" y1="{y}" x2="626" y2="{y}" stroke="#e2e8f0" stroke-width="0.9"/>'
-        tick_str = _fmt_axis_val(float(tv), span, unit_prefix, unit_suffix)
+        tick_str = _fmt_axis_val(tv, span, unit_prefix, unit_suffix)
         grid_svg += f'<text x="50" y="{y+4}" text-anchor="end" font-size="10.6" fill="#64748b">{svg_esc(tick_str)}</text>'
 
     ref_svg = ""
     for rl in ref_lines:
-        ry = y_w(float(rl["val"]))
+        ry = y_w(rl["val"])
         col = esc(rl.get("color", "#b45309"))
         anchor = esc(rl.get("align", "end"))
-        rx = float(rl.get("x", 622 if anchor == "end" else 62))
-        dy = float(rl.get("dy", -6))
+        rx = rl.get("x", 622 if anchor == "end" else 62)
+        dy = rl.get("dy", -6)
         ref_svg += f'<line x1="56" y1="{ry}" x2="626" y2="{ry}" stroke="{col}" stroke-width="1.5" stroke-dasharray="6,4"/>'
         ref_svg += (
             f'<text x="{rx}" y="{round(max(32.0, min(204.0, ry+dy)),1)}" text-anchor="{anchor}" '
             f'font-size="10.6" fill="{col}" font-weight="700" {HALO}>{svg_esc(rl.get("label", ""))}</text>'
         )
 
-    poly = " ".join(f"{xs[i]},{y_w(float(p['val']))}" for i, p in enumerate(pts))
+    poly = " ".join(f"{xs[i]},{y_w(val)}" for i, val in enumerate(vals))
     nodes_svg = ""
     for i, p in enumerate(pts):
         x = xs[i]
-        y = y_w(float(p["val"]))
+        y = y_w(vals[i])
         col = esc(p.get("color", "#b45309" if p.get("highlight") else "#1e3a5f"))
         pos = p.get("label_pos") or ("above" if (y > 70 and i % 2 == 0) else "below")
-        dx = float(p.get("dx", 0.0))
-        dy_extra = float(p.get("dy", 0.0))
+        dx = p.get("dx", 0.0)
+        dy_extra = p.get("dy", 0.0)
         anc = esc(p.get("anchor", "middle"))
         y_lbl = round(max(34.0, min(205.0, (y - 10.5 if pos == "above" else y + 17.0) + dy_extra)), 1)
         x_lbl = round(max(66.0, min(614.0, x + dx)), 1)
-        val_txt = p.get("val_label") or _fmt_axis_val(float(p["val"]), span, unit_prefix, unit_suffix)
+        val_txt = p.get("val_label") or _fmt_axis_val(vals[i], span, unit_prefix, unit_suffix)
         r = "5.0" if p.get("highlight") else "4.2"
         nodes_svg += f'<circle cx="{x}" cy="{y}" r="{r}" fill="{col}" stroke="#ffffff" stroke-width="1.5"/>'
         nodes_svg += f'<text x="{x_lbl}" y="{y_lbl}" text-anchor="{anc}" font-size="11" fill="{col}" font-weight="800" {HALO}>{svg_esc(val_txt)}</text>'
@@ -561,6 +563,7 @@ def render_chart_timeline(cfg: dict) -> str:
 
 def render_chart_switch(cfg: dict) -> str:
     """Dual-Gauge Dashboard (640px, >=10.0px print-safe, dynamic height, safe red/amber/green detection)."""
+    cfg = normalize_chart("DAILY_CHART_SWITCH", cfg)
     title = esc(cfg.get("title", "买点到了吗？四项安全条件仅亮 1 项，继续保持红灯观望"))
     sub = esc(cfg.get("subtitle", "买金四步红绿灯体检表与历史水位尺（单一真相刻度）"))
     note = esc(cfg.get("note", ""))
@@ -590,7 +593,7 @@ def render_chart_switch(cfg: dict) -> str:
     gauge_svg = ""
     for gi, g in enumerate(gauges):
         y = 40 + gi * 44
-        pct = max(0.0, min(100.0, float(g.get("pct", 50))))
+        pct = g["pct"]
         lbl = svg_esc(g.get("label", ""))
         val_txt = svg_esc(g.get("value_text", ""))
         bar_col = esc(g.get("color", "#b45309"))
@@ -604,7 +607,7 @@ def render_chart_switch(cfg: dict) -> str:
             f'<rect x="{bx}" y="{y+7}" width="{fill_w}" height="12" fill="{bar_col}" rx="6"/>'
         )
         if g.get("threshold_pct") is not None:
-            tp = max(0.0, min(100.0, float(g["threshold_pct"])))
+            tp = g["threshold_pct"]
             tx = round(bx + bw * tp / 100.0, 1)
             gauge_svg += f'<line x1="{tx}" y1="{y+5}" x2="{tx}" y2="{y+21}" stroke="#0f172a" stroke-width="1.8"/>'
 
@@ -651,11 +654,6 @@ def render_chart_switch(cfg: dict) -> str:
     '''
 
 
-def _parse_num(val) -> float:
-    s = str(val).replace("\u2212", "-").replace("\u2013", "-").replace(",", "").replace("%", "").replace("+", "").strip()
-    return float(s)
-
-
 def _is_protagonist_gold(it: dict) -> bool:
     if "highlight" in it:
         return bool(it["highlight"])
@@ -667,6 +665,7 @@ def _is_protagonist_gold(it: dict) -> bool:
 
 def render_chart_cross(cfg: dict) -> str:
     """1:1 Honest Linear Scale Cross-Asset Diverging Bar Chart with collision-proof x_zero & strict protagonist highlight."""
+    cfg = normalize_chart("DAILY_CHART_CROSS", cfg)
     title = esc(cfg.get("title", "隔夜全球市场分化全景"))
     sub = esc(cfg.get("subtitle", "主要资产单日涨跌幅（%）｜ [中文惯例：红涨 / 绿跌 · 1:1 真实线性比例]"))
     note = esc(cfg.get("note", ""))
@@ -675,7 +674,7 @@ def render_chart_cross(cfg: dict) -> str:
     if not items:
         return ""
 
-    cap_abs = max(_parse_num(cfg.get("linear_cap_pct", 10.0)), 1.0)
+    cap_abs = max(cfg.get("linear_cap_pct", 10.0), 1.0)
     row_h = 23.5
     top_pad = 30
     main_h = round(top_pad + len(items) * row_h, 1)
@@ -697,7 +696,7 @@ def render_chart_cross(cfg: dict) -> str:
     vb_h = int(round(main_h + rev_total_h + 14))
 
     x_label = 124.0
-    parsed_pcts = [_parse_num(it["pct"]) for it in items]
+    parsed_pcts = [it["pct"] for it in items]
     max_neg = min(cap_abs, max([abs(p) for p in parsed_pcts if p < 0] or [2.5]))
     max_pos = min(cap_abs, max([abs(p) for p in parsed_pcts if p > 0] or [4.0]))
     usable_span_px = 228.0
@@ -1727,6 +1726,14 @@ def build_gold_mobile_html(html_doc: str, meta: dict, out_path: Path | str) -> P
 
 
 def build_one(md_path: Path):
+    root = str(BASE_DIR.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from scripts.artifact_receipt import freeze_inputs, write_receipt
+
+    frozen = None
+    if md_path.resolve().is_relative_to(BASE_DIR.parent):
+        frozen = freeze_inputs(md_path, inputs=(BASE_DIR / "build_daily.py", BASE_DIR / "docx_embed.py", BASE_DIR / "chart_input.py"))
     text = md_path.read_text(encoding="utf-8")
     title, meta, body_pdf, _ = md_to_html(text, docx_mode=False, break_layer3=False)
     _, _, body_docx, docx_charts = md_to_html(text, docx_mode=True, break_layer3=False)
@@ -1822,6 +1829,8 @@ def build_one(md_path: Path):
     if _is_latest_daily(md_path):
         mobile_out = build_gold_mobile_html(pdf_html, meta, DAILY_DIR / "latest_gold.html")
         print(f"Built mobile HTML: {mobile_out} ({mobile_out.stat().st_size:,} bytes)")
+    if frozen is not None:
+        write_receipt(frozen, pdf_path, docx_path)
 
 
 def main():

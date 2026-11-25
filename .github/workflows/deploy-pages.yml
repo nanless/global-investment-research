@@ -30,6 +30,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Test release recovery and source receipts
+        run: python3 -m unittest discover -s tests
+
+      - name: Strict lint gold and equity manuscripts
+        run: python3 scripts/publish_site.py --check-manuscripts
+
       - name: Build static site
         run: python3 scripts/build_site.py --out _site
 
@@ -55,6 +61,15 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Verify this commit is still current on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$main_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::A newer main commit superseded this deployment."
+            exit 1
+          fi
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

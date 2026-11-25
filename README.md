@@ -11,7 +11,7 @@ An institutional-grade, plain-language multi-asset investment research monorepo 
 
 ## 更新节拍 · Publication Schedule (CST / UTC+8)
 
-黄金与全球三市权益采用 **每日 2 场一体化单会话流水线**（共享 6 路并发调研 + 1 路统一红队 → 黄金 SSOT 先行落盘严检 → 三地权益零延迟只读接力 → 统一 RSI 盲审 + 单次 `scripts/publish_site.py` 发布至 GitHub Pages 与 Releases）：
+黄金与全球三市权益采用 **每日 2 场一体化单会话流水线**（共享 6 路并发调研 + 1 路统一红队 → 黄金 SSOT 先行落盘严检 → 三地权益按当班计划只读接力 → 统一 RSI 盲审 + 单次 `scripts/publish_site.py` 发布至 GitHub Pages 与 Releases）：
 
 | 北京时间（CST） | 班次 / Schedule | 单会话串行产出 / Editions |
 | :--- | :--- | :--- |
@@ -59,14 +59,21 @@ global-investment-research/
 
 ### 1. 研报质量门禁（Report Linters）
 ```bash
+# 先看该班三市应交哪种稿件、哪些市场沿用旧稿
+python3 equity/lint_equity.py --plan 2026-11-26_1800
+
 # 黄金 7 道门禁全量严检（0 错误 0 警告）
 python3 gold/lint_readability.py \
   gold/黄金跨世纪周期与2026-2030终审研究报告.md \
-  gold/daily/2026-11-25_0730_早报_黄金深度研报.md \
+  gold/daily/2026-11-25_1800_晚报_黄金深度研报_r2.md \
   --strict
 
 # 权益全量法证 + 跨项目黄金 SSOT 门禁（Gates 0-6, 3B, C1-C3）
 python3 equity/lint_equity.py --strict
+
+# 与发布器和 GitHub Actions 共用的源稿检查，可在没有 PDF / Word 的环境运行
+python3 scripts/publish_site.py --check-manuscripts
+python3 -m unittest discover -s tests
 ```
 
 ### 2. 静态网站构建与严检（Static Site Build & Lint）
@@ -84,16 +91,24 @@ python3 scripts/publish_site.py --dry-run
 # 仅本地提交（不推送远程）
 python3 scripts/publish_site.py --no-push
 
-# 全自动发布（验证最终提交树、推送 main，并逐件核对线上附件哈希）
+# 无活动班次时的人工发布
 python3 scripts/publish_site.py
 
-# 仅推送网站源码，跳过 Release 附件上传
+# 仅同步站点源码的人工操作
 python3 scripts/publish_site.py --skip-release
+
+# 一体化班次在 publish 阶段正式交付
+python3 scripts/publish_site.py --edition-token <token>
+python3 scripts/edition_run.py complete <token>
 ```
+
+发布使用最终提交的源稿、数据时点、模板和渲染代码核对 PDF/Word 的编译凭据。首次启用需要为现行黄金主报告、黄金最新日报、三个权益旗舰和三个最新权益日报各编一次，以实际编译生成本地的 `*.artifacts.json`。黄金先编、权益后编，合计八对。遇到某一对因输入变化被拒，按报错重新编译那一对即可。只做源码预演可以使用 `--check-manuscripts`，或使用 `--dry-run --skip-release` 同时验证站点。
+
+归档时一并移动同名的 Markdown、PDF、Word 和 `*.artifacts.json`。曾发布的早晚报保留原网页地址，修订版各有独立地址。门户的下载入口提供最新文件，历史网页可以在线阅读和打印。
 
 ### 4. 本机定时任务安装与漂移校验（Local Sidecar Sync）
 
-使用同一个 Python 执行安装和两种检查。`--check` 比对配置文件，`--check-runtime` 另验 Antigravity 的启用、项目和授权。渲染目标是 `~/.gemini/config/sidecars/`。首次安装后，在 Antigravity 内启用这两个任务，已有任务会保留注册状态。
+早晚班共用 [定时提示词](automations/unified-edition.prompt.md) 与 [授权声明](automations/permissions.json)。安装器从模板生成 Antigravity 本机定义，运行时使用安装同一个 Python。先检查两个班次均无执行中会话，更新后在 Antigravity 内确认注册、授权和启用状态。`--check` 比对安装文件，`--check-runtime` 另外校验真实项目和配置授权，报告终端沙箱状态。首次实跑用任务触发记录与 `status` 的本期记录、GitHub Pages 部署和附件凭据核对。
 
 ```bash
 python3 scripts/install_sidecars.py
@@ -102,7 +117,13 @@ python3 scripts/install_sidecars.py --check-runtime
 python3 scripts/edition_run.py status
 ```
 
-两条定时任务共享运行锁，状态记录包括研究、黄金、权益、发布和 Pages 结果。失败后在任务记录里核对当前阶段。若会话意外终止，确认它已结束后可用 `scripts/edition_run.py recover <班次ID> <原因>` 释放锁，再从已验证的材料继续。
+### 5. 恢复中断班次
+
+先查 `python3 scripts/edition_run.py status` 和 Antigravity 对话状态。恢复涉及释放锁时，确认之前的会话已经结束，再读取刚返回的 `edition` 和 `attempt`。不要把完整 token 转发或写进报告。
+
+- 研究或编译阶段退出，且明确未发起推送，执行 `python3 scripts/edition_run.py recover <班次ID> <尝试编号> <原因>`。下一次使用同一期号，重新验证已有材料；旧失败记录会保留。
+- 发布中断或推送结果不明，执行 `python3 scripts/edition_run.py resume <班次ID> <尝试编号>` 取回该次 token，接着重跑 `publish_site.py --edition-token <token>`。发布器使用原来那次提交和已保存的传输状态。下载已验完、仅 Pages 未结束时，直接重跑 `edition_run.py complete <token>`。下一班可以自动复验已有完整凭据的部署。
+- 远端 Release 仍被前一个发布者占用时，先确认其进程已经退出，核对报错所列的锁资产编号，再在人工恢复中使用 `--recover-release-lock <资产ID>`。原发布会话已退出、确定放弃该次提交且它已不在远端 `main` 上时，可用 `edition_run.py close-superseded <班次ID> <尝试编号> <原因>` 关闭旧尝试，保留尝试提交与现有远端提交的记录。
 
 ---
 

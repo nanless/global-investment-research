@@ -50,6 +50,8 @@
 
 新刊与勘误版的 `DAILY_META` 必填 `edition_id` 和 `as_of_short`。刊号为 `YYYY-MM-DD_HHMM[_rN]`，与文件名和实时快照一致；数据截点为 `YYYY-MM-DD HH:MM`，与快照逐字相同。可读的 `timestamp` 可同时展示计划刊期和实盘截点。早于实时快照的存档仍可独立校验。
 
+从 `2026-11-25_1800_r2` 之后的新刊起，班次仅用 `0730` 或 `1800`，截点使用北京时间，落在所标班次开始至随后四小时。封面 `DAILY_META.timestamp`、快照 `as_of_bjt` 均须清楚显示同一截点，可用中文年月日或 ISO 日期。休市栏继续注明上一可用报价的交易日或观测时间。
+
 1. **`DAILY_META`**：`{"tag": str, "timestamp": str, "summary": str, "accent": "#hex", "footer_title": str, "kpis": [{"label": str, "val": str, "sub": str} × 6]}`（每条 `sub` 严控 ≤17 汉字当量；`footer_title` 不含 `V2.x/V7.x`）
 2. **`DAILY_VERDICT`**：`{"level": "L0"|"L1"|"L2", "badge": str, "traffic_light": str, "headline": str, "bullets": [str × 3], "risk_line": str}`（`badge` 禁用 `🟢`）
 3. **`DAILY_SIGNAL_NOISE`**：`{"title": str, "signals": [{"head": str, "body": str}], "noises": [{"head": str, "body": str}]}`（`signals` 建议 0–2 件）
@@ -63,6 +65,17 @@
 
 新刊 `DAILY_VERDICT` 还需提供与快照一致的 `tier_code`、布尔 `new_buy_allowed` 与整数 `tier1_passed`。封面红绿灯、裁决卡和图 3 均显示档位与 `X/4`；图 3 四关按快照顺序写布尔过关状态。第三关以当期可用的现货恐慌指数低于 30，或者较最近十个完整交易日最高收盘回落至少 10% 为过关。实时快照以 `vix_10d_session_closes` 保存十条 `{"date": "YYYY-MM-DD", "close": num}` 记录，便于从同一张日线表复算。
 
+新刊的 `tier1_gates` 与 `DAILY_CHART_SWITCH.checks` 使用相同的固定 `id` 顺序。下列数值保留原始精度，正文可另外显示舍入后的读数。
+
+| `id` | 结构化证据与过关条件 |
+| --- | --- |
+| `real_yield` | 官方 `dfii10_fred_official_pct ≤ 2.72`。盘中估算另行标注。 |
+| `rate_spread` | `(us2y_pct - effr_pct) × 100 ≤ 55` 基点。显示使用的 `spread_2y_ff_bp` 须和精确差值相差不超过 0.5 基点。 |
+| `vix` | 使用截点前最近十个已核实的 **Cboe 现货指数**日收。美国休市或半日市按日历核验点查 Cboe 官方 CSV，确认有独立日线才纳入十日窗口。未披露时记录缺口并留待下一刊复查。仅可用与截点处在同一连续发布窗口、距截点不超过 30 分钟的盘中现货指数作为比较读数。`vix_live` 和 `vix_live_as_of` 均留空或均省略时用最近官收。两个字段必须成对写入，禁止把期货或旧盘口填作新盘口。 |
+| `ny_close` | `spot_gold_ny_close_date` 是同口径已完成纽约 17:00 现货日线的交易日，`tier1_gate4_threshold_date` 是目标日之前有效交易日，`tier1_gate4_target_date` 是本次突破检验日。只有已完成日线的交易日等于目标日，且 `spot_gold_ny_close_usd > tier1_gate4_threshold_usd`（未舍入的前高），才算通过。目标日未收盘时保留待验。 |
+
+图表的数字字段与显示字段分开。数字允许普通小数和合法千位格式，如 `3555`、`"3,555"`，百分值可写 `"+1.25%"`；货币符号和完整文字放进 `val_label` 或对应标签。预检与渲染读取同一套数值规则。
+
 ---
 
 ## 四、一体化 6+1 红队核验、自动化安全与编译质检强制工作流
@@ -71,8 +84,9 @@
 2. **标准发刊闭环（Step 3 黄金 SSOT 优先，绝对路径裸命令，无 `cd &&` 前缀）**：
    1) 启动先读 `market_calendar.json` 查明休市叠加模式与北美冬/夏令时换算，并按**惰性主报告加载**仅读轻量级 `master_snapshot.json` 核验 5 大触发条件（命中时才全量读取主报告 MD）；随后更新日报数据源 `<REPO_ROOT>/gold/data_snapshot.json`（标准无日期跨资产键名 `cross_ratios`，同步维护跨项目 SSOT 裁决字段 `tier_code`/`new_buy_allowed`、`tier1_gates`、`rmb_channels` 与 `trust_assets`，供紧随其后的 Step 4 权益轨零延迟只读校验）；仅当触发主报告 5 大更新条件时，同步更新 `master_snapshot.json`、`MASTER_BASELINE` 与主报告正文；
    2) 撰写本刊 Markdown（同场修订加 `_r2` 防覆写），将全部【新增/更新/修正/删除】与口径消歧沉淀至 `daily/CHANGELOG.md`（最新置顶）与 `daily/AUDIT_LOG.md`，并同步在公开可证伪预测记分卡 `daily/SCORECARD.md` 回验到期预判与追加新追踪项（零内部工程/RSI 词汇、历史记录零篡改）；
+      - 新刊预检前，三个账本需同时登记本刊。记录格式见黄金技能的[快照与审阅台账契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)。预测情景须事前划定互斥区间与未覆盖时的处理方式。来源仍未披露的结论留待验，按事先锁定的原口径结算。
    3) **编译前秒检（`--precheck --strict`）**：先运行 `python3 <REPO_ROOT>/gold/lint_readability.py --precheck --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`（跳过 Gate 6 PDF/DOCX/手机端 HTML，秒拦组件错键、图 2 左标签超宽、68 个禁词、外置日历与记分卡异常），确认 0 错 0 警后再编译；
    4) 运行 `python3 <REPO_ROOT>/gold/build_daily.py <REPO_ROOT>/gold/daily/<本刊文件名>.md`（自动生成精排 PDF、原生 OOXML DOCX 与手机端响应式单文件 `daily/latest_gold.html`；满足主报告触发条件时运行 `python3 <REPO_ROOT>/gold/build_report.py`），并通过 `read_file` 抽检 PDF 关键页确认视觉零瑕疵；
    5) 强制运行 `python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`（若同步更新了主报告，一并传入 `<REPO_ROOT>/gold/黄金跨世纪周期与2026-2030终审研究报告.md`），必须 **7 道门禁（含 `market_calendar.json`、`daily/SCORECARD.md` 与 `daily/latest_gold.html`）0 错误 0 警告（退出码 0）** 方可交棒 Step 4 权益轨或单轨交付！
    6) **Step 5 统一 RSI 复盘与优化闭环**：一体化班次待 Step 4 三市权益亦通过 `lint_equity.py --strict` 后，由 1 路独立只读盲审子代理联合按 6 维量表（满分 30）复盘双轨本刊与回验上期预判，自动更新 `daily/rsi_metrics.json` 与 `daily/RSI_PLAYBOOK.md`（≤180 行上限，禁止膨胀），按 Tier A/B/C 分级谨慎落地改进并复验 `--strict` 全绿；
-   7) **双轨全绿后单次发布网站（Web Publish）**：运行 `python3 <REPO_ROOT>/scripts/publish_site.py`，自动构建响应式静态门户 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并按 SHA256 增量更新滚动 Release PDF/DOCX 附件（本地预演可附加 `--dry-run`）。
+   7) **双轨全绿后单次发布网站**：联合班次按根契约登记进入 `publish` 阶段，运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`。用同一 token 验证本期 Pages 和滚动 Release 后结束。本地预演单独运行 `publish_site.py --dry-run`，不附班次 token。

@@ -92,4 +92,4 @@
 ## 五、每 10 刊 Meta-RSI 跨周期趋势总复盘与终检收官
 
 1. **Meta-RSI 触发**：每当 `len(runs) > 0` 且 `len(runs) % 10 == 0` 时，盲审子代理同步统计最近 10 刊总分均值、一次过率（`first_pass_clean` 占比）与 6 个维度各自均分，锁定连续得分最低的 1–2 个结构性瓶颈维度，输出 **≤2 条高价值 Tier C 根因升级提案** 写入 `state/RSI_PLAYBOOK.md` 第四节待用户审批，同时彻底淘汰过时条目保持手册 ≤180 行。
-2. **统一终检与单次站点发布命令**：Tier A（及按需 Tier B）落盘后，必须复跑 **`python3 <REPO_ROOT>/equity/lint_equity.py --strict`**（一体化班次同步复跑黄金严检），确认手册行数、JSON 合法性、`run_id` 唯一性、`total_score == sum(scores)` 及全量 Gate 0–6 / 3B / C1–C3 全部绿灯后，单次运行 **`python3 <REPO_ROOT>/scripts/publish_site.py`** 完成双端静态门户编译、严检、推送与滚动 Release 同步，方可结束本班次。
+2. **统一终检与单次站点发布**：Tier A（及按需 Tier B）落盘后复跑双轨严检，确认手册行数、JSON 合法性、`run_id` 唯一性及各维分数在 1–5 且合计正确。推进本期令牌到 `publish`，执行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`，再执行 `python3 <REPO_ROOT>/scripts/edition_run.py complete <token>` 验证同一班次的发布结果。

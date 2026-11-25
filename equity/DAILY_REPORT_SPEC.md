@@ -59,7 +59,7 @@
 
 ## 三、一体化早/晚刊主轻协同矩阵与每周北京时间节拍
 
-本工作区纳入单仓库 **北京时间 `07:30` 一体化早报（产出 `_0730_` 场次）** 与 **`18:00` 一体化晚报（产出 `_1800_` 场次）** 单会话顺序流水线（详见 `../AGENTS.md`）：Step 3 黄金率先刷新 `../gold/data_snapshot.json` 并过 7 门禁，随后 Step 4 权益轨零延迟只读接力，彻底杜绝跨会话读旧快照竞态与并发编译内存争抢：
+本工作区纳入单仓库北京时间 `07:30` 早报（`_0730_`）与 `18:00` 晚报（`_1800_`）顺序流水线。Step 3 黄金率先更新 `../gold/data_snapshot.json` 并通过门禁，Step 4 权益读取同一班次快照后接力。完整流程见[根仓规则](../AGENTS.md)。
 
 | 市场与场次 | 定位与目标页数 | 核心内容边界与图表配额 | 严禁动作 |
 | :--- | :--- | :--- | :--- |
@@ -73,7 +73,7 @@
 | **周六 18:00 / 周日双场** | **双休守望 / 周日深度轮换** | 无 P0/P1 突发仅记 `INDEX`+`CHANGELOG` 不生 PDF；**周日例行刷新 `SCORECARD.md` 周频对照并产出 2–3 只龙头 6 维深度解剖**，命中阈值时刷新旗舰 | 严禁无实质增量仍生成冗余 PDF |
 
 - **全量龙头看板与 `DAILY_META_JSON` 尾置**：工作日早/晚刊仅列 4–6 只焦点股 3 列表；**全量 35–48 只/市（当前合计 135 只）龙头四色看板归属三份《全景手册》**。日报 `<!-- DAILY_META_JSON { ... } -->` 必须置于 `.md` 最末尾、零新旧键混写。`edition_id` 统一采用 `YYYY-MM-DD_HHMM` 或 `YYYY-MM-DD_HHMM_rN`，与报告文件名、市场状态、黄金共享快照一致。`edition_type` 为 `main`、`light` 或 `holiday_watch`。`chart_live.as_of_full` 以 `YYYY-MM-DD HH:MM` 开头并标明北京时间，所有实际嵌入图表使用本期元数据。
-- **双终端交付与跨项目黄金门禁**：编译同步产出印刷级杂志 PDF、纯 Python 原生 ECMA-376 `.docx` 与三市手机阅读页 `daily/latest_{a_share,hk_stock,us_stock}.html`（顶栏 `A 股 ｜ 港股 ｜ 美股` 一键互切）。冷启动阶段（Step 1）先读前序基线黄金 `data_snapshot.json`，并在一体化班次 Step 3 黄金落盘后的 **Step 4 入口**（仅独立单跑权益轨时于 Step 1）强制只读核验最新黄金快照（**0 分钟 / ≤4 小时新鲜度**、`brent_settle_usd` 与 `cfets_cny_fixing`）及 Tier-0 互斥锁；黄金为 `Tier 0` 或 `new_buy_allowed == false` 时，三市正文、JSON 与渲染后 SVG 均严禁出现买金指令，由 `lint_equity.py`（`--precheck --strict` 与 `--strict`）零错零警硬核验收。
+- **双终端交付与跨项目黄金门禁**：同期编译产出 PDF、原生 ECMA-376 Word 和手机阅读页。在黄金落盘后，权益入口核验同一 `edition_id`、`brent_settle_usd` 和 `cfets_cny_fixing` 等共享键。黄金截点须早于或同于权益，差值最多 4 小时，两轨截点各须在所标班次前后 4 小时内。黄金为 `Tier 0` 或 `new_buy_allowed == false` 时，三市正文、JSON 和 SVG 均须通过黄金行动锁。活动班次按[根仓规则](../AGENTS.md)执行带令牌的发布与完成校验。
 
 ---
 
@@ -81,9 +81,12 @@
 
 1. **三模式独立调度**（每日对照 `state/market_state.json` 未来 60 天休市日历与 `holiday_and_rollover_sop.md` 判定）：
    - **模式 1（三市均正常开市）**：A 股、港股、美股全部按“早晚主轻协同”标准出版。
-   - **模式 2（局部休市或半日市）**：如美国感恩节休市 / 黑五半日市、平安夜/跨年夜港美半日市、香港公众假期或内地春节/五一长假等。黑五分别按北京时间次日 `02:00` 美股常规收盘、`03:00` SIFMA 债市建议早收、`06:00` 纳斯达克盘后终盘理解。正常开市市场按标准出版；**休市或半日市市场自动降级为 1–2 页守望简报**（沿用 `YYYY-MM-DD_{0730,1800}_{market}.md`），聚焦复市防薄盘无量洗盘、跨市场映射与未来 72 小时排雷。
+  - **模式 2（局部休市或半日市）**：正常开市市场按标准出版，受影响市场出 1–2 页 `holiday_watch`。美股假期以美东交易日映射至北京时间当日晚刊与次日早刊。黑五次日 `02:00` 美股常规收盘、`03:00` SIFMA 债市建议早收、`06:00` 纳斯达克盘后终盘。港股现金市场半日市 `12:00` 结束持续交易，适用收市竞价的证券 `12:06` 后不可撤单，`12:08–12:10` 随机收市。[Nasdaq 黑五公告](https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34) · [港交所收市竞价](https://www.hkex.com.hk/Global/Exchange/FAQ/Securities-Market/Trading/CAS?sc_lang=en)
    - **模式 3（三市齐休，如常规周末/元旦）**：无 P0/P1 突发重磅时，**不生成冗余 PDF**，仅在 `daily/INDEX.md` 与 `daily/CHANGELOG.md` 顶部追加精简守望提示；逢周日例行刷新或 P0 黑天鹅突发按对应规格发布。
 2. **同场次防覆写（`_r2`）与 `05:30 CST` 跨午夜切割线**：同日同场次若已存在文件需补发，严禁覆写，统一追加 `_r2`（递进 `_r3`）；北京时间 `05:30` 前的凌晨突发归前日 `1800_r2`，`05:30` 起归当日 `0730`。
+3. **开工前生成计划**：运行 `python3 equity/lint_equity.py --plan YYYY-MM-DD_HHMM[_rN]` 可直接从交易日历计算目标班次。保存前在 `state/market_state.json` 中更新 `edition_id` 和三市 `markets.<市场>.latest_daily`。新发市场写计划中的 `required_file` 与 `edition_type`，复用市场沿用其最近一份历史稿，禁止在该班次生成替代稿。跨月时 `period_slug`、三份旗舰元数据与带月份的旗舰源稿同步进入新月，休市同样执行。编译前后执行严格门禁；默认日刊编译按计划跳过复用市场。旧稿保留原始刊型和格式。
+4. **例外必须有当班记录**：常规班次省略 `publication_exceptions`。需要例外时记录 `publication_exceptions.edition_id`，并在 `publication_exceptions.markets.<市场>` 填 `kind` 和具体 `reason`。本应出版但关键来源故障时用 `source_outage`，附官方 HTTPS `evidence_url` 和未来 `next_review_session`，同时挂入同市场、同核验班次的 `pending_backfills`。原应复用但出现经官方证实的 P0/P1 突发时用 `breaking_event`，附 `severity` 和 `evidence_url`，只为受影响市场新发守望刊。修订版若保留某市场同班上一版，使用 `revision_reuse` 说明原因。下个班次清除旧例外。
+5. **日历与跨轨空值**：`calendar_overrides` 每条有 `date_cst`、`type`、`mode` 和不重复的 `markets_affected`。连续休市补 `end_date_cst`，特殊窗口补 `affected_sessions`，不同市场的实际交易日不同则分行记录。美国债市提早收盘仅作备注，股市刊型按股市交易时段决定。有黄金日历同一事件时可填 `gold_event_id` 进行交叉核对。现货 VIX 无本班有效盘中观测时，黄金 `vix_live`、`vix_live_as_of` 与权益 `vix_live`、`vix_intraday_high` 都留空或省略。两轨仍须按 Cboe 最近已发布日线对齐 `vix_close`。
 
 ---
 

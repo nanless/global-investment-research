@@ -22,7 +22,14 @@ import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
+
+from chart_input import normalize_chart
+from edition_validation import (
+    ENTRY_GATE_IDS, LAST_LEGACY_EDITION, check_edition_time, check_vix_period, cutoff_displayed, evidence_url,
+    parse_day, recheck_entry_gates, vix_calendar,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
@@ -31,6 +38,8 @@ DAILY_SNAPSHOT_PATH = BASE_DIR / "data_snapshot.json"
 MASTER_SNAPSHOT_PATH = BASE_DIR / "master_snapshot.json"
 MARKET_CALENDAR_PATH = BASE_DIR / "market_calendar.json"
 SCORECARD_PATH = BASE_DIR / "daily" / "SCORECARD.md"
+AUDIT_LOG_PATH = DAILY_DIR / "AUDIT_LOG.md"
+CHANGELOG_PATH = DAILY_DIR / "CHANGELOG.md"
 LATEST_MOBILE_HTML_PATH = BASE_DIR / "daily" / "latest_gold.html"
 RSI_PLAYBOOK_PATH = BASE_DIR / "daily" / "RSI_PLAYBOOK.md"
 RSI_METRICS_PATH = BASE_DIR / "daily" / "rsi_metrics.json"
@@ -112,6 +121,7 @@ KNOWN_DIRECTIVES = {
 }
 
 ANY_DAILY_DIRECTIVE_RE = re.compile(r"<!--\s*(DAILY_[A-Z0-9_]+)\s*(.*?)\s*-->", re.DOTALL)
+EDITION_REVIEW_RE = re.compile(r"<!--\s*GOLD_EDITION_REVIEW\s+(.*?)\s*-->", re.DOTALL)
 MASTER_BASELINE_RE = re.compile(r"<!--\s*MASTER_BASELINE\s*(\{.*?\})\s*-->", re.DOTALL)
 DAILY_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_.*黄金深度研报(?:_r(\d+))?\.md$")
 EDITION_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})(?:_r([1-9]\d*))?")
@@ -192,13 +202,6 @@ def flatten_json_strings(obj, skip_style_keys: bool = True) -> str:
     return ""
 
 
-def _parse_num_safe(val) -> float:
-    number = float(str(val).replace("\u2212", "-").replace("\u2013", "-").replace(",", "").replace("%", "").replace("+", "").strip())
-    if not math.isfinite(number):
-        raise ValueError("number must be finite")
-    return number
-
-
 def _parse_timestamp(value: object) -> datetime | None:
     if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", value):
         return None
@@ -237,7 +240,9 @@ def _snapshot_numbers(data: dict, label: str, errors: list[str], keys: tuple[str
     return not invalid
 
 
-def _check_vix_snapshot(snap: dict, as_of: datetime | None, errors: list[str]) -> bool | None:
+def _check_vix_snapshot(
+    snap: dict, as_of: datetime | None, errors: list[str], *, schedule: tuple | None = None,
+) -> bool | None:
     observations = snap.get("vix_10d_session_closes")
     if not isinstance(observations, list) or len(observations) != 10 or any(
         not isinstance(row, dict)
@@ -263,14 +268,16 @@ def _check_vix_snapshot(snap: dict, as_of: datetime | None, errors: list[str]) -
     ):
         errors.append("[Gate 5 VIX 回看数值冲突] 末日、官收或十日收盘峰未与交易日序列对齐")
         return None
-    quote_key = "vix_live" if "vix_live" in snap else "vix_close"
+    observed_at = _parse_timestamp(snap.get("vix_live_as_of"))
+    if as_of is not None and schedule is not None and not check_vix_period(snap, as_of, observed_at, schedule, errors):
+        return None
+    quote_key = "vix_live" if snap.get("vix_live") is not None else "vix_close"
     if quote_key == "vix_live":
-        observed_at = _parse_timestamp(snap.get("vix_live_as_of"))
         if observed_at is None or (as_of is not None and observed_at > as_of):
             errors.append("[Gate 5 VIX 时间非法] vix_live_as_of 须为不晚于快照的有效观测时间")
     if not _snapshot_numbers(snap, DAILY_SNAPSHOT_PATH.name, errors, (quote_key,), positive=True):
         return None
-    return snap[quote_key] < 30 or snap[quote_key] <= peak * 0.9
+    return snap[quote_key] < 30 or Decimal(str(snap[quote_key])) <= Decimal(str(peak)) * Decimal("0.9")
 
 
 def _check_institutional_snapshot(snap: dict, label: str, errors: list[str]) -> None:
@@ -293,6 +300,23 @@ def _check_institutional_snapshot(snap: dict, label: str, errors: list[str]) -> 
         mid = snap.get(f"bank_2027_{key}_median_usd")
         if not values or type(count) is not int or count != len(values) or mid != statistics.median(values):
             errors.append(f"[Gate 5 机构样本汇总冲突] {label}: {key} 样本数、中位须由同期限记录复算")
+
+
+def _read_vix_calendar(as_of: datetime, errors: list[str], *, legacy: bool) -> tuple | None:
+    try:
+        calendar = json.loads(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        errors.append(f"[外置日历读取失败] {exc}")
+        return None
+    if legacy and isinstance(calendar, dict) and isinstance(calendar.get("coverage"), dict):
+        coverage = calendar["coverage"]
+        first = parse_day(coverage.get("start_date"))
+        if first is not None and first > as_of.date():
+            errors.append("[外置日历覆盖不足] 日历未覆盖当前已刊快照的日期")
+        verified = parse_day(coverage.get("verified_on"))
+        if verified is not None and verified > as_of.date():
+            as_of = datetime.combine(verified, datetime.min.time())
+    return vix_calendar(calendar, as_of, errors)
 
 
 def validate_snapshot_file(snap_path: Path, errors: list[str], warnings: list[str]) -> dict | None:
@@ -341,16 +365,26 @@ def validate_snapshot_file(snap_path: Path, errors: list[str], warnings: list[st
         errors.append(f"[Gate 5 档位与关卡冲突] {label}: 开放新仓前须先满足四项安全条件")
 
     if is_daily:
-        if _edition_key(snap.get("edition_id")) is None:
+        edition = _edition_key(snap.get("edition_id"))
+        if edition is None:
             errors.append(f"[Gate 5 刊期非法] {label}: edition_id 须为 YYYY-MM-DD_HHMM[_rN]")
         fixing_date = snap.get("cfets_fixing_date")
         fixing_dt = _parse_timestamp(f"{fixing_date} 00:00")
         if fixing_dt is None or (as_of is not None and fixing_dt.date() > as_of.date()):
             errors.append(f"[Gate 5 中间价日期非法] {label}: cfets_fixing_date 须为不晚于快照的交易日期")
         _snapshot_numbers(snap, label, errors, ("us10y_pct", "dfii10_live_pct", "dxy", "cfets_cny_fixing", "vix_close", "on_rrp_usd_m", "comex_copper_usd_lb"))
-        passed = _check_vix_snapshot(snap, as_of, errors)
-        if gates is not None and passed is not None and gates[2]["passed"] != passed:
-            errors.append(f"[Gate 5 VIX 第三关冲突] {label}: 应过关={passed}（低于 30 或较十日收盘峰回落至少 10%）")
+        new_rules = edition is not None and edition > LAST_LEGACY_EDITION
+        schedule = _read_vix_calendar(as_of, errors, legacy=not new_rules) if as_of is not None else None
+        if new_rules and as_of is not None:
+            check_edition_time(edition, as_of, errors)
+            if not cutoff_displayed(snap.get("as_of_bjt"), as_of):
+                errors.append("[Gate 5 快照展示时间错] as_of_bjt 须展示与 as_of_short 一致的北京时间")
+            passed = _check_vix_snapshot(snap, as_of, errors, schedule=schedule) if schedule is not None else None
+            recheck_entry_gates(snap, as_of, passed, errors)
+        else:
+            passed = _check_vix_snapshot(snap, as_of, errors)
+            if gates is not None and passed is not None and gates[2]["passed"] != passed:
+                errors.append(f"[Gate 5 VIX 第三关冲突] {label}: 应过关={passed}（低于 30 或较十日收盘峰回落至少 10%）")
 
     for key in snap:
         if re.fullmatch(r"cross_ratios_\d{4}", key):
@@ -626,6 +660,11 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
     for req_k in REQUIRED_KEYS.get(kind, []):
         if req_k not in parsed:
             errors.append(f"[Gate 0 Schema 缺必填键] <!-- {kind} --> 缺少字段 '{req_k}'")
+    if kind.startswith("DAILY_CHART_"):
+        try:
+            normalize_chart(kind, parsed)
+        except ValueError as exc:
+            errors.append(f"[Gate 0 图表数值结构错] {exc}")
 
     if kind == "DAILY_META":
         kpis = parsed.get("kpis")
@@ -677,21 +716,6 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
         pts = parsed.get("points")
         if not isinstance(pts, list) or not pts:
             errors.append("[Gate 0 时间轴空] DAILY_CHART_TIMELINE.points 不能为空")
-        else:
-            for idx, p in enumerate(pts):
-                if not isinstance(p, dict) or "val" not in p:
-                    errors.append(f"[Gate 0 时间轴缺值] points[{idx}] 缺少 val")
-                else:
-                    try:
-                        _parse_num_safe(p["val"])
-                    except (TypeError, ValueError):
-                        errors.append(f"[Gate 0 时间轴非数字] points[{idx}].val={p['val']}")
-        if "y_min" in parsed and "y_max" in parsed:
-            try:
-                if _parse_num_safe(parsed["y_min"]) >= _parse_num_safe(parsed["y_max"]):
-                    errors.append("[Gate 0 纵轴颠倒] DAILY_CHART_TIMELINE y_min 必须小于 y_max")
-            except (TypeError, ValueError):
-                errors.append("[Gate 0 纵轴非数字] DAILY_CHART_TIMELINE y_min/y_max 须为数字")
     elif kind == "DAILY_CHART_SWITCH":
         checks = parsed.get("checks", [])
         if isinstance(checks, list) and len(checks) != 4:
@@ -710,12 +734,6 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
             if not isinstance(g, dict) or not all(f in g for f in ("label", "value_text", "pct")) or ("safe_pct" in g and "threshold_pct" not in g):
                 errors.append(f"[Gate 0 水位尺项错] gauges[{idx}] 须含 label/value_text/pct（且用 threshold_pct 非 safe_pct）")
                 continue
-            try:
-                pct = float(g.get("pct", -1))
-                if not (0.0 <= pct <= 100.0):
-                    errors.append(f"[Gate 0 水位尺越界] gauges[{idx}].pct={pct} 超出 0..100")
-            except (TypeError, ValueError):
-                errors.append(f"[Gate 0 水位尺非数字] gauges[{idx}].pct 非法")
     elif kind == "DAILY_CHART_CROSS":
         items = parsed.get("items", [])
         if not isinstance(items, list) or not items:
@@ -730,10 +748,6 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
                     errors.append(f"[Gate 0 图2标签撞栏] items[{idx}].label='{it['label']}' 宽 {lw:.1f} > 9.5（请压至 ≤8.5）")
                 elif lw > 9.0:
                     warnings.append(f"[Gate 0 图2标签偏宽] items[{idx}].label='{it['label']}' 宽 {lw:.1f} > 9.0（建议 ≤8.5）")
-                try:
-                    _parse_num_safe(it["pct"])
-                except Exception:
-                    errors.append(f"[Gate 0 涨跌幅非数字] DAILY_CHART_CROSS.items[{idx}].pct 非法")
         reverse_items = parsed.get("reverse_items", [])
         if not isinstance(reverse_items, list) or any(
             not isinstance(ri, dict) or not all(f in ri for f in ("label", "detail")) for ri in reverse_items
@@ -804,6 +818,11 @@ def _check_daily_verdict(directives: dict[str, list[dict]], snap: dict, errors: 
         c.get("passed") for c in checks if isinstance(c, dict) and type(c.get("passed")) is bool
     ] != [g.get("passed") for g in expected_checks if isinstance(g, dict)]:
         errors.append("[Gate 5 图 3 与快照冲突] 四项过关状态或顺序与快照不一致")
+    edition = _edition_key(snap.get("edition_id"))
+    if edition is not None and edition > LAST_LEGACY_EDITION and (
+        not isinstance(checks, list) or tuple(check.get("id") for check in checks if isinstance(check, dict)) != ENTRY_GATE_IDS
+    ):
+        errors.append("[Gate 5 图 3 顺序错] checks 须按快照四关 id 标注")
     meta = next(iter(directives.get("DAILY_META", [])), {})
     kpis = meta.get("kpis", [])
     kpi = next(
@@ -899,6 +918,13 @@ def check_file(
             errors.append("[Gate 0 日报刊期不匹配] DAILY_META.edition_id 须与文件名含修订号一致")
         if _parse_timestamp(daily_meta.get("as_of_short")) is None:
             errors.append("[Gate 0 日报数据时间非法] DAILY_META.as_of_short 须为有效 YYYY-MM-DD HH:MM")
+    if filename_key is not None and filename_key > LAST_LEGACY_EDITION:
+        cutoff = _parse_timestamp(daily_meta.get("as_of_short"))
+        if cutoff is not None:
+            check_edition_time(filename_key, cutoff, errors)
+            if not cutoff_displayed(daily_meta.get("timestamp"), cutoff):
+                errors.append("[Gate 0 封面截点错] DAILY_META.timestamp 须展示与 as_of_short 一致的北京时间")
+        _check_edition_ledgers(filename_edition, daily_meta.get("as_of_short"), errors)
     if is_current_daily:
         if not daily_snap or daily_snap.get("edition_id") != filename_edition or daily_meta.get("as_of_short") != daily_snap.get("as_of_short"):
             errors.append("[Gate 5 日报快照错刊] 文件名、DAILY_META 与 data_snapshot 的 edition_id/as_of_short 须一致")
@@ -1006,6 +1032,8 @@ def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
             warnings.append(f"[RSI 防膨胀预警] daily/RSI_PLAYBOOK.md 共 {line_cnt} 行，超出 180 行上限，请合并淘汰旧条目")
         if "Tier C" not in pb_text or "Tier B" not in pb_text:
             errors.append("[RSI 边界缺失] daily/RSI_PLAYBOOK.md 缺少 Tier B / Tier C 安全自进化边界声明")
+    else:
+        errors.append("[RSI 手册缺失] 未找到 daily/RSI_PLAYBOOK.md")
 
     if RSI_METRICS_PATH.exists():
         try:
@@ -1013,7 +1041,7 @@ def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
         except json.JSONDecodeError as e:
             errors.append(f"[RSI 账本损坏] daily/rsi_metrics.json JSON 非法: {e}")
             return
-        runs = data.get("runs")
+        runs = data.get("runs") if isinstance(data, dict) else None
         if not isinstance(runs, list) or not runs:
             errors.append("[RSI 账本缺项] daily/rsi_metrics.json 缺少非空 runs 数组")
             return
@@ -1047,6 +1075,59 @@ def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
                     errors.append(f"[RSI 总分冲突] run '{rid}' total_score={r.get('total_score')} != 6 维之和 {score_sum}")
                 if r.get("max_score") != 30:
                     warnings.append(f"[RSI 满分口径] run '{rid}' max_score={r.get('max_score')}（应为 30）")
+    else:
+        errors.append("[RSI 账本缺失] 未找到 daily/rsi_metrics.json")
+
+
+def _check_edition_ledgers(edition: str, as_of: str | None, errors: list[str]) -> None:
+    """Require red-team evidence and synchronized public/internal records before building new reports."""
+    for path, marker in ((CHANGELOG_PATH, "GOLD_EDITION_CHANGELOG"), (SCORECARD_PATH, "GOLD_EDITION_SCORECARD")):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            errors.append(f"[黄金刊期台账缺失] {path.name}: {exc}")
+            continue
+        if len(re.findall(rf"<!--\s*{marker}\s+{re.escape(edition)}\s*-->", raw)) != 1:
+            errors.append(f"[黄金刊期台账错] {path.name} 须含一条 {marker} {edition} 标记")
+
+    try:
+        raw = AUDIT_LOG_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"[黄金核验台账缺失] {AUDIT_LOG_PATH.name}: {exc}")
+        return
+    reviews = []
+    for match in EDITION_REVIEW_RE.finditer(raw):
+        try:
+            review = json.loads(match[1])
+        except json.JSONDecodeError as exc:
+            errors.append(f"[黄金核验台账 JSON 错] GOLD_EDITION_REVIEW: {exc}")
+            continue
+        if not isinstance(review, dict):
+            errors.append("[黄金核验台账结构错] GOLD_EDITION_REVIEW 须为对象")
+        elif review.get("edition_id") == edition:
+            reviews.append(review)
+    if len(reviews) != 1:
+        errors.append(f"[黄金核验记录错] {AUDIT_LOG_PATH.name} 须含一条 {edition} 的 GOLD_EDITION_REVIEW")
+        return
+    review = reviews[0]
+    if review.get("as_of_short") != as_of or not isinstance(review.get("note"), str) or not review["note"].strip():
+        errors.append("[黄金核验记录错] 审阅截点须与日报一致，并保留非空核验说明")
+    sources = review.get("sources")
+    for key in ENTRY_GATE_IDS:
+        links = sources.get(key) if isinstance(sources, dict) else None
+        if not isinstance(links, list) or not links or not all(evidence_url(link) for link in links):
+            errors.append(f"[黄金核验来源缺失] 四关对应 {key} 项须附至少一条 HTTPS 证据链接")
+    forecast = review.get("forecast_review")
+    if not isinstance(forecast, dict):
+        errors.append("[黄金预判验真缺项] forecast_review 须为对象")
+        return
+    status, note, forecast_sources = forecast.get("status"), forecast.get("note"), forecast.get("sources")
+    if (
+        status not in ("settled", "none_due", "pending_evidence") or not isinstance(note, str) or not note.strip()
+        or not isinstance(forecast_sources, list) or not all(evidence_url(link) for link in forecast_sources)
+        or (status == "settled" and not forecast_sources)
+    ):
+        errors.append("[黄金预判验真缺项] 记录状态、核验说明与证据链接，结案必须附证据")
 
 
 def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None:

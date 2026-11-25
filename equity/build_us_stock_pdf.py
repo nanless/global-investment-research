@@ -25,6 +25,7 @@ from pdf_common import (
     atomic_copy,
     build_theme_css,
     clean_svg_text,
+    freeze_equity_inputs,
     norm_chart_title as _norm_chart_title,
     render_cover_banner,
     render_docx_atomic,
@@ -32,6 +33,7 @@ from pdf_common import (
     render_pdf_atomic,
     run_lint_gate,
     svg_shape,
+    write_equity_receipt,
 )
 
 OUT_DIR = BASE_DIR
@@ -771,6 +773,11 @@ def main() -> None:
     meta = load_meta()
     md_path, pdf_path = resolve_flagship_paths(meta)
     docx_path = pdf_path.with_suffix(".docx")
+    frozen = freeze_equity_inputs(md_path, Path(__file__), META_PATH) if not no_docx else None
+    if frozen is not None:
+        meta = load_meta()
+        if resolve_flagship_paths(meta)[0] != md_path:
+            raise ValueError("Flagship period changed while preparing compilation")
     report_md = md_path.read_text(encoding="utf-8")
     print(f"Loaded US-Stock MD ({len(report_md)} chars): {md_path}")
     run_lint_gate(report_md, str(md_path), is_flagship=True, meta=meta, no_lint=no_lint)
@@ -800,6 +807,7 @@ def main() -> None:
 
     if not no_docx:
         render_docx_atomic(full_pdf_html, docx_path, market="us_stock", footer_title=page_footer)
+        write_equity_receipt(frozen, pdf_path, docx_path)
         print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
 
     latest_md = OUT_DIR / "us_stock_market_report_latest.md"

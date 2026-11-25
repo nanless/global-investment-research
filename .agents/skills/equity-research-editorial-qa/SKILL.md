@@ -22,14 +22,14 @@ description: >-
 
 - **Step 0｜双轨 RSI 经验冷启动**：动笔前先读 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录（一体化班次同步读黄金 RSI 手册与 `gold/market_calendar.json`），直接继承高杠杆一手源检索词、Linter 避坑清单与上期 `next_run_watch` 必验真项。
 - **Step 1｜状态四件套与黄金基线快照冷启动**：
-  - 读 `state/market_state.json`（三市灯号、体检分、唯一防踏空阈值、35–48 只/市弹性池 `stock_pool_count`、三市危机总熔断三阀、跨市 AI ≤20%、待回补队列与 60 天休市日历）+ 冷启动只读前序基线 `<REPO_ROOT>/gold/data_snapshot.json`（一体化班次于 Step 3 黄金落盘后的 **Step 4 入口**强制执行最新 0 分钟新鲜 / **≤4 小时** SSOT 与 Tier-0 互斥锁核验；仅独立单跑权益轨时于 Step 1 直接执行该核验）。
+  - 冷启动读取 `state/market_state.json`、两轨日历及前序黄金基线，并以 `lint_equity.py --plan <edition_id>` 获取三市当班交付计划。黄金新快照落盘后，在权益入口核验同一 `edition_id`、四小时数据时限与黄金行动锁。
   - 读 `daily/INDEX.md`（前 60 行）与 `daily/SCORECARD.md`（检查今日到期预判并客观回填；新登检验日禁落周末）。
   - 仅命中旗舰 5 条触发阈值时，再全量读取对应旗舰手册与 `report_meta_*.json`。
 - **Step 2｜两阶段共享 6+1 调研与统一发前对抗红队**：
   - **阶段 2A（共享 6 路并发全信源深研）**：强制交叉核验 **7 类一手信源**（央行/监管官网、交易所官方、SEC EDGAR/HKEXnews/CNINFO、权威终端与财经新闻、雪球/集思录/股吧/香港连登/Reddit/X、Polymarket/Kalshi、公司 IR），严禁采信未刷新财经门户旧缓存（中金所必核 `YYYYMMDD` 日期戳）；围绕 **7 维度大盘架构** 撰写三市早/晚刊（`07:30` 一体化早报产出 `_0730_`：美股 4–5 页主刊/周一轻刊 + A/港各 2–3 页盘前快报，港股必以 05:00–05:15 A50/金龙/ADR 修正 `03:00` 夜期盲窗；`18:00` 一体化晚报产出 `_1800_`：A/港各 4–5 页收盘主刊 + 美股 1–2 页哨兵轻刊，封账 09:00/08:00 盘后终盘与前日两融）；**每周日**同步推进 **2–3 只核心龙头 6 维深度解剖轮换**。
   - **阶段 2B（1 路统一发前独立红队对抗子代理）**：6 路返回后先跨轨对抗审校再落盘，专项拦截 **6 大硬伤**：① A/H 同股 PE 与股息率物理学一致（`PE_A/PE_H ≈ 1 + AH 溢价率`）；② 全部配置表与口语配比 100% 闭环且 10 点条总和 = 10；③ 全部 `🔵 🔒未来主攻` 买点锚严格低于现价；④ 黄金红灯锁覆盖正文 + JSON + SVG；⑤ 冬/夏令时、07:30 禁写盘后终盘、SIFMA 半日市与工作日到期日历零错；⑥ 零退市股（如 `00011`）、零 QDII 误标（`513260`/`513010` 属 QDII、`159545`/`159792` 非 QDII）、零高费 `03033` / 沙特 `520830` 误用与零可转债到期兑付误作强赎。
-- **Step 4（接力 Step 3 黄金）｜黄金 SSOT 零延迟硬校验、10 项门禁、六文件落盘、串行编译与全量严检**：紧接 Step 3 黄金落盘严检完成后，**Step 4 入口**立即只读核验刚刷新的 `<REPO_ROOT>/gold/data_snapshot.json`（强核 `as_of_short` 距当前场次 **0 分钟 / ≤4 小时**、`brent_settle_usd` 与 `cfets_cny_fixing` 对齐，且当 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，三市正文、JSON 与 SVG 严禁出现买金指令）；再逐项核验 [references/pre_flight_10_gates.md](references/pre_flight_10_gates.md) 与 [references/dual_account_tax_and_rules.md](references/dual_account_tax_and_rules.md)，用 `write_file` 全量落盘三市日报、`INDEX.md`（三市+黄金总水位驾驶舱）、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json` 与 `state/audit_ledger.md`，依次执行 `lint_equity.py --precheck --strict` → 切入 `equity-report-publishing` 串行编译（PDF + 原生 ECMA-376 DOCX + 三市手机 HTML）→ `lint_equity.py --strict`（Gate 0–6 + Gate 3B + 跨项目门禁 C1–C3）达成退出码 0、0 错 0 警并抽看 PDF。
-- **Step 5｜发版后统一受控三层 RSI 盲审、优化与单次站点发布**：按 [references/rsi_self_review_protocol.md](references/rsi_self_review_protocol.md) 启动 1 路独立只读 `research` 盲审子代理（一体化班次联合复盘黄金 + 三市权益）按 6 维（`/30`）打分，执行 Tier A（更新 `state/rsi_metrics.json` + 精炼 `state/RSI_PLAYBOOK.md` ≤180 行）/ 按需慎改 Tier B（≤1 处 ≤40 行，改后必重编验证否则回滚）/ Tier C 仅写提案（满 10 刊触发 Meta-RSI），复跑双轨严检（含 **`lint_equity.py --strict`**）全绿后，单次运行 **`python3 <REPO_ROOT>/scripts/publish_site.py`** 发布静态门户与滚动 Release 附件。
+- **Step 4｜核验黄金快照、落盘与编译**：在黄金落盘严检后核验同一 `edition_id`。黄金截点须早于或同于权益，间隔最多 4 小时，两轨截点各须在所标班次前后 4 小时内。核对跨轨宏观字段与 Tier-0 行动锁，再按[十项门禁](references/pre_flight_10_gates.md)及[双账户规则](references/dual_account_tax_and_rules.md)落盘应发日报和状态账簿。串行执行严格预检、编译、严格终检与 PDF 抽查。
+- **Step 5｜盲审、复检与发布**：按[三层 RSI 协议](references/rsi_self_review_protocol.md)由独立子代理盲审，按授权落盘并复跑双轨严检。推进本期令牌到 `publish`，执行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`，再执行 `python3 <REPO_ROOT>/scripts/edition_run.py complete <token>` 核对同一班次的推送、附件和 Pages 部署。无活动班次时按根仓规则使用人工入口。
 
 ---
 

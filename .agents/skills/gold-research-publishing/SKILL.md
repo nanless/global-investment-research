@@ -56,6 +56,8 @@ description: Orchestrates the zero-barrier, institutional-grade gold deep-resear
 3. 详见 [./references/5-plus-1-research-playbook.md](./references/5-plus-1-research-playbook.md)。
 
 ### Step 3：双快照更新、三账本沉淀与正文写作
+
+新刊先核对北京刊期与数据截点、Cboe 现货指数的独立交易日历和四关精确输入，再记录红队来源、预判核验结果并同步三个账本。本地预检校验同刊编号、四关数值、盘中现货指数发布时间窗、覆盖期和图表输入。休市或没有合格现货指数盘中读数时，盘中值和时间同时留空，使用最新官方收盘。字段及台账示例见[黄金快照契约](./references/directives-and-snapshot-schema.md)。
 1. **先更跨项目 SSOT 日报数据源**：用 `write_file` 全量更新 `data_snapshot.json`（标准无日期比值键 `cross_ratios`、严禁残留旧日期键、同步维护 `tier_code` 与 `new_buy_allowed` 布尔开关、`tier1_gates[4]`、`rmb_channels` 与涨跌幅精确算术）。
 2. **撰写本刊 Markdown（含同场 `_r2` 防覆写锁）**：按 V2.2 四层洋葱结构写作（Layer 0 静默牌 + 唯一红绿灯 → Layer 1 信号/噪音 + 四步灯 + 10 万钱包账 + A/B/D 详讲与 C 实算 → Layer 2 充实大白话深读 + 3 张 `DAILY_CHART_*`【图 2 显式标 `"highlight"` 防误亮个股】→ Layer 3 `[进阶复核]` + 3 行 `DAILY_TRUST_BAR`）；同日同班次若需二次修订/重发，新档加 `_r2` 后缀严禁覆盖原归档。
 3. **物理分离三账本**：
@@ -94,17 +96,17 @@ description: Orchestrates the zero-barrier, institutional-grade gold deep-resear
 2. **Tier A（每刊必做 · 全自动生效）**：追加结构化记录至 `daily/rsi_metrics.json`，提炼 1–3 条高杠杆规则滚动合并精炼入 `daily/RSI_PLAYBOOK.md`（严格维持 ≤180 行，每满 10 刊做一次 Meta-RSI 趋势复盘）。
 3. **Tier B（按需慎做 · 必过验证否则回滚）**：仅当确认存在确定性小 Bug（≤40 行、单次 ≤1 处、**只加固门禁/修 Bug 绝不删禁词或放宽误差**）时可安全修补工作区脚本，改后必过 `--check` + 重编 + `--strict` + PDF 复核，任一步失败立刻回滚并降级为提案。
 4. **Tier C（宪法红线锁死 · 仅提案）**：核心金融策略红线、`<REPO_ROOT>/AGENTS.md`、`<REPO_ROOT>/.agents/skills/`、`<REPO_ROOT>/automations/sidecars/`（含 `scripts/install_sidecars.py`）与本地 `sidecar.json` 永不静默篡改，写入 `RSI_PLAYBOOK.md` 第四节提案区并在用户快报末尾呈报；最后补跑 `lint_readability.py --strict` 确保 RSI 手册与账本零错零警告。
-5. **门禁全绿后发布网站（Web Publish）**：在一键全资产一体化单会话任务（`daily-global-investment-research` / `daily-global-investment-research-evening`）中，待第 3 步黄金 SSOT、第 4 步股研（0 分钟零滞后直读黄金快照）及第 5 步统一 RSI 终检全部通过 `--strict` 后，统一执行一次站点发布脚本（单独手动发刊黄金时亦于本步执行）：
+5. **门禁全绿后发布网站**：联合班次的黄金、权益和统一 RSI 终检均通过 `--strict` 后，按根契约登记进入 `publish`，只执行一次：
    ```bash
-   python3 <REPO_ROOT>/scripts/publish_site.py
+   python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>
    ```
-   *(自动构建响应式静态站 `_site`、通过 `lint_site.py --strict`、SSH 推送至 GitHub Pages 并按 SHA256 增量同步滚动 Release PDF/DOCX；本地预演可附加 `--dry-run`。)*
+   使用同一 token 验证 Pages 部署及 Release 附件，暂时故障按根契约处理。独立手动发布和本地无 token 预演见 [仓库 README](../../../README.md)。
 
 ---
 
 ## 3. 核心红线速查（违反任一条即禁止交付）
 
-- **跨项目单一权威源（SSOT）与一体化 0 分钟零滞后宣言**：全仓库定时任务已统一为 `07:30` 早报（`daily-global-investment-research`）与 `18:00` 晚报（`daily-global-investment-research-evening`）两班单会话串行流水线：第 3 步由黄金模块率先出版并拥有 `data_snapshot.json`（现货金/COMEX/SHFE/SGE/铜/`DFII10`、`brent_settle_usd`、`cfets_cny_fixing`、`cfets_fixing_date`、`as_of_short` 与红绿灯 `tier_code`/`new_buy_allowed`）的唯一写入权；第 4 步股研模块（`global-investment-research/equity`）在黄金落盘且门禁全绿后以 **0 分钟零滞后**立即只读校验该快照，严禁逆向改写或与黄金红绿灯指令打架，最终在第 5 步统一 RSI 后单次调用 `scripts/publish_site.py` 发布全站。
+- **跨项目单一权威源（SSOT）与同刊期顺序交接**：全仓库定时任务已统一为 `07:30` 早报（`daily-global-investment-research`）与 `18:00` 晚报（`daily-global-investment-research-evening`）两班单会话串行流水线：第 3 步由黄金模块率先出版并拥有 `data_snapshot.json`（现货金/COMEX/SHFE/SGE/铜/`DFII10`、`brent_settle_usd`、`cfets_cny_fixing`、`cfets_fixing_date`、`as_of_short` 与红绿灯 `tier_code`/`new_buy_allowed`）的唯一写入权；第 4 步股研模块（`global-investment-research/equity`）在黄金落盘且门禁全绿后只读校验本期快照与镜像的相同期号、截点及数值，严禁逆向改写或与黄金红绿灯指令打架，最终在第 5 步统一盲审后按本期 token 发布并验证部署。
 - **无人值守防卡壳与治理闭环**：定时任务全程严禁调用 `edit_file`（一律 `write_file` 全量写盘）；休市与时令由 `market_calendar.json` 驱动；常规班次采用惰性主报告加载（只读 `master_snapshot.json`）；同场修订加 `_r2` 防覆写；每刊同步更新公开记分卡 `daily/SCORECARD.md` 并输出 `daily/latest_gold.html`。
 - **零幻觉与跨时区真实**：休市必须写「休市 / 沿用上一终盘（标注时点）」；严守官收白名单（`StockAnalysis`/`Investing`/`VanEck NAV`）、禁用 `Barchart` 远月滞后价、`site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与北美冬/夏令时硬校验；禁止将 `02:30` 国内夜盘与 `06:00` 纽约收盘时差混充国内溢价，禁止 `05:00` 讲话倒推归因 `02:30` 收盘。
 - **冷静语调与零黑话首屏**：Layer 0–1 严禁感叹号（0 个）、严禁 **68 个禁词（47 个 ASCII/版本代码 + 21 个中文/混合黑话）**、严禁已废除的 `X.X/6` 平行分制；全文禁用 13 个夸张煽动词。
