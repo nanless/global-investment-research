@@ -52,6 +52,8 @@
 
 从 `2026-11-25_1800_r2` 之后的新刊起，班次仅用 `0730` 或 `1800`，截点使用北京时间，落在所标班次开始至随后四小时。封面 `DAILY_META.timestamp`、快照 `as_of_bjt` 均须清楚显示同一截点，可用中文年月日或 ISO 日期。休市栏继续注明上一可用报价的交易日或观测时间。
 
+首刊使用截至观测日已核证的日历。修订刊可以用验收当天或更早核证的日历确认原班次的盘时，交易证据仍用原截点，收盘序列和盘中观测的有效范围随原截点计算。
+
 1. **`DAILY_META`**：`{"tag": str, "timestamp": str, "summary": str, "accent": "#hex", "footer_title": str, "kpis": [{"label": str, "val": str, "sub": str} × 6]}`（每条 `sub` 严控 ≤17 汉字当量；`footer_title` 不含 `V2.x/V7.x`）
 2. **`DAILY_VERDICT`**：`{"level": "L0"|"L1"|"L2", "badge": str, "traffic_light": str, "headline": str, "bullets": [str × 3], "risk_line": str}`（`badge` 禁用 `🟢`）
 3. **`DAILY_SIGNAL_NOISE`**：`{"title": str, "signals": [{"head": str, "body": str}], "noises": [{"head": str, "body": str}]}`（`signals` 建议 0–2 件）

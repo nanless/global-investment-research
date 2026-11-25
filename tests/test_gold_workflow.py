@@ -1,7 +1,7 @@
 """Regression checks for new gold editions. No browser or publication is used."""
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime
 import json
 from pathlib import Path
 import re
@@ -157,10 +157,10 @@ class GoldWorkflowTests(unittest.TestCase):
         paths.start()
         self.addCleanup(paths.stop)
 
-    def _validate(self, snapshot):
+    def _validate(self, snapshot, *, validated_on=date(2026, 11, 27)):
         self.snapshot_path.write_text(json.dumps(snapshot))
         errors, warnings = [], []
-        lint.validate_snapshot_file(self.snapshot_path, errors, warnings)
+        lint.validate_snapshot_file(self.snapshot_path, errors, warnings, validated_on=validated_on)
         self.assertEqual(warnings, [])
         return errors
 
@@ -243,6 +243,23 @@ class GoldWorkflowTests(unittest.TestCase):
         snap.update(edition_id="2026-11-25_1800_r2", as_of_short="2026-11-25 21:25")
         self.calendar_path.write_text('{"calendar_overrides": [{"date": "2001-01-01"}]}')
         self.assertTrue(any("日历时区错" in e for e in self._validate(snap)))
+
+    def test_replay_uses_calendar_verification_date_without_moving_market_cutoff(self):
+        snap = _fixture()
+        snap.update(
+            edition_id="2026-11-25_1800_r3", as_of_short="2026-11-25 21:25", as_of_bjt="2026-11-25 21:25",
+            spot_gold_ny_close_date="2026-11-24", tier1_gate4_target_date="2026-11-25", cfets_fixing_date="2026-11-25",
+            vix_close=26.36, vix_10d_window_end="2026-11-24", vix_live=30.99, vix_live_as_of="2026-11-25 21:20",
+        )
+        snap["vix_10d_session_closes"] = [{"date": "2026-11-11", "close": 17.49}] + snap["vix_10d_session_closes"][:-1]
+        self.assertEqual(self._validate(snap, validated_on=date(2026, 11, 26)), [])
+        errors = self._validate(snap, validated_on=date(2026, 11, 25))
+        self.assertTrue(any("日历核证日期过晚" in error for error in errors))
+        snap["edition_id"] = "2026-11-25_1800"
+        self.assertTrue(any("日历核证日期过晚" in error for error in self._validate(snap)))
+        snap["edition_id"] = "2026-11-25_1800_r3"
+        snap["vix_live_as_of"] = "2026-11-25 21:30"
+        self.assertTrue(any("VIX 盘口过时" in error for error in self._validate(snap)))
 
     def test_spread_uses_exact_difference_and_gate_four_requires_confirmed_close(self):
         snap = _fixture()

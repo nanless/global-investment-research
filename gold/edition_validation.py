@@ -122,8 +122,10 @@ def _validate_overrides(calendar: dict, first: date, last: date, exceptions: dic
                     errors.append(f"[外置日历 VIX 例外缺失] {event_id}: {day} 须明确登记 Cboe 现货指数时段")
 
 
-def vix_calendar(calendar: dict | None, as_of: datetime, errors: list[str]) -> tuple[date, dict] | None:
-    """Read the calendar's checked coverage and independent Cboe session exceptions."""
+def vix_calendar(
+    calendar: dict | None, as_of: datetime, errors: list[str], *, verified_by: date | None = None,
+) -> tuple[date, dict] | None:
+    """Use the evidence cutoff for market coverage and a separate limit for calendar verification."""
     if not isinstance(calendar, dict) or calendar.get("timezone") != "Asia/Shanghai":
         errors.append("[外置日历时区错] market_calendar.json 须声明 Asia/Shanghai")
         return None
@@ -134,11 +136,14 @@ def vix_calendar(calendar: dict | None, as_of: datetime, errors: list[str]) -> t
     source = coverage.get("vix_schedule_source") if isinstance(coverage, dict) else None
     if (
         first is None or last is None or verified is None or not evidence_url(source)
-        or not first <= verified <= as_of.date() <= last
+        or not first <= as_of.date() <= last or not first <= verified <= last
         or as_of.date() - verified > MIN_CALENDAR_HORIZON
         or last - as_of.date() < MIN_CALENDAR_HORIZON
     ):
         errors.append("[外置日历覆盖不足] 需有效起止日期、近 60 日核证日期、Cboe 来源和班次后至少 60 天覆盖")
+        return None
+    if verified > (verified_by or as_of.date()):
+        errors.append("[外置日历核证日期过晚] 首刊须在观测日或之前核证；修订刊不得使用晚于实际验收日的核证记录")
         return None
     rows = calendar.get("vix_session_exceptions")
     if not isinstance(rows, dict):

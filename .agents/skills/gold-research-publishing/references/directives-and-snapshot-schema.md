@@ -6,7 +6,7 @@
 
 `2026-11-25_1800_r2` 为沿用旧字段的最后已刊版本。后续新增日报及同场修订按 [日报规格](../../../../gold/daily/DAILY_FORMAT_SPEC.md) 记录北京 `edition_id`、`as_of_short` 及显示时间，四关使用 `real_yield`、`rate_spread`、`vix`、`ny_close` 的固定顺序，含图 3 的对应 `id`。
 
-`market_calendar.json` 的 `coverage` 含 `start_date`、`end_date`、`verified_on`、`vix_schedule_source`。核证日用北京时间日期，随维护更新，距本刊数据截点最多 60 日。开始日期须能覆盖截点前最新十个 Cboe 现货指数完整交易日，结束日期须覆盖刊期后至少 60 天。月底与跨年时重核并滚动展期。每个美国休市或半日市的非周末日期，都需在 `vix_session_exceptions` 留独立记录。日期及 `windows_et`、`official_close_et` 都按美国东部时间，程序按 IANA 时区换算夏令时。
+`market_calendar.json` 的 `coverage` 含 `start_date`、`end_date`、`verified_on`、`vix_schedule_source`。核证日用北京时间日期，随维护更新，不能比本刊数据截点早逾 60 日。首刊的核证日须在观测日或之前。修订刊可用晚于原截点的核证日，最晚为实际验收当天；仍按原截点确定十日覆盖和盘中观测资格。开始日期须覆盖截点前最新十个 Cboe 现货指数交易日，结束日期须覆盖刊期后至少 60 天。月底与跨年时重核并滚动展期。每个美国休市或半日市的非周末日期，都需在 `vix_session_exceptions` 留独立记录。日期及 `windows_et`、`official_close_et` 都按美国东部时间，程序按 IANA 时区换算夏令时。
 
 - 普通工作日的现货指数发布时段为 03:15–09:25 和 09:31–16:15 ET。截点所属连续发布时段与报价时点相同，且相差不超过 30 分钟，方可用盘中数值。
 - `windows_et` 只登记已核实、可采用的现货指数发布窗。“无 RTH”和“没有现货盘中发布窗”均不能推导出“没有日线”。2023、2024、2025 年感恩节以及 2026 年 MLK 日、总统日的 Cboe 官方 CSV 均有独立 OHLC。对假日或半日市，只掌握期权或参考交易时段而尚无现货指数精确终盘证据时，设 `official_close_et: null`，以 `daily_row_check_after_et` 记录保守的核验起点。例 `{"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"}`。这个时刻不声称为指数终盘、更不承诺 CSV 已发布。指数期权或期货可交易，也须证实现货指数实际发布才能填写盘中值。

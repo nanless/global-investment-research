@@ -21,14 +21,14 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
 from chart_input import normalize_chart
 from edition_validation import (
-    ENTRY_GATE_IDS, LAST_LEGACY_EDITION, check_edition_time, check_vix_period, cutoff_displayed, evidence_url,
-    parse_day, recheck_entry_gates, vix_calendar,
+    BEIJING, ENTRY_GATE_IDS, LAST_LEGACY_EDITION, check_edition_time, check_vix_period, cutoff_displayed,
+    evidence_url, recheck_entry_gates, vix_calendar,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -302,24 +302,18 @@ def _check_institutional_snapshot(snap: dict, label: str, errors: list[str]) -> 
             errors.append(f"[Gate 5 机构样本汇总冲突] {label}: {key} 样本数、中位须由同期限记录复算")
 
 
-def _read_vix_calendar(as_of: datetime, errors: list[str], *, legacy: bool) -> tuple | None:
+def _read_vix_calendar(as_of: datetime, errors: list[str], *, verified_by: date) -> tuple | None:
     try:
         calendar = json.loads(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         errors.append(f"[外置日历读取失败] {exc}")
         return None
-    if legacy and isinstance(calendar, dict) and isinstance(calendar.get("coverage"), dict):
-        coverage = calendar["coverage"]
-        first = parse_day(coverage.get("start_date"))
-        if first is not None and first > as_of.date():
-            errors.append("[外置日历覆盖不足] 日历未覆盖当前已刊快照的日期")
-        verified = parse_day(coverage.get("verified_on"))
-        if verified is not None and verified > as_of.date():
-            as_of = datetime.combine(verified, datetime.min.time())
-    return vix_calendar(calendar, as_of, errors)
+    return vix_calendar(calendar, as_of, errors, verified_by=verified_by)
 
 
-def validate_snapshot_file(snap_path: Path, errors: list[str], warnings: list[str]) -> dict | None:
+def validate_snapshot_file(
+    snap_path: Path, errors: list[str], warnings: list[str], *, validated_on: date | None = None,
+) -> dict | None:
     label = snap_path.name
     try:
         snap = json.loads(snap_path.read_text(encoding="utf-8"))
@@ -374,7 +368,12 @@ def validate_snapshot_file(snap_path: Path, errors: list[str], warnings: list[st
             errors.append(f"[Gate 5 中间价日期非法] {label}: cfets_fixing_date 须为不晚于快照的交易日期")
         _snapshot_numbers(snap, label, errors, ("us10y_pct", "dfii10_live_pct", "dxy", "cfets_cny_fixing", "vix_close", "on_rrp_usd_m", "comex_copper_usd_lb"))
         new_rules = edition is not None and edition > LAST_LEGACY_EDITION
-        schedule = _read_vix_calendar(as_of, errors, legacy=not new_rules) if as_of is not None else None
+        schedule = None
+        if as_of is not None:
+            verified_by = validated_on or datetime.now(BEIJING).date()
+            if edition is not None and edition[2] == 1:
+                verified_by = min(verified_by, as_of.date())
+            schedule = _read_vix_calendar(as_of, errors, verified_by=verified_by)
         if new_rules and as_of is not None:
             check_edition_time(edition, as_of, errors)
             if not cutoff_displayed(snap.get("as_of_bjt"), as_of):
