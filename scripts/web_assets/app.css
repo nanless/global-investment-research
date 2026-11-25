@@ -1967,6 +1967,7 @@ table.screener-table tbody tr:hover { background: var(--surface-subtle); }
   [data-theme="dark"] .erp-a { color: #b91c1c !important; }
   [data-theme="dark"] .erp-us { color: #1d4ed8 !important; }
   [data-theme="dark"] .erp-fill-hk { background: #0f766e !important; }
+  [data-theme="dark"] .erp-fill-hk-usd { background: #0d9488 !important; }
   [data-theme="dark"] .erp-fill-a { background: #b91c1c !important; }
   [data-theme="dark"] .erp-fill-us { background: #1d4ed8 !important; }
   [data-theme="dark"] .chg-up { color: #b91c1c !important; }
