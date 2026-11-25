@@ -18,6 +18,7 @@ import math
 import re
 import statistics
 import sys
+import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter
@@ -128,6 +129,18 @@ EDITION_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})(?:_r([1-9]\d*))?")
 TIER_LABELS = ("红灯", "黄灯", "绿灯", "满格")
 GATE_COUNT_RE = re.compile(r"(?<!\d)([0-4])\s*[/／]\s*4(?!\d)")
 RED_LIGHT_CONFLICT_RE = re.compile(r"🟢|🟡|(?<!红)绿灯|黄灯|满格|允许新买|(?:新仓|新买|试仓)\s*[1-9]\d*(?:\.\d+)?\s*%")
+_PARTIAL_ENTRY_PASS = r"(?:通过|满足|过)\s*(?:[0-3]\s*/\s*4(?!\d)\s*关?|[零一二两三0-3]\s*(?:道?关|项(?:条件)?))"
+_ENTRY_ACTION = r"(?:转(?:为)?黄(?:灯)?|亮黄灯|开(?:新)?仓|建仓|试仓|新买(?:入)?|试买|买入|动用首批)"
+PARTIAL_ENTRY_CLAIM_RE = re.compile(
+    rf"{_PARTIAL_ENTRY_PASS}\s*[,、]?\s*(?:即(?:可)?|便可|就可以|就可|就能|可以|允许|可)\s*{_ENTRY_ACTION}"
+    rf"|(?:转(?:为)?黄(?:灯)?|亮黄灯)\s*\(\s*{_PARTIAL_ENTRY_PASS}\s*\)"
+)
+_DISCLAIMED_ENTRY_PREFIX_RE = re.compile(
+    r"(?:并非|不是|不能|不得|不可|禁止|否认|误写(?:成|为)?|错误说法|错误示例)[\s:：‘“\"']*$"
+)
+_DISCLAIMED_ENTRY_SUFFIX_RE = re.compile(
+    r"^[\s’”\"']*(?:的说法)?\s*(?:是|属于)?\s*(?:错误|不实)"
+)
 TIER_COLORS = ("#dc2626", "#d97706", "#16a34a", "#16a34a")
 RATIO_FIELDS = {
     "gold_wti_ratio": ("wti_settle_usd", 0.15),
@@ -840,6 +853,22 @@ def _check_daily_verdict(directives: dict[str, list[dict]], snap: dict, errors: 
             errors.append(f"[Gate 5 {source}动作冲突] 黄金处于红灯，不得标注开新仓")
 
 
+def _check_partial_entry_claims(visible: str, widgets: list[tuple[str, str]], errors: list[str]) -> None:
+    """Reject explicit partial-gate entry thresholds in daily prose and rendered cards."""
+    for source, raw in [("正文", visible), *widgets]:
+        text = unicodedata.normalize("NFKC", html.unescape(raw))
+        text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+        text = re.sub(r"</?[A-Za-z][^<>\n]*>|[*_`]", "", text)
+        for line in text.splitlines():
+            for match in PARTIAL_ENTRY_CLAIM_RE.finditer(line):
+                if (
+                    _DISCLAIMED_ENTRY_PREFIX_RE.search(line[:match.start()])
+                    or _DISCLAIMED_ENTRY_SUFFIX_RE.match(line[match.end():])
+                ):
+                    continue
+                errors.append(f"[Gate 5 四关开仓阈值冲突] {source} 须四关全部通过才可转黄或开新仓：{match[0]}")
+
+
 def check_file(
     md_path: Path,
     daily_snap: dict | None,
@@ -924,6 +953,7 @@ def check_file(
             if not cutoff_displayed(daily_meta.get("timestamp"), cutoff):
                 errors.append("[Gate 0 封面截点错] DAILY_META.timestamp 须展示与 as_of_short 一致的北京时间")
         _check_edition_ledgers(filename_edition, daily_meta.get("as_of_short"), errors)
+        _check_partial_entry_claims(full_vis, all_widget_texts, errors)
     if is_current_daily:
         if not daily_snap or daily_snap.get("edition_id") != filename_edition or daily_meta.get("as_of_short") != daily_snap.get("as_of_short"):
             errors.append("[Gate 5 日报快照错刊] 文件名、DAILY_META 与 data_snapshot 的 edition_id/as_of_short 须一致")

@@ -322,6 +322,46 @@ class GoldWorkflowTests(unittest.TestCase):
         }
         self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(review) + " -->")
         self.assertEqual(lint.check_file(report, snap, master, precheck=True), ([], []))
+
+        wallet_claim = "**假设右侧信号转黄（通过 3/4 关）**：届时仅允许动用首批 30% 预算（即 3 万元），分拆为 2–3 笔挂单。"
+        body_with_claim = f"{raw}\n\n{wallet_claim}\n"
+        card_with_claim = _modify_directive(
+            raw, "DAILY_PERSONA",
+            lambda persona: persona["cards"][0]["actions"].append("<strong>通过３／４关即可开新仓</strong>。"),
+        )
+        for source, manuscript in (
+            ("正文", body_with_claim),
+            ("正文", f"{raw}\n\n通过 3/4 关即转黄。\n"),
+            ("DAILY_PERSONA", card_with_claim),
+        ):
+            with self.subTest(source=source):
+                report.write_text(manuscript)
+                errors, warnings = lint.check_file(report, snap, master, precheck=True)
+                self.assertEqual(warnings, [])
+                self.assertEqual(len(errors), 1)
+                self.assertIn(f"[Gate 5 四关开仓阈值冲突] {source}", errors[0])
+
+        allowed = (
+            "通过 3/4 关仍不得转黄或开仓，四关全部通过才可启用首批 30%。",
+            "只通过 1/4 关，维持红灯，继续等待。",
+            "“满足三关就能试买”的说法是错误的，必须等四关齐备。",
+            "不是转黄（通过 3/4 关）就可买入，须满足全部四关。",
+        )
+        report.write_text(raw + "\n\n" + "\n\n".join(allowed))
+        self.assertEqual(lint.check_file(report, snap, master, precheck=True), ([], []))
+
+        report.write_text(body_with_claim)
+        later_snap = dict(snap, edition_id="2026-11-27_0730")
+        errors, warnings = lint.check_file(report, later_snap, master, precheck=True)
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("四关开仓阈值冲突", errors[0])
+
+        legacy_report = self.path / ARCHIVED_REPORT.name
+        legacy_report.write_text(f"{ARCHIVED_REPORT.read_text()}\n\n{wallet_claim}\n")
+        self.assertEqual(lint.check_file(legacy_report, legacy, master, precheck=True), ([], []))
+
+        report.write_text(raw)
         bad = deepcopy(review)
         bad["forecast_review"]["status"] = "settled"
         self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(bad) + " -->")
