@@ -13,6 +13,8 @@ Completely replaces macOS `textutil` (which silently stripped all HTML tables an
   - Validates every XML part with xml.etree.ElementTree before atomic write.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import shutil

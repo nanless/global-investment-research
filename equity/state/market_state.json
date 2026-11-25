@@ -8,7 +8,7 @@
   "alert_label": "关键节点临近 · 今晚 21:30 美国核心通胀 + 11/30 三市大撞车",
   "rsi_enabled": true,
   "ssot_links": {
-    "gold_snapshot_path": "/Users/francis7999/code/github_repos/global-investment-research/gold/data_snapshot.json",
+    "gold_snapshot_path": "../gold/data_snapshot.json",
     "gold_snapshot_as_of": "2026-11-25 07:30"
   },
   "markets": {

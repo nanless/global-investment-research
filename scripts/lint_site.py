@@ -88,6 +88,31 @@ LINK_ATTR_BY_TAG: dict[str, str] = {
     "img": "src",
 }
 
+# Exact 16-file canonical kebab-case ASCII release asset allowlist matching scripts/publish_site.py
+CANONICAL_RELEASE_ASSETS: frozenset[str] = frozenset(
+    {
+        "gold-master-latest.pdf",
+        "gold-master-latest.docx",
+        "gold-daily-latest.pdf",
+        "gold-daily-latest.docx",
+        "a-share-flagship-latest.pdf",
+        "a-share-flagship-latest.docx",
+        "a-share-daily-latest.pdf",
+        "a-share-daily-latest.docx",
+        "hk-stock-flagship-latest.pdf",
+        "hk-stock-flagship-latest.docx",
+        "hk-stock-daily-latest.pdf",
+        "hk-stock-daily-latest.docx",
+        "us-stock-flagship-latest.pdf",
+        "us-stock-flagship-latest.docx",
+        "us-stock-daily-latest.pdf",
+        "us-stock-daily-latest.docx",
+    }
+)
+RELEASE_DL_ASSET_RE = re.compile(
+    r"/releases/download/latest-reports/([^?#\s\"'<>]+)", re.IGNORECASE
+)
+
 # HTML5 void elements that never have a closing tag.
 VOID_ELEMENTS = frozenset(
     {
@@ -203,11 +228,25 @@ S3_RAW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "unresolved DOCX chart token (___DOCX_CHART_)",
         re.compile(r"___DOCX_CHART_"),
     ),
+    (
+        "unresolved internal relative-link sentinel (gir-local.invalid)",
+        re.compile(r"gir-local\.invalid", re.IGNORECASE),
+    ),
 )
 
 # Unrendered Markdown table alignment / separator rows appearing in visible HTML text.
 S3_RAW_MD_SEP_RE = re.compile(
     r"\|\s*(?::-{2,}:?|-{2,}:)\s*\||\|\s*-{3,}\s*\|\s*-{3,}\s*\|"
+)
+# Unrendered Markdown bold (**...**) and stray backticks (`) in visible prose outside <code>/<pre>.
+S3_RAW_MD_BOLD_RE = re.compile(r"\*\*[^\s*\n][^*\n]{0,160}\*\*")
+S3_STRAY_BACKTICK_RE = re.compile(r"`")
+# Internal engineering filenames/tooling that must never leak onto public web pages.
+S3_INTERNAL_ENG_LEAK_RE = re.compile(
+    r"(?<![A-Za-z0-9_/-])(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
+    r"DAILY_FORMAT_SPEC\.md|lint_readability\.py|build_daily\.py|build_report\.py|"
+    r"docx_embed\.py|AGENTS\.md|SKILL\.md|gold-research-publishing)(?![A-Za-z0-9_])",
+    re.IGNORECASE,
 )
 
 # ---------------------------------------------------------------------------
@@ -220,12 +259,15 @@ FLAGSHIP_MIN_CHARTS: dict[str, int] = {
     "reports/us-stock.html": 7,
 }
 
-DAILY_REQUIRED_CHART_PAGES: tuple[str, ...] = (
-    "daily/gold-latest.html",
-    "daily/hk-stock-latest.html",
-    "daily/us-stock-latest.html",
+DAILY_GOLD_LATEST_PAGE = "daily/gold-latest.html"
+DAILY_EQUITY_LATEST_PAGES: tuple[tuple[str, str], ...] = (
+    ("a_share", "daily/a-share-latest.html"),
+    ("hk_stock", "daily/hk-stock-latest.html"),
+    ("us_stock", "daily/us-stock-latest.html"),
 )
-DAILY_OPTIONAL_LIGHT_PAGE = "daily/a-share-latest.html"
+
+# Pure JS-only hook classes (if any) exempt from CSS declaration audit in Gate S5.
+JS_HOOK_CLASS_ALLOWLIST: frozenset[str] = frozenset()
 
 CHART_CONTAINER_CLASS_RE = re.compile(
     r"(?:^|[-_])(?:chart[-_]?(?:box|card|wrap|wrapper|container|panel|figure|svg|block)|"
@@ -279,9 +321,17 @@ GOLD_TIER0_LOCK_INDICATORS_RE = re.compile(
     r"(?:Tier\s*0|红灯停|暂不新买|新仓\s*0%|不新买|严禁新买|严禁抢跑|红灯防守)",
     re.IGNORECASE,
 )
-LIGHT_EDITION_HINTS_RE = re.compile(
-    r"(?:早刊|盘前精简|盘前轻刊|轻刊|守望简报|休市简报|holiday_watch)",
-    re.IGNORECASE,
+SCREENER_RAW_MARKUP_RE = re.compile(r"<br\b|\*\*|`", re.IGNORECASE)
+SCREENER_VALID_COLORS = frozenset({"g", "b", "y", "r"})
+SCREENER_REQUIRED_FIELDS: tuple[str, ...] = (
+    "market",
+    "sector",
+    "name",
+    "code",
+    "price",
+    "valuation",
+    "color",
+    "summary",
 )
 
 
@@ -344,11 +394,13 @@ class ParsedHtml:
     abs_path: Path
     raw_text: str
     ids: set[str] = field(default_factory=set)
+    id_lines: dict[str, list[int]] = field(default_factory=dict)
     secondary_targets: set[str] = field(default_factory=set)
     links: list[LinkRef] = field(default_factory=list)
     svgs: list[SvgInfo] = field(default_factory=list)
     tables: list[TableInfo] = field(default_factory=list)
     ctas: list[CtaInfo] = field(default_factory=list)
+    used_classes: set[str] = field(default_factory=set)
     has_utf8_charset: bool = False
     has_viewport_meta: bool = False
     viewport_has_device_width: bool = False
@@ -358,8 +410,10 @@ class ParsedHtml:
     has_nav: bool = False
     edition_attr: str = ""
     stock_row_count: int = 0
+    screener_json_raw: str | None = None
     inline_styles: list[str] = field(default_factory=list)
     visible_text: str = ""
+    prose_text: str = ""
 
 
 def _parse_viewbox(vb: str | None) -> tuple[float | None, float | None]:
@@ -404,6 +458,59 @@ def _extract_scrollable_classes_from_css(css_text: str) -> set[str]:
     return classes
 
 
+def _extract_all_declared_css_classes(css_text: str) -> set[str]:
+    """Extract every CSS class referenced in selectors (including nested @media/@supports blocks),
+    strictly ignoring declaration bodies so url(x.svg) or decimal values are never misread."""
+    cleaned = CSS_COMMENT_RE.sub("", css_text)
+    classes: set[str] = set()
+    block_stack: list[bool] = []  # True = nested at-rule (@media/@supports/@layer); False = style decl block
+    buf: list[str] = []
+    in_str: str | None = None
+    escaped = False
+
+    for ch in cleaned:
+        if in_str is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == in_str:
+                in_str = None
+            continue
+        if ch in ('"', "'"):
+            in_str = ch
+            continue
+
+        in_decl = bool(block_stack and not block_stack[-1])
+        if ch == "{":
+            if in_decl:
+                block_stack.append(False)
+            else:
+                header = "".join(buf).strip()
+                buf = []
+                if header.startswith("@"):
+                    # @media / @supports / @layer / @container wrap nested selectors; @page / @font-face hold decls
+                    is_nested_at = bool(
+                        re.match(r"^@(?:media|supports|layer|container|scope|document)\b", header, re.IGNORECASE)
+                    )
+                    block_stack.append(is_nested_at)
+                else:
+                    for cls in CSS_CLASS_RE.findall(header):
+                        classes.add(cls)
+                    block_stack.append(False)
+        elif ch == "}":
+            buf = []
+            if block_stack:
+                block_stack.pop()
+        elif ch == ";":
+            if not in_decl:
+                buf = []
+        else:
+            if not in_decl:
+                buf.append(ch)
+    return classes
+
+
 class SiteHtmlParser(HTMLParser):
     """Single-pass stdlib HTMLParser collecting data for Gates S2, S3, S4, S5, S6."""
 
@@ -417,8 +524,12 @@ class SiteHtmlParser(HTMLParser):
         self._title_chunks: list[str] = []
         self._in_style = False
         self._style_chunks: list[str] = []
+        self._in_screener_json = False
+        self._screener_json_chunks: list[str] = []
         self._skip_text_depth = 0  # script / style / template
+        self._code_depth = 0  # code / pre / kbd / samp
         self._vis_chunks: list[str] = []
+        self._prose_chunks: list[str] = []
         self._cta_stack: list[tuple[str, int, set[str], list[str]]] = []
 
     def _on_open(self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool) -> None:
@@ -433,6 +544,10 @@ class SiteHtmlParser(HTMLParser):
         classes = {c for c in cls_raw.split() if c}
         style_raw = attr_map.get("style", "")
 
+        # Track HTML element classes outside <svg> for Gate S5 CSS declaration audit.
+        if not self._svg_stack and t != "svg" and classes:
+            self.doc.used_classes.update(classes)
+
         # Capture edition metadata attribute if set on html/body/main/article.
         for ed_key in ("data-edition", "data-edition-type"):
             if ed_key in attr_map and attr_map[ed_key].strip() and not self.doc.edition_attr:
@@ -446,6 +561,8 @@ class SiteHtmlParser(HTMLParser):
         elem_id = attr_map.get("id", "").strip()
         if elem_id:
             self.doc.ids.add(elem_id)
+            if not self._svg_stack and t != "svg":
+                self.doc.id_lines.setdefault(elem_id, []).append(lineno)
         if t == "a":
             a_name = attr_map.get("name", "").strip()
             if a_name:
@@ -530,6 +647,8 @@ class SiteHtmlParser(HTMLParser):
         # Block text separator for clean visible text extraction.
         if t in BLOCK_TEXT_TAGS and self._skip_text_depth == 0:
             self._vis_chunks.append("\n")
+            if self._code_depth == 0 and not self._svg_stack:
+                self._prose_chunks.append("\n")
 
         if self_closing or t in VOID_ELEMENTS:
             return
@@ -546,6 +665,15 @@ class SiteHtmlParser(HTMLParser):
             if t == "style":
                 self._in_style = True
                 self._style_chunks = []
+            elif (
+                t == "script"
+                and elem_id == "screener-data"
+                and attr_map.get("type", "").strip().lower() == "application/json"
+            ):
+                self._in_screener_json = True
+                self._screener_json_chunks = []
+        elif t in ("code", "pre", "kbd", "samp"):
+            self._code_depth += 1
         elif t in ("button", "a"):
             self._cta_stack.append((t, lineno, classes, []))
 
@@ -574,8 +702,16 @@ class SiteHtmlParser(HTMLParser):
             self.doc.inline_styles.append("".join(self._style_chunks))
             self._style_chunks = []
 
+        if t == "script" and self._in_screener_json:
+            self._in_screener_json = False
+            self.doc.screener_json_raw = "".join(self._screener_json_chunks)
+            self._screener_json_chunks = []
+
         if t in ("script", "style", "template") and self._skip_text_depth > 0:
             self._skip_text_depth -= 1
+
+        if t in ("code", "pre", "kbd", "samp") and self._code_depth > 0:
+            self._code_depth -= 1
 
         if t in ("button", "a") and self._cta_stack:
             for idx in range(len(self._cta_stack) - 1, -1, -1):
@@ -590,6 +726,8 @@ class SiteHtmlParser(HTMLParser):
 
         if t in BLOCK_TEXT_TAGS and self._skip_text_depth == 0:
             self._vis_chunks.append("\n")
+            if self._code_depth == 0 and not self._svg_stack:
+                self._prose_chunks.append("\n")
 
         # Resiliently pop back to matching open tag if present on stack.
         for idx in range(len(self._stack) - 1, -1, -1):
@@ -602,10 +740,14 @@ class SiteHtmlParser(HTMLParser):
             self._title_chunks.append(data)
         if self._in_style:
             self._style_chunks.append(data)
+        if self._in_screener_json:
+            self._screener_json_chunks.append(data)
         if self._svg_stack and data.strip():
             self._svg_stack[-1].has_content = True
         if self._skip_text_depth == 0:
             self._vis_chunks.append(data)
+            if self._code_depth == 0 and not self._svg_stack:
+                self._prose_chunks.append(data)
             if self._cta_stack:
                 self._cta_stack[-1][3].append(data)
 
@@ -614,6 +756,7 @@ class SiteHtmlParser(HTMLParser):
         while self._svg_stack:
             self.doc.svgs.append(self._svg_stack.pop())
         self.doc.visible_text = "".join(self._vis_chunks)
+        self.doc.prose_text = "".join(self._prose_chunks)
         return self.doc
 
 
@@ -729,11 +872,19 @@ def run_gate_s2(
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Gate S2: Zero broken internal links, assets & same-page anchors."""
+    """Gate S2: Zero broken internal links, assets, anchors, duplicate IDs, or non-canonical Release URLs."""
     site_root = site_dir.resolve()
     by_abs: dict[Path, ParsedHtml] = {doc.abs_path: doc for doc in parsed_htmls.values()}
 
     for rel_path, doc in sorted(parsed_htmls.items()):
+        # Hard error on duplicate element IDs within the same HTML document.
+        for elem_id, line_list in sorted(doc.id_lines.items()):
+            if len(line_list) > 1:
+                lines_disp = ", ".join(f"L{ln}" for ln in line_list[:6])
+                errors.append(
+                    f"[S2] {rel_path}: duplicate id=\"{elem_id}\" appears {len(line_list)} times ({lines_disp})"
+                )
+
         for link in doc.links:
             raw_ref = link.value.strip()
             if not raw_ref:
@@ -742,6 +893,16 @@ def run_gate_s2(
                         f"[S2] {rel_path}:{link.lineno}: empty <{link.tag} {link.attr}=\"\"> attribute"
                     )
                 continue
+
+            # Validate canonical GitHub Releases direct-download URLs against the 16-file ASCII allowlist.
+            m_rel = RELEASE_DL_ASSET_RE.search(raw_ref)
+            if m_rel:
+                asset_name = m_rel.group(1)
+                if not asset_name.isascii() or asset_name not in CANONICAL_RELEASE_ASSETS:
+                    errors.append(
+                        f"[S2] {rel_path}:{link.lineno}: non-canonical GitHub Release asset URL "
+                        f"\"{asset_name}\" (must match 16-file ASCII kebab-case allowlist)"
+                    )
 
             lower_ref = raw_ref.lower()
             if lower_ref.startswith(EXTERNAL_SCHEMES):
@@ -859,31 +1020,62 @@ def run_gate_s3(
                 f"[S3] {rel_path}: unrendered raw Markdown table separator in visible HTML -> {snippet!r}"
             )
 
+        m_bold = S3_RAW_MD_BOLD_RE.search(doc.prose_text)
+        if m_bold:
+            snippet = " ".join(
+                doc.prose_text[max(0, m_bold.start() - 12) : min(len(doc.prose_text), m_bold.end() + 12)].split()
+            )
+            errors.append(
+                f"[S3] {rel_path}: unrendered raw Markdown **bold** marker in visible prose -> {snippet!r}"
+            )
 
-def _a_share_daily_is_light(doc: ParsedHtml, market_state: dict | None) -> bool:
-    """Determine if daily/a-share-latest.html represents a light/holiday edition (0 charts allowed)."""
+        m_bt = S3_STRAY_BACKTICK_RE.search(doc.prose_text)
+        if m_bt:
+            snippet = " ".join(
+                doc.prose_text[max(0, m_bt.start() - 16) : min(len(doc.prose_text), m_bt.end() + 16)].split()
+            )
+            errors.append(
+                f"[S3] {rel_path}: stray backtick (`) outside <code>/<pre> in visible prose -> {snippet!r}"
+            )
+
+        m_eng = S3_INTERNAL_ENG_LEAK_RE.search(doc.visible_text)
+        if m_eng:
+            snippet = " ".join(
+                doc.visible_text[max(0, m_eng.start() - 16) : min(len(doc.visible_text), m_eng.end() + 16)].split()
+            )
+            errors.append(
+                f"[S3] {rel_path}: leaked internal engineering filename/identifier -> {snippet!r}"
+            )
+
+
+def _daily_is_light(market_key: str, doc: ParsedHtml, market_state: dict | None) -> bool:
+    """Determine whether an equity daily page is a light / holiday_watch edition (0 charts allowed).
+    Checks explicit <body data-edition="..."> first, then DAILY_META_JSON.edition_type in source .md."""
     if doc.edition_attr in ("light", "holiday_watch"):
         return True
     if doc.edition_attr == "main":
         return False
-    if LIGHT_EDITION_HINTS_RE.search(doc.title_text) or LIGHT_EDITION_HINTS_RE.search(
-        doc.visible_text[:2000]
-    ):
-        return True
-    if re.search(r"(?:晚刊|收盘主刊)", doc.title_text):
-        return False
+
     if market_state and isinstance(market_state.get("markets"), dict):
-        latest_rel = market_state["markets"].get("a_share", {}).get("latest_daily")
+        latest_rel = market_state["markets"].get(market_key, {}).get("latest_daily")
         if isinstance(latest_rel, str) and latest_rel.strip():
             md_path = REPO_ROOT / "equity" / latest_rel
             if md_path.is_file():
                 try:
                     md_txt = md_path.read_text(encoding="utf-8")
-                    if re.search(r'"edition_type"\s*:\s*"(?:light|holiday_watch)"', md_txt):
-                        return True
-                    if not re.search(r"<!--\s*CHART_[A-Z]\d+", md_txt):
-                        return True
-                except OSError:
+                    m_meta = re.search(
+                        r"<!--\s*DAILY_META_JSON\s*(\{.*?\})\s*-->",
+                        md_txt,
+                        flags=re.DOTALL,
+                    )
+                    if m_meta:
+                        meta_obj = json.loads(m_meta.group(1))
+                        ed = str(meta_obj.get("edition_type", "")).strip().lower()
+                        if ed in ("light", "holiday_watch"):
+                            return True
+                        if ed == "main":
+                            return False
+                except (OSError, json.JSONDecodeError):
                     pass
     return False
 
@@ -915,24 +1107,25 @@ def run_gate_s4(
                 f"(required >= {min_charts})"
             )
 
-    # Daily latest pages: gold, hk-stock, us-stock require >= 1 data chart.
-    for rel_path in DAILY_REQUIRED_CHART_PAGES:
+    # Gold daily latest ALWAYS requires >= 1 data chart.
+    gold_doc = parsed_htmls.get(DAILY_GOLD_LATEST_PAGE)
+    if gold_doc is not None:
+        chart_count = sum(1 for s in gold_doc.svgs if s.is_data_chart)
+        if chart_count < 1:
+            errors.append(
+                f"[S4] {DAILY_GOLD_LATEST_PAGE}: found 0 data <svg> charts (required >= 1)"
+            )
+
+    # All 3 equity daily latest pages: light / holiday_watch allow 0 charts; main editions require >= 1.
+    for market_key, rel_path in DAILY_EQUITY_LATEST_PAGES:
         doc = parsed_htmls.get(rel_path)
         if doc is None:
             continue
         chart_count = sum(1 for s in doc.svgs if s.is_data_chart)
-        if chart_count < 1:
+        if chart_count < 1 and not _daily_is_light(market_key, doc, market_state):
             errors.append(
-                f"[S4] {rel_path}: found 0 data <svg> charts (required >= 1)"
-            )
-
-    # A-share daily: light edition may legitimately have 0 charts; warn only if main edition lacks charts.
-    a_doc = parsed_htmls.get(DAILY_OPTIONAL_LIGHT_PAGE)
-    if a_doc is not None:
-        chart_count = sum(1 for s in a_doc.svgs if s.is_data_chart)
-        if chart_count < 1 and not _a_share_daily_is_light(a_doc, market_state):
-            warnings.append(
-                f"[S4] {DAILY_OPTIONAL_LIGHT_PAGE}: main edition has 0 data <svg> charts"
+                f"[S4] {rel_path}: main edition has 0 data <svg> charts (required >= 1; "
+                f"edition={doc.edition_attr or 'unspecified'})"
             )
 
 
@@ -943,15 +1136,16 @@ def run_gate_s5(
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Gate S5: Desktop + mobile responsive meta hygiene, <title>, <nav>, and scrollable tables."""
-    # Dynamically discover CSS classes declaring overflow-x / overflow: auto|scroll.
+    """Gate S5: Desktop + mobile responsive meta hygiene, <title>, <nav>, scrollable tables & CSS class coverage."""
+    # Dynamically discover CSS classes declaring overflow-x/overflow: auto|scroll and ALL declared CSS classes.
     global_scroll_classes: set[str] = set()
+    global_declared_classes: set[str] = set()
     for p in all_files:
         if p.suffix.lower() == ".css":
             try:
-                global_scroll_classes.update(
-                    _extract_scrollable_classes_from_css(p.read_text(encoding="utf-8"))
-                )
+                css_txt = p.read_text(encoding="utf-8")
+                global_scroll_classes.update(_extract_scrollable_classes_from_css(css_txt))
+                global_declared_classes.update(_extract_all_declared_css_classes(css_txt))
             except (OSError, UnicodeDecodeError):
                 pass
 
@@ -978,8 +1172,10 @@ def run_gate_s5(
             errors.append(f"[S5] {rel_path}: missing <nav> navigation element")
 
         local_scroll_classes = set(global_scroll_classes)
+        local_declared_classes = set(global_declared_classes)
         for style_block in doc.inline_styles:
             local_scroll_classes.update(_extract_scrollable_classes_from_css(style_block))
+            local_declared_classes.update(_extract_all_declared_css_classes(style_block))
 
         unwrapped_lines: list[int] = []
         for tbl in doc.tables:
@@ -999,6 +1195,15 @@ def run_gate_s5(
             errors.append(
                 f"[S5] {rel_path}: {len(unwrapped_lines)} unwrapped <table> element(s) inside "
                 f"<article>/<main> without scrollable wrapper ({sample}{extra})"
+            )
+
+        # Audit all HTML classes against declared CSS rules (+ explicit JS hook allowlist).
+        undeclared = sorted(doc.used_classes - local_declared_classes - JS_HOOK_CLASS_ALLOWLIST)
+        if undeclared:
+            sample_cls = ", ".join(f".{c}" for c in undeclared[:8])
+            extra_cls = f" (+{len(undeclared) - 8} more)" if len(undeclared) > 8 else ""
+            errors.append(
+                f"[S5] {rel_path}: undeclared CSS class(es) not found in stylesheets: {sample_cls}{extra_cls}"
             )
 
 
@@ -1052,6 +1257,97 @@ def _check_gold_tier0_mutex(index_doc: ParsedHtml, errors: list[str]) -> None:
                 return
 
 
+def _validate_screener_json(
+    screener_doc: ParsedHtml,
+    expected_by_market: dict[str, int],
+    errors: list[str],
+) -> None:
+    """Parse and validate <script id='screener-data' type='application/json'> payload in screener.html."""
+    if screener_doc.screener_json_raw is None:
+        errors.append(
+            "[S6] screener.html: missing <script id=\"screener-data\" type=\"application/json\"> payload"
+        )
+        return
+
+    try:
+        payload = json.loads(screener_doc.screener_json_raw)
+    except json.JSONDecodeError as exc:
+        errors.append(f"[S6] screener.html: invalid JSON in #screener-data: {exc}")
+        return
+
+    if not isinstance(payload, list):
+        errors.append("[S6] screener.html: #screener-data JSON root must be a list")
+        return
+
+    expected_total = sum(expected_by_market.values())
+    if len(payload) != expected_total:
+        errors.append(
+            f"[S6] screener.html: #screener-data length ({len(payload)}) != expected total ({expected_total})"
+        )
+
+    actual_by_market: dict[str, int] = {"a-share": 0, "hk-stock": 0, "us-stock": 0}
+    bad_entries = 0
+    for idx, entry in enumerate(payload):
+        if not isinstance(entry, dict):
+            errors.append(f"[S6] screener.html: #screener-data[{idx}] is not a JSON object")
+            bad_entries += 1
+            if bad_entries >= 10:
+                break
+            continue
+
+        mk = str(entry.get("market", "")).strip()
+        if mk in actual_by_market:
+            actual_by_market[mk] += 1
+
+        # Required fields non-empty
+        for req_k in SCREENER_REQUIRED_FIELDS:
+            val = entry.get(req_k)
+            if not isinstance(val, str) or not val.strip():
+                errors.append(
+                    f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) "
+                    f"missing or empty required field '{req_k}'"
+                )
+                bad_entries += 1
+                break
+        else:
+            action_val = entry.get("action_label") or entry.get("action")
+            if not isinstance(action_val, str) or not action_val.strip():
+                errors.append(
+                    f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) "
+                    f"missing or empty 'action_label'/'action'"
+                )
+                bad_entries += 1
+
+        col_val = str(entry.get("color", "")).strip()
+        if col_val not in SCREENER_VALID_COLORS:
+            errors.append(
+                f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) "
+                f"invalid color {col_val!r} (expected one of {sorted(SCREENER_VALID_COLORS)})"
+            )
+            bad_entries += 1
+
+        # Zero raw <br>, **, or ` in any string field
+        for k, v in entry.items():
+            if isinstance(v, str) and SCREENER_RAW_MARKUP_RE.search(v):
+                errors.append(
+                    f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) "
+                    f"field '{k}' contains raw markup (<br> / ** / `): {v[:80]!r}"
+                )
+                bad_entries += 1
+                break
+
+        if bad_entries >= 10:
+            break
+
+    for mk, exp_cnt in expected_by_market.items():
+        act_cnt = actual_by_market.get(mk, 0)
+        if act_cnt != exp_cnt:
+            errors.append(
+                f"[S6] screener.html: #screener-data market '{mk}' count ({act_cnt}) "
+                f"!= market_state.json stock_pool_count ({exp_cnt})"
+            )
+
+
 def run_gate_s6(
     parsed_htmls: dict[str, ParsedHtml],
     gold_snap: dict | None,
@@ -1059,35 +1355,64 @@ def run_gate_s6(
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Gate S6: Live SSOT fidelity on index.html, screener.html total count, and Gold Tier 0 mutex."""
+    """Gate S6: Live SSOT fidelity on index.html, screener.html JSON schema, and authoritative Gold Tier 0 mutex."""
     index_doc = parsed_htmls.get("index.html")
     screener_doc = parsed_htmls.get("screener.html")
 
-    # 1. Live spot gold & Gold Tier 0 mutex from gold/data_snapshot.json.
+    # 1. Live Gold SSOT metrics & authoritative Tier 0 mutex from gold/data_snapshot.json.
     gold_new_buy_blocked = False
+    gold_auth_resolved = False
     if gold_snap is not None:
-        spot_val = gold_snap.get("spot_gold_ny_close_usd")
-        spot_rounded = gold_snap.get("spot_gold_ny_close_rounded")
-        if index_doc is not None and spot_val is not None:
-            extras = [spot_rounded] if spot_rounded is not None else []
-            variants = _numeric_variants(float(spot_val), extras)
-            if not _contains_any_number(index_doc.visible_text, variants):
-                errors.append(
-                    f"[S6] index.html: missing live Gold spot_gold_ny_close_usd={spot_val} "
-                    f"(expected one of {variants[:6]})"
-                )
-        if gold_snap.get("new_buy_allowed") is False or (
-            str(gold_snap.get("tier_code", "")).strip() == "Tier 0"
-        ):
-            gold_new_buy_blocked = True
+        if index_doc is not None:
+            spot_val = gold_snap.get("spot_gold_ny_close_usd")
+            spot_rounded = gold_snap.get("spot_gold_ny_close_rounded")
+            if spot_val is not None:
+                extras = [spot_rounded] if spot_rounded is not None else []
+                variants = _numeric_variants(float(spot_val), extras)
+                if not _contains_any_number(index_doc.visible_text, variants):
+                    errors.append(
+                        f"[S6] index.html: missing live Gold spot_gold_ny_close_usd={spot_val} "
+                        f"(expected one of {variants[:6]})"
+                    )
 
-    # 2. Live A / HK / US benchmark indices & 135-stock screener count from market_state.json.
+            dfii_val = gold_snap.get("dfii10_live_pct")
+            if dfii_val is not None:
+                dfii_vars = _numeric_variants(float(dfii_val))
+                if not _contains_any_number(index_doc.visible_text, dfii_vars):
+                    errors.append(
+                        f"[S6] index.html: missing live Gold dfii10_live_pct={dfii_val}"
+                    )
+
+            autd_night = gold_snap.get("sge_autd_night_rmb")
+            autd_day = gold_snap.get("sge_autd_day_rmb")
+            autd_vals = [float(v) for v in (autd_night, autd_day) if isinstance(v, (int, float)) and v > 0]
+            if autd_vals:
+                autd_vars = _numeric_variants(autd_vals[0], autd_vals[1:])
+                if not _contains_any_number(index_doc.visible_text, autd_vars):
+                    errors.append(
+                        f"[S6] index.html: missing live SGE Au(T+D) reading ({autd_vals})"
+                    )
+
+        if "new_buy_allowed" in gold_snap or "tier_code" in gold_snap:
+            gold_auth_resolved = True
+            gold_new_buy_blocked = (
+                gold_snap.get("new_buy_allowed") is False
+                or str(gold_snap.get("tier_code", "")).strip() == "Tier 0"
+            )
+
+    # 2. Live A / HK / US benchmark indices, cockpit risk radar SSOT & screener JSON fidelity.
     if market_state is not None:
         markets = market_state.get("markets")
+        linkages = market_state.get("cross_market_linkages", {})
         if isinstance(markets, dict):
-            gold_mirror = markets.get("gold_mirror_readonly")
-            if isinstance(gold_mirror, dict) and gold_mirror.get("new_buy_allowed") is False:
-                gold_new_buy_blocked = True
+            # Fallback to gold_mirror_readonly ONLY if authoritative gold/data_snapshot.json was absent.
+            if not gold_auth_resolved:
+                gold_mirror = markets.get("gold_mirror_readonly")
+                if isinstance(gold_mirror, dict) and (
+                    gold_mirror.get("new_buy_allowed") is False
+                    or str(gold_mirror.get("tier_code", "")).strip() == "Tier 0"
+                ):
+                    gold_new_buy_blocked = True
 
             if index_doc is not None:
                 # A-Share benchmark (CSI 300 primary).
@@ -1131,26 +1456,76 @@ def run_gate_s6(
                                 f"(expected one of {us_vars[:6]})"
                             )
 
-            # Screener total stock pool fidelity across A / HK / US.
-            pool_counts: list[int] = []
-            for mkey in ("a_share", "hk_stock", "us_stock"):
+                # Cross-market cockpit SSOT: us10y, vix, hkma_agg_bal, household_composite_weights == 100.
+                if isinstance(linkages, dict):
+                    rates = linkages.get("rates_fx_chain", {})
+                    brake = linkages.get("crisis_correlation_brake", {})
+                    hcw = linkages.get("household_composite_weights", {})
+
+                    if isinstance(rates, dict):
+                        us10y_val = rates.get("us10y_pct")
+                        if isinstance(us10y_val, (int, float)):
+                            u10_vars = _numeric_variants(float(us10y_val)) + [f"{float(us10y_val):.3f}"]
+                            if not _contains_any_number(index_doc.visible_text, u10_vars):
+                                errors.append(
+                                    f"[S6] index.html: missing live us10y_pct={us10y_val}"
+                                )
+                        hkma_val = rates.get("hkma_agg_bal_hkd_100m")
+                        if isinstance(hkma_val, (int, float)):
+                            hkma_vars = _numeric_variants(float(hkma_val))
+                            if not _contains_any_number(index_doc.visible_text, hkma_vars):
+                                errors.append(
+                                    f"[S6] index.html: missing live hkma_agg_bal_hkd_100m={hkma_val}"
+                                )
+
+                    if isinstance(brake, dict):
+                        vix_val = brake.get("vix_close")
+                        if isinstance(vix_val, (int, float)):
+                            vix_vars = _numeric_variants(float(vix_val))
+                            if not _contains_any_number(index_doc.visible_text, vix_vars):
+                                errors.append(
+                                    f"[S6] index.html: missing live vix_close={vix_val}"
+                                )
+
+                    if isinstance(hcw, dict):
+                        w_keys = (
+                            "equity_total_pct",
+                            "convertible_bond_pct",
+                            "bonds_and_cash_pct",
+                            "gold_existing_hold_pct",
+                        )
+                        if all(isinstance(hcw.get(k), (int, float)) for k in w_keys):
+                            w_sum = sum(int(hcw[k]) for k in w_keys)
+                            if w_sum != 100:
+                                errors.append(
+                                    f"[S6] market_state.json: household_composite_weights sum={w_sum} != 100"
+                                )
+                            elif f"{w_sum}%" not in index_doc.visible_text:
+                                errors.append(
+                                    f"[S6] index.html: missing household composite total '{w_sum}%'"
+                                )
+
+            # Screener total stock pool & embedded JSON fidelity across A / HK / US.
+            expected_by_market: dict[str, int] = {}
+            for mkey, slug in (("a_share", "a-share"), ("hk_stock", "hk-stock"), ("us_stock", "us-stock")):
                 mobj = markets.get(mkey)
                 if isinstance(mobj, dict) and isinstance(mobj.get("stock_pool_count"), (int, float)):
-                    pool_counts.append(int(mobj["stock_pool_count"]))
+                    expected_by_market[slug] = int(mobj["stock_pool_count"])
 
-            if len(pool_counts) == 3 and screener_doc is not None:
-                expected_total = sum(pool_counts)
+            if len(expected_by_market) == 3 and screener_doc is not None:
+                expected_total = sum(expected_by_market.values())
                 tot_pat = re.compile(rf"(?<![0-9]){expected_total}(?![0-9])")
                 if not tot_pat.search(screener_doc.visible_text):
                     errors.append(
                         f"[S6] screener.html: missing expected total stock pool count "
-                        f"{expected_total} ({'+'.join(str(c) for c in pool_counts)}) in visible text"
+                        f"{expected_total} in visible text"
                     )
                 if screener_doc.stock_row_count >= 20 and screener_doc.stock_row_count != expected_total:
                     errors.append(
                         f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) "
                         f"!= expected total ({expected_total})"
                     )
+                _validate_screener_json(screener_doc, expected_by_market, errors)
 
     # 3. Gold Tier 0 mutex enforcement on index.html.
     if gold_new_buy_blocked and index_doc is not None:

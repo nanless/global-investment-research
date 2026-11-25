@@ -10,6 +10,8 @@ Usage:
   --strict    Fail with exit code 1 on any warning in addition to errors.
 """
 
+from __future__ import annotations
+
 import json
 import re
 import sys

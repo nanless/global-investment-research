@@ -23,7 +23,7 @@ from pathlib import Path
 
 from pdf_common import BASE_DIR, DAILY_DIR, lint_markdown_report
 
-GOLD_SNAPSHOT_PATH = (BASE_DIR.parent / "gold" / "data_snapshot.json") if (BASE_DIR.parent / "gold" / "data_snapshot.json").exists() else Path("/Users/francis7999/.gemini/antigravity/scratch/gold_research_2026/data_snapshot.json")
+GOLD_SNAPSHOT_PATH = BASE_DIR.parent / "gold" / "data_snapshot.json"
 STATE_PATH = BASE_DIR / "state" / "market_state.json"
 
 _CHART_PLACEHOLDER_RE = re.compile(r"<!--\s*CHART_[AHU]\d+\s*-->")
@@ -579,15 +579,16 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
     return errs, warns
 
 
-def _auto_discover_targets() -> list[Path]:
+def _auto_discover_targets() -> tuple[list[Path], list[str]]:
     targets: list[Path] = []
+    disc_errors: list[str] = []
     for market in ("a_share", "hk_stock", "us_stock"):
         meta_f = BASE_DIR / f"report_meta_{market}.json"
         if meta_f.exists():
             try:
                 slug = json.loads(meta_f.read_text(encoding="utf-8")).get("period_slug", "2026_11")
             except Exception as exc:
-                errs.append(f"Gate 6 失败：{meta_f.name} JSON 解析失败: {exc}")
+                disc_errors.append(f"Gate 6 失败：{meta_f.name} JSON 解析失败: {exc}")
                 continue
             fp = BASE_DIR / f"{market}_market_report_{slug}.md"
             if fp.exists():
@@ -598,7 +599,7 @@ def _auto_discover_targets() -> list[Path]:
         )
         if daily_files:
             targets.append(daily_files[-1])
-    return targets
+    return targets, disc_errors
 
 
 def main() -> None:
@@ -613,8 +614,14 @@ def main() -> None:
     strict = "--strict" in args
     skip_cross = "--skip-cross-project" in args
     positional = [Path(a) for a in args if not a.startswith("-")]
-    targets = positional if positional else _auto_discover_targets()
+    discovery_errors: list[str] = []
+    if positional:
+        targets = positional
+    else:
+        targets, discovery_errors = _auto_discover_targets()
     if not targets:
+        for derr in discovery_errors:
+            print(f"  [FAIL] {derr}", file=sys.stderr)
         print("No target Markdown files found.", file=sys.stderr)
         sys.exit(2)
 
@@ -625,7 +632,7 @@ def main() -> None:
         except Exception:
             state_obj = None
 
-    all_errors: list[str] = []
+    all_errors: list[str] = list(discovery_errors)
     all_warnings: list[str] = []
 
     for p in targets:

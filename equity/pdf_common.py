@@ -373,7 +373,8 @@ def render_md_body(
                 elif re.match(r"^\d+\.\s+", sc):
                     parts.append(f'<div class="callout-ol">{md_inline(sc)}</div>')
                 elif re.match(r"^[-•*]\s+", sc):
-                    parts.append(f'<div class="callout-item">• {md_inline(re.sub(r"^[-•*]\s+", "", sc))}</div>')
+                    clean_item = re.sub(r"^[-•*]\s+", "", sc)
+                    parts.append(f'<div class="callout-item">• {md_inline(clean_item)}</div>')
                 else:
                     parts.append(f'<div class="callout-line">{md_inline(sc)}</div>')
             html_out.append(f'<div class="{cls}">{"".join(parts)}</div>')

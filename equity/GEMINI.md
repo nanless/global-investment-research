@@ -66,13 +66,13 @@
 
 - **写文件铁律**：修改或创建任何工作区文件一律使用 `write_file` 全量写入，**严禁调用 `edit_file`**。
 - **原生 Word 底线**：三本旗舰与每日早晚刊均通过 `docx_embed.py` 纯 Python 生成严格符合 ECMA-376 标准的原生 `.docx`（真 `<w:tbl>` + Chrome 2× Retina PIL 裁图 + 自动页码），**严禁使用 `textutil`**。
-- **Shell 与 5 条唯一预授权核心命令**：严禁调用未授权 Shell 命令（禁 `cd`/`ls`/`mv`/`rm`/`&&`/`;`/`|`、引号包裹路径或临时 `python3 -c`）。工作区**唯一预授权的 5 条核心脚本**（独立串行调用；允许给 `lint_equity.py` 传入 `--precheck --strict` 或 `--strict` 参数，严禁绕过）：
+- **Shell 与 6 个唯一预授权核心脚本（共 7 条命令）**：严禁调用未授权 Shell 命令（禁 `cd`/`ls`/`mv`/`rm`/`&&`/`;`/`|`、引号包裹路径或临时 `python3 -c`）。工作区**唯一预授权的 6 个核心脚本**（独立串行调用；允许给 `lint_equity.py` 传入 `--precheck --strict` 或 `--strict` 参数，严禁绕过；未触发旗舰大修时仅跑 `lint_equity.py`、`build_daily.py` 与 `publish_site.py`）：
   1. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/lint_equity.py`（编译前跑 `--precheck --strict`，编译后跑 `--strict` 校验全量 Gate 0–6、Gate 3B 与跨项目黄金门禁 C1–C3）
   2. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_a_share_pdf.py`
   3. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_hk_stock_pdf.py`
   4. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_us_stock_pdf.py`
   5. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_daily.py`
-- **门禁全绿后站点发布命令（Web Publish）**：全量 `lint_equity.py --strict` 达成 0 错 0 警后，运行 `python3 /Users/francis7999/code/github_repos/global-investment-research/scripts/publish_site.py`（自动编译静态站 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）。
+  6. `python3 /Users/francis7999/code/github_repos/global-investment-research/scripts/publish_site.py`（全量 `lint_equity.py --strict` 及 RSI 终检全绿后运行：自动编译静态站 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并按 SHA256 增量滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）
 - **工作区双 Skill 分工**：
   - 出版编译、原生 OOXML、独立 Linter、**21 张矢量图（`A1–A7` / `H1–H7` / `U1–U7`）**、三市休市/跨月滚存与模板 → `equity-report-publishing`；
   - 投研写作、7 维度大盘与政策市雷达、三市联动与黄金 SSOT 校验、10 项门禁、双账户税费与 Step 5 受控 RSI 盲审 → `equity-research-editorial-qa`。

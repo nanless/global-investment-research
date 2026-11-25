@@ -17,6 +17,8 @@ Usage:
   python3 build_daily.py --check            # self-check environment
 """
 
+from __future__ import annotations
+
 import argparse
 import glob
 import html
@@ -374,10 +376,11 @@ def render_persona_cards(cfg: dict) -> str:
         avoid = md_inline(c.get("avoid", ""))
         avoid_html = f'<div class="persona-avoid"><strong>切忌踩坑：</strong>{avoid}</div>' if avoid else ""
         badge_html = f'<span class="grp-badge" style="background:{brd};">{grp}</span>'
+        sub_html = f'<div class="persona-sub">{sub}</div>' if sub else ""
         rendered_cards.append(
             f'<div class="persona-card" style="border-left:4px solid {brd};background:{bg};">'
             f'<div class="persona-head">{badge_html}{heading}</div>'
-            f'{("<div class=\"persona-sub\">" + sub + "</div>") if sub else ""}'
+            f'{sub_html}'
             f'<ul class="persona-ul">{actions}</ul>'
             f'{avoid_html}'
             f'</div>'
@@ -421,11 +424,12 @@ def render_trust_bar(cfg: dict) -> str:
     items = cfg.get("items", [])
     note = md_inline(cfg.get("note", ""))
     li_html = "".join(f"<li>{md_inline(it)}</li>" for it in items)
+    note_html = f'<div class="trust-note">{note}</div>' if note else ""
     return f'''
     <div class="trust-box">
       <div class="trust-title">{title}</div>
       <ul class="trust-ul">{li_html}</ul>
-      {("<div class=\"trust-note\">" + note + "</div>") if note else ""}
+      {note_html}
     </div>
     '''
 
@@ -1594,8 +1598,22 @@ html { scroll-behavior: smooth; }
 """
 
 
+_DAILY_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_.*?(?:_r(\d+))?\.md$")
+
+
+def _daily_sort_key(p: Path) -> tuple[str, int, int, str]:
+    """Deterministic sort key (date, int(hhmm), int(rev or 1), name) so _r10 sorts after _r2."""
+    m = _DAILY_FILENAME_RE.match(p.name)
+    if m:
+        return (m.group(1), int(m.group(2)), int(m.group(3) or 1), p.name)
+    return ("0000-00-00", 0, 0, p.name)
+
+
 def _is_latest_daily(md_path: Path) -> bool:
-    files = sorted(Path(p).resolve() for p in glob.glob(str(DAILY_DIR / "????-??-??_*.md")))
+    files = sorted(
+        (Path(p).resolve() for p in glob.glob(str(DAILY_DIR / "????-??-??_*.md"))),
+        key=_daily_sort_key,
+    )
     if not files:
         return True
     return md_path.resolve() == files[-1]
@@ -1823,7 +1841,10 @@ def main():
     if args.md_file:
         target = Path(args.md_file)
     else:
-        files = sorted(Path(p) for p in glob.glob(str(DAILY_DIR / "????-??-??_*.md")))
+        files = sorted(
+            (Path(p) for p in glob.glob(str(DAILY_DIR / "????-??-??_*.md"))),
+            key=_daily_sort_key,
+        )
         if not files:
             raise SystemExit("No daily YYYY-MM-DD_*.md files found in daily/")
         target = files[-1]

@@ -1,7 +1,7 @@
 # 关键判断验真与避坑记分卡
 
 > 本记分卡公开锁定每期主刊的关键可证伪判断与排雷预警，到期按客观行情逐笔算账，绝不只讲新故事、绝不篡改旧判断。  
-> 返回：[每日天气总看板（INDEX）](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/INDEX.md) ｜ [观点演进记录（CHANGELOG）](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/CHANGELOG.md)
+> 返回：[每日天气总看板（INDEX）](INDEX.md) ｜ [观点演进记录（CHANGELOG）](CHANGELOG.md)
 
 ---
 

@@ -9,12 +9,17 @@ Usage:
   python3 scripts/publish_site.py --dry-run           # Build + strict lint + status preview only
   python3 scripts/publish_site.py --no-push           # Build + strict lint + local commit only
   python3 scripts/publish_site.py --skip-release      # Build + strict lint + commit + push (skip PDF/DOCX release)
+  python3 scripts/publish_site.py --force-release     # Force re-upload all rolling Release PDF/DOCX assets
   python3 scripts/publish_site.py --message "..."     # Custom commit message
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -24,11 +29,16 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Iterator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BUILD_SCRIPT = REPO_ROOT / "scripts" / "build_site.py"
 LINT_SCRIPT = REPO_ROOT / "scripts" / "lint_site.py"
 SITE_DIR = REPO_ROOT / "_site"
+LOCK_PATH = REPO_ROOT / ".git" / "publish_site.lock"
+MANIFEST_PATH = REPO_ROOT / ".git" / "last_release_manifest.json"
+
+CANONICAL_STAGE_PATHS = ("gold", "equity", "scripts", "README.md", ".gitignore", ".github")
 
 RELEASE_TAG = "latest-reports"
 RELEASE_TITLE = "Latest Research Reports (PDF & Word)"
@@ -45,20 +55,46 @@ _GOLD_DAILY_RE = re.compile(
 )
 
 
+@contextlib.contextmanager
+def _publish_lock() -> Iterator[None]:
+    """Serialize overlapping publish_site.py runs via an exclusive advisory lock inside .git/."""
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_fp = LOCK_PATH.open("a+", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"[lock] Waiting for active publish_site.py lock ({LOCK_PATH})...")
+            fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_fp.close()
+
+
 def _clean_env() -> dict[str, str]:
-    """Return a clean non-interactive environment without stale GITHUB_TOKEN."""
+    """Return a clean non-interactive environment without stale GitHub tokens."""
     env = os.environ.copy()
-    # Strip any stale GITHUB_TOKEN so git relies on SSH remote and gh uses its
+    # Strip any stale tokens so git relies on SSH remote and gh uses its
     # configured keyring credentials rather than an expired environment token.
     env.pop("GITHUB_TOKEN", None)
+    env.pop("GH_TOKEN", None)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GH_PROMPT_DISABLED"] = "1"
+    env["GIT_SSH_COMMAND"] = (
+        "ssh -o BatchMode=yes -o ConnectTimeout=20 "
+        "-o ServerAliveInterval=15 -o ServerAliveCountMax=3"
+    )
 
-    path_parts = env.get("PATH", "").split(os.pathsep)
-    for extra in ("/opt/homebrew/bin", "/usr/local/bin"):
-        if os.path.isdir(extra) and extra not in path_parts:
-            path_parts.insert(0, extra)
-    env["PATH"] = os.pathsep.join(p for p in path_parts if p)
+    preferred_bins = [
+        extra
+        for extra in ("/Users/francis7999/miniforge3/bin", "/opt/homebrew/bin", "/usr/local/bin")
+        if os.path.isdir(extra)
+    ]
+    existing_parts = [p for p in env.get("PATH", "").split(os.pathsep) if p and p not in preferred_bins]
+    env["PATH"] = os.pathsep.join(preferred_bins + existing_parts)
     return env
 
 
@@ -79,6 +115,36 @@ def _run(
         capture_output=capture,
         timeout=timeout,
     )
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _load_release_manifest() -> dict[str, str]:
+    if not MANIFEST_PATH.is_file():
+        return {}
+    try:
+        data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {str(k): str(v) for k, v in data.items()}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_release_manifest(manifest: dict[str, str]) -> None:
+    MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = MANIFEST_PATH.with_name(MANIFEST_PATH.name + ".tmp")
+    try:
+        tmp_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(tmp_path, MANIFEST_PATH)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def _find_latest_gold_daily(ext: str) -> Path | None:
@@ -183,6 +249,20 @@ def discover_release_assets() -> list[tuple[Path, str, str]]:
     return found
 
 
+def _verify_main_branch(env: dict[str, str]) -> str:
+    """Return current branch name or raise RuntimeError if detached/non-main."""
+    res = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], env=env, check=False, capture=True)
+    if res.returncode != 0:
+        detail = (res.stderr or res.stdout).strip()
+        raise RuntimeError(f"Unable to determine current git branch: {detail}")
+    branch = res.stdout.strip()
+    if branch != "main":
+        raise RuntimeError(
+            f"Refusing to commit/push from branch {branch!r}; expected 'main' (detached or wrong branch)."
+        )
+    return branch
+
+
 def _has_origin_remote(env: dict[str, str]) -> str | None:
     res = _run(["git", "remote", "get-url", "origin"], env=env, check=False, capture=True)
     if res.returncode == 0 and res.stdout.strip():
@@ -253,8 +333,8 @@ def _push_main_with_retry(env: dict[str, str]) -> None:
         raise RuntimeError(f"git push origin main failed after retry: {err_msg}")
 
 
-def _upload_rolling_release(env: dict[str, str]) -> None:
-    """Non-fatal rolling upload of latest PDF/DOCX reports to GitHub Release `latest-reports`."""
+def _upload_rolling_release(env: dict[str, str], *, force_release: bool = False) -> None:
+    """Non-fatal rolling upload of changed PDF/DOCX reports to GitHub Release `latest-reports`."""
     gh_bin = shutil.which("gh", path=env.get("PATH"))
     if not gh_bin:
         print("[WARN] `gh` CLI not found in PATH; skipping rolling Release upload.", file=sys.stderr)
@@ -266,6 +346,7 @@ def _upload_rolling_release(env: dict[str, str]) -> None:
         return
 
     try:
+        release_created = False
         view_res = _run(
             [gh_bin, "release", "view", RELEASE_TAG],
             env=env,
@@ -300,16 +381,37 @@ def _upload_rolling_release(env: dict[str, str]) -> None:
                     file=sys.stderr,
                 )
                 return
+            release_created = True
 
+        prev_manifest = {} if (force_release or release_created) else _load_release_manifest()
+        current_hashes: dict[str, str] = {}
+        changed_assets: list[tuple[Path, str, str]] = []
+        for src, ascii_name, label in assets:
+            digest = _sha256_file(src)
+            current_hashes[ascii_name] = digest
+            if prev_manifest.get(ascii_name) != digest:
+                changed_assets.append((src, ascii_name, label))
+
+        if not changed_assets:
+            print(
+                f"[release] All {len(assets)} Release assets unchanged (SHA256 match); "
+                f"skipping upload (pass --force-release to override)."
+            )
+            return
+
+        skipped = len(assets) - len(changed_assets)
         with tempfile.TemporaryDirectory(prefix="gir_release_") as tmp_dir_str:
             tmp_dir = Path(tmp_dir_str)
             upload_specs: list[str] = []
-            for src, ascii_name, label in assets:
+            for src, ascii_name, label in changed_assets:
                 dst = tmp_dir / ascii_name
                 shutil.copy2(src, dst)
                 upload_specs.append(f"{dst}#{label}")
 
-            print(f"[release] Uploading {len(upload_specs)} latest PDF/DOCX assets to `{RELEASE_TAG}`...")
+            print(
+                f"[release] Uploading {len(upload_specs)} changed PDF/DOCX asset(s) "
+                f"(skipped {skipped} unchanged) to `{RELEASE_TAG}`..."
+            )
             up_res = _run(
                 [gh_bin, "release", "upload", RELEASE_TAG, *upload_specs, "--clobber"],
                 env=env,
@@ -325,7 +427,13 @@ def _upload_rolling_release(env: dict[str, str]) -> None:
                 )
                 return
 
-        print(f"[release] Successfully updated {len(assets)} assets on Release `{RELEASE_TAG}`.")
+        merged_manifest = dict(prev_manifest)
+        merged_manifest.update(current_hashes)
+        _save_release_manifest(merged_manifest)
+        print(
+            f"[release] Successfully uploaded {len(changed_assets)} changed asset(s) "
+            f"to Release `{RELEASE_TAG}` ({skipped} unchanged skipped)."
+        )
     except Exception as exc:
         print(f"[WARN] Rolling Release upload encountered an error (non-fatal): {exc}", file=sys.stderr)
 
@@ -351,6 +459,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Skip uploading compiled PDF/DOCX files to GitHub Release `latest-reports`.",
     )
     parser.add_argument(
+        "--force-release",
+        action="store_true",
+        help="Force re-upload all discovered PDF/DOCX Release assets regardless of SHA256 cache.",
+    )
+    parser.add_argument(
         "--no-push",
         action="store_true",
         help="Build + strict lint + local git commit only (skip push and release upload).",
@@ -369,82 +482,117 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[FAIL] Missing site linter: {LINT_SCRIPT}", file=sys.stderr)
         return 1
 
-    # 1. Build static site
-    print(f"[1/4] Building static site -> {SITE_DIR}")
-    build_res = _run(
-        [sys.executable, str(BUILD_SCRIPT), "--out", str(SITE_DIR)],
-        env=env,
-        check=False,
-    )
-    if build_res.returncode != 0:
-        print(f"[FAIL] build_site.py failed with exit code {build_res.returncode}", file=sys.stderr)
-        return build_res.returncode
+    with _publish_lock():
+        # 1. Build static site
+        print(f"[1/4] Building static site -> {SITE_DIR}")
+        build_res = _run(
+            [sys.executable, str(BUILD_SCRIPT), "--out", str(SITE_DIR)],
+            env=env,
+            check=False,
+        )
+        if build_res.returncode != 0:
+            print(f"[FAIL] build_site.py failed with exit code {build_res.returncode}", file=sys.stderr)
+            return build_res.returncode
 
-    # 2. Strict lint generated site
-    print(f"[2/4] Running strict site linter -> {SITE_DIR}")
-    lint_res = _run(
-        [sys.executable, str(LINT_SCRIPT), str(SITE_DIR), "--strict"],
-        env=env,
-        check=False,
-    )
-    if lint_res.returncode != 0:
-        print(f"[FAIL] lint_site.py --strict failed with exit code {lint_res.returncode}", file=sys.stderr)
-        return lint_res.returncode
+        # 2. Strict lint generated site
+        print(f"[2/4] Running strict site linter -> {SITE_DIR}")
+        lint_res = _run(
+            [sys.executable, str(LINT_SCRIPT), str(SITE_DIR), "--strict"],
+            env=env,
+            check=False,
+        )
+        if lint_res.returncode != 0:
+            print(f"[FAIL] lint_site.py --strict failed with exit code {lint_res.returncode}", file=sys.stderr)
+            return lint_res.returncode
 
-    # 3. Dry-run preview
-    if args.dry_run:
-        status_res = _run(["git", "status", "--short"], env=env, check=False, capture=True)
-        print("\n=== [DRY-RUN] Git Status ===")
-        print(status_res.stdout.strip() or "(working tree clean)")
-        assets = discover_release_assets()
-        print(f"\n=== [DRY-RUN] Discovered Release Assets ({len(assets)}) ===")
-        for src, ascii_name, label in assets:
-            rel = src.relative_to(REPO_ROOT)
-            print(f"  - {ascii_name}  <-  {rel}  [{label}]")
-        print("\n[DRY-RUN] Build & strict lint passed. No commit, push, or release upload performed.")
+        # 3. Dry-run preview
+        if args.dry_run:
+            status_res = _run(["git", "status", "--short"], env=env, check=False, capture=True)
+            print("\n=== [DRY-RUN] Git Status ===")
+            print(status_res.stdout.strip() or "(working tree clean)")
+            assets = discover_release_assets()
+            prev_manifest = {} if args.force_release else _load_release_manifest()
+            print(f"\n=== [DRY-RUN] Discovered Release Assets ({len(assets)}) ===")
+            for src, ascii_name, label in assets:
+                rel = src.relative_to(REPO_ROOT)
+                state = "UPLOAD" if prev_manifest.get(ascii_name) != _sha256_file(src) else "SKIP-UNCHANGED"
+                print(f"  - [{state}] {ascii_name}  <-  {rel}  [{label}]")
+            print("\n[DRY-RUN] Build & strict lint passed. No commit, push, or release upload performed.")
+            return 0
+
+        # 4. Verify branch is strictly `main` before committing or pushing
+        try:
+            _verify_main_branch(env)
+        except Exception as exc:
+            print(f"[FAIL] {exc}", file=sys.stderr)
+            return 1
+
+        # 5. Explicitly scoped Git staging & commit
+        stage_paths = [p for p in CANONICAL_STAGE_PATHS if (REPO_ROOT / p).exists()]
+        if not stage_paths:
+            print("[FAIL] No canonical repository paths found to stage.", file=sys.stderr)
+            return 1
+
+        print(f"[3/4] Staging canonical paths ({', '.join(stage_paths)}) and committing updates...")
+        add_res = _run(["git", "add", "--", *stage_paths], env=env, check=False, capture=True)
+        if add_res.returncode != 0:
+            detail = (add_res.stderr or add_res.stdout).strip()
+            print(f"[FAIL] git add failed: {detail}", file=sys.stderr)
+            return 1
+
+        diff_cached = _run(["git", "diff", "--cached", "--quiet"], env=env, check=False)
+        if diff_cached.returncode != 0:
+            now_cst = datetime.now(CST).strftime("%Y-%m-%d %H:%M")
+            commit_msg = args.message or f"publish: update research reports {now_cst} CST"
+            try:
+                commit_res = _run(
+                    ["git", "commit", "-m", commit_msg],
+                    env=env,
+                    check=False,
+                    capture=True,
+                )
+                if commit_res.returncode != 0:
+                    detail = (commit_res.stderr or commit_res.stdout).strip()
+                    print(f"[FAIL] git commit failed: {detail}", file=sys.stderr)
+                    return 1
+                if commit_res.stdout.strip():
+                    print(commit_res.stdout.strip())
+            except Exception as exc:
+                print(f"[FAIL] git commit encountered an unexpected error: {exc}", file=sys.stderr)
+                return 1
+        else:
+            print("[git] No staged changes to commit.")
+
+        if args.no_push:
+            print("[4/4] --no-push set; skipping remote push and Release upload.")
+            return 0
+
+        remote_url = _has_origin_remote(env)
+        if not remote_url:
+            print("[4/4] No git remote `origin` configured; skipping push and Release upload.")
+            return 0
+
+        # 6. Pull-rebase & push with retry
+        print(f"[4/4] Syncing with origin ({remote_url})...")
+        has_head = _run(["git", "rev-parse", "--verify", "HEAD"], env=env, check=False, capture=True)
+        if has_head.returncode != 0:
+            print("[WARN] Repository has no commits yet; nothing to push.", file=sys.stderr)
+            return 0
+
+        try:
+            _push_main_with_retry(env)
+        except Exception as exc:
+            print(f"[FAIL] {exc}", file=sys.stderr)
+            return 1
+
+        # 7. Optional non-fatal rolling Release PDF/DOCX upload (SHA256 deduplicated)
+        if args.skip_release:
+            print("[release] --skip-release set; skipping Release asset upload.")
+        else:
+            _upload_rolling_release(env, force_release=args.force_release)
+
+        print("[DONE] Publish pipeline completed successfully.")
         return 0
-
-    # 4. Git stage & commit
-    print("[3/4] Staging and committing repository updates...")
-    _run(["git", "add", "-A"], env=env, check=True)
-    diff_cached = _run(["git", "diff", "--cached", "--quiet"], env=env, check=False)
-    if diff_cached.returncode != 0:
-        now_cst = datetime.now(CST).strftime("%Y-%m-%d %H:%M")
-        commit_msg = args.message or f"publish: update research reports {now_cst} CST"
-        _run(["git", "commit", "-m", commit_msg], env=env, check=True)
-    else:
-        print("[git] No staged changes to commit.")
-
-    if args.no_push:
-        print("[4/4] --no-push set; skipping remote push and Release upload.")
-        return 0
-
-    remote_url = _has_origin_remote(env)
-    if not remote_url:
-        print("[4/4] No git remote `origin` configured; skipping push and Release upload.")
-        return 0
-
-    # 5. Pull-rebase & push with retry
-    print(f"[4/4] Syncing with origin ({remote_url})...")
-    has_head = _run(["git", "rev-parse", "--verify", "HEAD"], env=env, check=False, capture=True)
-    if has_head.returncode != 0:
-        print("[WARN] Repository has no commits yet; nothing to push.", file=sys.stderr)
-        return 0
-
-    try:
-        _push_main_with_retry(env)
-    except Exception as exc:
-        print(f"[FAIL] {exc}", file=sys.stderr)
-        return 1
-
-    # 6. Optional non-fatal rolling Release PDF/DOCX upload
-    if args.skip_release:
-        print("[release] --skip-release set; skipping Release asset upload.")
-    else:
-        _upload_rolling_release(env)
-
-    print("[DONE] Publish pipeline completed successfully.")
-    return 0
 
 
 if __name__ == "__main__":

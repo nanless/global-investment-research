@@ -15,11 +15,11 @@
 
 ### 常用核心入口（PDF · 原生 Word · 手机大字流式版）
 - **全景常青手册（7 维大盘 × 135 只全板块龙头）**：
-  - A 股全景手册（44 股）：[PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/a_share_market_report_latest.pdf) · [Word](file:///Users/francis7999/code/github_repos/global-investment-research/equity/a_share_market_report_latest.docx) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/a_share_market_report_latest.md)
-  - 港股全景手册（45 股）：[PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/hk_stock_market_report_latest.pdf) · [Word](file:///Users/francis7999/code/github_repos/global-investment-research/equity/hk_stock_market_report_latest.docx) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/hk_stock_market_report_latest.md)
-  - 美股全景手册（46 股）：[PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/us_stock_market_report_latest.pdf) · [Word](file:///Users/francis7999/code/github_repos/global-investment-research/equity/us_stock_market_report_latest.docx) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/us_stock_market_report_latest.md)
-- **三市一键互切手机版**：[A 股手机版](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/latest_a_share.html) · [港股手机版](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/latest_hk_stock.html) · [美股手机版](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/latest_us_stock.html)
-- **长期追踪账本**：[观点演进记录（CHANGELOG）](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/CHANGELOG.md) · [关键判断记分卡（SCORECARD）](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/SCORECARD.md)
+  - A 股全景手册（44 股）：[PDF](../a_share_market_report_latest.pdf) · [Word](../a_share_market_report_latest.docx) · [正文](../a_share_market_report_latest.md)
+  - 港股全景手册（45 股）：[PDF](../hk_stock_market_report_latest.pdf) · [Word](../hk_stock_market_report_latest.docx) · [正文](../hk_stock_market_report_latest.md)
+  - 美股全景手册（46 股）：[PDF](../us_stock_market_report_latest.pdf) · [Word](../us_stock_market_report_latest.docx) · [正文](../us_stock_market_report_latest.md)
+- **三市一键互切手机版**：[A 股手机版](latest_a_share.html) · [港股手机版](latest_hk_stock.html) · [美股手机版](latest_us_stock.html)
+- **长期追踪账本**：[观点演进记录（CHANGELOG）](CHANGELOG.md) · [关键判断记分卡（SCORECARD）](SCORECARD.md)
 
 ---
 
@@ -27,7 +27,7 @@
 
 - **✅ 累计 4 战全胜（严守“锁定早于验真”铁律）**：① 劝退财报前赌戴尔科技（正盘暴跌 -11.83%、盘后终盘回吐至仅 +0.89%）；② 5 年美债拍卖平稳过关（4.719%）；③ 好市多除息未现错杀；④ 11/24 提前避开 A 股算力高开派发（另宁德 H 股 11/25 午盘虽已急跌超 6%，按规则留待 12/07 正式算账）。
 - **⏳ 今日三市紧盯**：A 股 15:00 收盘与两融/芯片设备分化；港股 16:10 官收与老铺黄金股东会决议；美股今晚 21:30 美国 10 月核心通胀（明 11/26 感恩节全天休市）。
-- **📋 全部公开算账**：查看 17 项追踪预判与周频防守体验对照 → [关键判断记分卡（SCORECARD）](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/SCORECARD.md)。
+- **📋 全部公开算账**：查看 17 项追踪预判与周频防守体验对照 → [关键判断记分卡（SCORECARD）](SCORECARD.md)。
 
 ---
 
@@ -35,9 +35,9 @@
 
 | 更新时间（北京时间） | 三市水温灯 | 一句话人话行动指令 | 独立日报（点击阅读） |
 | :--- | :---: | :--- | :--- |
-| **2026-11-25 07:30** 早刊 | 🛡️ 三市红灯防守 | A股避高溢价基、到期转债误转与铜矿飞刀；港股盯联汇；美股勿追戴尔与黄金。 | A 股 [PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_a_share.pdf) · [Word](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_a_share.docx) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_a_share.md)<br>港股 [PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_hk_stock.pdf) · [Word](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_hk_stock.docx) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_hk_stock.md)<br>美股 [PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_us_stock.pdf) · [Word](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_us_stock.docx) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-25_0730_us_stock.md) |
-| **2026-11-24 18:00** 晚刊 | 🛡️ 双市红灯防守 | A股禁抢停牌高溢价基；美股亚德诺暴跌10%+新清单，禁赌戴尔。 | A 股 [PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_1800_a_share.pdf) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_1800_a_share.md)<br>美股 [PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_1800_us_stock.pdf) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_1800_us_stock.md) |
-| **2026-11-24 07:30** 早刊 | 🛡️ 双市红灯防守 | A股不追高、慢吸红利避高溢价基金；美股不追芯片、避高估超市。 | A 股 [PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_0730_a_share.pdf) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_0730_a_share.md)<br>美股 [PDF](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_0730_us_stock.pdf) · [正文](file:///Users/francis7999/code/github_repos/global-investment-research/equity/daily/2026-11-24_0730_us_stock.md) |
+| **2026-11-25 07:30** 早刊 | 🛡️ 三市红灯防守 | A股避高溢价基、到期转债误转与铜矿飞刀；港股盯联汇；美股勿追戴尔与黄金。 | A 股 [PDF](2026-11-25_0730_a_share.pdf) · [Word](2026-11-25_0730_a_share.docx) · [正文](2026-11-25_0730_a_share.md)<br>港股 [PDF](2026-11-25_0730_hk_stock.pdf) · [Word](2026-11-25_0730_hk_stock.docx) · [正文](2026-11-25_0730_hk_stock.md)<br>美股 [PDF](2026-11-25_0730_us_stock.pdf) · [Word](2026-11-25_0730_us_stock.docx) · [正文](2026-11-25_0730_us_stock.md) |
+| **2026-11-24 18:00** 晚刊 | 🛡️ 双市红灯防守 | A股禁抢停牌高溢价基；美股亚德诺暴跌10%+新清单，禁赌戴尔。 | A 股 [PDF](2026-11-24_1800_a_share.pdf) · [正文](2026-11-24_1800_a_share.md)<br>美股 [PDF](2026-11-24_1800_us_stock.pdf) · [正文](2026-11-24_1800_us_stock.md) |
+| **2026-11-24 07:30** 早刊 | 🛡️ 双市红灯防守 | A股不追高、慢吸红利避高溢价基金；美股不追芯片、避高估超市。 | A 股 [PDF](2026-11-24_0730_a_share.pdf) · [正文](2026-11-24_0730_a_share.md)<br>美股 [PDF](2026-11-24_0730_us_stock.pdf) · [正文](2026-11-24_0730_us_stock.md) |
 
 ---
 

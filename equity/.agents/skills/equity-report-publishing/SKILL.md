@@ -17,7 +17,7 @@ description: >-
 
 ---
 
-## 1. 四步出版编译与门禁流程（唯一 5 条预授权核心命令）
+## 1. 五步出版编译、门禁与站点发布流程（唯一 6 个预授权核心脚本）
 
 1. **编译前毫秒级秒检（`lint_equity.py --precheck --strict`）**：确认日报 `<!-- DAILY_META_JSON { ... } -->` 置于 `.md` 最末尾、JSON 合法且零新旧键混写，先跑独立秒检拦停禁词、Gate 3B（标题分级 ≤27/≤36 字、一句话结论 ≤50 字、段长/列表密墙、10 点进度条总和 = 10、旗舰 Appendix 行数 == `stock_pool_count`）、港股红利税/`520830`/QDII 误标、以及 Gate C1–C3（`brent_settle_usd` + 黄金快照 4 小时新鲜度 + 黄金红灯锁），0 错 0 警后再编译：
    - `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/lint_equity.py --precheck --strict`
@@ -31,6 +31,7 @@ description: >-
    - **Gate 6（PDF 页数红线 + 原生 OOXML + 三市终端）**：PDF 页数须落入红线区间（**旗舰 16–24 页 / 主刊 4–5 页 / 轻刊 1–3 页**）、DOCX 7 核心 XML / `<w:tbl>` / 图数与 `docPr` 唯一性、三市 `_latest.{md,pdf,docx}` 原子同步、三市手机端 HTML 与 RSI 账本；
    - **Cross-Project Gates C1–C3**：直读 `../gold/data_snapshot.json` 校验 **`brent_settle_usd`**、`cfets_cny_fixing`（含日期）等全量共享宏观键及 **≤4 小时新鲜度**；Gate C2 当 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，全载体扫描 Markdown、JSON 与编译后 HTML/SVG 严禁买金指令与金矿股违规标绿；Gate C3 检查期铜 ≥3.5% 异动传导。必须退出码 `0`、0 错 0 警。
 4. **产物核验与 PDF 视觉抽查**：确认 `daily/latest_{a_share,hk_stock,us_stock}.html`（顶栏 `A 股 ｜ 港股 ｜ 美股` 三市一键互切）与全部 PDF/DOCX 已刷新，用 `read_file` 抽检 PDF 确认零标签遮挡、零半页空白与零孤行尾页。Step 5 完成 RSI 更新后再跑一次 `lint_equity.py --strict` 确认终检全绿。
+5. **门禁全绿后统一站点发布（`scripts/publish_site.py`）**：终检全绿后执行第 6 个预授权核心脚本 `python3 /Users/francis7999/code/github_repos/global-investment-research/scripts/publish_site.py`（带 `fcntl.flock` 防并发锁，自动构建双端响应式网页 `_site/`、过 `lint_site.py --strict`、限域提交并 SSH 推送至 GitHub Pages、按 SHA256 增量同步滚动 Release PDF/DOCX）。
 
 ---
 

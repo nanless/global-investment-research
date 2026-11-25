@@ -15,6 +15,8 @@ Usage:
   python3 build_report.py --snapshot <file.json> # override snapshot file explicitly
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re

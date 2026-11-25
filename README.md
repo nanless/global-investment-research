@@ -68,8 +68,8 @@ python3 equity/lint_equity.py --strict
 ```
 
 ### 2. 静态网站构建与严检（Static Site Build & Lint）
+> 零第三方依赖（仅需 Python 3.9+ 标准库即可直接构建与严检，无需 `pip install`）。
 ```bash
-pip install markdown
 python3 scripts/build_site.py --out _site
 python3 scripts/lint_site.py _site --strict
 ```

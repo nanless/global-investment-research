@@ -11,7 +11,7 @@
 2. **获用户明确审批执行 Tier C 提案 C1（A 股 T 日两融余额永久归口次日 `18:00` 晚刊）**：
    - 同步更新 `GEMINI.md`（第四节）、`DAILY_REPORT_SPEC.md`（第三、六节）、`.agents/skills/equity-research-editorial-qa/SKILL.md`、`pre_flight_10_gates.md` 及 `.agents/skills/equity-report-publishing/resources/{daily_main_template.md,daily_light_or_holiday_template.md}`：全链路明确 A 股 T 日两融余额因沪深交所次晨 `08:00–09:00 CST` 才披露，比照美国现货比特币 ETF T+1 官流，统一由**次日 `18:00` 晚刊封账**，`07:30` 早刊专职回补延迟中金所/申万/晚间公告。
 3. **获用户明确审批执行 Tier C 提案 C2（双 `sidecar.json` 固化防返工护栏 + 启用 18:00 晚刊）**：
-   - 用户已于 Automations Dashboard 启用 **`每日A股与美股深度投研（18:00 晚刊）`**；同步更新 `/Users/francis7999/.gemini/config/sidecars/daily-a-us-equity-research/sidecar.json` 与 `/Users/francis7999/.gemini/config/sidecars/daily-a-us-equity-research-evening/sidecar.json`：对齐 C1 两融归口，并固化 `site:cffex.com.cn` 日期戳直查、美股轻刊首稿 ≤50 行防跨第 3 页、封面主标题 ≤27 字与压字禁合并 ETF 费率/禁裸缩写护栏；同步清空 `state/RSI_PLAYBOOK.md` 第四节待批列表。
+   - 用户已于 Automations Dashboard 启用 **`每日A股与美股深度投研（18:00 晚刊）`**；同步更新 `~/.gemini/config/sidecars/daily-a-us-equity-research/sidecar.json` 与 `~/.gemini/config/sidecars/daily-a-us-equity-research-evening/sidecar.json`：对齐 C1 两融归口，并固化 `site:cffex.com.cn` 日期戳直查、美股轻刊首稿 ≤50 行防跨第 3 页、封面主标题 ≤27 字与压字禁合并 ETF 费率/禁裸缩写护栏；同步清空 `state/RSI_PLAYBOOK.md` 第四节待批列表。
 
 ---
 

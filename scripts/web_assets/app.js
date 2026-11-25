@@ -269,6 +269,29 @@
 
     const COLOR_ORDER = { g: 1, b: 2, y: 3, r: 4 };
     const COLOR_MARK = { g: "●", b: "◆", y: "▲", r: "×" };
+    const sortHeaders = Array.from(document.querySelectorAll("table.screener-table th.sortable"));
+    sortHeaders.forEach(function (th) {
+      if (!th.dataset.baseLabel) {
+        th.dataset.baseLabel = (th.textContent || "").replace(/\s*[⇅▲▼]\s*$/, "").trim();
+      }
+    });
+
+    function syncSortHeaders() {
+      sortHeaders.forEach(function (th) {
+        const key = th.getAttribute("data-sort");
+        const base = th.dataset.baseLabel || "";
+        if (state.sortKey === key) {
+          const dirStr = state.sortDir === 1 ? "asc" : "desc";
+          th.setAttribute("data-sort-dir", dirStr);
+          th.setAttribute("aria-sort", state.sortDir === 1 ? "ascending" : "descending");
+          th.textContent = base + (state.sortDir === 1 ? " ▲" : " ▼");
+        } else {
+          th.removeAttribute("data-sort-dir");
+          th.setAttribute("aria-sort", "none");
+          th.textContent = base + " ⇅";
+        }
+      });
+    }
 
     function escHtml(s) {
       return String(s || "")
@@ -321,19 +344,17 @@
 
       if (state.sortKey !== "default") {
         rows = rows.slice().sort(function (a, b) {
-          let va, vb;
           if (state.sortKey === "color") {
-            va = COLOR_ORDER[a.color] || 9;
-            vb = COLOR_ORDER[b.color] || 9;
-          } else {
-            va = String(a[state.sortKey] || "");
-            vb = String(b[state.sortKey] || "");
+            const va = COLOR_ORDER[a.color] || 9;
+            const vb = COLOR_ORDER[b.color] || 9;
+            return (va - vb) * state.sortDir;
           }
-          if (va < vb) return -1 * state.sortDir;
-          if (va > vb) return 1 * state.sortDir;
-          return 0;
+          const va = String(a[state.sortKey] || "");
+          const vb = String(b[state.sortKey] || "");
+          return va.localeCompare(vb, "zh-Hans-CN", { numeric: true }) * state.sortDir;
         });
       }
+      syncSortHeaders();
 
       if (countEl) {
         countEl.textContent = "显示 " + rows.length + " / " + allStocks.length + " 家龙头公司";
@@ -470,6 +491,7 @@
   if (tabBtns.length > 0) {
     function activateTab(tabId, updateHash) {
       if (tabId === "changelog") tabId = "equity-changelog";
+      if (tabId === "audit-log") tabId = "gold-audit-log";
       const valid = tabBtns.some(function (b) { return b.getAttribute("data-tab-target") === tabId; });
       const targetId = valid ? tabId : tabBtns[0].getAttribute("data-tab-target");
       tabBtns.forEach(function (b) {

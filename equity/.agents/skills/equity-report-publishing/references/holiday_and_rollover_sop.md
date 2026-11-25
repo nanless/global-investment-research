@@ -70,10 +70,11 @@
      - `"period_slug": "2026_12"`、`"version": "2026年12月刊"`、`"page_footer"` 改为 `2026年12月`；
      - 推进 `"as_of_year_float"`（12 月初约 `2026.92`，12 月下旬约 `2026.97`）；
      - 同步更新 `a3`/`a4`/`a6`/`a7`、`h2`/`h3`（用 `hkma_agg_bal_hkd_100m`）/`h4`/`h6`/`h7`、`u3`/`u4`/`u6`/`u7` 与 `kpis`，并确保 `stock_pool_count` 与附表二行数 100% 相等。
-2. **第 2 步｜预检 + 5 条预授权核心命令串行编译并全量严检**：
+2. **第 2 步｜预检 + 6 个预授权核心脚本串行编译、严检并发布**：
    - 先跑 `python3 .../lint_equity.py --precheck --strict` 达成 0 错 0 警；
    - 按序单独串行执行 4 个构建脚本：`build_a_share_pdf.py` → `build_hk_stock_pdf.py` → `build_us_stock_pdf.py` → `build_daily.py`；
-   - 再跑全量验收 `python3 .../lint_equity.py --strict`，确认三份 `*_2026_12.{pdf,docx}` 与 `*_latest.{md,pdf,docx}` 原子同步、三市手机 HTML `daily/latest_{a_share,hk_stock,us_stock}.html` 已刷新，且 Gate 0–6（含旗舰 16–24 页红线）、Gate 3B 及跨项目 Gate C1–C3 全部退出码 0、0 错 0 警。
+   - 再跑全量验收 `python3 .../lint_equity.py --strict`，确认三份 `*_2026_12.{pdf,docx}` 与 `*_latest.{md,pdf,docx}` 原子同步、三市手机 HTML `daily/latest_{a_share,hk_stock,us_stock}.html` 已刷新，且 Gate 0–6（含旗舰 16–24 页红线）、Gate 3B 及跨项目 Gate C1–C3 全部退出码 0、0 错 0 警；
+   - 终检全绿后执行第 6 个预授权脚本 `python3 .../scripts/publish_site.py` 同步静态门户与滚动 Release 附件。
 3. **第 3 步｜更新 `daily/INDEX.md` 月度归档导航**：将超 7 天的上月三市日报折叠入底部“历史月份归档区”，保持主表清爽。
 4. **第 4 步｜更新单一事实源 `state/market_state.json`**：推进 `period_slug`、月度基准日期、刷新未来 60 天三市休市日历与实时 `stock_pool_count`。
 5. **第 5 步｜留痕与待用户物理归档移交清单**：在 `state/audit_ledger.md` 倒序置顶登记新月刊编译字节数与待移入 `daily/archive/2026-11/`、`archive/flagship/` 的上月历史文件清单（不违背零 `mv`/`rm` 铁律）；在 `daily/CHANGELOG.md` 仅以纯人话记录新月刊观点变化（零工程/RSI 词）。

@@ -53,8 +53,8 @@
 6. ☐ `state/audit_ledger.md`（倒序置顶归档一手源核验、红队纠偏 Diff、数据回补日志与编译字节数）
 - ☐ 若命中旗舰 5 条触发阈值，同步更新 `{a_share,hk_stock,us_stock}_market_report_{YYYY_MM}.md` 与 `report_meta_{a_share,hk_stock,us_stock}.json`。
 
-## 门禁 10｜独立预检、5 条预授权命令编译、Gate 6 页数红线与目检
+## 门禁 10｜独立预检、6 个预授权核心脚本编译、Gate 6 页数红线与站点发布
 - ☐ **编译前秒检**：运行 `python3 .../lint_equity.py --precheck --strict`（Gate 0–5 + Gate 3B + Gate C1–C3），确认 0 错 0 警后再编译。
-- ☐ **唯一 5 条预授权命令串行编译**（未改旗舰仅跑 `build_daily.py`；严禁 `textutil`，全部 Word 由 `docx_embed.py` 生成纯 Python 原生 ECMA-376 OOXML）。
+- ☐ **唯一 6 个预授权核心脚本串行执行**（未改旗舰仅跑 `lint_equity.py`、`build_daily.py` 及终检全绿后的 `../scripts/publish_site.py`；严禁 `textutil`，全部 Word 由 `docx_embed.py` 生成纯 Python 原生 ECMA-376 OOXML）。
 - ☐ **编译后全量严检**：运行 `python3 .../lint_equity.py --strict`，确认 Gate 0–6（含 **PDF 页数红线：旗舰 16–24 页 / 主刊 4–5 页 / 轻刊 1–3 页**、DOCX 7 核心 XML / `<w:tbl>` / 图数与 `docPr` 唯一性、三市 `_latest.{md,pdf,docx}` 与三市手机 HTML、RSI 账本）、Gate 3B 及跨项目 Gate C1–C3（`brent_settle_usd` + 4 小时新鲜度 + HTML/SVG 黄金锁）**退出码 0、0 错 0 警**。
-- ☐ 通过 `read_file` 抽检 PDF 确认零标签遮挡、零半页空白、图号连续与零孤行尾页；Step 5 完成 RSI 更新后再复跑 `lint_equity.py --strict` 全绿收官。
+- ☐ 通过 `read_file` 抽检 PDF 确认零标签遮挡、零半页空白、图号连续与零孤行尾页；Step 5 完成 RSI 更新后再复跑 `lint_equity.py --strict` 全绿，随后运行 `python3 .../scripts/publish_site.py` 完成静态站点构建、严检与 GitHub Pages / Release 发布。

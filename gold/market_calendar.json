@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "as_of": "2026-11-25",
   "timezone": "Asia/Shanghai",
-  "description": "60+ day cross-market holiday, half-day, DST transition, and gold-specific macro/mechanical calendar for gold_research_2026 (2026-11-26 through 2027-03-14 + 2027-Q1 structural watch).",
+  "description": "60+ day cross-market holiday, half-day, DST transition, and gold-specific macro/mechanical calendar for global-investment-research/gold (2026-11-26 through 2027-03-14 + 2027-Q1 structural watch).",
   "dst_schedule": {
     "current_regime": "north_america_winter_standard",
     "winter_standard": {

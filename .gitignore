@@ -21,5 +21,12 @@ __pycache__/
 # macOS metadata
 .DS_Store
 
+# Environment secrets, virtualenvs, logs & backups
+.env
+.env.*
+*.log
+.venv/
+*.bak
+
 # Legacy generated HTML archive
 equity/archive/legacy_combined/*.html

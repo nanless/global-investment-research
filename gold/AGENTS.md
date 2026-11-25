@@ -1,4 +1,4 @@
-# 黄金深度研报项目规则（gold_research_2026）
+# 黄金深度研报项目规则（global-investment-research/gold）
 
 本目录是面向普通理性投资者的「每日黄金深度研报（07:30 早报 & 18:00 晚报 / 周末专项版）」与「跨世纪周期全景主报告（1971–2030）」生产与出版工作区。以下规则为本项目的永久约束；完整 JSON Schema、7 道门禁词表、OOXML 引擎架构与 5+1 调研提示词请按需加载本机全局 Skill **`gold-research-publishing`**（`~/.gemini/config/skills/gold-research-publishing/SKILL.md`）。
 
@@ -7,7 +7,7 @@
 ## 1. 核心工作区资产地图与跨项目单一权威源（SSOT）
 
 - **双快照防撕裂数据源与跨项目 SSOT 宣言**：
-  - **跨项目单一权威源（SSOT）**：黄金深度研报项目在每日 **`07:30` / `18:00` BJT** 率先运行，并拥有 `data_snapshot.json`（涵盖国际现货金、COMEX 期金、SHFE 沪金、SGE 现货、COMEX 期铜、`DFII10` 实际利率、以及买金四步红绿灯 `tier_code` 与新买开关 `new_buy_allowed` 等核心裁决字段）的**唯一写入权**；全球股研项目（`global-equity-report-2026-11`）在 **`07:55` / `18:25` BJT** 错峰启动后仅对本快照执行**只读校验**，严禁逆向修改黄金快照，亦严禁输出与黄金红绿灯指令冲突的买金建议；
+  - **跨项目单一权威源（SSOT）**：黄金深度研报项目在每日 **`07:30` / `18:00` BJT** 率先运行，并拥有 `data_snapshot.json`（涵盖国际现货金、COMEX 期金、SHFE 沪金、SGE 现货、COMEX 期铜、`DFII10` 实际利率、以及买金四步红绿灯 `tier_code` 与新买开关 `new_buy_allowed` 等核心裁决字段）的**唯一写入权**；全球股研模块（`global-investment-research/equity`）在 **`07:55` / `18:25` BJT** 错峰启动后仅对本快照执行**只读校验**，严禁逆向修改黄金快照，亦严禁输出与黄金红绿灯指令冲突的买金建议；
   - 日报唯一实时数据源：`data_snapshot.json`（涵盖版本号、L0/L1/L2 警报、四步红绿灯 `tier1_gates[4]`、`tier_code`/`new_buy_allowed`、全球金银铜/沪金/上金所实盘、美债/汇率/估值锚、油气/风险资产/金矿/信用、四大央行与 12 大行 2027 中位、`rmb_channels`、`cross_ratios`、`monthly_candles`、`mechanical_calendar`、`institutional_targets`、`trust_assets`）；
   - 主报告独立锁定数据源：`master_snapshot.json`（由主报告顶部 `<!-- MASTER_BASELINE {"as_of_short": "...", "snapshot": "master_snapshot.json"} -->` 原子锁定，`build_report.py` 与 `lint_readability.py` 强制校验一致，彻底根除跨日更新日报导致主报告 `--strict` 死锁或图表/正文撕裂）；
   - 外置跨市场休市与时令日历：`market_calendar.json`（覆盖 60+ 天美/中/港/欧/英/日/印休市、半日市、四大央行议息、BCOM/GSCI 调仓及北美冬/夏令时切换规则，取代硬编码节假日）。

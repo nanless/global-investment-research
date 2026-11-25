@@ -11,7 +11,7 @@ from pathlib import Path
 import fitz
 from playwright.sync_api import sync_playwright
 
-OUT_DIR = Path("/Users/francis7999/.gemini/antigravity/scratch/global-equity-report-2026-11")
+OUT_DIR = Path(__file__).resolve().parent
 HTML_PATH = OUT_DIR / "global_equity_market_report_2026_11.html"
 PDF_PATH = OUT_DIR / "global_equity_market_report_2026_11.pdf"
 

@@ -1,7 +1,7 @@
 # 黄金深度研报·公开可证伪预测记分卡
 
 > **账本定位**：本记分卡向所有读者完全透明公开每期早晚报锁定的关键可证伪判断与排雷预警，到期按客观官方行情逐笔验真，**对就写对、偏就写偏、错就公开认错**，绝不只讲新故事、绝不事后修改旧记录。  
-> 关联公开档案：[每日演化日志（CHANGELOG）](file:///Users/francis7999/code/github_repos/global-investment-research/gold/daily/CHANGELOG.md) ｜ [公开核查与辟谣账本（AUDIT_LOG）](file:///Users/francis7999/code/github_repos/global-investment-research/gold/daily/AUDIT_LOG.md)
+> 关联公开档案：[每日演化日志（CHANGELOG）](CHANGELOG.md) ｜ [公开核查与辟谣账本（AUDIT_LOG）](AUDIT_LOG.md)
 
 ---
 
