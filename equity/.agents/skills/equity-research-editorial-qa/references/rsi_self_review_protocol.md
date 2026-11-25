@@ -92,4 +92,4 @@
 ## 五、每 10 刊 Meta-RSI 跨周期趋势总复盘与终检收官
 
 1. **Meta-RSI 触发**：每当 `len(runs) > 0` 且 `len(runs) % 10 == 0` 时，盲审子代理同步统计最近 10 刊总分均值、一次过率（`first_pass_clean` 占比）与 6 个维度各自均分，锁定连续得分最低的 1–2 个结构性瓶颈维度，输出 **≤2 条高价值 Tier C 根因升级提案** 写入 `state/RSI_PLAYBOOK.md` 第四节待用户审批，同时彻底淘汰过时条目保持手册 ≤180 行。
-2. **统一终检与站点发布命令**：Tier A（及按需 Tier B）落盘后，必须统一执行 **`python3 /Users/francis7999/code/github_repos/global-investment-research/equity/lint_equity.py --strict`**，确认手册行数、JSON 合法性、`run_id` 唯一性、`total_score == sum(scores)` 及全量 Gate 0–6 / 3B / C1–C3 全部绿灯后，立即运行 **`python3 /Users/francis7999/code/github_repos/global-investment-research/scripts/publish_site.py`** 完成双端静态门户编译、严检、推送与滚动 Release 同步，方可结束本班次。
+2. **统一终检与站点发布命令**：Tier A（及按需 Tier B）落盘后，必须统一执行 **`python3 <REPO_ROOT>/equity/lint_equity.py --strict`**，确认手册行数、JSON 合法性、`run_id` 唯一性、`total_score == sum(scores)` 及全量 Gate 0–6 / 3B / C1–C3 全部绿灯后，立即运行 **`python3 <REPO_ROOT>/scripts/publish_site.py`** 完成双端静态门户编译、严检、推送与滚动 Release 同步，方可结束本班次。

@@ -88,11 +88,13 @@ def _clean_env() -> dict[str, str]:
         "-o ServerAliveInterval=15 -o ServerAliveCountMax=3"
     )
 
-    preferred_bins = [
-        extra
-        for extra in ("/Users/francis7999/miniforge3/bin", "/opt/homebrew/bin", "/usr/local/bin")
-        if os.path.isdir(extra)
-    ]
+    candidates = (
+        str(Path(sys.executable).resolve().parent),
+        str(Path.home() / "miniforge3" / "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+    )
+    preferred_bins = [extra for extra in dict.fromkeys(candidates) if os.path.isdir(extra)]
     existing_parts = [p for p in env.get("PATH", "").split(os.pathsep) if p and p not in preferred_bins]
     env["PATH"] = os.pathsep.join(preferred_bins + existing_parts)
     return env
@@ -270,15 +272,21 @@ def _has_origin_remote(env: dict[str, str]) -> str | None:
     return None
 
 
-def _remote_has_main(env: dict[str, str]) -> bool:
-    res = _run(
-        ["git", "ls-remote", "--heads", "origin", "main"],
-        env=env,
-        check=False,
-        capture=True,
-        timeout=30,
-    )
-    return res.returncode == 0 and bool(res.stdout.strip())
+def _remote_has_main(env: dict[str, str]) -> bool | None:
+    """Return True if origin/main exists, False if remote is empty, None on transient error/timeout."""
+    try:
+        res = _run(
+            ["git", "ls-remote", "--heads", "origin", "main"],
+            env=env,
+            check=False,
+            capture=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if res.returncode != 0:
+        return None
+    return bool(res.stdout.strip())
 
 
 def _abort_rebase_if_active(env: dict[str, str]) -> None:
@@ -289,34 +297,51 @@ def _abort_rebase_if_active(env: dict[str, str]) -> None:
 
 def _push_main_with_retry(env: dict[str, str]) -> None:
     for attempt in (1, 2):
-        if _remote_has_main(env):
-            print(f"[git] Pulling latest origin/main with rebase (attempt {attempt}/2)...")
-            pull_res = _run(
-                ["git", "pull", "--rebase", "--autostash", "origin", "main"],
+        has_main = _remote_has_main(env)
+        if has_main is None:
+            if attempt == 1:
+                print("[git] Transient ls-remote failure/timeout; retrying in 3s...", file=sys.stderr)
+                time.sleep(3)
+                continue
+            raise RuntimeError("git ls-remote origin main failed after retry")
+
+        try:
+            if has_main:
+                print(f"[git] Pulling latest origin/main with rebase (attempt {attempt}/2)...")
+                pull_res = _run(
+                    ["git", "pull", "--rebase", "--autostash", "origin", "main"],
+                    env=env,
+                    check=False,
+                    capture=True,
+                    timeout=90,
+                )
+                if pull_res.returncode != 0:
+                    _abort_rebase_if_active(env)
+                    msg = (pull_res.stderr or pull_res.stdout).strip()
+                    if attempt == 1:
+                        print(f"[git] Rebase pull failed ({msg}); retrying in 3s...", file=sys.stderr)
+                        time.sleep(3)
+                        continue
+                    raise RuntimeError(f"git pull --rebase failed after retry: {msg}")
+            else:
+                print("[git] Remote origin/main not found yet; performing initial push...")
+
+            print(f"[git] Pushing main to origin (attempt {attempt}/2)...")
+            push_res = _run(
+                ["git", "push", "-u", "origin", "main"],
                 env=env,
                 check=False,
                 capture=True,
-                timeout=90,
+                timeout=120,
             )
-            if pull_res.returncode != 0:
-                _abort_rebase_if_active(env)
-                msg = (pull_res.stderr or pull_res.stdout).strip()
-                if attempt == 1:
-                    print(f"[git] Rebase pull failed ({msg}); retrying in 3s...", file=sys.stderr)
-                    time.sleep(3)
-                    continue
-                raise RuntimeError(f"git pull --rebase failed after retry: {msg}")
-        else:
-            print("[git] Remote origin/main not found yet; performing initial push...")
+        except subprocess.TimeoutExpired as exc:
+            _abort_rebase_if_active(env)
+            if attempt == 1:
+                print(f"[git] Git network timeout ({exc}); retrying in 3s...", file=sys.stderr)
+                time.sleep(3)
+                continue
+            raise RuntimeError(f"git network operation timed out after retry: {exc}") from exc
 
-        print(f"[git] Pushing main to origin (attempt {attempt}/2)...")
-        push_res = _run(
-            ["git", "push", "-u", "origin", "main"],
-            env=env,
-            check=False,
-            capture=True,
-            timeout=120,
-        )
         if push_res.returncode == 0:
             if push_res.stdout.strip():
                 print(push_res.stdout.strip())

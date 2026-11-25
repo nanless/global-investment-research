@@ -245,7 +245,8 @@ S3_STRAY_BACKTICK_RE = re.compile(r"`")
 S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"(?<![A-Za-z0-9_/-])(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
     r"DAILY_FORMAT_SPEC\.md|lint_readability\.py|build_daily\.py|build_report\.py|"
-    r"docx_embed\.py|AGENTS\.md|SKILL\.md|gold-research-publishing)(?![A-Za-z0-9_])",
+    r"docx_embed\.py|AGENTS\.md|SKILL\.md|gold-research-publishing|"
+    r"GEMINI\.md|DAILY_REPORT_SPEC\.md|lint_equity\.py|pdf_common\.py|audit_ledger\.md|publish_site\.py)(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
 

@@ -489,13 +489,21 @@
      ------------------------------------------------------------------------ */
   const tabBtns = Array.from(document.querySelectorAll("[data-tab-target]"));
   if (tabBtns.length > 0) {
+    function keepTabBarVisible() {
+      requestAnimationFrame(function () {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      });
+    }
+
     function activateTab(tabId, updateHash) {
       if (tabId === "changelog") tabId = "equity-changelog";
       if (tabId === "audit-log") tabId = "gold-audit-log";
       const valid = tabBtns.some(function (b) { return b.getAttribute("data-tab-target") === tabId; });
       const targetId = valid ? tabId : tabBtns[0].getAttribute("data-tab-target");
       tabBtns.forEach(function (b) {
-        b.classList.toggle("active", b.getAttribute("data-tab-target") === targetId);
+        const isAct = b.getAttribute("data-tab-target") === targetId;
+        b.classList.toggle("active", isAct);
+        b.setAttribute("aria-selected", isAct ? "true" : "false");
       });
       document.querySelectorAll(".tab-panel").forEach(function (p) {
         p.classList.toggle("active", p.id === targetId);
@@ -503,6 +511,7 @@
       if (updateHash && history.replaceState) {
         history.replaceState(null, "", "#" + targetId);
       }
+      return valid;
     }
 
     tabBtns.forEach(function (btn) {
@@ -511,10 +520,16 @@
       });
     });
     const initHash = (location.hash || "").replace(/^#/, "");
-    activateTab(initHash || tabBtns[0].getAttribute("data-tab-target"), false);
+    const matchedInit = activateTab(initHash || tabBtns[0].getAttribute("data-tab-target"), false);
+    if (initHash && matchedInit) {
+      keepTabBarVisible();
+      window.addEventListener("load", keepTabBarVisible, { once: true });
+    }
     window.addEventListener("hashchange", function () {
       const h = (location.hash || "").replace(/^#/, "");
-      if (h) activateTab(h, false);
+      if (h && activateTab(h, false)) {
+        keepTabBarVisible();
+      }
     });
   }
 

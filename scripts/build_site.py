@@ -499,7 +499,9 @@ def sanitize_public_ledger_md(md_text: str, *, is_audit_log: bool = False) -> st
             if re.match(r"^\d+\.\s+", st) and _HARD_INFRA_RE.search(line):
                 continue
             if st.startswith("### ") and "核心模型与出版架构升级" in st:
-                line = line.replace("15 次核心模型与出版架构升级", "核心量化模型与风控体系升级")
+                line = line.replace(" 15 次核心模型与出版架构升级", "核心量化模型与风控体系升级").replace(
+                    "15 次核心模型与出版架构升级", "核心量化模型与风控体系升级"
+                )
             if _HARD_INFRA_RE.search(line):
                 continue
             out_lines.append(_clean_soft_filenames(line))
@@ -1996,11 +1998,11 @@ def build_scorecard_page(
     </div>
 
     <div class="tab-bar no-print" role="tablist">
-      <button type="button" class="tab-btn active" data-tab-target="equity-scorecard">📈 全球股市记分卡</button>
-      <button type="button" class="tab-btn" data-tab-target="gold-scorecard">🥇 黄金记分卡</button>
-      <button type="button" class="tab-btn" data-tab-target="equity-changelog">🧭 股市观点演进</button>
-      <button type="button" class="tab-btn" data-tab-target="gold-changelog">📜 黄金观点演进</button>
-      <button type="button" class="tab-btn" data-tab-target="gold-audit-log">🛡️ 黄金辟谣核查账本</button>
+      <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab-target="equity-scorecard">📈 全球股市记分卡</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab-target="gold-scorecard">🥇 黄金记分卡</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab-target="equity-changelog">🧭 股市观点演进</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab-target="gold-changelog">📜 黄金观点演进</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab-target="gold-audit-log">🛡️ 黄金辟谣核查账本</button>
     </div>
 
     <section id="equity-scorecard" class="tab-panel active article-card">

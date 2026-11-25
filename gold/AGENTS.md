@@ -88,15 +88,15 @@
 任何报告更新必须完整走完以下闭环方可视为完成：
 1. 更新 `data_snapshot.json`（同步维护跨项目 SSOT 裁决键 `tier_code` 与 `new_buy_allowed`，保证现货涨跌幅、`rmb_channels` 省钱差额与 `cross_ratios` 算术自洽；若命中主报告 5 大触发条件，方全量读取并同步更新主报告、`master_snapshot.json` 与 `MASTER_BASELINE`）；
 2. 撰写/修订目标 Markdown（无人值守定时任务一律用 `write_file` 全量写盘，同日同班次修订加 `_r2` 后缀防覆写），并将【新增 / 更新 / 修正 / 删除】与红队消歧同步记入 `daily/CHANGELOG.md`（最新置顶）与 `daily/AUDIT_LOG.md`，同步在 `daily/SCORECARD.md` 公开回验到期预判并追加新追踪项（零内部工程/RSI 词汇、历史记录零篡改）；
-3. **编译前秒检（`--precheck --strict` · 先拦截再编译）**：运行 `python3 /Users/francis7999/code/github_repos/global-investment-research/gold/lint_readability.py --precheck --strict /Users/francis7999/code/github_repos/global-investment-research/gold/daily/<本刊文件名>.md`（同步更新主报告时一并传入主报告路径），跳过尚未生成的 Gate 6，毫秒级拦截组件错键、图 2 左标签超宽、68 个禁词、感叹号、外置日历/记分卡异常与快照冲突，**0 错 0 警后再进入编译**；
+3. **编译前秒检（`--precheck --strict` · 先拦截再编译）**：运行 `python3 <REPO_ROOT>/gold/lint_readability.py --precheck --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`（同步更新主报告时一并传入主报告路径），跳过尚未生成的 Gate 6，毫秒级拦截组件错键、图 2 左标签超宽、68 个禁词、感叹号、外置日历/记分卡异常与快照冲突，**0 错 0 警后再进入编译**；
 4. 运行预授权绝对路径编译脚本生成 PDF、原生 OOXML DOCX 与手机端响应式单文件 HTML（最新日报自动原子写入 `daily/latest_gold.html`），并用 `read_file` 抽检生成 PDF 关键页确认零文字碰撞、零断尾白页：
-   - 日报：`python3 /Users/francis7999/code/github_repos/global-investment-research/gold/build_daily.py /Users/francis7999/code/github_repos/global-investment-research/gold/daily/<本刊文件名>.md`
-   - 主报告（仅满足 5 大触发条件时）：`python3 /Users/francis7999/code/github_repos/global-investment-research/gold/build_report.py`
+   - 日报：`python3 <REPO_ROOT>/gold/build_daily.py <REPO_ROOT>/gold/daily/<本刊文件名>.md`
+   - 主报告（仅满足 5 大触发条件时）：`python3 <REPO_ROOT>/gold/build_report.py`
 5. **强制运行 7 道门禁全量严格模式**（退出码必须为 `0`，**0 errors、0 warnings**）：
-   - 仅发日报：`python3 /Users/francis7999/code/github_repos/global-investment-research/gold/lint_readability.py --strict /Users/francis7999/code/github_repos/global-investment-research/gold/daily/<本刊文件名>.md`
-   - 同步更新主报告时：`python3 /Users/francis7999/code/github_repos/global-investment-research/gold/lint_readability.py --strict /Users/francis7999/code/github_repos/global-investment-research/gold/daily/<本刊文件名>.md /Users/francis7999/code/github_repos/global-investment-research/gold/黄金跨世纪周期与2026-2030终审研究报告.md`
+   - 仅发日报：`python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`
+   - 同步更新主报告时：`python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md <REPO_ROOT>/gold/黄金跨世纪周期与2026-2030终审研究报告.md`
 6. **独立 RSI 自我复盘与递归优化闭环（仅在门禁全绿后执行）**：
    - 调用 1 路独立只读 `research` 盲审子代理，按 6 维定量量表（数据零幻觉 / 上期预判回验 / 白话可读性 / 视觉排版 / 检索效率 / 工具稳健性，每维 1–5 分、满分 30）严苛自审本刊；
    - **Tier A 必做**：追加结构化记录至 `daily/rsi_metrics.json`，提炼 1–3 条高杠杆规则滚动精炼写入 `daily/RSI_PLAYBOOK.md`（严格保持 ≤180 行，合并旧项防膨胀；每满 10 刊自动执行一次 Meta-RSI 趋势总复盘）；
    - **Tier B 慎做 / Tier C 仅提案**：如有确凿确定性小 Bug 且改后能通过 `--check` + 重编 + `--strict` + 视觉复核，最多安全落地 1 处补丁（失败立即回滚）；宪法级策略与配置变更一律记入 `RSI_PLAYBOOK.md` 提案区；最后补跑一次 `lint_readability.py --strict` 确保 RSI 账本与手册全绿，并在快报末尾汇报本轮 RSI 得分与优化动作。
-7. **门禁全绿后发布网站（Web Publish）**：运行 `python3 /Users/francis7999/code/github_repos/global-investment-research/scripts/publish_site.py`（自动编译静态站 `_site`、通过 `lint_site.py --strict`、提交推送至 GitHub Pages 并滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）。
+7. **门禁全绿后发布网站（Web Publish）**：运行 `python3 <REPO_ROOT>/scripts/publish_site.py`（自动编译静态站 `_site`、通过 `lint_site.py --strict`、提交推送至 GitHub Pages 并滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）。

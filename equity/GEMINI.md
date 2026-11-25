@@ -1,6 +1,6 @@
 # 投研报告永久写作与交付宪法（Workspace Rule）
 
-本工作区根目录 `/Users/francis7999/code/github_repos/global-investment-research/equity` **永久冻结不改名**。所有面向读者的交付物——包括 `daily/YYYY-MM-DD_{0730,1800}_{a_share,hk_stock,us_stock}.{md,pdf,docx}`（兼容历史 `1630` 快照）、`daily/latest_{a_share,hk_stock,us_stock}.html`、`{a_share,hk_stock,us_stock}_market_report_{YYYY_MM,latest}.{md,pdf,docx}`、`report_meta_*.json`、`daily/INDEX.md`、`daily/CHANGELOG.md` 与 `daily/SCORECARD.md`——必须无条件遵守本宪法。
+本工作区根目录 `<REPO_ROOT>/equity` **永久冻结不改名**。所有面向读者的交付物——包括 `daily/YYYY-MM-DD_{0730,1800}_{a_share,hk_stock,us_stock}.{md,pdf,docx}`（兼容历史 `1630` 快照）、`daily/latest_{a_share,hk_stock,us_stock}.html`、`{a_share,hk_stock,us_stock}_market_report_{YYYY_MM,latest}.{md,pdf,docx}`、`report_meta_*.json`、`daily/INDEX.md`、`daily/CHANGELOG.md` 与 `daily/SCORECARD.md`——必须无条件遵守本宪法。
 
 > **单一权威详规索引（防跨文件重复与漂移）**：
 > - 排版量化红线、7 维度大盘架构、周日 6 维龙头解剖与旗舰触发阈值 → 唯一详规见 `DAILY_REPORT_SPEC.md`
@@ -24,7 +24,7 @@
 
 每次新会话或定时班次（**北京时间 `07:55` 早刊 / `18:25` 晚刊**，错峰晚于黄金 25 分钟）启动，必须按序完成对齐后再动笔：
 0. **读 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录**：第一时间继承一手源检索词雷达、一次过 Linter 避坑清单与 `next_run_watch` 必验真追踪项。
-1. **读 `state/market_state.json`（单一事实源）并只读校验 `/Users/francis7999/code/github_repos/global-investment-research/gold/data_snapshot.json`**：锁定 **A 股 × 港股 × 美股** 三市当前灯号、体检分、唯一防踏空阈值、核心龙头池实时总数（每市弹性 35–48 只，当前 A 44 / 港 45 / 美 46，合计 135 只，以 `market_state.json` 为准）、跨市场 AI 同源总仓上限（≤ 总资产 20%）、三市危机总熔断三阀（`VIX 连 2 日 > 30` / 日元 3 日急升 `>3%` / 10 年美债 `>5.25%`，港股叠加金管局总结余 `<400 亿港元`）、待回补 `pending_backfills` 队列及未来 60 天休市日历。
+1. **读 `state/market_state.json`（单一事实源）并只读校验 `<REPO_ROOT>/gold/data_snapshot.json`**：锁定 **A 股 × 港股 × 美股** 三市当前灯号、体检分、唯一防踏空阈值、核心龙头池实时总数（每市弹性 35–48 只，当前 A 44 / 港 45 / 美 46，合计 135 只，以 `market_state.json` 为准）、跨市场 AI 同源总仓上限（≤ 总资产 20%）、三市危机总熔断三阀（`VIX 连 2 日 > 30` / 日元 3 日急升 `>3%` / 10 年美债 `>5.25%`，港股叠加金管局总结余 `<400 亿港元`）、待回补 `pending_backfills` 队列及未来 60 天休市日历。
    - **跨项目黄金 SSOT 与 4 小时新鲜度硬锁**：核查黄金快照 `as_of_short` 距当前场次 **≤4 小时**（超时须告警并独立核价），并核齐 `brent_settle_usd`、`cfets_cny_fixing`（含日期）等共享宏观键；**当黄金快照 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，三地权益研报正文、封面 JSON 与 SVG 图表均严禁下达任何新买/补齐黄金指令！**
 2. **读 `daily/INDEX.md`（前 60 行）**：核对三市场 + 黄金总水位驾驶舱、同日同场次防覆写状态（已存在须走 `_r2`）与连续脉络。
 3. **读 `daily/SCORECARD.md`**：检查有无今日到期或已出结果的历史预判需客观回填胜负（统一用 `✅ 兑现` / `⚠️ 部分兑现` / `❌ 证伪`；新登到期检验日严禁落在非交易日周末）。
@@ -67,12 +67,12 @@
 - **写文件铁律**：修改或创建任何工作区文件一律使用 `write_file` 全量写入，**严禁调用 `edit_file`**。
 - **原生 Word 底线**：三本旗舰与每日早晚刊均通过 `docx_embed.py` 纯 Python 生成严格符合 ECMA-376 标准的原生 `.docx`（真 `<w:tbl>` + Chrome 2× Retina PIL 裁图 + 自动页码），**严禁使用 `textutil`**。
 - **Shell 与 6 个唯一预授权核心脚本（共 7 条命令）**：严禁调用未授权 Shell 命令（禁 `cd`/`ls`/`mv`/`rm`/`&&`/`;`/`|`、引号包裹路径或临时 `python3 -c`）。工作区**唯一预授权的 6 个核心脚本**（独立串行调用；允许给 `lint_equity.py` 传入 `--precheck --strict` 或 `--strict` 参数，严禁绕过；未触发旗舰大修时仅跑 `lint_equity.py`、`build_daily.py` 与 `publish_site.py`）：
-  1. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/lint_equity.py`（编译前跑 `--precheck --strict`，编译后跑 `--strict` 校验全量 Gate 0–6、Gate 3B 与跨项目黄金门禁 C1–C3）
-  2. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_a_share_pdf.py`
-  3. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_hk_stock_pdf.py`
-  4. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_us_stock_pdf.py`
-  5. `python3 /Users/francis7999/code/github_repos/global-investment-research/equity/build_daily.py`
-  6. `python3 /Users/francis7999/code/github_repos/global-investment-research/scripts/publish_site.py`（全量 `lint_equity.py --strict` 及 RSI 终检全绿后运行：自动编译静态站 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并按 SHA256 增量滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）
+  1. `python3 <REPO_ROOT>/equity/lint_equity.py`（编译前跑 `--precheck --strict`，编译后跑 `--strict` 校验全量 Gate 0–6、Gate 3B 与跨项目黄金门禁 C1–C3）
+  2. `python3 <REPO_ROOT>/equity/build_a_share_pdf.py`
+  3. `python3 <REPO_ROOT>/equity/build_hk_stock_pdf.py`
+  4. `python3 <REPO_ROOT>/equity/build_us_stock_pdf.py`
+  5. `python3 <REPO_ROOT>/equity/build_daily.py`
+  6. `python3 <REPO_ROOT>/scripts/publish_site.py`（全量 `lint_equity.py --strict` 及 RSI 终检全绿后运行：自动编译静态站 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并按 SHA256 增量滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）
 - **工作区双 Skill 分工**：
   - 出版编译、原生 OOXML、独立 Linter、**21 张矢量图（`A1–A7` / `H1–H7` / `U1–U7`）**、三市休市/跨月滚存与模板 → `equity-report-publishing`；
   - 投研写作、7 维度大盘与政策市雷达、三市联动与黄金 SSOT 校验、10 项门禁、双账户税费与 Step 5 受控 RSI 盲审 → `equity-research-editorial-qa`。

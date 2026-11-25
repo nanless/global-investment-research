@@ -1,6 +1,6 @@
 # 杂志级大白话深度投研出版与排版唯一权威规范
 
-> 本规范永久适用于 `/Users/francis7999/code/github_repos/global-investment-research/equity`（根目录永久冻结不改名）下的全部 **A 股 × 港股 × 美股** 独立日报/半日报、响应式三市手机阅读页、三份旗舰常青手册（PDF + 纯 Python 原生 ECMA-376 OOXML Word `.docx`，严禁使用 `textutil`）、**21 张矢量图（`A1–A7` / `H1–H7` / `U1–U7`）**、封面元数据及 `daily/INDEX.md`、`daily/CHANGELOG.md`、`daily/SCORECARD.md`。（本文档为内部规范，**严禁在任何读者可见交付物中提及本文件名、版本号或任何内部工程词**。）  
+> 本规范永久适用于 `<REPO_ROOT>/equity`（根目录永久冻结不改名）下的全部 **A 股 × 港股 × 美股** 独立日报/半日报、响应式三市手机阅读页、三份旗舰常青手册（PDF + 纯 Python 原生 ECMA-376 OOXML Word `.docx`，严禁使用 `textutil`）、**21 张矢量图（`A1–A7` / `H1–H7` / `U1–U7`）**、封面元数据及 `daily/INDEX.md`、`daily/CHANGELOG.md`、`daily/SCORECARD.md`。（本文档为内部规范，**严禁在任何读者可见交付物中提及本文件名、版本号或任何内部工程词**。）  
 > **核心写作哲学（巴菲特 Doris 原则 × 平克古典风格）**：绝不阉割深度与硬核证据，彻底清除术语墙、视觉噪声与工程自嗨，用透明大白话讲透真实因果。
 
 ---

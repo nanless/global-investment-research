@@ -22,7 +22,7 @@ description: >-
 
 - **Step 0｜RSI 经验冷启动**：动笔前先读 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录，直接继承高杠杆一手源检索词、Linter 避坑清单与上期 `next_run_watch` 必验真项。
 - **Step 1｜状态四件套 + 黄金跨项目 SSOT 与 4 小时新鲜度校验**：
-  - 读 `state/market_state.json`（三市灯号、体检分、唯一防踏空阈值、35–48 只/市弹性池 `stock_pool_count`、三市危机总熔断三阀、跨市 AI ≤20%、待回补队列与 60 天休市日历）+ 只读 `/Users/francis7999/code/github_repos/global-investment-research/gold/data_snapshot.json`（强核 `as_of_short` 距当前场次 **≤4 小时**、`brent_settle_usd` 与 `cfets_cny_fixing` 对齐；**黄金 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，三市正文、JSON 与 SVG 严禁出现买金指令**）。
+  - 读 `state/market_state.json`（三市灯号、体检分、唯一防踏空阈值、35–48 只/市弹性池 `stock_pool_count`、三市危机总熔断三阀、跨市 AI ≤20%、待回补队列与 60 天休市日历）+ 只读 `<REPO_ROOT>/gold/data_snapshot.json`（强核 `as_of_short` 距当前场次 **≤4 小时**、`brent_settle_usd` 与 `cfets_cny_fixing` 对齐；**黄金 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，三市正文、JSON 与 SVG 严禁出现买金指令**）。
   - 读 `daily/INDEX.md`（前 60 行）与 `daily/SCORECARD.md`（检查今日到期预判并客观回填；新登检验日禁落周末）。
   - 仅命中旗舰 5 条触发阈值时，再全量读取对应旗舰手册与 `report_meta_*.json`。
 - **Step 2｜两阶段 5+1 调研与发前对抗红队**：
@@ -30,7 +30,7 @@ description: >-
   - **阶段 2B（第 6 路发前独立红队对抗子代理）**：5 路返回后先对抗审校再落盘，专项拦截 **6 大硬伤**：① A/H 同股 PE 与股息率物理学一致（`PE_A/PE_H ≈ 1 + AH 溢价率`）；② 全部配置表与口语配比 100% 闭环且 10 点条总和 = 10；③ 全部 `🔵 🔒未来主攻` 买点锚严格低于现价；④ 黄金红灯锁覆盖正文 + JSON + SVG；⑤ 冬/夏令时、07:30 禁写盘后终盘、SIFMA 半日市与工作日到期日历零错；⑥ 零退市股（如 `00011`）、零 QDII 误标（`513260`/`513010` 属 QDII、`159545`/`159792` 非 QDII）、零高费 `03033` / 沙特 `520830` 误用与零可转债到期兑付误作强赎。
 - **Step 3｜10 项门禁核对、六文件同步落盘与编译前秒检**：逐项核验 [references/pre_flight_10_gates.md](references/pre_flight_10_gates.md) 与 [references/dual_account_tax_and_rules.md](references/dual_account_tax_and_rules.md)，用 `write_file` 全量落盘三市日报、`INDEX.md`（三市+黄金总水位驾驶舱）、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json` 与 `state/audit_ledger.md`，随后运行 `lint_equity.py --precheck --strict` 0 错 0 警再编译。
 - **Step 4｜串行编译（PDF + 原生 ECMA-376 DOCX + 三市手机 HTML）、全量严检与 PDF 目检**：切入 `equity-report-publishing` 串行编译，运行 `lint_equity.py --strict`（Gate 0–6 + Gate 3B + 跨项目门禁 C1–C3）达成退出码 0、0 错 0 警并抽看 PDF。
-- **Step 5｜发版后受控三层 RSI 盲审、优化与站点发布**：按 [references/rsi_self_review_protocol.md](references/rsi_self_review_protocol.md) 启动 1 路独立只读 `research` 盲审子代理对三市发刊做 6 维（`/30`）打分，执行 Tier A（更新 `state/rsi_metrics.json` + 精炼 `state/RSI_PLAYBOOK.md` ≤180 行）/ 按需慎改 Tier B（≤1 处 ≤40 行，改后必重编验证否则回滚）/ Tier C 仅写提案（满 10 刊触发 Meta-RSI），复跑 **`lint_equity.py --strict`** 全绿后，立即运行 **`python3 /Users/francis7999/code/github_repos/global-investment-research/scripts/publish_site.py`** 发布静态门户与滚动 Release 附件。
+- **Step 5｜发版后受控三层 RSI 盲审、优化与站点发布**：按 [references/rsi_self_review_protocol.md](references/rsi_self_review_protocol.md) 启动 1 路独立只读 `research` 盲审子代理对三市发刊做 6 维（`/30`）打分，执行 Tier A（更新 `state/rsi_metrics.json` + 精炼 `state/RSI_PLAYBOOK.md` ≤180 行）/ 按需慎改 Tier B（≤1 处 ≤40 行，改后必重编验证否则回滚）/ Tier C 仅写提案（满 10 刊触发 Meta-RSI），复跑 **`lint_equity.py --strict`** 全绿后，立即运行 **`python3 <REPO_ROOT>/scripts/publish_site.py`** 发布静态门户与滚动 Release 附件。
 
 ---
 

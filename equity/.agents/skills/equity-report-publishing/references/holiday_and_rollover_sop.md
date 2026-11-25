@@ -62,7 +62,7 @@
 
 ## 三、三市标准 5 步跨月滚存 SOP（以 `2026_11` → `2026_12` 为范例）
 
-> **根目录冻结与零未授权 Shell 铁律**：工作区根目录 `/Users/francis7999/code/github_repos/global-investment-research/equity` **永久不改名**；沙箱内严禁调用 `mv`/`rm`，物理清理旧档一律登记清单交由用户确认执行。
+> **根目录冻结与零未授权 Shell 铁律**：工作区根目录 `<REPO_ROOT>/equity` **永久不改名**；沙箱内严禁调用 `mv`/`rm`，物理清理旧档一律登记清单交由用户确认执行。
 
 1. **第 1 步｜创建新月份三份旗舰源文并更新 3 份 `report_meta_*.json`**：
    - 使用 `write_file` 全量写入 `a_share_market_report_2026_12.md`、`hk_stock_market_report_2026_12.md` 与 `us_stock_market_report_2026_12.md`（刷新精确 12 月公历日期、7 维度大盘与三市 35–48 只弹性龙头池）。
