@@ -11,15 +11,13 @@ An institutional-grade, plain-language multi-asset investment research monorepo 
 
 ## 更新节拍 · Publication Schedule (CST / UTC+8)
 
-黄金与权益双体系每日错峰 **25 分钟** 联动运行，确保权益研报始终读取当日最新黄金快照，GitHub Actions Pages 队列按序构建发布：
+黄金与全球三市权益采用 **每日 2 场一体化单会话流水线**（共享 6 路并发调研 + 1 路统一红队 → 黄金 SSOT 先行落盘严检 → 三地权益零延迟只读接力 → 统一 RSI 盲审 + 单次 `scripts/publish_site.py` 发布至 GitHub Pages 与 Releases）：
 
-| 北京时间（CST） | 模块 / Market | 产出内容 / Editions |
+| 北京时间（CST） | 班次 / Schedule | 单会话串行产出 / Editions |
 | :--- | :--- | :--- |
-| **07:30** | **黄金（Gold）** | 黄金早报（纽约 06:00 终盘、国内夜盘、跨资产分化与买金四步红绿灯，写入 `gold/data_snapshot.json` SSOT） |
-| **07:55** | **三地权益（Equities）** | 美股隔夜复盘主刊 + A 股 / 港股盘前快报（只读校验黄金 SSOT，校核 03:00 恒指夜期盲窗） |
-| **18:00** | **黄金（Gold）** | 黄金晚报（上金所 15:30 终盘、沪金 15:00 收盘与龙虎榜、亚欧盘实况，刷新 `gold/data_snapshot.json`） |
-| **18:25** | **三地权益（Equities）** | A 股 / 港股收盘主刊 + 美股欧亚盘/盘前哨兵轻刊（封账两融、中金所席位、南向资金与盘后终盘） |
-| **周六 / 周日** | **周末专项 / 复盘** | 黄金周末专项版（CFTC / 链上金 / 线下客流）；周六美股主刊；周日 `SCORECARD.md` 公开记分卡与核心龙头 6 维轮换深研 |
+| **07:30** | **一体化早报** (`daily-global-investment-research`) | **Step 3 黄金早报**（纽约 06:00 终盘、国内夜盘、跨资产分化与买金四步红绿灯，写入 `gold/data_snapshot.json` SSOT） → **Step 4 三地权益早刊**（美股隔夜复盘主刊 + A 股 / 港股盘前快报，零延迟只读校验黄金 SSOT 并校核 03:00 恒指夜期盲窗） → **Step 5 统一 RSI 与单次发布** |
+| **18:00** | **一体化晚报** (`daily-global-investment-research-evening`) | **Step 3 黄金晚报**（上金所 15:30 终盘、沪金 15:00 收盘与龙虎榜、亚欧盘实况，刷新 `gold/data_snapshot.json`） → **Step 4 三地权益晚刊**（A 股 / 港股收盘主刊 + 美股欧亚盘/盘前哨兵轻刊，封账两融、中金所席位、南向资金与盘后终盘） → **Step 5 统一 RSI 与单次发布** |
+| **周六 / 周日** | **周末专项 / 复盘** | 周六 07:30 黄金周末专项版（CFTC / 链上金 / 线下客流）+ 美股周五复盘主刊；周日刷新 `SCORECARD.md` 公开记分卡并推进核心龙头 6 维轮换深研 |
 
 ---
 
@@ -27,6 +25,7 @@ An institutional-grade, plain-language multi-asset investment research monorepo 
 
 ```text
 global-investment-research/
+├── AGENTS.md                       # 仓库顶层统一编排宪章（07:30/18:00 一体化双任务与跨轨硬约束）
 ├── gold/                           # 黄金深度研报体系（跨项目 SSOT 写入源）
 │   ├── 黄金跨世纪周期与2026-2030终审研究报告.md
 │   ├── data_snapshot.json          # 日报实时数据源 & 跨项目红绿灯裁决 SSOT

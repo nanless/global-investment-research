@@ -38,7 +38,7 @@ SITE_DIR = REPO_ROOT / "_site"
 LOCK_PATH = REPO_ROOT / ".git" / "publish_site.lock"
 MANIFEST_PATH = REPO_ROOT / ".git" / "last_release_manifest.json"
 
-CANONICAL_STAGE_PATHS = ("gold", "equity", "scripts", "README.md", ".gitignore", ".github")
+CANONICAL_STAGE_PATHS = ("AGENTS.md", "gold", "equity", "scripts", "README.md", ".gitignore", ".github")
 
 RELEASE_TAG = "latest-reports"
 RELEASE_TITLE = "Latest Research Reports (PDF & Word)"
@@ -559,7 +559,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         print(f"[3/4] Staging canonical paths ({', '.join(stage_paths)}) and committing updates...")
-        add_res = _run(["git", "add", "--", *stage_paths], env=env, check=False, capture=True)
+        add_res = _run(["git", "add", "-A", "--", *stage_paths], env=env, check=False, capture=True)
         if add_res.returncode != 0:
             detail = (add_res.stderr or add_res.stdout).strip()
             print(f"[FAIL] git add failed: {detail}", file=sys.stderr)

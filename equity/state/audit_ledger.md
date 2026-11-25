@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-11-25 14:30 CST · 单仓库一体化架构收口（4→2 统一 07:30/18:00 调度、共享 6+1、顺序发布与退役目录清理）
+
+1. **4→2 一体化单会话调度落地**：废止原 4 套拆分定时任务（原黄金 `07:30/18:00` + 权益 `07:55/18:25` 错峰），统一收敛为每日 `07:30`（`daily-global-investment-research`）与 `18:00`（`daily-global-investment-research-evening`）2 个单仓库一体化定时任务，由顶层 `<REPO_ROOT>/AGENTS.md` 统一编排。
+2. **共享 6+1 调研与黄金先→权益后顺序发布**：单会话严格按 `Step 0/1 冷启动 → Step 2A 共享 6 路并发调研 → Step 2B 1 路统一发前红队 → Step 3 黄金 SSOT 先行落盘、编译与 7 门禁严检 → Step 4 三地权益零延迟只读校验最新 gold/data_snapshot.json、串行编译与全量严检（消除 Chrome 并发争抢）→ Step 5 1 路统一盲审 RSI 闭环 + 双轨复检全绿后每班次单次运行 scripts/publish_site.py` 执行。
+3. **退役目录清理与跨轨契约收口**：彻底删除已废弃的历史合刊归档目录 `equity/archive/legacy_combined/`；同步对齐 `state/rsi_metrics.json` `next_run_watch`、感恩节 `affected_sessions` 边界（11/26 07:30 仍正常出 11/25 美股主刊）、双 Skill 路径与 Step 1/Step 4 时序因果、跨 4 脚本内部工程词拦截正则及 `lint_equity.py` 反向滞后告警。
+
+---
+
 ## 2026-11-25 13:30 CST · 9 路全信源深度复审、27 项系统红队修复、7 维大盘与 135 只全板块龙头扩容记录
 
 1. **9 路全信源并发深度审计（零编造 · 7 类一手源交叉验真）**：

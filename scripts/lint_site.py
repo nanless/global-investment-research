@@ -244,9 +244,11 @@ S3_STRAY_BACKTICK_RE = re.compile(r"`")
 # Internal engineering filenames/tooling that must never leak onto public web pages.
 S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"(?<![A-Za-z0-9_/-])(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
-    r"DAILY_FORMAT_SPEC\.md|lint_readability\.py|build_daily\.py|build_report\.py|"
-    r"docx_embed\.py|AGENTS\.md|SKILL\.md|gold-research-publishing|"
-    r"GEMINI\.md|DAILY_REPORT_SPEC\.md|lint_equity\.py|pdf_common\.py|audit_ledger\.md|publish_site\.py)(?![A-Za-z0-9_])",
+    r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
+    r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
+    r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
+    r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
+    r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing)(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
 

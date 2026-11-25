@@ -3,6 +3,7 @@
 本工作区根目录 `<REPO_ROOT>/equity` **永久冻结不改名**。所有面向读者的交付物——包括 `daily/YYYY-MM-DD_{0730,1800}_{a_share,hk_stock,us_stock}.{md,pdf,docx}`（兼容历史 `1630` 快照）、`daily/latest_{a_share,hk_stock,us_stock}.html`、`{a_share,hk_stock,us_stock}_market_report_{YYYY_MM,latest}.{md,pdf,docx}`、`report_meta_*.json`、`daily/INDEX.md`、`daily/CHANGELOG.md` 与 `daily/SCORECARD.md`——必须无条件遵守本宪法。
 
 > **单一权威详规索引（防跨文件重复与漂移）**：
+> - 单仓库顶层一体化编排（07:30/18:00 双任务、共享 6+1 调研、Step 3 黄金→Step 4 权益→Step 5 统一发布） → 唯一详规见 `../AGENTS.md`
 > - 排版量化红线、7 维度大盘架构、周日 6 维龙头解剖与旗舰触发阈值 → 唯一详规见 `DAILY_REPORT_SPEC.md`
 > - 境内 A 股/支付宝 × 离岸美股/港股税费、权限、低费 ETF 与外汇/CRS 合规 → 唯一详规见 `.agents/skills/equity-research-editorial-qa/references/dual_account_tax_and_rules.md`
 > - 发版前 10 项全量质量与合规门禁 → 唯一详规见 `.agents/skills/equity-research-editorial-qa/references/pre_flight_10_gates.md`
@@ -22,10 +23,10 @@
 
 ## 1. 冷启动必读五步序（含第 0 步 RSI 经验继承）
 
-每次新会话或定时班次（**北京时间 `07:55` 早刊 / `18:25` 晚刊**，错峰晚于黄金 25 分钟）启动，必须按序完成对齐后再动笔：
+每次新会话或一体化定时班次（**北京时间 `07:30` 一体化早报 / `18:00` 一体化晚报**，单会话内 Step 3 黄金 SSOT 落盘严检后由本轨 Step 4 顺序接力）启动，必须按序完成对齐后再动笔：
 0. **读 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录**：第一时间继承一手源检索词雷达、一次过 Linter 避坑清单与 `next_run_watch` 必验真追踪项。
-1. **读 `state/market_state.json`（单一事实源）并只读校验 `<REPO_ROOT>/gold/data_snapshot.json`**：锁定 **A 股 × 港股 × 美股** 三市当前灯号、体检分、唯一防踏空阈值、核心龙头池实时总数（每市弹性 35–48 只，当前 A 44 / 港 45 / 美 46，合计 135 只，以 `market_state.json` 为准）、跨市场 AI 同源总仓上限（≤ 总资产 20%）、三市危机总熔断三阀（`VIX 连 2 日 > 30` / 日元 3 日急升 `>3%` / 10 年美债 `>5.25%`，港股叠加金管局总结余 `<400 亿港元`）、待回补 `pending_backfills` 队列及未来 60 天休市日历。
-   - **跨项目黄金 SSOT 与 4 小时新鲜度硬锁**：核查黄金快照 `as_of_short` 距当前场次 **≤4 小时**（超时须告警并独立核价），并核齐 `brent_settle_usd`、`cfets_cny_fixing`（含日期）等共享宏观键；**当黄金快照 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，三地权益研报正文、封面 JSON 与 SVG 图表均严禁下达任何新买/补齐黄金指令！**
+1. **读 `state/market_state.json`（单一事实源）并冷启动读取前序基线 `<REPO_ROOT>/gold/data_snapshot.json`**：锁定 **A 股 × 港股 × 美股** 三市当前灯号、体检分、唯一防踏空阈值、核心龙头池实时总数（每市弹性 35–48 只，当前 A 44 / 港 45 / 美 46，合计 135 只，以 `market_state.json` 为准）、跨市场 AI 同源总仓上限（≤ 总资产 20%）、三市危机总熔断三阀（`VIX 连 2 日 > 30` / 日元 3 日急升 `>3%` / 10 年美债 `>5.25%`，港股叠加金管局总结余 `<400 亿港元`）、待回补 `pending_backfills` 队列及未来 60 天休市日历。
+   - **跨项目黄金 SSOT 与 4 小时新鲜度硬锁（一体化班次于 Step 3 黄金落盘后的 Step 4 入口强制校验；仅独立单跑权益轨时于 Step 1 执行）**：只读核查最新黄金快照 `as_of_short` 距当前场次 **≤4 小时**（一体化实测 0 分钟新鲜；超时须告警并独立核价），并核齐 `brent_settle_usd`、`cfets_cny_fixing`（含日期）等共享宏观键；**当黄金快照 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，三地权益研报正文、封面 JSON 与 SVG 图表均严禁下达任何新买/补齐黄金指令！**
 2. **读 `daily/INDEX.md`（前 60 行）**：核对三市场 + 黄金总水位驾驶舱、同日同场次防覆写状态（已存在须走 `_r2`）与连续脉络。
 3. **读 `daily/SCORECARD.md`**：检查有无今日到期或已出结果的历史预判需客观回填胜负（统一用 `✅ 兑现` / `⚠️ 部分兑现` / `❌ 证伪`；新登到期检验日严禁落在非交易日周末）。
 4. **按需读旗舰手册**：仅当命中《全景手册》5 条硬触发阈值（见 `DAILY_REPORT_SPEC.md` 第五节）时，再全量读取对应 `{a_share,hk_stock,us_stock}_market_report_latest.md` 与 `report_meta_*.json` 执行同步大修。
@@ -52,12 +53,12 @@
 
 ---
 
-## 4. 三市错峰早晚分工、5+1 调研红队与周日深度轮换
+## 4. 一体化顺序节拍、共享 6+1 调研红队与周日深度轮换
 
-- **错峰启动节拍（晚于黄金 25 分钟防读旧快照竞态）**：黄金先行 `07:30` / `18:00` CST 更新 `data_snapshot.json`；本工作区固定于 **`07:55` 早刊（产出 `_0730_` 场次）** 与 **`18:25` 晚刊（产出 `_1800_` 场次）** 启动：
-  - **早刊（07:55 启动 → `_0730_`）**：**美股 4–5 页隔夜复盘主刊**（周一降为 1–2 页本周前瞻轻刊；周六仅发美股主刊）+ **A 股 2–3 页盘前快报** + **港股 2–3 页盘前快报**（强制以 05:00–05:15 A50/金龙/ADR 修正 `03:00` 恒指夜期盲窗）。
-  - **晚刊（18:25 启动 → `_1800_`）**：**A 股 4–5 页收盘主刊**（封账前日两融 + 16:30–17:30 中金所结算与席位 + 政策雷达）+ **港股 4–5 页收盘主刊**（16:10 官收 + 南向终值 + 沽空比 + HIBOR/联汇 + AH 路由 + 盘后财报）+ **美股 1–2 页欧亚盘与正规盘前哨兵轻刊**（封账 09:00/08:00 盘后终盘 + T+1 加密 ETF 官流）。
-- **两阶段 5+1 调研与发前红队**：每班次先由 **5 路并发子代理** 交叉核查 7 类一手信源（央行监管官网、交易所官方、SEC EDGAR/HKEXnews/CNINFO、权威终端媒体、三地社区论坛、Polymarket/Kalshi、公司 IR，严禁采信未刷新旧缓存），再由 **第 6 路发前独立红队子代理** 对抗拦截 6 大硬伤（A/H PE 物理学一致、100% 配置闭环、买点锚 < 现价、黄金红灯锁含 SVG/JSON、时区日历、无退市股/QDII 误标）后方可落盘。
+- **单会话顺序启动节拍（Step 3 黄金 SSOT → Step 4 三地权益，0 分钟新鲜零竞态）**：每日 **`07:30` 一体化早报** 与 **`18:00` 一体化晚报** 同一会话内，黄金 Step 3 先行落盘 `../gold/data_snapshot.json` 并通过 7 门禁严检，随后本工作区在 **Step 4** 紧接执行（严禁并发跑 Chrome 无头编译，完整编排见 `../AGENTS.md`）：
+  - **早刊（`07:30` 一体化早报 → `_0730_`）**：**美股 4–5 页隔夜复盘主刊**（周一降为 1–2 页本周前瞻轻刊；周六仅发美股主刊）+ **A 股 2–3 页盘前快报** + **港股 2–3 页盘前快报**（强制以 05:00–05:15 A50/金龙/ADR 修正 `03:00` 恒指夜期盲窗）。
+  - **晚刊（`18:00` 一体化晚报 → `_1800_`）**：**A 股 4–5 页收盘主刊**（封账前日两融 + 16:30–17:30 中金所结算与席位 + 政策雷达）+ **港股 4–5 页收盘主刊**（16:10 官收 + 南向终值 + 沽空比 + HIBOR/联汇 + AH 路由 + 盘后财报）+ **美股 1–2 页欧亚盘与正规盘前哨兵轻刊**（封账 09:00/08:00 盘后终盘 + T+1 加密 ETF 官流）。
+- **两阶段共享 6+1 调研与统一发前红队**：一体化班次在 Step 2A 由 **共享 6 路并发子代理**（黄金、A 股、港股、美股、跨资产宏观汇宗、三地社区/预测市场/辟谣）交叉核查 7 类一手信源（央行监管官网、交易所官方、SEC EDGAR/HKEXnews/CNINFO、权威终端媒体、三地社区论坛、Polymarket/Kalshi、公司 IR，严禁采信未刷新旧缓存），再由 **Step 2B 1 路统一发前红队子代理** 跨轨对抗拦截 6 大硬伤（A/H PE 物理学一致、100% 配置闭环、买点锚 < 现价、黄金红灯锁含 SVG/JSON、时区日历、无退市股/QDII 误标）后方可落盘（单跑权益轨时按需缩减对应调研路数）。
 - **周日龙头深度轮换与休市/防覆写规则**：每周日除例行刷新 `SCORECARD.md` 周频对照外，执行 **2–3 只核心龙头 6 维深度解剖轮换制**（详见 `DAILY_REPORT_SPEC.md`）；三市按模式 1/2/3 独立调度（见 `holiday_and_rollover_sop.md`）；同日同场补跑一律追加 `_r2` 严禁覆写，跨午夜切割线为北京时间 `05:30`。
 
 ---
@@ -72,7 +73,7 @@
   3. `python3 <REPO_ROOT>/equity/build_hk_stock_pdf.py`
   4. `python3 <REPO_ROOT>/equity/build_us_stock_pdf.py`
   5. `python3 <REPO_ROOT>/equity/build_daily.py`
-  6. `python3 <REPO_ROOT>/scripts/publish_site.py`（全量 `lint_equity.py --strict` 及 RSI 终检全绿后运行：自动编译静态站 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并按 SHA256 增量滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）
+  6. `python3 <REPO_ROOT>/scripts/publish_site.py`（双轨全量严检及 Step 5 统一 RSI 终检全绿后**单次运行**：自动编译静态站 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并按 SHA256 增量滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）
 - **工作区双 Skill 分工**：
   - 出版编译、原生 OOXML、独立 Linter、**21 张矢量图（`A1–A7` / `H1–H7` / `U1–U7`）**、三市休市/跨月滚存与模板 → `equity-report-publishing`；
   - 投研写作、7 维度大盘与政策市雷达、三市联动与黄金 SSOT 校验、10 项门禁、双账户税费与 Step 5 受控 RSI 盲审 → `equity-research-editorial-qa`。
@@ -82,6 +83,6 @@
 ## 6. 任务后受控三层 RSI 自我复盘闭环（摘要，详规见 `rsi_self_review_protocol.md`）
 
 每次正常发刊通过 `lint_equity.py --strict`（0 错 0 警）与 PDF 视觉抽检后，必须执行 Step 5 有界 RSI 闭环：
-1. 启动 1 路独立只读 `research` 盲审子代理，对本期 **三市（A/港/美）** 日报与同步台账按 6 维（`/30`）客观打分并拆出 Tier A / Tier B / Tier C 与 `next_run_watch`；
-2. 严守三层权限边界：**Tier A** 每刊自动更新 `state/rsi_metrics.json` 与 `state/RSI_PLAYBOOK.md`（严控 **≤180 行**、硬上限 ≤200 行）；**Tier B** 仅在复现确凿脚本/规范 Bug 时实施 ≤1 处 ≤40 行确定性补丁（禁放宽红线，改后必重编并通过 `lint_equity.py --strict` 否则立刻回滚）；**Tier C**（`GEMINI.md`/核心风控红线/Skill/`sidecar.json`）永不自动改写，仅列提案待用户审批；
-3. 每累计满 `10` 刊触发一次 Meta-RSI 跨周期趋势总复盘；Tier A/B 落盘后统一复跑 **`python3 .../lint_equity.py --strict`** 确认全绿收官，仅在对话摘要末尾附精简 RSI 简报，绝不泄露至读者可见文件。
+1. 启动 1 路独立只读 `research` 盲审子代理（一体化班次由 Step 5 统一盲审联合覆盖黄金 + 三市权益），对本期 **三市（A/港/美）** 日报与同步台账按 6 维（`/30`）客观打分并拆出 Tier A / Tier B / Tier C 与 `next_run_watch`；
+2. 严守三层权限边界：**Tier A** 每刊自动更新 `state/rsi_metrics.json` 与 `state/RSI_PLAYBOOK.md`（严控 **≤180 行**、硬上限 ≤200 行）；**Tier B** 仅在复现确凿脚本/规范 Bug 时实施 ≤1 处 ≤40 行确定性补丁（禁放宽红线，改后必重编并通过 `lint_equity.py --strict` 否则立刻回滚）；**Tier C**（`../AGENTS.md`/`GEMINI.md`/核心风控红线/Skill/`sidecar.json`）永不自动改写，仅列提案待用户审批；
+3. 每累计满 `10` 刊触发一次 Meta-RSI 跨周期趋势总复盘；Tier A/B 落盘后统一复跑 **`python3 .../lint_equity.py --strict`**（一体化班次同步复跑黄金严检）确认双轨全绿，再单次运行 `scripts/publish_site.py` 收官，仅在对话摘要末尾附精简 RSI 简报，绝不泄露至读者可见文件。

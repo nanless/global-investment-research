@@ -1,13 +1,13 @@
 # 黄金深度研报项目规则（global-investment-research/gold）
 
-本目录是面向普通理性投资者的「每日黄金深度研报（07:30 早报 & 18:00 晚报 / 周末专项版）」与「跨世纪周期全景主报告（1971–2030）」生产与出版工作区。以下规则为本项目的永久约束；完整 JSON Schema、7 道门禁词表、OOXML 引擎架构与 5+1 调研提示词请按需加载本机全局 Skill **`gold-research-publishing`**（`~/.gemini/config/skills/gold-research-publishing/SKILL.md`）。
+本目录是面向普通理性投资者的「每日黄金深度研报（07:30 早报 & 18:00 晚报 / 周末专项版）」与「跨世纪周期全景主报告（1971–2030）」生产与出版工作区，隶属于仓库顶层统一编排宪章 `../AGENTS.md`（07:30 / 18:00 一体化单会话流水线的 Step 3）。以下规则为黄金子轨的永久约束；完整 JSON Schema、7 道门禁词表、OOXML 引擎架构与调研提示词请按需加载本机全局 Skill **`gold-research-publishing`**（`~/.gemini/config/skills/gold-research-publishing/SKILL.md`）。
 
 ---
 
 ## 1. 核心工作区资产地图与跨项目单一权威源（SSOT）
 
 - **双快照防撕裂数据源与跨项目 SSOT 宣言**：
-  - **跨项目单一权威源（SSOT）**：黄金深度研报项目在每日 **`07:30` / `18:00` BJT** 率先运行，并拥有 `data_snapshot.json`（涵盖国际现货金、COMEX 期金、SHFE 沪金、SGE 现货、COMEX 期铜、`DFII10` 实际利率、以及买金四步红绿灯 `tier_code` 与新买开关 `new_buy_allowed` 等核心裁决字段）的**唯一写入权**；全球股研模块（`global-investment-research/equity`）在 **`07:55` / `18:25` BJT** 错峰启动后仅对本快照执行**只读校验**，严禁逆向修改黄金快照，亦严禁输出与黄金红绿灯指令冲突的买金建议；
+  - **跨项目单一权威源（SSOT）**：在每日 **`07:30` / `18:00` CST** 一体化单会话流水线中，黄金深度研报在 **Step 3** 率先落盘、编译并严检通过，拥有 `data_snapshot.json`（涵盖国际现货金、COMEX 期金、SHFE 沪金、SGE 现货、COMEX 期铜、`DFII10` 实际利率、以及买金四步红绿灯 `tier_code` 与新买开关 `new_buy_allowed` 等核心裁决字段）的**唯一写入权**；紧随其后的全球股研模块（`../equity/`）在 **Step 4** 对刚刷新的本快照执行**零延迟只读校验**（详见仓库根规则 `../AGENTS.md`），严禁逆向修改黄金快照，亦严禁输出与黄金红绿灯指令冲突的买金建议；
   - 日报唯一实时数据源：`data_snapshot.json`（涵盖版本号、L0/L1/L2 警报、四步红绿灯 `tier1_gates[4]`、`tier_code`/`new_buy_allowed`、全球金银铜/沪金/上金所实盘、美债/汇率/估值锚、油气/风险资产/金矿/信用、四大央行与 12 大行 2027 中位、`rmb_channels`、`cross_ratios`、`monthly_candles`、`mechanical_calendar`、`institutional_targets`、`trust_assets`）；
   - 主报告独立锁定数据源：`master_snapshot.json`（由主报告顶部 `<!-- MASTER_BASELINE {"as_of_short": "...", "snapshot": "master_snapshot.json"} -->` 原子锁定，`build_report.py` 与 `lint_readability.py` 强制校验一致，彻底根除跨日更新日报导致主报告 `--strict` 死锁或图表/正文撕裂）；
   - 外置跨市场休市与时令日历：`market_calendar.json`（覆盖 60+ 天美/中/港/欧/英/日/印休市、半日市、四大央行议息、BCOM/GSCI 调仓及北美冬/夏令时切换规则，取代硬编码节假日）。
@@ -38,8 +38,8 @@
 2. **跨时区因果红线**：
    - 严禁把国内 02:30 夜盘收盘价与纽约 06:00 现货终盘价之间的 3.5 小时时差混充为「国内供需溢价」（比较溢价必须使用同一时点折算）；
    - 严禁把 05:00 等盘后官员讲话或突发新闻因果倒置地归因到 02:30 已经收盘的国内夜盘价格。
-3. **两阶段 5+1 调研机制、官收信源白/黑名单与防卡壳/防篡改红线**：
-   - 所有外部联网实盘与资讯调研必须通过两阶段 `research` 子代理使用中英双语 `search_web` 覆盖七大信源完成：**阶段 2A** 并行启动 5 路专项调研（严格遵守美股 `GLD`/`GDX` 官收白名单 `StockAnalysis`/`Investing`/`VanEck NAV`、**禁用 `Barchart` 远月滞后合约快照**、`site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与 `market_calendar.json` 北美冬/夏令时硬校验），**必须等全部 5 路返回后**再启动 **阶段 2B** 第 6 路无情红队复核审计，输出【新增 / 更新 / 修正 / 删除】四张清单；
+3. **共享 6+1（单跑 5+1）两阶段调研机制、官收信源白/黑名单与防卡壳/防篡改红线**：
+   - 所有外部联网实盘与资讯调研必须通过两阶段 `research` 子代理使用中英双语 `search_web` 覆盖七大信源完成：在每日 `07:30` / `18:00` 一体化班次中执行仓库级 **阶段 2A 共享 6 路并发调研 + 阶段 2B 1 路统一红队**（详见 `../AGENTS.md`；独立单跑黄金轨时沿用 5 路并行 + 第 6 路红队），严格遵守美股 `GLD`/`GDX` 官收白名单 `StockAnalysis`/`Investing`/`VanEck NAV`、**禁用 `Barchart` 远月滞后合约快照**、`site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与 `market_calendar.json` 北美冬/夏令时硬校验，**必须等全部调研子代理返回后**再启动红队复核审计，输出【新增 / 更新 / 修正 / 删除】四张清单；
    - **无人值守防卡壳铁律**：在定时自动化任务中，主代理严禁调用 `date`、`ls`、`curl` 等未授权外部抓取或探测 shell 命令，**亦严禁调用 `edit_file`**（所有 Markdown/JSON 更新一律使用 `write_file` 全量写盘，彻底杜绝交互权限拦截或上下文漂移），**仅运行预授权的绝对路径裸命令**（不加 `cd &&` 前缀）执行 Python 编译与质检脚本，直接依据系统本地时间（`+08:00`）+ `market_calendar.json` 判定刊期与休市叠加；同日同班次若需二次重发/勘误，新档加 `_r2` 后缀严禁覆盖原归档；
    - **定时任务三层 RSI 防篡改与防退化铁律**：在正常发刊编译阶段（Step 1–4）严禁修改任何 `.py` 脚本与规则文件；仅在每刊 7 道门禁全绿交付验收通过后的 **Step 5 RSI 闭环阶段** 按三层分级执行自进化——**Tier A**（`daily/RSI_PLAYBOOK.md` ≤180 行 + `daily/rsi_metrics.json`）全自动迭代；**Tier B**（工作区 `.py` 或 `DAILY_FORMAT_SPEC.md` 确凿小 Bug）仅允许单次 ≤1 处最小补丁（≤40 行，**只允许加固门禁或修 Bug，严禁删禁词/放宽误差**）且必须通过 `--check` + 重编 + `--strict` + PDF 视觉复核，**任一步失败立即回滚并转提案**；**Tier C**（核心风控策略红线、`AGENTS.md`、`sidecar.json`、全局 Skill）永不静默修改，仅写入提案区待用户审批。
 
@@ -95,8 +95,8 @@
 5. **强制运行 7 道门禁全量严格模式**（退出码必须为 `0`，**0 errors、0 warnings**）：
    - 仅发日报：`python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`
    - 同步更新主报告时：`python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md <REPO_ROOT>/gold/黄金跨世纪周期与2026-2030终审研究报告.md`
-6. **独立 RSI 自我复盘与递归优化闭环（仅在门禁全绿后执行）**：
-   - 调用 1 路独立只读 `research` 盲审子代理，按 6 维定量量表（数据零幻觉 / 上期预判回验 / 白话可读性 / 视觉排版 / 检索效率 / 工具稳健性，每维 1–5 分、满分 30）严苛自审本刊；
+6. **独立 RSI 自我复盘与递归优化闭环（一体化班次于 Step 5 联合执行）**：
+   - 在每日 `07:30` / `18:00` 一体化班次中，黄金 Step 3 全绿后先交棒 Step 4 全球权益串行出刊，再由 **Step 5 的 1 路统一只读 `research` 盲审子代理**联合复盘黄金与三地权益（单跑黄金轨时单独启动 1 路盲审），按 6 维定量量表（数据零幻觉 / 上期预判回验 / 白话可读性 / 视觉排版 / 检索效率 / 工具稳健性，每维 1–5 分、满分 30）严苛自审本刊；
    - **Tier A 必做**：追加结构化记录至 `daily/rsi_metrics.json`，提炼 1–3 条高杠杆规则滚动精炼写入 `daily/RSI_PLAYBOOK.md`（严格保持 ≤180 行，合并旧项防膨胀；每满 10 刊自动执行一次 Meta-RSI 趋势总复盘）；
    - **Tier B 慎做 / Tier C 仅提案**：如有确凿确定性小 Bug 且改后能通过 `--check` + 重编 + `--strict` + 视觉复核，最多安全落地 1 处补丁（失败立即回滚）；宪法级策略与配置变更一律记入 `RSI_PLAYBOOK.md` 提案区；最后补跑一次 `lint_readability.py --strict` 确保 RSI 账本与手册全绿，并在快报末尾汇报本轮 RSI 得分与优化动作。
-7. **门禁全绿后发布网站（Web Publish）**：运行 `python3 <REPO_ROOT>/scripts/publish_site.py`（自动编译静态站 `_site`、通过 `lint_site.py --strict`、提交推送至 GitHub Pages 并滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）。
+7. **双轨门禁全绿后单次发布网站（Web Publish）**：在一体化班次中待 Step 3 黄金、Step 4 权益与 Step 5 统一 RSI 复检全部绿灯后（单跑黄金轨则在本轨全绿后），**仅运行一次** `python3 <REPO_ROOT>/scripts/publish_site.py`（自动编译静态站 `_site`、通过 `lint_site.py --strict`、提交推送至 GitHub Pages 并滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）。

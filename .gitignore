@@ -27,6 +27,3 @@ __pycache__/
 *.log
 .venv/
 *.bak
-
-# Legacy generated HTML archive
-equity/archive/legacy_combined/*.html

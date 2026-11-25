@@ -395,11 +395,15 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
                 g_dt = datetime.strptime(g_ts_s, "%Y-%m-%d %H:%M")
                 e_dt = datetime.fromisoformat(e_ts_s).replace(tzinfo=None)
                 delta_h = (e_dt - g_dt).total_seconds() / 3600.0
-                # Auto-run staggered windows (07:30-10:30 / 18:00-21:00 CST) require <= 4.0h freshness; midday manual <= 10.5h
+                # Unified sequential run windows (07:00–10:59 / 18:00–20:59 CST, Gold SSOT first -> Equity second) require <= 4.0h freshness; midday manual <= 10.5h
                 max_h = 4.0 if e_dt.hour in (7, 8, 9, 10, 18, 19, 20) else 10.5
                 if delta_h > max_h:
                     warns.append(
                         f"Gate C1 新鲜度提醒：黄金快照 ({g_ts_s}) 早于股研状态 ({e_ts_s[:16]}) {delta_h:.1f} 小时 (> {max_h:.1f}h 阈值)"
+                    )
+                elif delta_h < -4.0:
+                    warns.append(
+                        f"Gate C1 反向滞后提醒：股研状态 ({e_ts_s[:16]}) 落后黄金快照 ({g_ts_s}) {abs(delta_h):.1f} 小时 (> 4.0h 阈值)"
                     )
             except Exception as exc:
                 errs.append(f"Gate C1 失败：跨项目时间戳解析异常 gold={g_ts_s!r} equity={e_ts_s!r} ({exc})")

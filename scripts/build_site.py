@@ -407,9 +407,12 @@ _REL_MD_LINK_RE = re.compile(
 
 # Internal engineering files/tooling that must never leak onto public scorecard/changelog pages
 _HARD_INFRA_RE = re.compile(
-    r"(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|DAILY_FORMAT_SPEC\.md|"
-    r"lint_readability\.py|build_daily\.py|build_report\.py|docx_embed\.py|"
-    r"AGENTS\.md|SKILL\.md|gold-research-publishing|"
+    r"(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
+    r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
+    r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
+    r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
+    r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
+    r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing|"
     r"5-plus-1-research-playbook(?:\.md)?|directives-and-snapshot-schema(?:\.md)?|"
     r"\btextutil\b)",
     flags=re.IGNORECASE,
@@ -1261,28 +1264,43 @@ def build_cockpit_page(
     gold_tier_label = str(gold_snap.get("tier_label", "红灯停（暂不新买 · 新仓 0%）"))
     gold_tier_short = gold_tier_label.split("（")[0].strip()
     gold_lamp_cls = _lamp_css_class(gold_tier_label)
-    gold_pass = f'{gold_snap.get("tier1_passed", 0)}/{gold_snap.get("tier1_total", 4)} 关'
-    gold_spot = float(gold_snap.get("spot_gold_ny_close_usd", 0))
-    gold_chg = float(gold_snap.get("spot_gold_ny_change_pct", 0))
-    gold_autd_night = float(gold_snap.get("sge_autd_night_rmb", 0))
-    gold_autd_day = float(gold_snap.get("sge_autd_day_rmb", 0))
-    gold_dfii = float(gold_snap.get("dfii10_live_pct", 0))
+    gold_pass = f'{gold_snap.get("tier1_passed") or 0}/{gold_snap.get("tier1_total") or 4} 关'
+    gold_spot = float(gold_snap.get("spot_gold_ny_close_usd") or 0)
+    gold_chg = float(gold_snap.get("spot_gold_ny_change_pct") or 0)
+    gold_asia_open = int(gold_snap.get("spot_gold_asia_open_usd") or 0)
+    gold_spot_val = f"${gold_spot:,.2f} {_fmt_chg_span(gold_chg)}" if gold_spot > 0 else "待刷新"
+    gold_asia_sub = f"亚盘约 ${gold_asia_open:,}" if gold_asia_open > 0 else "纽约官收基准"
+    gold_autd_night = float(gold_snap.get("sge_autd_night_rmb") or 0)
+    gold_autd_day = float(gold_snap.get("sge_autd_day_rmb") or 0)
+    gold_dfii_raw = gold_snap.get("dfii10_live_pct")
+    gold_dfii_val = f"{float(gold_dfii_raw):.2f}%" if gold_dfii_raw is not None else "待刷新"
     gold_verdict = str(gold_snap.get("tier_cover_sub") or gold_snap.get("tier_status_sub") or "")
-    rmb_ch = gold_snap.get("rmb_channels", {})
-    bank_bar = rmb_ch.get("bank_bar_rmb", 0)
+    rmb_ch = gold_snap.get("rmb_channels") or {}
+    bank_bar = rmb_ch.get("bank_bar_rmb") or 0
 
     # SGE Au(T+D) session-aware display: >= 15:00 headlines day session; < 15:00 headlines night session
     gold_as_of_short = str(gold_snap.get("as_of_short", ""))
     m_hr = re.search(r"\b(\d{2}):\d{2}\b", gold_as_of_short)
     gold_hour = int(m_hr.group(1)) if m_hr else 7
+    bank_bar_txt = f"银行条 {bank_bar} 元" if float(bank_bar) > 0 else ""
     if gold_hour >= 15 and gold_autd_day > 0:
         sge_main_lbl = "上金所 Au(T+D) 日盘"
         sge_main_val = f"{gold_autd_day:.2f} 元/克"
-        sge_sub_txt = f"夜盘 {gold_autd_night:.2f} · 银行条 {bank_bar} 元"
-    else:
+        sub_parts = [f"夜盘 {gold_autd_night:.2f}" if gold_autd_night > 0 else "", bank_bar_txt]
+        sge_sub_txt = " · ".join(p for p in sub_parts if p) or "以上金所官方收盘为准"
+    elif gold_autd_night > 0:
         sge_main_lbl = "上金所 Au(T+D) 夜盘"
         sge_main_val = f"{gold_autd_night:.2f} 元/克"
-        sge_sub_txt = f"日盘 {gold_autd_day:.2f} · 银行条 {bank_bar} 元"
+        sub_parts = [f"日盘 {gold_autd_day:.2f}" if gold_autd_day > 0 else "", bank_bar_txt]
+        sge_sub_txt = " · ".join(p for p in sub_parts if p) or "以上金所官方夜盘为准"
+    elif gold_autd_day > 0:
+        sge_main_lbl = "上金所 Au(T+D) 日盘"
+        sge_main_val = f"{gold_autd_day:.2f} 元/克"
+        sge_sub_txt = bank_bar_txt or "以上金所官方收盘为准"
+    else:
+        sge_main_lbl = "上金所 Au(T+D)"
+        sge_main_val = "待刷新"
+        sge_sub_txt = bank_bar_txt or "以上金所官方披露为准"
 
     # Dynamic DFII10 gate threshold + percentile level
     t1_gates = gold_snap.get("tier1_gates") or []
@@ -1455,8 +1473,8 @@ def build_cockpit_page(
         btc_usd = float(comm["btc_usd"])
         btc_sub_html = "股市快照锚 · 流动敏感风向标"
     else:
-        btc_usd = float(gold_snap.get("btc_usd", comm.get("btc_usd", 0)))
-        btc_chg = float(gold_snap.get("btc_change_pct", 0))
+        btc_usd = float(gold_snap.get("btc_usd") or comm.get("btc_usd") or 0)
+        btc_chg = float(gold_snap.get("btc_change_pct") or 0)
         btc_sub_html = f'{_fmt_chg_span(btc_chg)} · 流动敏感风向标'
 
     usd_cny = float(rates.get("usd_cnh", rates.get("usd_cny_1630", gold_snap.get("usd_cny", 0))))
@@ -1491,7 +1509,7 @@ def build_cockpit_page(
     <section class="live-banner">
       <div class="live-banner-top">
         <span class="live-pill"><span class="live-pulse"></span>{esc(alert_label)}</span>
-        <span class="live-cadence">每日 07:30 黄金 · 07:55 股市 ｜ 18:00 黄金 · 18:25 股市 自动刷新</span>
+        <span class="live-cadence">每日 07:30 一体化早报 ｜ 18:00 一体化晚报（黄金 × A/港/美 自动刷新）</span>
       </div>
       <h1 class="live-title">全球大类资产 10 秒水温驾驶舱</h1>
       <div class="live-meta-row">
@@ -1518,8 +1536,8 @@ def build_cockpit_page(
         <div class="m-metrics">
           <div class="m-metric">
             <div class="m-metric-lbl">纽约现货金（美元/盎司）</div>
-            <div class="m-metric-val">${gold_spot:,.2f} {_fmt_chg_span(gold_chg)}</div>
-            <div class="m-metric-sub">亚盘约 ${int(gold_snap.get("spot_gold_asia_open_usd", 0)):,}</div>
+            <div class="m-metric-val">{gold_spot_val}</div>
+            <div class="m-metric-sub">{esc(gold_asia_sub)}</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">{esc(sge_main_lbl)}</div>
@@ -1528,7 +1546,7 @@ def build_cockpit_page(
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">10 年美债真实利率 DFII10</div>
-            <div class="m-metric-val">{gold_dfii:.2f}%</div>
+            <div class="m-metric-val">{esc(gold_dfii_val)}</div>
             <div class="m-metric-sub">{esc(dfii_sub)}</div>
           </div>
           <div class="m-metric">
@@ -1741,7 +1759,7 @@ def build_cockpit_page(
         <div class="chip-grid">
           <div class="mirror-chip">
             <div class="mirror-lbl">纽约现货金</div>
-            <div class="mirror-val">${gold_spot:,.2f}</div>
+            <div class="mirror-val">{f"${gold_spot:,.2f}" if gold_spot > 0 else "待刷新"}</div>
             <div class="mirror-sub">{_fmt_chg_span(gold_chg)} · {esc(gold_mirror_badge)}</div>
           </div>
           <div class="mirror-chip">

@@ -1,6 +1,6 @@
 # 每日黄金研报目录专属规则（daily/）
 
-本目录存放所有每日早报（07:30）、晚报（18:00）、周末专项版、最新响应式手机端单文件 HTML（`latest_gold.html`）、面向读者的公开可证伪预测记分卡（`SCORECARD.md`）、编辑宪章 `DAILY_FORMAT_SPEC.md`、迭代账本 `CHANGELOG.md`、独立法证审计账本 `AUDIT_LOG.md` 以及 RSI 进化资产（`RSI_PLAYBOOK.md` / `rsi_metrics.json`）。以下规则叠加在项目根规则 `../AGENTS.md` 与外置日历 `../market_calendar.json` 之上。
+本目录存放所有每日早报（07:30）、晚报（18:00）、周末专项版、最新响应式手机端单文件 HTML（`latest_gold.html`）、面向读者的公开可证伪预测记分卡（`SCORECARD.md`）、编辑宪章 `DAILY_FORMAT_SPEC.md`、迭代账本 `CHANGELOG.md`、独立法证审计账本 `AUDIT_LOG.md` 以及 RSI 进化资产（`RSI_PLAYBOOK.md` / `rsi_metrics.json`）。以下规则叠加在仓库根编排宪章 `../../AGENTS.md`、子轨规则 `../AGENTS.md` 与外置日历 `../market_calendar.json` 之上。
 
 ---
 
@@ -27,9 +27,9 @@
 
 ---
 
-## 3. 本目录公开记分卡、双账本与 RSI 自进化资产细则（叠加根规则 `../AGENTS.md`）
+## 3. 本目录公开记分卡、双账本与 RSI 自进化资产细则（叠加仓库根规则 `../../AGENTS.md` 与子轨规则 `../AGENTS.md`）
 
 1. **`SCORECARD.md`（公开可证伪预测记分卡）**：面向普通投资者完全公开透明，每刊发刊同步回验到期预判（`✅ 兑现` / `⚠️ 部分兑现` / `❌ 证伪`）并追加新追踪项，**历史记录零篡改**；全文严禁出现任何内部工程/RSI 词汇（如 `Subagent`/`RSI`/`Tier A/B/C`/`V2.2`），由 `lint_readability.py` 强制校验。
 2. **`CHANGELOG.md`**：每发一刊，在文件最顶部置顶写入本刊完整相对路径（如 `daily/YYYY-MM-DD_1800_晚报_黄金深度研报.md`）及红队四张清单【新增 / 更新 / 修正 / 删除】。
 3. **`AUDIT_LOG.md`**：持续维护「三大信任资产」（拦截谣言/误区清单、模型与策略升级清单、细节校准清单及 `0/N` 核心结论影响说明）与一手官方数据库索引；**严禁将版本 Diff 表、子代理调研路数或分析师人名消歧塞入日报正文（尤禁 Layer 0–1）**。
-4. **`RSI_PLAYBOOK.md` 与 `rsi_metrics.json`**：每刊通过 `--strict` 后由独立只读盲审子代理完成 6 维打分（`/30`）与上期预判验真，自动追加 `rsi_metrics.json` 并滚动精炼 `RSI_PLAYBOOK.md`（硬上限 ≤180 行防膨胀，由 `lint_readability.py` 强制校验）；每满 10 刊汇总 Meta-RSI 趋势并向用户呈报 Tier C 升级提案。
+4. **`RSI_PLAYBOOK.md` 与 `rsi_metrics.json`**：每班次待双轨（Step 3 黄金 + Step 4 权益）均通过编译与 `--strict` 严检后进入 **Step 5**，由 **1 路统一独立只读盲审子代理**联合复盘黄金与三地权益（独立单跑黄金轨时单独盲审），完成 6 维打分（`/30`）与上期预判验真，自动执行 Tier A 追加 `rsi_metrics.json` 并滚动精炼 `RSI_PLAYBOOK.md`（硬上限 ≤180 行防膨胀，由 `lint_readability.py` 强制校验）及按需慎改 Tier B（Tier C 含 `../../AGENTS.md` 与 `../AGENTS.md` 仅写提案）；随后复跑双轨 `--strict` 全绿，**每班次仅运行一次** `scripts/publish_site.py` 统一发布静态门户与增量 Release；每满 10 刊汇总 Meta-RSI 趋势并向用户呈报 Tier C 升级提案。

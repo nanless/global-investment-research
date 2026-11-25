@@ -30,8 +30,11 @@ RSI_METRICS_PATH = BASE_DIR / "daily" / "rsi_metrics.json"
 SCORECARD_BANNED_RE = re.compile(
     r"(?:Subagent|子代理|\bRSI\b|Meta-RSI|Recursive\s+Self-Improvement|"
     r"\bTier\s*[ABC](?:\b|/[ABC])|\bV[267]\.\d+\b|"
-    r"RSI_PLAYBOOK\.md|rsi_metrics\.json|sidecar\.json|DAILY_FORMAT_SPEC\.md|"
-    r"build_daily\.py|build_report\.py|lint_readability\.py|docx_embed\.py|"
+    r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
+    r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
+    r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|"
+    r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
+    r"publish_site\.py|lint_(?:readability|equity|site)\.py|pdf_common\.py|docx_embed\.py|"
     r"63\s*路|红队|法证|\bGate\s*[0-6]\b)",
     flags=re.IGNORECASE,
 )

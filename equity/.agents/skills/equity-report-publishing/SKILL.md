@@ -2,7 +2,8 @@
 name: equity-report-publishing
 description: >-
   Engineering runbook for compiling magazine-grade A-share, HK-stock, and US
-  equity daily reports (07:55 morning / _0730_ & 18:25 evening / _1800_ CST),
+  equity daily reports (07:30 morning / _0730_ & 18:00 evening / _1800_ CST,
+  executed sequentially after Gold SSOT in unified sessions),
   pure-Python native ECMA-376 OOXML Word (.docx), responsive 3-market mobile
   HTML (daily/latest_{a_share,hk_stock,us_stock}.html), 16-24p flagship
   handbooks, 21 vector SVG charts (A1-A7, H1-H7, U1-U7), standalone
@@ -13,7 +14,7 @@ description: >-
 
 # Equity Report Magazine Publishing & PDF Build Runbook
 
-工作区根目录 `<REPO_ROOT>/equity` 永久冻结不改名。全部写作规范、7 维度大盘架构与周日 6 维龙头解剖见 `DAILY_REPORT_SPEC.md`，10 项内容门禁、双账户税费详表及 Step 5 受控 RSI 盲审协议见 `equity-research-editorial-qa` 技能。
+工作区根目录 `<REPO_ROOT>/equity` 永久冻结不改名，在仓库顶层统一编排（`<REPO_ROOT>/AGENTS.md`）的每日 `07:30` / `18:00` 一体化单会话中作为 **Step 4** 紧接 Step 3 黄金落盘严检后串行运行（严禁并发跑 Chrome 无头编译）。全部写作规范、7 维度大盘架构与周日 6 维龙头解剖见 `DAILY_REPORT_SPEC.md`，10 项内容门禁、双账户税费详表及 Step 5 受控 RSI 盲审协议见 `equity-research-editorial-qa` 技能。
 
 ---
 
@@ -30,8 +31,8 @@ description: >-
    - **Gate 0–5 & Gate 3B**：零工程/RSI 噪声、裸缩写清零、标题/结论/密墙/粗体占比/10 点条守恒/Appendix 实际行数与 `stock_pool_count` 一致；
    - **Gate 6（PDF 页数红线 + 原生 OOXML + 三市终端）**：PDF 页数须落入红线区间（**旗舰 16–24 页 / 主刊 4–5 页 / 轻刊 1–3 页**）、DOCX 7 核心 XML / `<w:tbl>` / 图数与 `docPr` 唯一性、三市 `_latest.{md,pdf,docx}` 原子同步、三市手机端 HTML 与 RSI 账本；
    - **Cross-Project Gates C1–C3**：直读 `../gold/data_snapshot.json` 校验 **`brent_settle_usd`**、`cfets_cny_fixing`（含日期）等全量共享宏观键及 **≤4 小时新鲜度**；Gate C2 当 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，全载体扫描 Markdown、JSON 与编译后 HTML/SVG 严禁买金指令与金矿股违规标绿；Gate C3 检查期铜 ≥3.5% 异动传导。必须退出码 `0`、0 错 0 警。
-4. **产物核验与 PDF 视觉抽查**：确认 `daily/latest_{a_share,hk_stock,us_stock}.html`（顶栏 `A 股 ｜ 港股 ｜ 美股` 三市一键互切）与全部 PDF/DOCX 已刷新，用 `read_file` 抽检 PDF 确认零标签遮挡、零半页空白与零孤行尾页。Step 5 完成 RSI 更新后再跑一次 `lint_equity.py --strict` 确认终检全绿。
-5. **门禁全绿后统一站点发布（`scripts/publish_site.py`）**：终检全绿后执行第 6 个预授权核心脚本 `python3 <REPO_ROOT>/scripts/publish_site.py`（带 `fcntl.flock` 防并发锁，自动构建双端响应式网页 `_site/`、过 `lint_site.py --strict`、限域提交并 SSH 推送至 GitHub Pages、按 SHA256 增量同步滚动 Release PDF/DOCX）。
+4. **产物核验与 PDF 视觉抽查**：确认 `daily/latest_{a_share,hk_stock,us_stock}.html`（顶栏 `A 股 ｜ 港股 ｜ 美股` 三市一键互切）与全部 PDF/DOCX 已刷新，用 `read_file` 抽检 PDF 确认零标签遮挡、零半页空白与零孤行尾页。
+5. **Step 5 统一盲审、双轨复检与单次站点发布（`scripts/publish_site.py`）**：待 Step 3 黄金与 Step 4 权益双轨均完成编译与 `--strict` 严检后，进入 **Step 5** 启动 **1 路统一独立盲审子代理**联合复盘两轨产出 → 按 Tier A/B 权限落盘更新（Tier C 含 `<REPO_ROOT>/AGENTS.md` 仅写提案）→ 复跑双轨严格门禁（`gold/lint_readability.py --strict` + `equity/lint_equity.py --strict`）确认全绿后，**每班次仅运行一次**第 6 个预授权核心脚本 `python3 <REPO_ROOT>/scripts/publish_site.py`（带 `fcntl.flock` 防并发锁，自动构建双端响应式网页 `_site/`、过 `lint_site.py --strict`、限域提交并 SSH 推送至 GitHub Pages、按 SHA256 增量同步滚动 Release PDF/DOCX）。
 
 ---
 

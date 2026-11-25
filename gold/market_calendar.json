@@ -103,7 +103,7 @@
         "rate_decision": "2026-12-10 03:00 BJT",
         "press_conference": "2026-12-10 03:30 BJT"
       },
-      "gold_impact_note": "G4 央行密集加息潮首枪；核验加息幅度、2027 点阵图与鲍威尔/沃什表态是否引发 US2Y 与 DFII10 见顶回落（Tier 1 红绿灯关键变盘窗）。"
+      "gold_impact_note": "G4 央行密集加息潮首枪；核验加息幅度、2027 点阵图与沃什主席新闻发布会表态是否引发 US2Y 与 DFII10 见顶回落（Tier 1 红绿灯关键变盘窗）。"
     },
     {
       "id": "ecb_boe_boj_dec_2026",
@@ -152,18 +152,18 @@
       "gold_impact_note": "国际外盘全休、沿用平安夜提前收盘价，严禁把中国内盘孤立涨跌当作全球趋势外推。"
     },
     {
-      "id": "uk_hk_post_christmas_2026",
+      "id": "uk_boxing_day_sub_2026",
       "date": "2026-12-28",
       "end_date": "2026-12-28",
-      "markets": ["UK_LSE_LBMA", "HK_EQUITY"],
-      "event": "英国节礼日补休与香港圣诞后首个工作日休市（美/中正常交易）",
+      "markets": ["UK_LSE_LBMA"],
+      "event": "英国节礼日补休全天休市（港股、美股与中国内地市场正常交易）",
       "overlay_mode": "C",
       "affected_editions": ["2026-12-28_1800"],
       "trading_hours_bjt": {
-        "uk_lbma_hkex": "全天休市（无 LBMA 伦敦定盘）",
-        "us_cn": "正常开市"
+        "uk_lse_lbma": "全天休市（无 LBMA 伦敦定盘）",
+        "hkex_us_cn": "正常开市（2026-12-26 节礼日为周六，香港仅周日假日顺延，故 12/28 港股与港股通正常交易）"
       },
-      "gold_impact_note": "局部标注伦敦定盘与港股黄金股（周大福/老铺等）休市，其余 COMEX 与国内市场正常编译。"
+      "gold_impact_note": "仅英国 LSE/LBMA 全天休市（无伦敦定盘）；港股黄金股（周大福/老铺等）、COMEX 美盘及中国内地市场均正常交易，按标准流程编译。"
     },
     {
       "id": "new_years_eve_2026",
@@ -245,7 +245,7 @@
       "affected_editions": ["2027-02-05_0730", "2027-02-14_1800"],
       "trading_hours_bjt": {
         "cn_a_share_sge_shfe": "2027-02-05 至 2027-02-14 全天休市（2027-02-04 晚起无夜盘，2027-02-15 恢复交易）",
-        "hkex": "春节期间局部休市（以港交所 2027 官方日历为准，约 02/06–02/09 休市）",
+        "hkex": "2027-02-05 12:00 BJT 半日收，02/06–02/09 休市，02/10 复市",
         "us_eu_uk": "正常交易"
       },
       "gold_impact_note": "严格切入 B 类局部休市模式：国内 SGE/SHFE/在岸汇率与国内黄金 ETF 净值全部明标休市、沿用 02/04 收盘，全面聚焦 COMEX/LBMA/离岸人民币（CNH）与海外 GLD 资金流，并逐日测算节后复市补涨/补跌幅度。"

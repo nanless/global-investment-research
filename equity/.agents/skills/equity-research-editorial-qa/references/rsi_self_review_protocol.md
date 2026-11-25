@@ -1,6 +1,6 @@
 # 受控三层 RSI 自我复盘与递归优化唯一详规（Bounded RSI Self-Review Protocol）
 
-本协议为全项目 Step 5 受控三层 RSI 自我复盘的**唯一权威详规**（`GEMINI.md`、`DAILY_REPORT_SPEC.md` 与 `state/RSI_PLAYBOOK.md` 均以本协议为准）。每次 **07:55 早刊（`_0730_`）** 或 **18:25 晚刊（`_1800_`）**（含周末突发升级刊）正常出版并通过 `lint_equity.py --strict`（0 错 0 警）与 PDF 视觉抽检后，必须执行本闭环。全部 RSI 产物永久隔离于 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`，**绝不泄露至任何读者可见 `.md` / `.pdf` / `.docx` / `.html` / `INDEX.md` / `CHANGELOG.md` / `SCORECARD.md`**。
+本协议为全项目 Step 5 受控三层 RSI 自我复盘的**唯一权威详规**（`GEMINI.md`、`DAILY_REPORT_SPEC.md` 与 `state/RSI_PLAYBOOK.md` 均以本协议为准，一体化单会话编排见 `<REPO_ROOT>/AGENTS.md`）。每次 **07:30 一体化早报（`_0730_`）** 或 **18:00 一体化晚报（`_1800_`）**（含周末突发升级刊）正常出版并通过严检（0 错 0 警）与 PDF 视觉抽检后，必须执行本闭环（一体化班次由 1 路统一盲审子代理联合覆盖黄金 + 三市权益并分别落盘至两轨 RSI 台账）。全部 RSI 产物永久隔离于 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`，**绝不泄露至任何读者可见 `.md` / `.pdf` / `.docx` / `.html` / `INDEX.md` / `CHANGELOG.md` / `SCORECARD.md`**。
 
 ---
 
@@ -18,7 +18,7 @@
 | :--- | :--- | :--- | :--- |
 | **Tier A（每刊自动）** | `state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json` | 每刊全自动追加 1 条三市盲审遥测、滚动精炼经验手册并更新 `next_run_watch` | 手册严格 **≤180 行**（181–200 行告警，>200 行阻断；合并重复、淘汰已固化项）；JSON 合法、`run_id` 唯一、`total_score == sum(scores)`、`max_score == 30`；须通过 `lint_equity.py --strict` 终检 |
 | **Tier B（按需慎改）** | `pdf_common.py`、`docx_embed.py`、`build_daily.py`、`build_a_share_pdf.py`、`build_hk_stock_pdf.py`、`build_us_stock_pdf.py`、`lint_equity.py`、`DAILY_REPORT_SPEC.md` | 仅当本轮复现了确凿的渲染碰撞、JSON 解析或 Linter 漏网 Bug 时，允许实施 **≤1 处、≤40 行** 最小补丁 | 改后必须串行重跑受影响的 `build_*.py` 并执行 **`lint_equity.py --strict`** 达成 **0 错 0 警** + 抽看 PDF；**任一步报错、误报或版面恶化，必须立即回滚**并降级写入 Tier C 提案区 |
-| **Tier C（宪法锁定）** | `GEMINI.md`、核心风控红线（四灯阈值、三市危机总熔断阀、AI 跨市 ≤20%、单股 ≤8%、黄金红灯锁、5 万美元购汇红线、6 万美元美国遗产税边界）、工作区双 Skill、定时任务 `sidecar.json` | **严禁无人值守自改**；仅作为结构化提案写入 `state/RSI_PLAYBOOK.md` 第四节与 `rsi_metrics.json` 的 `tier_c_proposals` | 在最终快报中向用户明确呈报，等待用户在交互会话中明确审批后再执行 |
+| **Tier C（宪法锁定）** | `<REPO_ROOT>/AGENTS.md`、`GEMINI.md`、核心风控红线（四灯阈值、三市危机总熔断阀、AI 跨市 ≤20%、单股 ≤8%、黄金红灯锁、5 万美元购汇红线、6 万美元美国遗产税边界）、工作区双 Skill、定时任务 `sidecar.json` | **严禁无人值守自改**；仅作为结构化提案写入 `state/RSI_PLAYBOOK.md` 第四节与 `rsi_metrics.json` 的 `tier_c_proposals` | 在最终快报中向用户明确呈报，等待用户在交互会话中明确审批后再执行 |
 
 ---
 
@@ -31,7 +31,7 @@
 > 2. `prior_forecast_calibration`（上期 `next_run_watch` 与 `SCORECARD.md` 到期预判客观验真、不回避失误、新登检验日均为工作日）
 > 3. `plain_language_and_strict_readability`（巴菲特大白话深度、零内部/RSI/工程词泄露、反引号/粗体/段长/列表密墙/3 秒正向自检卡/双账户税费与 QDII 属性零错、黄金红灯全载体互斥锁零破口）
 > 4. `visual_layout_and_pagination`（PDF 页数精准落于红线区间：旗舰 16–24p / 主刊 4–5p / 轻刊 1–3p、零文字/图表压线碰撞、零尾页孤行、图号顺排、图文评级色标一致）
-> 5. `research_efficiency_and_source_quality`（阶段 2A 五路并发分工 + 阶段 2B 发前独立红队高效拦截 6 大硬伤、一手官源占比高、有效拦截门户脏缓存或市场谣言）
+> 5. `research_efficiency_and_source_quality`（阶段 2A 共享六路并发分工 + 阶段 2B 统一发前独立红队高效拦截 6 大硬伤、一手官源占比高、有效拦截门户脏缓存或市场谣言）
 > 6. `engine_and_guardrail_reliability`（一次过 `lint_equity.py --precheck --strict` 与 `--strict` 零重试、原生 ECMA-376 DOCX 完整无损、JSON 零混键零语法错、`hkma_agg_bal_hkd_100m` 单位规范）
 >
 > 请直接输出结构化盲审报告：
@@ -46,7 +46,7 @@
 
 ## 四、`state/rsi_metrics.json` 单条运行记录 Schema（三市统一版）
 
-每刊向 `runs` 数组末尾追加 1 个对象（严禁篡改历史记录；周六 07:55 仅发美股主刊时，`pdf_pages` 写 `{"a_share": null, "hk_stock": null, "us_stock": 4}`，周五滞后美股盘后/BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股轻刊）：
+每刊向 `runs` 数组末尾追加 1 个对象（严禁篡改历史记录；周六 07:30 仅发美股主刊时，`pdf_pages` 写 `{"a_share": null, "hk_stock": null, "us_stock": 4}`，周五滞后美股盘后/BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股轻刊）：
 
 ```json
 {
@@ -92,4 +92,4 @@
 ## 五、每 10 刊 Meta-RSI 跨周期趋势总复盘与终检收官
 
 1. **Meta-RSI 触发**：每当 `len(runs) > 0` 且 `len(runs) % 10 == 0` 时，盲审子代理同步统计最近 10 刊总分均值、一次过率（`first_pass_clean` 占比）与 6 个维度各自均分，锁定连续得分最低的 1–2 个结构性瓶颈维度，输出 **≤2 条高价值 Tier C 根因升级提案** 写入 `state/RSI_PLAYBOOK.md` 第四节待用户审批，同时彻底淘汰过时条目保持手册 ≤180 行。
-2. **统一终检与站点发布命令**：Tier A（及按需 Tier B）落盘后，必须统一执行 **`python3 <REPO_ROOT>/equity/lint_equity.py --strict`**，确认手册行数、JSON 合法性、`run_id` 唯一性、`total_score == sum(scores)` 及全量 Gate 0–6 / 3B / C1–C3 全部绿灯后，立即运行 **`python3 <REPO_ROOT>/scripts/publish_site.py`** 完成双端静态门户编译、严检、推送与滚动 Release 同步，方可结束本班次。
+2. **统一终检与单次站点发布命令**：Tier A（及按需 Tier B）落盘后，必须复跑 **`python3 <REPO_ROOT>/equity/lint_equity.py --strict`**（一体化班次同步复跑黄金严检），确认手册行数、JSON 合法性、`run_id` 唯一性、`total_score == sum(scores)` 及全量 Gate 0–6 / 3B / C1–C3 全部绿灯后，单次运行 **`python3 <REPO_ROOT>/scripts/publish_site.py`** 完成双端静态门户编译、严检、推送与滚动 Release 同步，方可结束本班次。

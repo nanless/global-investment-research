@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "description": "Structured per-run Recursive Self-Improvement (RSI) telemetry & 6-dimension audit log for daily-gold-deep-research.",
+  "description": "Structured per-run Recursive Self-Improvement (RSI) telemetry & 6-dimension audit log for the Gold track within unified daily global investment research (07:30 morning & 18:00 evening CST).",
   "meta_review_interval_runs": 10,
   "playbook_max_lines": 180,
   "score_dimensions": [
@@ -176,7 +176,7 @@
         "build_daily.py _ATOMIC_NW_RE 加固（+3/-2 行）：补齐数字后独立单位“元(?![/旦])”与“欧元”及区间后置单位黏连，经 --check + 重编 + --strict + PDF 目检确认第 2 页 5 处孤字“元”100% 清零且稳守满版 11 页"
       ],
       "tier_c_proposals": [
-        "提案 #2（待用户审批）：将 07:30 官收白名单/黑名单、site:shfe/lbma 定向补录词与北美冬令时换算硬校验写入 sidecar.json 提示词与全局 Skill，根治连续两刊调研信噪比停在 3/5 的瓶颈"
+        "提案 #2（已于 2026-11-25 获用户审批并落地）：将 07:30 官收白名单/黑名单、site:shfe/lbma 定向补录词与北美冬令时换算硬校验写入 sidecar.json 提示词与全局 Skill，根治连续两刊调研信噪比停在 3/5 的瓶颈"
       ],
       "next_run_watch": [
         "验真今早 09:00–10:00 国内四大行金条（昨均 802）与品牌金店（昨 1,098–1,103）是否随夜盘（765–767）补跌 10–15 元/克并重算婚庆省钱差额，同步核验 15:30 SGE 官收溢价、老铺股东大会与周大福绩后大行点评",

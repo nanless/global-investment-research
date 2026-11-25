@@ -2,7 +2,7 @@
   "schema_version": "2.1",
   "as_of_cst": "2026-11-25T13:30:00+08:00",
   "period_slug": "2026_11",
-  "schedule_cst": ["07:55", "18:25"],
+  "schedule_cst": ["07:30", "18:00"],
   "edition_slugs_cst": ["07:30", "18:00"],
   "alert_level": "L1",
   "alert_label": "关键节点临近 · 今晚 21:30 美国核心通胀 + 11/30 三市大撞车",
@@ -266,7 +266,7 @@
     }
   ],
   "calendar_overrides": [
-    {"date_cst": "2026-11-26", "type": "partial_holiday", "markets_affected": ["us_stock"], "mode": "mode_2_watch_brief", "note": "美国感恩节全天休市（美股 1–2 页守望简报，A 股/港股正常）"},
+    {"date_cst": "2026-11-26", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2026-11-26_1800", "2026-11-27_0730"], "mode": "mode_2_watch_brief", "note": "美国感恩节全天休市（11/26 07:30 CST 仍正常出美股 11/25 隔夜 4-5p 主刊；11/26 18:00 与 11/27 07:30 切模式 2 美股休市守望简报，A 股/港股正常）"},
     {"date_cst": "2026-11-27", "type": "half_day", "markets_affected": ["us_stock"], "mode": "mode_2_watch_brief", "note": "美国黑五半日市（美股 11/28 02:00 CST 收、美债 03:00 CST；A/港正常，港股盯美团 Q3 财报与老铺除净）"},
     {"date_cst": "2026-11-30", "type": "rebalance_and_policy", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "三市撞车：A 股降保 80% + MSCI 剔 22 A股/15 港股/MSTR + 财政部 2,180 亿美债集中交割（CMS 药价已于 11/23 提前落地）"},
     {"date_cst": "2026-12-01", "type": "monthly_rollover", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "rollover_2026_11_to_2026_12", "note": "三市跨月滚存（2026_11 -> 2026_12）"},

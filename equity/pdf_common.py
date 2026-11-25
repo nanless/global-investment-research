@@ -1004,9 +1004,11 @@ def prepare_mobile_html(full_html: str, market: str) -> str:
 
 _BANNED_INTERNAL_RE = re.compile(
     r"(?:\bV\d+\.\d+\b|Subagent|红队|法证|\bTier\s*[0-3]\b|"
-    r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|pdf)\.py|pdf_common\.py|docx_embed\.py|lint_equity\.py|"
-    r"DAILY_REPORT_SPEC\.md|audit_ledger\.md|market_state\.json|GEMINI\.md|SKILL\.md|sidecar\.json|"
-    r"RSI_PLAYBOOK\.md|rsi_metrics\.json|Meta-RSI|Recursive\s+Self-Improvement|"
+    r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
+    r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
+    r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
+    r"AGENTS\.md|GEMINI\.md|SKILL\.md|sidecar\.json|"
+    r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|Meta-RSI|Recursive\s+Self-Improvement|"
     r"next_run_watch|rsi_self_review_protocol|"
     r"RSI\s*(?:自(?:我|优|评|检|进)|盲审|复盘|闭环|体检|遥测|打分|简报|手册|进化|迭代|协议)|"
     r"\bTier\s*[ABC](?:/[ABC])+\b|"

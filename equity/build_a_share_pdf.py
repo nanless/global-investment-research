@@ -36,7 +36,6 @@ from pdf_common import (
 )
 
 OUT_DIR = BASE_DIR
-DAILY_DIR.mkdir(parents=True, exist_ok=True)
 META_PATH = OUT_DIR / "report_meta_a_share.json"
 HTML_PDF_PATH = OUT_DIR / "a_share_print.tmp.html"
 TMP_PDF_PATH = OUT_DIR / "a_share_print.tmp.pdf"
@@ -762,6 +761,7 @@ def svg_chart_a7_stock_quadrant(meta_override: dict | None = None) -> str:
 
 
 def main() -> None:
+    DAILY_DIR.mkdir(parents=True, exist_ok=True)
     args = sys.argv[1:]
     if "--check" in args:
         assert Path(CHROME_BIN).exists(), f"Chrome missing: {CHROME_BIN}"
