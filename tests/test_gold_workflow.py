@@ -10,13 +10,16 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from scripts.build_site import load_renderers
+
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLD = ROOT / "gold"
 sys.path.insert(0, str(GOLD))
-import build_daily
 import edition_validation as rules
 import lint_readability as lint
+
+build_daily = load_renderers().gold_daily
 
 
 ARCHIVED_REPORT = GOLD / "daily" / "2026-11-25_1800_晚报_黄金深度研报_r2.md"
