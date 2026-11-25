@@ -300,14 +300,8 @@ def _report_inputs(source: Path, report: Report) -> list[str]:
             inputs.extend(("gold/build_report.py", "gold/master_snapshot.json"))
         return inputs
 
-    inputs = ["equity/pdf_common.py", "equity/docx_embed.py"]
     market = next(key for key, slug, _ in MARKETS if report.asset_stem.startswith(f"{slug}-"))
-    inputs.append(f"equity/build_{market}_pdf.py")
-    if "-daily-" in report.asset_stem:
-        inputs.append("equity/build_daily.py")
-    else:
-        inputs.append(f"equity/report_meta_{market}.json")
-    return inputs
+    return artifact_receipt.equity_render_inputs(market, flagship="-daily-" not in report.asset_stem)
 
 
 def _prepare_assets(source: Path, copies: Path) -> list[tuple[LocalAsset, LocalAsset]]:

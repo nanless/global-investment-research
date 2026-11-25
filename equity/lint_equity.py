@@ -266,12 +266,34 @@ def _check_gate_3b(md_text: str, path: Path, *, is_flagship: bool, meta: dict | 
     return errs, warns
 
 
-def _check_docx_forensics(docx_path: Path, md_mtime: float, expected_charts: int) -> tuple[list[str], list[str]]:
+def _has_matching_artifact_receipt(source: Path, market: str, *, is_flagship: bool) -> bool:
+    root = BASE_DIR.parent
+    assets = {ext: source.with_suffix(f".{ext}") for ext in ("pdf", "docx")}
+    if any(not asset.is_file() or asset.is_symlink() for asset in assets.values()):
+        return False
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    try:
+        from scripts import artifact_receipt
+
+        artifact_receipt.verify_receipt(
+            source, repository=root, tree=root,
+            inputs=artifact_receipt.equity_render_inputs(market, flagship=is_flagship),
+            outputs={ext: artifact_receipt.sha256_file(asset) for ext, asset in assets.items()},
+        )
+    except (ImportError, OSError, ValueError):
+        return False
+    return True
+
+
+def _check_docx_forensics(
+    docx_path: Path, md_mtime: float, expected_charts: int, *, receipt_verified: bool = False,
+) -> tuple[list[str], list[str]]:
     errs: list[str] = []
     warns: list[str] = []
     if not docx_path.exists():
         return [f"Gate 6 失败：缺失原生 Word 文件 {docx_path.name}"], warns
-    if docx_path.stat().st_mtime < md_mtime - 2.0:
+    if docx_path.stat().st_mtime < md_mtime - 2.0 and not receipt_verified:
         errs.append(f"Gate 6 失败：{docx_path.name} 修改时间早于源 Markdown（请重新编译）")
     try:
         with zipfile.ZipFile(docx_path, "r") as zf:
@@ -1071,11 +1093,15 @@ def main() -> None:
         if not precheck:
             md_mtime = p.stat().st_mtime
             pdf_p = p.with_suffix(".pdf")
+            docx_p = p.with_suffix(".docx")
+            pdf_older = pdf_p.is_file() and pdf_p.stat().st_mtime < md_mtime - 2.0
+            docx_older = docx_p.is_file() and docx_p.stat().st_mtime < md_mtime - 2.0
+            receipt_verified = (pdf_older or docx_older) and _has_matching_artifact_receipt(p, mkt, is_flagship=is_flag)
             if not pdf_p.exists() or pdf_p.stat().st_size < 50_000:
                 all_errors.append(f"Gate 6 失败：缺失或过小的 PDF {pdf_p.name}")
             elif pdf_p.read_bytes()[:5] != b"%PDF-":
                 all_errors.append(f"Gate 6 失败：{pdf_p.name} 文件头非法")
-            elif pdf_p.stat().st_mtime < md_mtime - 2.0:
+            elif pdf_older and not receipt_verified:
                 all_errors.append(f"Gate 6 失败：{pdf_p.name} 修改时间早于 {p.name}")
             else:
                 n_pages = _count_pdf_pages(pdf_p)
@@ -1092,7 +1118,7 @@ def main() -> None:
                             all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（日报偏长，建议 ≤6 页）")
 
             exp_charts = len(_CHART_PLACEHOLDER_RE.findall(body_no_meta)) if is_flag or meta else 0
-            de, dw = _check_docx_forensics(p.with_suffix(".docx"), md_mtime, exp_charts)
+            de, dw = _check_docx_forensics(docx_p, md_mtime, exp_charts, receipt_verified=receipt_verified)
             all_errors.extend([f"{p.name}: {x}" for x in de])
             all_warnings.extend([f"{p.name}: {x}" for x in dw])
 

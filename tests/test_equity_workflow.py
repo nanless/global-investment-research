@@ -1,10 +1,14 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from zipfile import ZipFile
+
+from scripts import artifact_receipt
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -308,6 +312,55 @@ class EquityWorkflowTests(unittest.TestCase):
         result = self.lint("--precheck", "--strict")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("不得保留 vix_intraday_high", result.stdout)
+
+    def test_strict_checks_old_artifacts_against_the_publish_receipt(self):
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        shutil.copy2(ROOT / "scripts/artifact_receipt.py", scripts)
+        md = self.root / "equity/a_share_market_report_2026_11.md"
+        pdf, docx = md.with_suffix(".pdf"), md.with_suffix(".docx")
+        pdf_bytes = b"%PDF-1.4\n" + b"/Type /Page\n" * 16 + b" " * 50_000
+        pdf.write_bytes(pdf_bytes)
+        with ZipFile(docx, "w") as word:
+            for name in ("[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels",
+                         "word/styles.xml", "word/settings.xml", "word/footer1.xml"):
+                word.writestr(name, "<root/>")
+            word.writestr("word/document.xml", (
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:body><w:tbl/><w:sectPr/></w:body></w:document>'
+            ))
+        inputs = artifact_receipt.equity_render_inputs("a_share", flagship=True)
+        frozen = artifact_receipt.freeze_inputs(md, root=self.root, inputs=[self.root / p for p in inputs])
+        artifact_receipt.write_receipt(frozen, pdf, docx)
+        old = md.stat().st_mtime - 300
+        for output in (pdf, docx):
+            os.utime(output, (old, old))
+
+        def check_expected_timestamps(count):
+            result = self.lint("--strict", str(md))
+            self.assertIn("FULL FORENSIC", result.stdout, result.stderr)
+            self.assertEqual(result.stdout.count("修改时间早于"), count, result.stdout)
+
+        check_expected_timestamps(0)
+
+        pdf.write_bytes(pdf_bytes + b"changed PDF bytes")
+        os.utime(pdf, (old, old))
+        check_expected_timestamps(2)
+        pdf.write_bytes(pdf_bytes)
+        os.utime(pdf, (old, old))
+
+        original = md.read_bytes()
+        md.write_bytes(original + b"\nEdit after compiling\n")
+        check_expected_timestamps(2)
+        md.write_bytes(original)
+
+        receipt_path = md.with_suffix(".artifacts.json")
+        partial = json.loads(receipt_path.read_text())
+        del partial["inputs"]["equity/report_meta_a_share.json"]
+        receipt_path.write_text(json.dumps(partial), encoding="utf-8")
+        check_expected_timestamps(2)
+        receipt_path.unlink()
+        check_expected_timestamps(2)
 
     def test_backfill_and_archive_duplicates_fail(self):
         self.advance("2026-11-28_0730")

@@ -22,6 +22,15 @@ class FrozenInputs:
     hashes: dict[str, str]
 
 
+def equity_render_inputs(market: str, *, flagship: bool) -> list[str]:
+    return [
+        "equity/pdf_common.py",
+        "equity/docx_embed.py",
+        f"equity/build_{market}_pdf.py",
+        f"equity/report_meta_{market}.json" if flagship else "equity/build_daily.py",
+    ]
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as file:
