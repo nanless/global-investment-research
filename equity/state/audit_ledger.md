@@ -5,6 +5,13 @@
 
 ---
 
+## 2026-11-25 23:05 CST · 100% 单仓库收敛留痕（统一 `.agents/skills/`、脱敏 Sidecar 模板与外部副本清理）
+
+1. **三 Skill 单仓统一与脱敏定时模板入库**：将 `equity/.agents/skills/*` 与原全局 `gold-research-publishing` 统一收口至根目录 `.agents/skills/`（零个人路径 PII），新增 `automations/sidecars/*.template.json` 与 `scripts/install_sidecars.py` 原子渲染/漂移校验引擎，并在 `scripts/publish_site.py`、`AGENTS.md`、`README.md`、`GEMINI.md` 与 `state/RSI_PLAYBOOK.md` 同步更新路径与 Tier C 护栏。
+2. **外部重复资产清零**：确认旧 `scratch/` 目录零更新缺失文件后彻底清理旧目录及重复全局 Skill，本机定时 `sidecar.json` 与仓库模板达成字节级一致（46 条精确无通配授权）。
+
+---
+
 ## 2026-11-25 21:25 CST · `2026-11-25_1800` 黄金×三地股研首次一体化晚报联合实盘核验留痕
 
 1. **跨项目零延迟 SSOT 与红队纠偏闭环**：

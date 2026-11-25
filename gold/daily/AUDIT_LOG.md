@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-11-25 100% 单仓库收敛工程架构升级留痕（统一技能库、脱敏定时模板与旧目录清零）
+
+- **全量技能与定时配置单仓收敛**：合并全部 3 套工作区 Skill 至根目录 `.agents/skills/`（零个人绝对路径 PII），新增脱敏模板 `automations/sidecars/*.template.json` 与原子安装/漂移校验脚本 `scripts/install_sidecars.py`，同步将 `.agents` 与 `automations` 纳入 `scripts/publish_site.py` 标准暂存清单。
+- **外部副本与遗留目录清零**：经时间戳逐项核验无新增缺失文件后，彻底移除本机重复全局 Skill 与旧 `scratch/` 遗留目录，实现 100% 单仓库单一真相源收敛。
+
+---
+
 ## 2026-11-25 单仓库一体化工程架构升级留痕（4→2 统一调度、共享 6+1 与顺序发布）
 
 - **4→2 统一 `07:30`/`18:00` 定时调度**：彻底合并历史 4 套拆分定时任务（原黄金 07:30/18:00 与权益 07:55/18:25 错峰任务），收敛为 `daily-global-investment-research`（`07:30 CST`）与 `daily-global-investment-research-evening`（`18:00 CST`）2 个单会话一体化任务，由仓库顶层 `<REPO_ROOT>/AGENTS.md` 统一编排。

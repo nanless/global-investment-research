@@ -38,7 +38,7 @@ SITE_DIR = REPO_ROOT / "_site"
 LOCK_PATH = REPO_ROOT / ".git" / "publish_site.lock"
 MANIFEST_PATH = REPO_ROOT / ".git" / "last_release_manifest.json"
 
-CANONICAL_STAGE_PATHS = ("AGENTS.md", "gold", "equity", "scripts", "README.md", ".gitignore", ".github")
+CANONICAL_STAGE_PATHS = ("AGENTS.md", ".agents", "automations", "gold", "equity", "scripts", "README.md", ".gitignore", ".github")
 
 RELEASE_TAG = "latest-reports"
 RELEASE_TITLE = "Latest Research Reports (PDF & Word)"

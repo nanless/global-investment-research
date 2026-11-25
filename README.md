@@ -26,6 +26,8 @@ An institutional-grade, plain-language multi-asset investment research monorepo 
 ```text
 global-investment-research/
 ├── AGENTS.md                       # 仓库顶层统一编排宪章（07:30/18:00 一体化双任务与跨轨硬约束）
+├── .agents/skills/                 # 统一工作区三 Skill（gold-research-publishing + equity 双 Skill）
+├── automations/sidecars/           # 脱敏版 07:30/18:00 一体化定时任务模板（零个人路径）
 ├── gold/                           # 黄金深度研报体系（跨项目 SSOT 写入源）
 │   ├── 黄金跨世纪周期与2026-2030终审研究报告.md
 │   ├── data_snapshot.json          # 日报实时数据源 & 跨项目红绿灯裁决 SSOT
@@ -39,10 +41,11 @@ global-investment-research/
 │   ├── state/market_state.json     # 三市灯号、政策雷达、跨市熔断阀与黄金只读镜像
 │   ├── build_{a_share,hk_stock,us_stock}_pdf.py / build_daily.py / pdf_common.py / docx_embed.py / lint_equity.py
 │   └── daily/                      # 三市每日早晚报、总看板 INDEX、SCORECARD 与 CHANGELOG
-├── scripts/                        # 统一静态门户构建、严格门禁与一键发布引擎
+├── scripts/                        # 统一静态门户构建、严格门禁、发布与本地定时安装引擎
 │   ├── build_site.py               # 生成响应式多资产静态阅读门户（_site/）
 │   ├── lint_site.py                # 静态站点死链、结构与可读性严格校验
 │   ├── publish_site.py             # 编译 -> 严检 -> 提交推送 -> 滚动更新 Release PDF/DOCX
+│   ├── install_sidecars.py         # 渲染/原子安装本机定时任务配置并校验零漂移
 │   └── web_assets/                 # 站点样式与交互脚本
 └── .github/workflows/
     └── deploy-pages.yml            # push main 自动构建、严检并部署至 GitHub Pages
@@ -87,6 +90,9 @@ python3 scripts/publish_site.py
 # 仅推送网站源码，跳过 Release 附件上传
 python3 scripts/publish_site.py --skip-release
 ```
+
+### 4. 本机定时任务安装与漂移校验（Local Sidecar Sync）
+> 从 `automations/sidecars/*.template.json` 原子渲染安装至 `~/.gemini/config/sidecars/` 并校验零漂移：`python3 scripts/install_sidecars.py && python3 scripts/install_sidecars.py --check`
 
 ---
 

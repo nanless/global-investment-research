@@ -5,10 +5,10 @@
 > **单一权威详规索引（防跨文件重复与漂移）**：
 > - 单仓库顶层一体化编排（07:30/18:00 双任务、共享 6+1 调研、Step 3 黄金→Step 4 权益→Step 5 统一发布） → 唯一详规见 `../AGENTS.md`
 > - 排版量化红线、7 维度大盘架构、周日 6 维龙头解剖与旗舰触发阈值 → 唯一详规见 `DAILY_REPORT_SPEC.md`
-> - 境内 A 股/支付宝 × 离岸美股/港股税费、权限、低费 ETF 与外汇/CRS 合规 → 唯一详规见 `.agents/skills/equity-research-editorial-qa/references/dual_account_tax_and_rules.md`
-> - 发版前 10 项全量质量与合规门禁 → 唯一详规见 `.agents/skills/equity-research-editorial-qa/references/pre_flight_10_gates.md`
-> - 受控三层 RSI 自我复盘与 Meta-RSI 协议 → 唯一详规见 `.agents/skills/equity-research-editorial-qa/references/rsi_self_review_protocol.md`
-> - 21 张矢量图 Schema 与 2026–2027 三市休市/跨月滚存 SOP → 唯一详规见 `.agents/skills/equity-report-publishing/references/`
+> - 境内 A 股/支付宝 × 离岸美股/港股税费、权限、低费 ETF 与外汇/CRS 合规 → 唯一详规见 `../.agents/skills/equity-research-editorial-qa/references/dual_account_tax_and_rules.md`
+> - 发版前 10 项全量质量与合规门禁 → 唯一详规见 `../.agents/skills/equity-research-editorial-qa/references/pre_flight_10_gates.md`
+> - 受控三层 RSI 自我复盘与 Meta-RSI 协议 → 唯一详规见 `../.agents/skills/equity-research-editorial-qa/references/rsi_self_review_protocol.md`
+> - 21 张矢量图 Schema 与 2026–2027 三市休市/跨月滚存 SOP → 唯一详规见 `../.agents/skills/equity-report-publishing/references/`
 
 ---
 
@@ -74,9 +74,9 @@
   4. `python3 <REPO_ROOT>/equity/build_us_stock_pdf.py`
   5. `python3 <REPO_ROOT>/equity/build_daily.py`
   6. `python3 <REPO_ROOT>/scripts/publish_site.py`（双轨全量严检及 Step 5 统一 RSI 终检全绿后**单次运行**：自动编译静态站 `_site`、执行 `lint_site.py --strict`、提交推送 GitHub Pages 并按 SHA256 增量滚动更新 Release PDF/DOCX 附件；本地预演可附加 `--dry-run`）
-- **工作区双 Skill 分工**：
-  - 出版编译、原生 OOXML、独立 Linter、**21 张矢量图（`A1–A7` / `H1–H7` / `U1–U7`）**、三市休市/跨月滚存与模板 → `equity-report-publishing`；
-  - 投研写作、7 维度大盘与政策市雷达、三市联动与黄金 SSOT 校验、10 项门禁、双账户税费与 Step 5 受控 RSI 盲审 → `equity-research-editorial-qa`。
+- **统一工作区 Skill 分工（`../.agents/skills/`）**：
+  - 出版编译、原生 OOXML、独立 Linter、**21 张矢量图（`A1–A7` / `H1–H7` / `U1–U7`）**、三市休市/跨月滚存与模板 → `../.agents/skills/equity-report-publishing`；
+  - 投研写作、7 维度大盘与政策市雷达、三市联动与黄金 SSOT 校验、10 项门禁、双账户税费与 Step 5 受控 RSI 盲审 → `../.agents/skills/equity-research-editorial-qa`。
 
 ---
 
@@ -84,5 +84,5 @@
 
 每次正常发刊通过 `lint_equity.py --strict`（0 错 0 警）与 PDF 视觉抽检后，必须执行 Step 5 有界 RSI 闭环：
 1. 启动 1 路独立只读 `research` 盲审子代理（一体化班次由 Step 5 统一盲审联合覆盖黄金 + 三市权益），对本期 **三市（A/港/美）** 日报与同步台账按 6 维（`/30`）客观打分并拆出 Tier A / Tier B / Tier C 与 `next_run_watch`；
-2. 严守三层权限边界：**Tier A** 每刊自动更新 `state/rsi_metrics.json` 与 `state/RSI_PLAYBOOK.md`（严控 **≤180 行**、硬上限 ≤200 行）；**Tier B** 仅在复现确凿脚本/规范 Bug 时实施 ≤1 处 ≤40 行确定性补丁（禁放宽红线，改后必重编并通过 `lint_equity.py --strict` 否则立刻回滚）；**Tier C**（`../AGENTS.md`/`GEMINI.md`/核心风控红线/Skill/`sidecar.json`）永不自动改写，仅列提案待用户审批；
+2. 严守三层权限边界：**Tier A** 每刊自动更新 `state/rsi_metrics.json` 与 `state/RSI_PLAYBOOK.md`（严控 **≤180 行**、硬上限 ≤200 行）；**Tier B** 仅在复现确凿脚本/规范 Bug 时实施 ≤1 处 ≤40 行确定性补丁（禁放宽红线，改后必重编并通过 `lint_equity.py --strict` 否则立刻回滚）；**Tier C**（`../AGENTS.md`/`GEMINI.md`/核心风控红线/`../.agents/skills/`/`../automations/sidecars/`/`../scripts/install_sidecars.py`/`sidecar.json`）永不自动改写，仅列提案待用户审批；
 3. 每累计满 `10` 刊触发一次 Meta-RSI 跨周期趋势总复盘；Tier A/B 落盘后统一复跑 **`python3 .../lint_equity.py --strict`**（一体化班次同步复跑黄金严检）确认双轨全绿，再单次运行 `scripts/publish_site.py` 收官，仅在对话摘要末尾附精简 RSI 简报，绝不泄露至读者可见文件。

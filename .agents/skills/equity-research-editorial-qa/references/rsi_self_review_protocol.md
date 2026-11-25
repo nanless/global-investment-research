@@ -18,7 +18,7 @@
 | :--- | :--- | :--- | :--- |
 | **Tier A（每刊自动）** | `state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json` | 每刊全自动追加 1 条三市盲审遥测、滚动精炼经验手册并更新 `next_run_watch` | 手册严格 **≤180 行**（181–200 行告警，>200 行阻断；合并重复、淘汰已固化项）；JSON 合法、`run_id` 唯一、`total_score == sum(scores)`、`max_score == 30`；须通过 `lint_equity.py --strict` 终检 |
 | **Tier B（按需慎改）** | `pdf_common.py`、`docx_embed.py`、`build_daily.py`、`build_a_share_pdf.py`、`build_hk_stock_pdf.py`、`build_us_stock_pdf.py`、`lint_equity.py`、`DAILY_REPORT_SPEC.md` | 仅当本轮复现了确凿的渲染碰撞、JSON 解析或 Linter 漏网 Bug 时，允许实施 **≤1 处、≤40 行** 最小补丁 | 改后必须串行重跑受影响的 `build_*.py` 并执行 **`lint_equity.py --strict`** 达成 **0 错 0 警** + 抽看 PDF；**任一步报错、误报或版面恶化，必须立即回滚**并降级写入 Tier C 提案区 |
-| **Tier C（宪法锁定）** | `<REPO_ROOT>/AGENTS.md`、`GEMINI.md`、核心风控红线（四灯阈值、三市危机总熔断阀、AI 跨市 ≤20%、单股 ≤8%、黄金红灯锁、5 万美元购汇红线、6 万美元美国遗产税边界）、工作区双 Skill、定时任务 `sidecar.json` | **严禁无人值守自改**；仅作为结构化提案写入 `state/RSI_PLAYBOOK.md` 第四节与 `rsi_metrics.json` 的 `tier_c_proposals` | 在最终快报中向用户明确呈报，等待用户在交互会话中明确审批后再执行 |
+| **Tier C（宪法锁定）** | `<REPO_ROOT>/AGENTS.md`、`GEMINI.md`、核心风控红线（四灯阈值、三市危机总熔断阀、AI 跨市 ≤20%、单股 ≤8%、黄金红灯锁、5 万美元购汇红线、6 万美元美国遗产税边界）、工作区三 Skill（`<REPO_ROOT>/.agents/skills/`）、`<REPO_ROOT>/automations/sidecars/`（含 `scripts/install_sidecars.py`）与本地 `sidecar.json` | **严禁无人值守自改**；仅作为结构化提案写入 `state/RSI_PLAYBOOK.md` 第四节与 `rsi_metrics.json` 的 `tier_c_proposals` | 在最终快报中向用户明确呈报，等待用户在交互会话中明确审批后再执行 |
 
 ---
 

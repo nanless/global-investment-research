@@ -10,6 +10,11 @@
 global-investment-research/
 ├── AGENTS.md                        # 本文件：单仓库顶层编排宪章与跨轨硬约束
 ├── README.md                        # 仓库总览、一体化双班次节拍与本地构建说明
+├── .agents/skills/                  # 全仓库统一工作区三 Skill（黄金出版 + 权益出版 + 权益编辑审校）
+│   ├── gold-research-publishing/    # 黄金 7 门禁、OOXML 引擎、组件 Schema 与调研红队手册
+│   ├── equity-report-publishing/    # 权益出版编译、21 张矢量图与三市休市/跨月 SOP
+│   └── equity-research-editorial-qa/# 权益 7 维大盘、10 项门禁、双账户税费与 RSI 协议
+├── automations/sidecars/            # 脱敏版 07:30/18:00 一体化定时任务模板（Tier C 只读）
 ├── gold/                            # 黄金深度研报体系（跨轨 SSOT 唯一写入源）
 │   ├── AGENTS.md                    # 黄金子轨永久规则
 │   ├── data_snapshot.json           # 日报实时数据源 & 跨项目红绿灯裁决 SSOT
@@ -20,14 +25,14 @@ global-investment-research/
 ├── equity/                          # 全球三市权益研报体系（A 股 × 港股 × 美股）
 │   ├── GEMINI.md                    # 权益子轨永久宪法
 │   ├── DAILY_REPORT_SPEC.md         # 7 维大盘、排版量化与主轻协同唯一详规
-│   ├── .agents/skills/              # 权益出版编译与编辑审校双工作区 Skill
 │   ├── state/                       # market_state.json、audit_ledger.md、RSI 台账
 │   ├── build_{a_share,hk_stock,us_stock}_pdf.py / build_daily.py / pdf_common.py / docx_embed.py / lint_equity.py
 │   └── daily/                       # 三市日报、总看板 INDEX、SCORECARD、CHANGELOG
-├── scripts/                         # 统一静态门户构建、严格门禁与一键发布引擎
+├── scripts/                         # 统一静态门户构建、严格门禁、发布与本地定时安装引擎
 │   ├── build_site.py                # 零第三方依赖生成双端响应式门户（_site/）
 │   ├── lint_site.py                 # 6 道法证与安全门禁（S1–S6，--strict 零容忍）
 │   ├── publish_site.py              # 构建 -> 严检 -> 限域提交推送 -> 增量 Release 上传
+│   ├── install_sidecars.py          # 将脱敏定时模板渲染/原子安装至本机并做漂移校验
 │   └── web_assets/                  # 站点样式与交互脚本
 └── .github/workflows/
     └── deploy-pages.yml             # push main 自动构建、严检并部署至 GitHub Pages
@@ -101,7 +106,8 @@ global-investment-research/
 
 - **黄金子轨规则与格式宪章**：[gold/AGENTS.md](gold/AGENTS.md) · [gold/daily/AGENTS.md](gold/daily/AGENTS.md) · [gold/daily/DAILY_FORMAT_SPEC.md](gold/daily/DAILY_FORMAT_SPEC.md) · [gold/daily/RSI_PLAYBOOK.md](gold/daily/RSI_PLAYBOOK.md)
 - **权益子轨宪法与排版详规**：[equity/GEMINI.md](equity/GEMINI.md) · [equity/DAILY_REPORT_SPEC.md](equity/DAILY_REPORT_SPEC.md) · [equity/state/RSI_PLAYBOOK.md](equity/state/RSI_PLAYBOOK.md)
-- **权益工作区双 Skill**：
-  - 出版编译、21 张矢量图与休市/跨月 SOP：[equity/.agents/skills/equity-report-publishing/SKILL.md](equity/.agents/skills/equity-report-publishing/SKILL.md)
-  - 7 维大盘、10 项门禁、双账户税费与 RSI 盲审：[equity/.agents/skills/equity-research-editorial-qa/SKILL.md](equity/.agents/skills/equity-research-editorial-qa/SKILL.md)
-- **全局配套 Skill（本机配置）**：`gold-research-publishing`（`~/.gemini/config/skills/gold-research-publishing/SKILL.md`）
+- **统一工作区三 Skill（`.agents/skills/` · Tier C 只读）**：
+  - 黄金 7 门禁、OOXML 引擎、组件 Schema 与调研红队：[.agents/skills/gold-research-publishing/SKILL.md](.agents/skills/gold-research-publishing/SKILL.md)
+  - 权益出版编译、21 张矢量图与休市/跨月 SOP：[.agents/skills/equity-report-publishing/SKILL.md](.agents/skills/equity-report-publishing/SKILL.md)
+  - 权益 7 维大盘、10 项门禁、双账户税费与 RSI 盲审：[.agents/skills/equity-research-editorial-qa/SKILL.md](.agents/skills/equity-research-editorial-qa/SKILL.md)
+- **脱敏定时任务模板与安装器（Tier C 只读）**：`automations/sidecars/*.template.json` · [scripts/install_sidecars.py](scripts/install_sidecars.py)

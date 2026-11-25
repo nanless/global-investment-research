@@ -1,6 +1,6 @@
 # 黄金深度研报项目规则（global-investment-research/gold）
 
-本目录是面向普通理性投资者的「每日黄金深度研报（07:30 早报 & 18:00 晚报 / 周末专项版）」与「跨世纪周期全景主报告（1971–2030）」生产与出版工作区，隶属于仓库顶层统一编排宪章 `../AGENTS.md`（07:30 / 18:00 一体化单会话流水线的 Step 3）。以下规则为黄金子轨的永久约束；完整 JSON Schema、7 道门禁词表、OOXML 引擎架构与调研提示词请按需加载本机全局 Skill **`gold-research-publishing`**（`~/.gemini/config/skills/gold-research-publishing/SKILL.md`）。
+本目录是面向普通理性投资者的「每日黄金深度研报（07:30 早报 & 18:00 晚报 / 周末专项版）」与「跨世纪周期全景主报告（1971–2030）」生产与出版工作区，隶属于仓库顶层统一编排宪章 `../AGENTS.md`（07:30 / 18:00 一体化单会话流水线的 Step 3）。以下规则为黄金子轨的永久约束；完整 JSON Schema、7 道门禁词表、OOXML 引擎架构与调研提示词请按需加载工作区 Skill **`gold-research-publishing`**（[`../.agents/skills/gold-research-publishing/SKILL.md`](../.agents/skills/gold-research-publishing/SKILL.md)）。
 
 ---
 
@@ -41,7 +41,7 @@
 3. **共享 6+1（单跑 5+1）两阶段调研机制、官收信源白/黑名单与防卡壳/防篡改红线**：
    - 所有外部联网实盘与资讯调研必须通过两阶段 `research` 子代理使用中英双语 `search_web` 覆盖七大信源完成：在每日 `07:30` / `18:00` 一体化班次中执行仓库级 **阶段 2A 共享 6 路并发调研 + 阶段 2B 1 路统一红队**（详见 `../AGENTS.md`；独立单跑黄金轨时沿用 5 路并行 + 第 6 路红队），严格遵守美股 `GLD`/`GDX` 官收白名单 `StockAnalysis`/`Investing`/`VanEck NAV`、**禁用 `Barchart` 远月滞后合约快照**、`site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与 `market_calendar.json` 北美冬/夏令时硬校验，**必须等全部调研子代理返回后**再启动红队复核审计，输出【新增 / 更新 / 修正 / 删除】四张清单；
    - **无人值守防卡壳铁律**：在定时自动化任务中，主代理严禁调用 `date`、`ls`、`curl` 等未授权外部抓取或探测 shell 命令，**亦严禁调用 `edit_file`**（所有 Markdown/JSON 更新一律使用 `write_file` 全量写盘，彻底杜绝交互权限拦截或上下文漂移），**仅运行预授权的绝对路径裸命令**（不加 `cd &&` 前缀）执行 Python 编译与质检脚本，直接依据系统本地时间（`+08:00`）+ `market_calendar.json` 判定刊期与休市叠加；同日同班次若需二次重发/勘误，新档加 `_r2` 后缀严禁覆盖原归档；
-   - **定时任务三层 RSI 防篡改与防退化铁律**：在正常发刊编译阶段（Step 1–4）严禁修改任何 `.py` 脚本与规则文件；仅在每刊 7 道门禁全绿交付验收通过后的 **Step 5 RSI 闭环阶段** 按三层分级执行自进化——**Tier A**（`daily/RSI_PLAYBOOK.md` ≤180 行 + `daily/rsi_metrics.json`）全自动迭代；**Tier B**（工作区 `.py` 或 `DAILY_FORMAT_SPEC.md` 确凿小 Bug）仅允许单次 ≤1 处最小补丁（≤40 行，**只允许加固门禁或修 Bug，严禁删禁词/放宽误差**）且必须通过 `--check` + 重编 + `--strict` + PDF 视觉复核，**任一步失败立即回滚并转提案**；**Tier C**（核心风控策略红线、`AGENTS.md`、`sidecar.json`、全局 Skill）永不静默修改，仅写入提案区待用户审批。
+   - **定时任务三层 RSI 防篡改与防退化铁律**：在正常发刊编译阶段（Step 1–4）严禁修改任何 `.py` 脚本与规则文件；仅在每刊 7 道门禁全绿交付验收通过后的 **Step 5 RSI 闭环阶段** 按三层分级执行自进化——**Tier A**（`daily/RSI_PLAYBOOK.md` ≤180 行 + `daily/rsi_metrics.json`）全自动迭代；**Tier B**（工作区 `.py` 或 `DAILY_FORMAT_SPEC.md` 确凿小 Bug）仅允许单次 ≤1 处最小补丁（≤40 行，**只允许加固门禁或修 Bug，严禁删禁词/放宽误差**）且必须通过 `--check` + 重编 + `--strict` + PDF 视觉复核，**任一步失败立即回滚并转提案**；**Tier C**（核心风控策略红线、`AGENTS.md`、`../.agents/skills/`、`../automations/sidecars/`、`../scripts/install_sidecars.py` 与本地 `sidecar.json`）永不静默修改，仅写入提案区待用户审批。
 
 ---
 

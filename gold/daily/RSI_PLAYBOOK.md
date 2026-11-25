@@ -11,7 +11,7 @@
 | :--- | :--- | :--- | :--- |
 | **Tier A（每刊自动）** | 本手册 `RSI_PLAYBOOK.md` + `rsi_metrics.json`（检索词优化、避坑清单、写作精进、上期预判回验） | 全自动落盘，下班次立即继承 | 手册 ≤180 行滚动精炼；JSON 严格合法 |
 | **Tier B（按需慎改）** | 工作区引擎脚本（`build_daily.py` / `build_report.py` / `docx_embed.py` / `lint_readability.py`）与 `DAILY_FORMAT_SPEC.md` | 仅限复现确凿渲染/解析/漏网 Bug 时，单次 ≤1 处最小补丁（≤40 行） | **只允许加固门禁或修 Bug，严禁删禁词/放宽误差**；改后必过 `--check` + 重编 + `--strict` 0 错 0 警 + PDF 复核，**任一步失败立即回滚**并改写进下方提案区 |
-| **Tier C（永不自改）** | 核心金融策略红线（10%–15% 仓位、四步红绿灯阈值、`30%+45%+25%`、60日新高止损、深熊红线）、`<REPO_ROOT>/AGENTS.md`（仓库根规则 `../../AGENTS.md` 与子轨规则 `../AGENTS.md`）、`sidecar.json`、全局 Skill | **仅输出提案**写入下方第四节并呈报用户 | 严禁静默修改；须等用户在交互会话审批 |
+| **Tier C（永不自改）** | 核心金融策略红线（10%–15% 仓位、四步红绿灯阈值、`30%+45%+25%`、60日新高止损、深熊红线）、`<REPO_ROOT>/AGENTS.md`（仓库根规则 `../../AGENTS.md` 与子轨规则 `../AGENTS.md`）、`../../.agents/skills/`、`../../automations/sidecars/`（含 `scripts/install_sidecars.py`）与本地 `sidecar.json` | **仅输出提案**写入下方第四节并呈报用户 | 严禁静默修改；须等用户在交互会话审批 |
 
 ---
 

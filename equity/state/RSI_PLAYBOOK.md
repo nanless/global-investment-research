@@ -11,7 +11,7 @@
 | :--- | :--- | :--- |
 | **Tier A（每刊自动）** | `state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json` | 全自动落盘；手册 ≤180 行；JSON 合法、`run_id` 唯一、`total_score == sum(scores)`、`max_score == 30` |
 | **Tier B（按需慎改）** | `pdf_common.py`、`docx_embed.py`、`build_*_pdf.py`、`build_daily.py`、`lint_equity.py`、`DAILY_REPORT_SPEC.md` | 仅复现确凿 Bug 时单次 ≤1 处 ≤40 行最小补丁（禁放宽红线）；改后必重编并通过 `lint_equity.py --strict` + PDF 抽检，**任一步失败立即回滚** |
-| **Tier C（永不自改）** | `<REPO_ROOT>/AGENTS.md`、`GEMINI.md`、核心风控红线、双 Skill、`sidecar.json` | 严禁无人值守自改；仅写提案至第四节待用户交互审批 |
+| **Tier C（永不自改）** | `<REPO_ROOT>/AGENTS.md`、`GEMINI.md`、核心风控红线、统一工作区 Skill（`../../.agents/skills/`）、`../../automations/sidecars/`（含 `scripts/install_sidecars.py`）与本地 `sidecar.json` | 严禁无人值守自改；仅写提案至第四节待用户交互审批 |
 
 ---
 
