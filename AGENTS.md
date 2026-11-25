@@ -82,8 +82,8 @@ global-investment-research/
    - Step 4 入口只读校验本期黄金快照、其观测截点和 Tier-0 行动互斥锁。权益引用的黄金镜像须使用和黄金快照相同的期号、时间和数值，权益自己的观测时间与班次窗口另查。按计划写本期日报、`INDEX.md`、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`，明确沿用市场、出版例外和跨月旗舰处理。
    - 串行执行：`python3 equity/lint_equity.py --precheck --strict` → `python3 equity/build_daily.py`（按需串行 `build_{a_share,hk_stock,us_stock}_pdf.py`）→ `python3 equity/lint_equity.py --strict`（必须 `0 errors, 0 warnings`）+ `read_file` 抽检 PDF。
 7. **Step 5｜统一 RSI 盲审闭环 + 单次静态站与 Release 发布**：
-   - 启动 **1 路独立只读 `research` 盲审子代理** 联合复盘黄金与三地权益本班次产出（各按 6 维 `/30` 独立打分与预判验真）；
-   - 按 Tier A/B/C 安全权限分别更新 `gold/daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 与 `equity/state/{rsi_metrics.json,RSI_PLAYBOOK.md}`。两轨的复盘记录各用本期完整 `edition_id` 作 `run_id`。两份手册各 ≤180 行，Tier B 单次 ≤1 处 ≤40 行且验证失败即回滚，Tier C 含本文件 `AGENTS.md`，只写提案待批。
+   - 启动 **1 路独立只读 `research` 盲审子代理**，按两轨各 6 维 `/30` 打分与预判验真，并逐项核对当期总看板、记分卡、快照、正文与图表。等待盲审返回，修正全部已证实问题，按黄金在先、权益在后的顺序重编受影响附件。未发布或暂不可取的数据本期留空或明确挂账。
+   - 按 Tier A/B/C 安全权限分别更新 `gold/daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 与 `equity/state/{rsi_metrics.json,RSI_PLAYBOOK.md}`。两轨复盘各用本期完整 `edition_id` 作 `run_id`。按共享任务提示词填写 `review_closure`，记录每项发现、修正证据或待补数据的来源和期限。发布阶段拒绝仍开放的问题和缺失的处置记录。两份手册各 ≤180 行，Tier B 单次 ≤1 处 ≤40 行且验证失败即回滚，Tier C 含本文件 `AGENTS.md`，只写提案待批。
    - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict`。进入发布阶段后运行 `python3 scripts/publish_site.py --edition-token <token>`。发布器用最终提交校验两轨稿件、构建站点，将 PDF/Word 与编译输入对账后发布。同班只允许发布一个提交。推送及附件核验都有记录，`complete` 通过实际 Pages 部署步骤和在线附件复验后才算完成。遇到暂时性故障，可续同一 token 和提交。
 
 ---

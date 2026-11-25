@@ -1,13 +1,13 @@
 # 受控三层 RSI 自我复盘与递归优化唯一详规（Bounded RSI Self-Review Protocol）
 
-本协议为全项目 Step 5 受控三层 RSI 自我复盘的**唯一权威详规**（`GEMINI.md`、`DAILY_REPORT_SPEC.md` 与 `state/RSI_PLAYBOOK.md` 均以本协议为准，一体化单会话编排见 `<REPO_ROOT>/AGENTS.md`）。每次 **07:30 一体化早报（`_0730_`）** 或 **18:00 一体化晚报（`_1800_`）**（含周末突发升级刊）正常出版并通过严检（0 错 0 警）与 PDF 视觉抽检后，必须执行本闭环（一体化班次由 1 路统一盲审子代理联合覆盖黄金 + 三市权益并分别落盘至两轨 RSI 台账）。全部 RSI 产物永久隔离于 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`，**绝不泄露至任何读者可见 `.md` / `.pdf` / `.docx` / `.html` / `INDEX.md` / `CHANGELOG.md` / `SCORECARD.md`**。
+本协议为全项目 Step 5 受控三层 RSI 自我复盘的**唯一权威详规**（`GEMINI.md`、`DAILY_REPORT_SPEC.md` 与 `state/RSI_PLAYBOOK.md` 均以本协议为准，一体化单会话编排见 `<REPO_ROOT>/AGENTS.md`）。每次 **07:30 一体化早报（`_0730_`）** 或 **18:00 一体化晚报（`_1800_`）**（含周末突发升级刊）的候选稿通过严检（0 错 0 警）与 PDF 视觉抽检后，发布前必须执行本闭环（一体化班次由 1 路统一盲审子代理联合覆盖黄金 + 三市权益并分别落盘至两轨 RSI 台账）。全部 RSI 产物永久隔离于 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`，**绝不泄露至任何读者可见 `.md` / `.pdf` / `.docx` / `.html` / `INDEX.md` / `CHANGELOG.md` / `SCORECARD.md`**。
 
 ---
 
 ## 一、核心原则：安全、有界、可回滚、永不退化
 
 1. **冷启动先读经验（Step 0）**：每班次开始动笔前，必须先读取 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录，直接继承历史教训、一手源检索词雷达与 `next_run_watch`。
-2. **发刊验收后再盲审（Step 5）**：先确保读者版三市日报正常出版、`lint_equity.py --strict` 绿灯且 PDF 逐页抽检通过，再启动独立的只读盲审子代理打分与沉淀经验，不让未验证修改污染已发成品。
+2. **本地检查后启动发布前盲审（Step 5）**：先编译三市候选稿，通过 `lint_equity.py --strict` 和 PDF 逐页抽检。等独立只读盲审返回后，修正本期所有已证实的错误，并重编、复验受影响的报告。发布前记录每项发现的处置结果。
 3. **防退化铁律**：只允许**加固门禁、消除 Bug、提炼更高杠杆规则**；**严禁**为凑“一次过”而删除红线禁词、调松字数/加粗/表宽/页数/黄金锁门禁，或悄悄改写策略红线与宪法规则。
 
 ---
@@ -24,9 +24,9 @@
 
 ## 三、Step 5 独立只读盲审子代理 Prompt 模板（三市 + 黄金 SSOT 版）
 
-每次正常发刊后，启动 **1 个独立只读 `research` 子代理**（`Role: "RSI Self-Review & Improvement Auditor"`）：
+每次候选稿通过本地验收后，启动 **1 个独立只读 `research` 子代理**（`Role: "RSI Self-Review & Improvement Auditor"`）：
 
-> 你是独立、严苛的投研出版质量盲审审计员（只读，不修改任何文件）。请完整核查本次刚发布的 `YYYY-MM-DD_HHMM` **三市日报**（`daily/YYYY-MM-DD_HHMM_a_share.{md,pdf}`、`daily/YYYY-MM-DD_HHMM_hk_stock.{md,pdf}`、`daily/YYYY-MM-DD_HHMM_us_stock.{md,pdf}`，含涉及更新的旗舰手册与 `report_meta_*.json`）、配套同步文件（`daily/INDEX.md`、`daily/CHANGELOG.md`、`daily/SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`）、跨项目黄金快照（`../gold/data_snapshot.json`）以及历史经验文件（`state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json`），严格按以下 6 个维度独立逐项打分（1–5 分整数，严禁虚高打满分，发现任何实质缺陷必须扣分并写明证据）：
+> 你负责独立只读盲审，所有判断交回主会话。请完整核查本期候选 **三市日报**（`daily/YYYY-MM-DD_HHMM_a_share.{md,pdf}`、`daily/YYYY-MM-DD_HHMM_hk_stock.{md,pdf}`、`daily/YYYY-MM-DD_HHMM_us_stock.{md,pdf}`，含涉及更新的旗舰手册与 `report_meta_*.json`）、配套同步文件（`daily/INDEX.md`、`daily/CHANGELOG.md`、`daily/SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`）、跨项目黄金快照（`../gold/data_snapshot.json`）以及历史经验文件（`state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json`）。按以下 6 个维度逐项打分（1–5 分整数），写清每项缺陷、文件位置、原值、核对依据及其观测时点：
 > 1. `data_freshness_and_zero_hallucination`（7 类一手源鲜度、黄金快照 4 小时新鲜度与 `brent_settle_usd`/`cfets_cny_fixing` 对齐、T+1 挂账诚实度、A/H 同股 PE 物理学一致、冬夏令时与合约口径零误差、无退市股或事件误判）
 > 2. `prior_forecast_calibration`（上期 `next_run_watch` 与 `SCORECARD.md` 到期预判客观验真、不回避失误、新登检验日均为工作日）
 > 3. `plain_language_and_strict_readability`（巴菲特大白话深度、零内部/RSI/工程词泄露、反引号/粗体/段长/列表密墙/3 秒正向自检卡/双账户税费与 QDII 属性零错、黄金红灯全载体互斥锁零破口）
@@ -41,12 +41,13 @@
 > - (d) **Tier B 补丁评估**（若本轮无确定性脚本/Linter Bug 明确写“无需 Tier B 补丁”；若有则给出 ≤40 行精确最小改动建议与回归测试点）；
 > - (e) **Tier C 架构提案**（如有需用户审批的规则/宪法/Skill/定时架构升级，最多 2 条，否则为空）；
 > - (f) **下班次 3–4 条 `next_run_watch` 必验真追踪项**（必须带精确北京时间节点与客观检验标准）。
+> - (g) **发布前必须处理的事实与载体问题**，供主会话逐项修正并复验。若数据确实待公布或来源暂不可取，说明来源、回补期号，以及本期是否已经省略或挂账。
 
 ---
 
 ## 四、`state/rsi_metrics.json` 单条运行记录 Schema（三市统一版）
 
-每刊向 `runs` 数组末尾追加 1 个对象（严禁篡改历史记录；周六 07:30 仅发美股主刊时，`pdf_pages` 写 `{"a_share": null, "hk_stock": null, "us_stock": 4}`，周五滞后美股盘后/BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股轻刊）：
+每刊向 `runs` 数组末尾追加 1 个对象，保留历史记录。联合班次按 [共享任务提示词](../../../../automations/unified-edition.prompt.md) 登记 `review_closure`。周六 07:30 仅发美股主刊时，`pdf_pages` 按实际页数登记，A 股、港股为 `null`。周五滞后美股盘后与 BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股轻刊。
 
 ```json
 {
@@ -73,6 +74,16 @@
   },
   "total_score": 29,
   "max_score": 30,
+  "review_closure": {
+    "reviewer_completed": true,
+    "findings": [
+      {
+        "description": "总看板错引盘中恐慌指数旧值",
+        "status": "resolved",
+        "evidence": "总看板已改为带交易日的 Cboe 官收，逐项对照快照及美股报告，复检通过。"
+      }
+    ]
+  },
   "prior_predictions_checked": [
     {
       "claim": "具体预判或追踪项",

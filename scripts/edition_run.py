@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,6 +23,8 @@ BEIJING = timezone(timedelta(hours=8))
 EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
 PHASES = ("research", "gold", "equity", "publish")
 GOLD_HISTORY_LEDGERS = ("gold/daily/AUDIT_LOG.md", "gold/daily/CHANGELOG.md")
+LAST_EDITION_WITHOUT_REVIEW = ("2026-11-25", 1800, 2)
+LAST_EDITION_WITHOUT_REVIEW_CLOSURE = ("2026-11-25", 1800, 3)
 SHA_RE = re.compile(r"[a-f0-9]{40}")
 DIGEST_RE = re.compile(r"[a-f0-9]{64}")
 REPOSITORY_RE = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
@@ -158,18 +161,78 @@ def _check_edition_document(edition: str, file: str, sha: str | None = None) -> 
         raise ValueError(f"{file} does not belong to edition {edition}.")
 
 
+def _edition_key(value: object) -> tuple[str, int, int] | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        edition_id(value)
+    except argparse.ArgumentTypeError:
+        return None
+    match = EDITION_RE.fullmatch(value)
+    assert match is not None
+    return match[1], int(match[2]), int(match[3] or 1)
+
+
+def _has_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _has_deferred_data_evidence(evidence: object, current: tuple[str, int, int]) -> bool:
+    if not isinstance(evidence, dict):
+        return False
+    due = _edition_key(evidence.get("due_edition"))
+    source = evidence.get("source")
+    if due is None or due <= current or not _has_text(evidence.get("disposition")):
+        return False
+    if not isinstance(source, str) or re.search(r"\s", source):
+        return False
+    try:
+        url = urlsplit(source)
+        return url.scheme in {"http", "https"} and bool(url.hostname)
+    except ValueError:
+        return False
+
+
+def _check_review_closure(review: dict, file: str, current: tuple[str, int, int]) -> None:
+    closure = review.get("review_closure")
+    if not isinstance(closure, dict) or closure.get("reviewer_completed") is not True:
+        raise ValueError(f"{file} requires review_closure.reviewer_completed to be true.")
+    findings = closure.get("findings")
+    if not isinstance(findings, list):
+        raise ValueError(f"{file} requires a review_closure.findings list.")
+    for index, finding in enumerate(findings, start=1):
+        label = f"{file} review finding {index}"
+        if not isinstance(finding, dict) or not _has_text(finding.get("description")):
+            raise ValueError(f"{label} requires a description.")
+        status = finding.get("status")
+        evidence = finding.get("evidence")
+        if status == "resolved":
+            if not _has_text(evidence):
+                raise ValueError(f"{label} requires evidence of resolution.")
+        elif status == "deferred_data":
+            if not _has_deferred_data_evidence(evidence, current):
+                raise ValueError(f"{label} requires a source URL, future due_edition and disposition for deferred data.")
+        else:
+            raise ValueError(f"{label} must be resolved or documented as deferred_data before publication.")
+
+
 def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = None) -> None:
-    current = EDITION_RE.fullmatch(edition)
-    if current and (current[1], current[2], int(current[3] or 1)) <= ("2026-11-25", "1800", 2):
+    current = _edition_key(edition)
+    if current is None:
+        raise ValueError(f"Invalid edition ID for blind review: {edition!r}.")
+    if current <= LAST_EDITION_WITHOUT_REVIEW:
         return
     for file in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
         text = git_value("show", f"{sha}:{file}") if sha else (root / file).read_text(encoding="utf-8")
         document = json.loads(text)
         reviews = document.get("runs") if isinstance(document, dict) else None
-        if not isinstance(reviews, list) or sum(
-            isinstance(review, dict) and review.get("run_id") == edition for review in reviews
-        ) != 1:
+        matches = [
+            review for review in reviews if isinstance(review, dict) and review.get("run_id") == edition
+        ] if isinstance(reviews, list) else []
+        if len(matches) != 1:
             raise ValueError(f"{file} requires one completed independent review for {edition}.")
+        if current > LAST_EDITION_WITHOUT_REVIEW_CLOSURE:
+            _check_review_closure(matches[0], file, current)
 
 
 def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:

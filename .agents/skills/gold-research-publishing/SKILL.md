@@ -93,7 +93,7 @@ description: Orchestrates the zero-barrier, institutional-grade gold deep-resear
 
 ### Step 5：独立 RSI 自我复盘与三层递归优化闭环（门禁全绿后强制执行）
 1. **启动 1 路独立只读盲审子代理**（一体化单会话班次调用 `Unified RSI Self-Review & Improvement Auditor` 联合复盘黄金与全球权益 A/港/美股各 `/30`；独立黄金班次调用 `RSI Self-Review & Improvement Auditor`）：对照本刊 MD、PDF 视觉抽检结果、首次 `--strict` 报错记录与上期预判清单，按 6 维量表（每维 1–5 分，总分 `/30`）无情复盘并输出 Tier A/B/C 分级改进清单（完整提示词模板见 [./references/5-plus-1-research-playbook.md](./references/5-plus-1-research-playbook.md) 第 6 节）。
-2. **Tier A（每刊必做 · 全自动生效）**：追加结构化记录至 `daily/rsi_metrics.json`，提炼 1–3 条高杠杆规则滚动合并精炼入 `daily/RSI_PLAYBOOK.md`（严格维持 ≤180 行，每满 10 刊做一次 Meta-RSI 趋势复盘）。
+2. **Tier A（每刊必做 · 全自动生效）**：等盲审实际返回，核对正文、图表、快照和账本发现的问题，修正并复验后追加结构化记录至 `daily/rsi_metrics.json`。联合班次按共享提示词填写 `review_closure`，保留首次报错与重跑记录。提炼 1–3 条规则并入 `daily/RSI_PLAYBOOK.md`（严格维持 ≤180 行，每满 10 刊回看累计结果）。
 3. **Tier B（按需慎做 · 必过验证否则回滚）**：仅当确认存在确定性小 Bug（≤40 行、单次 ≤1 处、**只加固门禁/修 Bug 绝不删禁词或放宽误差**）时可安全修补工作区脚本，改后必过 `--check` + 重编 + `--strict` + PDF 复核，任一步失败立刻回滚并降级为提案。
 4. **Tier C（宪法红线锁死 · 仅提案）**：核心金融策略红线、`<REPO_ROOT>/AGENTS.md`、`<REPO_ROOT>/.agents/skills/`、`<REPO_ROOT>/automations/sidecars/`（含 `scripts/install_sidecars.py`）与本地 `sidecar.json` 永不静默篡改，写入 `RSI_PLAYBOOK.md` 第四节提案区并在用户快报末尾呈报；最后补跑 `lint_readability.py --strict` 确保 RSI 手册与账本零错零警告。
 5. **门禁全绿后发布网站**：联合班次的黄金、权益和统一 RSI 终检均通过 `--strict` 后，按根契约登记进入 `publish`，只执行一次：

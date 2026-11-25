@@ -17,6 +17,8 @@ An institutional-grade, plain-language multi-asset investment research monorepo 
 | :--- | :--- | :--- |
 | **07:30** | **一体化早报** (`daily-global-investment-research`) | **Step 3 黄金早报**（纽约 06:00 终盘、国内夜盘、跨资产分化与买金四步红绿灯，写入 `gold/data_snapshot.json` SSOT） → **Step 4 三地权益早刊**（美股隔夜复盘主刊 + A 股 / 港股盘前快报，零延迟只读校验黄金 SSOT 并校核 03:00 恒指夜期盲窗） → **Step 5 统一 RSI 与单次发布** |
 | **18:00** | **一体化晚报** (`daily-global-investment-research-evening`) | **Step 3 黄金晚报**（上金所 15:30 终盘、沪金 15:00 收盘与龙虎榜、亚欧盘实况，刷新 `gold/data_snapshot.json`） → **Step 4 三地权益晚刊**（A 股 / 港股收盘主刊 + 美股欧亚盘/盘前哨兵轻刊，封账两融、中金所席位、南向资金与盘后终盘） → **Step 5 统一 RSI 与单次发布** |
+
+进入发布前，独立盲审须核对当期总看板、记分卡、状态和各载体。两轨分别记录已修正问题的复验证据。待公布或一时取不到的数字须在报告中留空或挂账，并记录数据来源和回补期号。程序在切换到发布阶段和检查提交时，都核对两轨的盲审处置记录。
 | **周六 / 周日** | **周末专项 / 复盘** | 周六 07:30 黄金周末专项版（CFTC / 链上金 / 线下客流）+ 美股周五复盘主刊；周日刷新 `SCORECARD.md` 公开记分卡并推进核心龙头 6 维轮换深研 |
 
 ---

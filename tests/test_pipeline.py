@@ -33,7 +33,7 @@ class EditionRunTest(unittest.TestCase):
             cwd=self.root, capture_output=True, text=True, check=True,
         ).stdout.strip()
 
-    def reach_publish(self):
+    def reach_equity(self):
         token = edition_run.begin(self.runs, self.edition)
         with self.runs:
             edition_run.advance(self.runs, token, "gold")
@@ -43,12 +43,22 @@ class EditionRunTest(unittest.TestCase):
             path.write_text(json.dumps({"edition_id": self.edition}))
         with self.runs:
             edition_run.advance(self.runs, token, "equity")
+        return token
+
+    def write_review(self, name, review):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"runs": [review]}), encoding="utf-8")
+
+    def reach_publish(self):
+        token = self.reach_equity()
         with self.assertRaisesRegex((OSError, ValueError), "rsi_metrics.json"), self.runs:
             edition_run.advance(self.runs, token, "publish")
         for name in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
-            path = self.root / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"runs": [{"run_id": self.edition}]}))
+            self.write_review(name, {
+                "run_id": self.edition,
+                "review_closure": {"reviewer_completed": True, "findings": []},
+            })
         with self.runs:
             edition_run.advance(self.runs, token, "publish")
         return token
@@ -108,6 +118,61 @@ class EditionRunTest(unittest.TestCase):
 
         candidate = self.committed_edition()
         edition_run.check_publication_candidate(token, sha=candidate, repository="example/project")
+
+    def test_publish_phase_accepts_only_completed_blind_review_and_closed_findings(self):
+        token = self.reach_equity()
+        gold = "gold/daily/rsi_metrics.json"
+        equity = "equity/state/rsi_metrics.json"
+        resolved = {"description": "The chart used yesterday's percentage", "status": "resolved",
+                    "evidence": "Replaced the chart value and passed the strict manuscript check"}
+        pending = {"description": "The first-party daily file is pending", "status": "deferred_data",
+                   "evidence": {"source": "https://example.invalid/daily.csv", "due_edition": "2026-11-27_0730",
+                                "disposition": "The missing official daily value was omitted from the chart"}}
+        valid = {"reviewer_completed": True, "findings": [resolved, pending]}
+        self.write_review(gold, {"run_id": self.edition, "review_closure": valid})
+        cases = (
+            (None, "reviewer_completed"),
+            ({**valid, "reviewer_completed": 1}, "reviewer_completed"),
+            ({**valid, "findings": None}, "findings list"),
+            ({**valid, "findings": [{**resolved, "status": "open"}]}, "must be resolved"),
+            ({**valid, "findings": [{**resolved, "description": " "}]}, "requires a description"),
+            ({**valid, "findings": [{**resolved, "evidence": " "}]}, "evidence of resolution"),
+            ({**valid, "findings": [{**pending, "evidence": "Maybe next time"}]}, "future due_edition"),
+            ({**valid, "findings": [{**pending, "evidence": {**pending["evidence"], "due_edition": self.edition}}]},
+             "future due_edition"),
+            ({**valid, "findings": [{**pending, "evidence": {**pending["evidence"], "source": "file:///tmp/daily.csv"}}]},
+             "source URL"),
+            ({**valid, "findings": [{**pending, "evidence": {**pending["evidence"], "disposition": " "}}]},
+             "disposition"),
+        )
+        for closure, error in cases:
+            with self.subTest(closure=closure):
+                self.write_review(equity, {"run_id": self.edition, "review_closure": closure})
+                with self.assertRaisesRegex(ValueError, f"equity/state/rsi_metrics.json.*{error}"), self.runs:
+                    edition_run.advance(self.runs, token, "publish")
+        self.write_review(equity, {"run_id": self.edition, "review_closure": valid})
+        with self.runs:
+            self.assertEqual(edition_run.advance(self.runs, token, "publish"), "publish")
+
+    def test_publication_candidate_checks_committed_review_closure(self):
+        token = self.reach_publish()
+        gold = "gold/daily/rsi_metrics.json"
+        finalized = (self.root / gold).read_bytes()
+        self.write_review(gold, {"run_id": self.edition, "review_closure": {
+            "reviewer_completed": True, "findings": [{"description": "Unresolved", "status": "open", "evidence": " "}],
+        }})
+        dirty = self.committed_edition()
+        (self.root / gold).write_bytes(finalized)
+        with self.assertRaisesRegex(ValueError, "gold/daily/rsi_metrics.json.*must be resolved"):
+            edition_run.check_publication_candidate(token, sha=dirty, repository="example/project")
+        valid = self.committed_edition()
+        edition_run.check_publication_candidate(token, sha=valid, repository="example/project")
+
+    def test_replayed_r3_keeps_the_existing_review_format(self):
+        edition = "2026-11-25_1800_r3"
+        for name in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
+            self.write_review(name, {"run_id": edition})
+        edition_run.check_edition_reviews(edition, root=self.root)
 
     def test_old_recovery_does_not_release_reopened_attempt(self):
         original = edition_run.begin(self.runs, self.edition)

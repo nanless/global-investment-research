@@ -32,7 +32,9 @@
 
 ## 阶段 4 盲审、发布与确认
 
-启动独立只读盲审，对黄金、权益分别按既定六项评分核验当期和前期观察项。两轨分别在自己的 `rsi_metrics.json` 登记一条复盘记录，`run_id` 必须精确等于本期 ID，包含修订号。手册各不超过 180 行。Tier B 仅在按纪律验证并获得安全的修改依据时实施，研究过程中不得改程序取巧，Tier C 只提案。盲审未完成不进入发布。复跑两轨严格检查；值班人员需要补核时保留原判断及证据。
+启动独立只读盲审，对黄金、权益分别按既定六项评分核验当期和前期观察项，逐条对照新旧数据及其来源和时间。除了正文、图表和附件，也逐项检查当期 `INDEX.md`、`SCORECARD.md`、状态 JSON 与黄金快照的关键数字和行动指令。等评审实际返回，再在两轨自己的 `rsi_metrics.json` 各追加一条本期复盘，`run_id` 精确等于本期 ID（含修订号）。保留首次检查、重跑和人工补核的真实记录。最后一次检查通过不能改写此前出现的错误。
+
+每条本期复盘须有 `review_closure: {"reviewer_completed": true, "findings": [...]}`。`findings` 登记盲审指出的所有当期发布问题，逐条写 `description`、`status`、`evidence`。未处理的标 `open` 并暂停发布。确定修正并复验的标 `resolved`，写清文件、改动和验证结果。仅当数据确实未发布或可靠来源暂不可取，且本期已省略该值或明确挂账时，可用 `deferred_data`，其 `evidence` 用对象登记 `source`（原数据来源的 HTTP(S) URL）、`due_edition`（接续的有效期号）、`disposition`（当期如何处理）。已经证实稿件有误时须修正相关载体，不能用待补数据状态放行错误。有错的金或权益正文、图表改正后，按黄金在先、权益在后的顺序重编并抽检；两轨严格检查须重新通过。盲审确无当期发布问题，`findings` 可为空。手册各不超过 180 行。Tier B 仅在按纪律验证并获得安全的修改依据时实施，研究过程中不得改程序取巧，Tier C 只提案。
 
 运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py advance <token> publish`，再用 `__PYTHON_BIN__ __REPO_ROOT__/scripts/publish_site.py --edition-token <token>` 执行本期发布。发布器验证最终 Git 提交、研报和附件凭据；任何附件未验证时，发布环节仍未结束。推送后遇到可确认的临时故障，只续相同 token 和提交，最多重试一次。远端身份、冲突、已发布版本不明或权限异常时停止重试，记录状态。不得另开班次、另造提交、更改远端或覆盖新版。发布成功后运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py complete <token>`，以本期推送、下载验证及对应 Pages 部署为准。若返回等待，只允许复查同次 complete 一次，仍等待则报告待部署并保留锁。已开始推送或发布的异常也应保留锁并说明恢复所需的尝试编号；明确未开始推送且不再继续时才执行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py fail <token> <具体原因>`。
 
