@@ -48,6 +48,8 @@
 
 所有组件须置于独立 HTML 注释中 `<!-- DIRECTIVE_NAME { ...合法 JSON... } -->`（拼写错误、缺必填键或坏 JSON 均触发 `build_daily.py` 与 `lint_readability.py` 强制报错）：
 
+新刊与勘误版的 `DAILY_META` 必填 `edition_id` 和 `as_of_short`。刊号为 `YYYY-MM-DD_HHMM[_rN]`，与文件名和实时快照一致；数据截点为 `YYYY-MM-DD HH:MM`，与快照逐字相同。可读的 `timestamp` 可同时展示计划刊期和实盘截点。早于实时快照的存档仍可独立校验。
+
 1. **`DAILY_META`**：`{"tag": str, "timestamp": str, "summary": str, "accent": "#hex", "footer_title": str, "kpis": [{"label": str, "val": str, "sub": str} × 6]}`（每条 `sub` 严控 ≤17 汉字当量；`footer_title` 不含 `V2.x/V7.x`）
 2. **`DAILY_VERDICT`**：`{"level": "L0"|"L1"|"L2", "badge": str, "traffic_light": str, "headline": str, "bullets": [str × 3], "risk_line": str}`（`badge` 禁用 `🟢`）
 3. **`DAILY_SIGNAL_NOISE`**：`{"title": str, "signals": [{"head": str, "body": str}], "noises": [{"head": str, "body": str}]}`（`signals` 建议 0–2 件）
@@ -58,6 +60,8 @@
 8. **`DAILY_CHART_TIMELINE`**：`{"title": str, "subtitle": str, "note": str, "y_min": num, "y_max": num, "y_ticks"?: [num], "unit_prefix"?: str, "unit_suffix"?: str, "ref_lines": [{"val": num, "label": str, "color": str, "align": "start"|"end", "dy": num}], "highlight_zones": [{"start_idx": int, "end_idx": int, "label": str, "fill": str, "text_color": str}], "points": [{"time": str, "val": num, "val_label": str, "desc": str, "color": str, "label_pos": "above"|"below", "dx"?: num, "dy"?: num, "anchor"?: str, "highlight"?: bool}]}`
 9. **`DAILY_CHART_CROSS`**：`{"title": str, "subtitle": str, "note": str, "linear_cap_pct": num, "items": [{"label": str, "pct": num, "pct_label": str, "tag": str, "highlight"?: bool}], "reverse_items": [{"label": str, "detail": str}]}`（每条 `items[].label` 视觉宽严控 **≤8.5 汉字当量**，Gate 0 强制 `>9.5` 阻断 / `>9.0` 警告，防止碰撞左栏高亮条）
 10. **`DAILY_CHART_SWITCH`**：`{"title": str, "subtitle": str, "note": str, "status_line": str, "status_color"?: "#hex", "gauges": [{"label": str, "value_text": str, "pct": num, "threshold_pct"?: num, "color": str}], "checks": [{"name": str, "passed": bool, "line1": str, "line2": str} × 4]}`
+
+新刊 `DAILY_VERDICT` 还需提供与快照一致的 `tier_code`、布尔 `new_buy_allowed` 与整数 `tier1_passed`。封面红绿灯、裁决卡和图 3 均显示档位与 `X/4`；图 3 四关按快照顺序写布尔过关状态。第三关以当期可用的现货恐慌指数低于 30，或者较最近十个完整交易日最高收盘回落至少 10% 为过关。实时快照以 `vix_10d_session_closes` 保存十条 `{"date": "YYYY-MM-DD", "close": num}` 记录，便于从同一张日线表复算。
 
 ---
 

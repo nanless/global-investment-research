@@ -18,13 +18,20 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from math import isfinite
 from pathlib import Path
 
 from pdf_common import BASE_DIR, DAILY_DIR, lint_markdown_report
 
 GOLD_SNAPSHOT_PATH = BASE_DIR.parent / "gold" / "data_snapshot.json"
 STATE_PATH = BASE_DIR / "state" / "market_state.json"
+MARKETS = ("a_share", "hk_stock", "us_stock")
+BEIJING = timezone(timedelta(hours=8))
+EDITION_CUTOVER = ("2026-11-25", 1800, 2)
+_EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
+_DAILY_NAME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})_(a_share|hk_stock|us_stock)(?:_r([2-9]|[1-9]\d+))?\.md")
+_REPORT_CUTOFF_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:\s|$)")
 
 _CHART_PLACEHOLDER_RE = re.compile(r"<!--\s*CHART_[AHU]\d+\s*-->")
 _GOLD_ACTIVE_BUY_RE = re.compile(
@@ -42,12 +49,74 @@ _GOLD_MINER_TICKERS_RE = re.compile(
 _TEN_DOT_RE = re.compile(r"[●○]{10}")
 
 
+def parse_edition_id(value: object) -> tuple[str, int, int] | None:
+    match = _EDITION_RE.fullmatch(value) if isinstance(value, str) else None
+    if not match:
+        return None
+    try:
+        datetime.strptime(match[1], "%Y-%m-%d")
+    except ValueError:
+        return None
+    return match[1], int(match[2]), int(match[3] or 1)
+
+
 def parse_daily_sort_key(p: Path) -> tuple[str, int, int, str]:
     """Deterministic sort key (YYYY-MM-DD, HHMM, rev_int, name) — immune to file mtime drift."""
-    m = re.match(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_(?:a_share|hk_stock|us_stock)(?:_r(\d+))?\.md$", p.name)
-    if m:
-        return (m.group(1), int(m.group(2)), int(m.group(3) or 1), p.name)
-    return ("0000-00-00", 0, 0, p.name)
+    match = _DAILY_NAME_RE.fullmatch(p.name)
+    if match:
+        try:
+            datetime.strptime(f"{match[1]}_{match[2]}", "%Y-%m-%d_%H%M")
+        except ValueError:
+            pass
+        else:
+            return match[1], int(match[2]), int(match[4] or 1), p.name
+    return "0000-00-00", 0, 0, p.name
+
+
+def check_daily_contract(path: Path, meta: dict | None, md_text: str, *, as_of_cst: datetime | None = None) -> list[str]:
+    """Check publication metadata while allowing immutable reports predating the contract."""
+    sort_key = parse_daily_sort_key(path)[:3]
+    if sort_key[0] == "0000-00-00":
+        return [f"{path.name}: 日报文件名包含无效市场、日期、时刻或修订号"]
+    requires_edition = sort_key >= EDITION_CUTOVER
+    if meta is None:
+        return [f"{path.name}: 当前体例须有文末 DAILY_META_JSON"] if requires_edition else []
+    errors: list[str] = []
+    edition = meta.get("edition_id")
+    if (requires_edition or edition is not None) and parse_edition_id(edition) != sort_key:
+        errors.append(f"{path.name}: edition_id 必须与文件名的日期、班次和修订号一致")
+    if (requires_edition or "edition_type" in meta) and meta.get("edition_type") not in ("main", "light", "holiday_watch"):
+        errors.append(f"{path.name}: edition_type 必须为 main、light 或 holiday_watch")
+    chart = meta.get("chart_live")
+    if isinstance(chart, dict) and "hkma_agg_bal_hkd_b" in chart and (requires_edition or "hkma_agg_bal_hkd_100m" in chart):
+        errors.append(f"{path.name}: 金管局总结余须使用唯一的 hkma_agg_bal_hkd_100m（亿港元）")
+    if requires_edition:
+        cover_fields = ("tag", "title", "benchmark_time", "methodology", "page_footer", "footer_note")
+        if any(not isinstance(meta.get(k), str) or not meta[k].strip() for k in cover_fields):
+            errors.append(f"{path.name}: 当前体例缺少必填封面字段")
+        if not isinstance(meta.get("kpis"), list) or len(meta["kpis"]) != 4:
+            errors.append(f"{path.name}: 当前体例须提供四张 KPI 卡片")
+        if not isinstance(chart, dict) or not chart:
+            errors.append(f"{path.name}: 当前体例须有自身 chart_live 元数据")
+        else:
+            market_prefix = {"a_share": "A", "hk_stock": "H", "us_stock": "U"}[_detect_market(path)]
+            for key in re.findall(r"<!--\s*CHART_([AHU]\d+)\s*-->", md_text):
+                if key not in {f"{market_prefix}{n}" for n in range(1, 8)}:
+                    errors.append(f"{path.name}: 图 {key} 不属于该市场")
+                elif key not in ("A1", "A5") and not (isinstance(chart.get(key.lower()), dict) and chart[key.lower()]):
+                    errors.append(f"{path.name}: 图 {key} 缺少本期 chart_live.{key.lower()} 数据")
+            raw = chart.get("as_of_full")
+            cutoff = _REPORT_CUTOFF_RE.match(raw) if isinstance(raw, str) else None
+            try:
+                local_cutoff = datetime.strptime(cutoff[1], "%Y-%m-%d %H:%M").replace(tzinfo=BEIJING) if cutoff else None
+                edition_time = datetime.strptime(f"{sort_key[0]}_{sort_key[1]:04}", "%Y-%m-%d_%H%M").replace(tzinfo=BEIJING)
+                if local_cutoff is None or abs(local_cutoff - edition_time) > timedelta(hours=4):
+                    raise ValueError
+                if as_of_cst is not None and local_cutoff.replace(second=0, microsecond=0) != as_of_cst.replace(second=0, microsecond=0):
+                    errors.append(f"{path.name}: 图表数据截点与市场状态时间戳不一致")
+            except ValueError:
+                errors.append(f"{path.name}: chart_live.as_of_full 须为班次四小时内的有效北京时间")
+    return errors
 
 
 def _extract_meta(md_text: str, path: Path) -> tuple[dict | None, str | None]:
@@ -310,6 +379,73 @@ def _scan_text_for_gold_buy(label: str, text: str) -> list[str]:
     return found
 
 
+def _check_release_snapshot(gold: dict, state: dict, targets: list[Path]) -> list[str]:
+    errors: list[str] = []
+    edition_id = state.get("edition_id")
+    edition_key = parse_edition_id(edition_id)
+    if edition_key is None or parse_edition_id(gold.get("edition_id")) != edition_key:
+        return ["Gate C1 失败：黄金与权益须声明同一有效 edition_id"]
+    if any(parse_daily_sort_key(p)[:3] > edition_key for p in targets if not _detect_is_flagship(p)):
+        errors.append("Gate C1 失败：日报场次晚于共享快照场次")
+    try:
+        g_ts = datetime.strptime(gold["as_of_short"], "%Y-%m-%d %H:%M").replace(tzinfo=BEIJING)
+        e_ts = datetime.fromisoformat(state["as_of_cst"])
+        edition_time = datetime.strptime(f"{edition_key[0]}_{edition_key[1]:04}", "%Y-%m-%d_%H%M").replace(tzinfo=BEIJING)
+        if e_ts.utcoffset() != BEIJING.utcoffset(e_ts):
+            raise ValueError("权益状态须明确使用 +08:00")
+        if not timedelta(0) <= e_ts - g_ts <= timedelta(hours=4):
+            errors.append("Gate C1 失败：黄金须先于或同分钟于权益落盘，且数据时间差须在四小时内")
+        if any(abs(ts - edition_time) > timedelta(hours=4) for ts in (g_ts, e_ts)):
+            errors.append("Gate C1 失败：快照数据时间偏离所标班次超过四小时")
+    except (KeyError, TypeError, ValueError) as exc:
+        errors.append(f"Gate C1 失败：跨项目时间戳非法：{exc}")
+
+    try:
+        mirror = state["markets"]["gold_mirror_readonly"]
+        rates = state["cross_market_linkages"]["rates_fx_chain"]
+        comm = state["cross_market_linkages"]["commodity_mirror"]
+        brake = state["cross_market_linkages"]["crisis_correlation_brake"]
+        if not all(isinstance(obj, dict) for obj in (mirror, rates, comm, brake)):
+            raise TypeError("镜像字段须为对象")
+    except (KeyError, TypeError) as exc:
+        return errors + [f"Gate C1 失败：黄金跨市场镜像结构不完整：{exc}"]
+
+    if mirror.get("edition_id") != edition_id or mirror.get("as_of_short") != gold.get("as_of_short"):
+        errors.append("Gate C1 失败：黄金镜像场次或数据截点与权威快照不一致")
+    if not gold.get("tier_code") or mirror.get("tier_code") != gold["tier_code"]:
+        errors.append("Gate C1 失败：黄金档位与镜像不一致")
+    if not isinstance(gold.get("new_buy_allowed"), bool) or mirror.get("new_buy_allowed") is not gold["new_buy_allowed"]:
+        errors.append("Gate C1 失败：黄金新仓开关与镜像不一致或类型非法")
+    if mirror.get("gates_passed") != f"{gold.get('tier1_passed')}/{gold.get('tier1_total')}":
+        errors.append("Gate C1 失败：黄金过关计数与镜像不一致")
+    values = (
+        ("spot_gold_ny_close_usd", mirror, "spot_ny_close_usd"),
+        ("us10y_pct", rates, "us10y_pct"),
+        ("dfii10_live_pct", rates, "dfii10_pct"),
+        ("dxy", rates, "dxy"),
+        ("brent_settle_usd", comm, "brent_usd"),
+        ("brent_live_usd", comm, "brent_live_usd"),
+        ("cfets_cny_fixing", rates, "cfets_cny_fixing"),
+        ("vix_close", brake, "vix_close"),
+        ("vix_live", brake, "vix_live"),
+        ("on_rrp_usd_m", brake, "on_rrp_usd_m"),
+        ("comex_copper_usd_lb", comm, "comex_copper_usd_lb"),
+        ("comex_copper_change_pct", comm, "comex_copper_chg_pct"),
+    )
+    for gold_key, mirror_group, equity_key in values:
+        gold_value, equity_value = gold.get(gold_key), mirror_group.get(equity_key)
+        if (any(type(v) not in (int, float) or not isfinite(v) for v in (gold_value, equity_value))
+                or gold_value != equity_value):
+            errors.append(f"Gate C1 失败：{gold_key} 跨轨数值缺失、非法或漂移 gold={gold_value} equity={equity_value}")
+    fixing_date = gold.get("cfets_fixing_date")
+    try:
+        if fixing_date != rates.get("cfets_fixing_date") or datetime.strptime(fixing_date, "%Y-%m-%d").date().isoformat() != fixing_date or fixing_date > edition_key[0]:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append("Gate C1 失败：CFETS 中间价日期须有效、跨轨一致且不晚于班次日期")
+    return errors
+
+
 def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[list[str], list[str]]:
     """Cross-Project Consistency Gates C1-C3 against ../gold/data_snapshot.json."""
     errs: list[str] = []
@@ -323,6 +459,23 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
     except Exception as exc:
         return [f"Gate C1 失败：无法解析黄金快照: {exc}"], warns
 
+    if not isinstance(gold, dict):
+        return ["Gate C1 失败：黄金快照须为 JSON 对象"], warns
+
+    st: dict = {}
+    if STATE_PATH.exists():
+        try:
+            st = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return [f"Gate C1 失败：无法解析权益状态：{exc}"], warns
+    if not isinstance(st, dict):
+        return ["Gate C1 失败：权益状态须为 JSON 对象"], warns
+    release = gold.get("edition_id") is not None or st.get("edition_id") is not None or any(
+        parse_daily_sort_key(p)[:3] >= EDITION_CUTOVER for p in targets if not _detect_is_flagship(p)
+    )
+    if release:
+        errs.extend(_check_release_snapshot(gold, st, targets))
+
     req_gold_keys = ("tier_code", "spot_gold_ny_close_usd", "us10y_pct", "brent_settle_usd", "vix_close")
     for rk in req_gold_keys:
         if gold.get(rk) is None:
@@ -330,18 +483,21 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
 
     gold_tier = str(gold.get("tier_code", "")).strip()
     gold_new_buy = gold.get("new_buy_allowed", gold_tier != "Tier 0")
-    gold_spot = float(gold.get("spot_gold_ny_close_usd", 0) or 0)
-    gold_us10y = float(gold.get("us10y_pct", 0) or 0)
-    gold_brent = float(gold.get("brent_settle_usd", 0) or 0)
-    gold_vix = float(gold.get("vix_close", 0) or 0)
-    gold_dfii10 = float(gold.get("dfii10_live_pct", 0) or 0)
-    gold_dxy = float(gold.get("dxy", 0) or 0)
-    gold_on_rrp = float(gold.get("on_rrp_usd_m", 0) or 0)
-    gold_copper_chg = float(gold.get("comex_copper_change_pct", 0) or 0)
+    try:
+        gold_copper_chg = float(gold.get("comex_copper_change_pct", 0) or 0)
+    except (TypeError, ValueError):
+        return errs + ["Gate C3 失败：COMEX 铜异动数值非法"], warns
 
     # Gate C1: market_state.json mirror & freshness consistency
-    if STATE_PATH.exists():
-        st = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    if st and not release:
+        try:
+            gold_spot, gold_us10y, gold_brent, gold_vix, gold_dfii10, gold_dxy, gold_on_rrp = (
+                float(gold.get(key, 0) or 0) for key in (
+                    "spot_gold_ny_close_usd", "us10y_pct", "brent_settle_usd", "vix_close", "dfii10_live_pct", "dxy", "on_rrp_usd_m"
+                )
+            )
+        except (TypeError, ValueError):
+            return errs + ["Gate C1 失败：黄金快照的历史宏观字段含非数值"], warns
         mirror = st.get("markets", {}).get("gold_mirror_readonly", {})
         if not mirror:
             errs.append("Gate C1 失败：state/market_state.json 缺少 markets.gold_mirror_readonly 镜像锁")
@@ -479,6 +635,61 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
     return errs, warns
 
 
+def _check_state_schedule(state: dict) -> list[str]:
+    errors: list[str] = []
+    current = parse_edition_id(state.get("edition_id"))
+    queue = state.get("pending_backfills")
+    if not isinstance(queue, list):
+        errors.append("Gate 4 失败：pending_backfills 须为数组")
+    else:
+        for index, item in enumerate(queue):
+            if not isinstance(item, dict) or item.get("market") not in MARKETS or not isinstance(item.get("item"), str) or not item["item"].strip():
+                errors.append(f"Gate 4 失败：pending_backfills[{index}] 须有有效市场和待补事项")
+                continue
+            due = parse_edition_id(item.get("due_session"))
+            if due is None or due[2] != 1:
+                errors.append(f"Gate 4 失败：pending_backfills[{index}].due_session 须为有效计划班次")
+            elif current and due[:2] < current[:2]:
+                errors.append(f"Gate 4 失败：pending_backfills[{index}] 已逾期，须结清或指定下次核验班次")
+
+    overrides = state.get("calendar_overrides")
+    if not isinstance(overrides, list):
+        return errors + ["Gate 4 失败：calendar_overrides 须为数组"]
+    for index, item in enumerate(overrides):
+        label = f"calendar_overrides[{index}]"
+        try:
+            day = datetime.strptime(item["date_cst"], "%Y-%m-%d").date()
+            if day.isoformat() != item["date_cst"]:
+                raise ValueError
+        except (TypeError, KeyError, ValueError):
+            errors.append(f"Gate 4 失败：{label}.date_cst 须为有效日期")
+            continue
+        markets = item.get("markets_affected")
+        if not isinstance(markets, list) or not markets or any(m not in MARKETS for m in markets):
+            errors.append(f"Gate 4 失败：{label}.markets_affected 含未知市场或缺失")
+            continue
+        sessions = item.get("affected_sessions", [])
+        parsed_sessions = [parse_edition_id(value) for value in sessions] if isinstance(sessions, list) else [None]
+        if any(key is None or key[2] != 1 for key in parsed_sessions):
+            errors.append(f"Gate 4 失败：{label}.affected_sessions 含无效计划班次")
+            continue
+        if sessions and markets == ["us_stock"] and item.get("type") in ("partial_holiday", "half_day") and item.get("mode") == "mode_2_watch_brief":
+            expected = {f"{day.isoformat()}_1800", f"{(day + timedelta(days=1)).isoformat()}_0730"}
+            if set(sessions) != expected:
+                errors.append(f"Gate 4 失败：{label} 美股休市窗口应覆盖当日晚刊和次日早刊")
+        if "session_closes_cst" in item:
+            try:
+                closes = [datetime.fromisoformat(value) for value in item["session_closes_cst"].values()]
+                if not closes or any(
+                    close.utcoffset() != BEIJING.utcoffset(close) or close.date() not in (day, day + timedelta(days=1))
+                    for close in closes
+                ):
+                    raise ValueError
+            except (AttributeError, TypeError, ValueError):
+                errors.append(f"Gate 4 失败：{label}.session_closes_cst 须为交易日或次日的有效北京时间")
+    return errors
+
+
 def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[str]]:
     """Shared single-source workspace state, RSI playbook/metrics, ledger, INDEX link & _latest sync check."""
     errs: list[str] = []
@@ -495,9 +706,13 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
                     if k not in st:
                         errs.append(f"Gate 4 失败：market_state.json 缺少必填域 {k}")
                 mkts = st.get("markets", {})
-                for mk in ("a_share", "hk_stock", "us_stock", "gold_mirror_readonly"):
-                    if mk not in mkts:
-                        errs.append(f"Gate 4 失败：market_state.json.markets 缺少 {mk}")
+                if not isinstance(mkts, dict):
+                    errs.append("Gate 4 失败：market_state.json.markets 须为对象")
+                else:
+                    for mk in (*MARKETS, "gold_mirror_readonly"):
+                        if not isinstance(mkts.get(mk), dict):
+                            errs.append(f"Gate 4 失败：market_state.json.markets 缺少 {mk}")
+                errs.extend(_check_state_schedule(st))
         except json.JSONDecodeError as exc:
             errs.append(f"Gate 4 失败：market_state.json JSON 语法错误: {exc}")
 
@@ -601,7 +816,9 @@ def _auto_discover_targets() -> tuple[list[Path], list[str]]:
             (Path(p) for p in glob.glob(str(DAILY_DIR / f"????-??-??_*_{market}*.md"))),
             key=parse_daily_sort_key,
         )
-        if daily_files:
+        for invalid in (p for p in daily_files if parse_daily_sort_key(p)[0] == "0000-00-00"):
+            disc_errors.append(f"Gate 4 失败：日报文件名非法 {invalid.name}")
+        if daily_files and parse_daily_sort_key(daily_files[-1])[0] != "0000-00-00":
             targets.append(daily_files[-1])
     return targets, disc_errors
 
@@ -635,6 +852,13 @@ def main() -> None:
             state_obj = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         except Exception:
             state_obj = None
+    if not isinstance(state_obj, dict):
+        state_obj = {}
+    current_id = parse_edition_id(state_obj.get("edition_id"))
+    try:
+        as_of_cst = datetime.fromisoformat(state_obj.get("as_of_cst", ""))
+    except (TypeError, ValueError):
+        as_of_cst = None
 
     all_errors: list[str] = list(discovery_errors)
     all_warnings: list[str] = []
@@ -658,6 +882,8 @@ def main() -> None:
             meta, jerr = _extract_meta(md_text, p)
             if jerr:
                 all_errors.append(f"{p.name}: {jerr}")
+            cutoff = as_of_cst if parse_daily_sort_key(p)[:3] == current_id else None
+            all_errors.extend(check_daily_contract(p, meta, md_text, as_of_cst=cutoff))
 
         errs, warns = lint_markdown_report(md_text, str(p), is_flagship=is_flag, meta=meta)
         all_errors.extend([f"{p.name}: {x}" for x in errs])
@@ -698,7 +924,7 @@ def main() -> None:
                         elif not ed_type and n_pages > 6:
                             all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（日报偏长，建议 ≤6 页）")
 
-            exp_charts = len(_CHART_PLACEHOLDER_RE.findall(body_no_meta))
+            exp_charts = len(_CHART_PLACEHOLDER_RE.findall(body_no_meta)) if is_flag or meta else 0
             de, dw = _check_docx_forensics(p.with_suffix(".docx"), md_mtime, exp_charts)
             all_errors.extend([f"{p.name}: {x}" for x in de])
             all_warnings.extend([f"{p.name}: {x}" for x in dw])

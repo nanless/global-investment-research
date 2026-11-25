@@ -1,4 +1,5 @@
 {
+  "edition_id": "2026-11-25_1800_r2",
   "as_of_bjt": "2026年11月25日（周三）21:25",
   "as_of_short": "2026-11-25 21:25",
   "master_version": "V7.2 零门槛·真深度普通人终审定版",
@@ -7,9 +8,9 @@
   "tier_code": "Tier 0",
   "new_buy_allowed": false,
   "tier_label": "红灯停（暂不新买 · 新仓 0%）",
-  "tier_status_sub": "今晚四关全灭（0/4 关）· 红灯停（恐慌指数盘前冲破30+现货盘中探3,486）",
-  "tier_cover_sub": "暂不新买 · 四关全灭静待 21:30 美核心通胀与 22:15 英央行作证",
-  "tier1_passed": 0,
+  "tier_status_sub": "一关通过（1/4 关）· 红灯停（盘前恐慌升温但仍低于近期峰值）",
+  "tier_cover_sub": "暂不新买 · 一关通过 · 静待美国通胀与英国央行作证",
+  "tier1_passed": 1,
   "tier1_total": 4,
   "a_class_tranche_split": "30% + 45% + 25%",
   "tier1_gates": [
@@ -28,11 +29,11 @@
       "detail": "2年美债 4.604% 比基准高 0.72%（需降到 0.55% 以内）"
     },
     {
-      "name": "第 3 关：全球股市停止踩踏",
-      "passed": false,
-      "reading": "昨官收 26.4 曾守线，21:20 盘前飙破 30 至 30.99",
-      "threshold": "维持在 30 警戒线下方",
-      "detail": "恐慌指数盘前大涨 17.6% 冲破 30 至 30.99（失守）"
+      "name": "第 3 关：全球股市恐慌回落",
+      "passed": true,
+      "reading": "21:20 盘前 30.99，较过去十个完整交易日最高收盘 35.89 回落 13.65%",
+      "threshold": "低于 30，或较最近十个交易日峰值回落至少 10%",
+      "detail": "盘前超过 30，仍满足距十日峰回落的条件"
     },
     {
       "name": "第 4 关：金价收盘站上关键高点",
@@ -122,7 +123,7 @@
   "spread_2y_ff_range": "+72bp",
   "dfii10_live_pct": 2.79,
   "dfii10_fred_official_pct": 2.79,
-  "t10yie_fred_pct": 2.11,
+  "t10yie_fred_pct": 2.12,
   "dfii10_20d_peak_pct": 2.92,
   "dfii10_60d_peak_pct": 2.95,
   "dfii10_percentile_20y": 99,
@@ -150,7 +151,26 @@
   "vix_change_pct": -0.98,
   "vix_live": 30.99,
   "vix_live_change_pct": 17.56,
-  "vix_live_range": "26.36 昨官收 → 30.99 盘前飙破 30（日高 31.08）",
+  "vix_live_range": "26.36 昨官收 / 32.38 昨高 / 30.99 今盘前观察",
+  "vix_prev_session_high": 32.38,
+  "vix_10d_peak_close": 35.89,
+  "vix_10d_peak_intraday": 40.03,
+  "vix_10d_peak_date": "2026-11-20",
+  "vix_10d_window_end": "2026-11-24",
+  "vix_10d_session_closes": [
+    {"date": "2026-11-11", "close": 17.49},
+    {"date": "2026-11-12", "close": 18.70},
+    {"date": "2026-11-13", "close": 19.30},
+    {"date": "2026-11-16", "close": 22.91},
+    {"date": "2026-11-17", "close": 25.46},
+    {"date": "2026-11-18", "close": 24.56},
+    {"date": "2026-11-19", "close": 28.44},
+    {"date": "2026-11-20", "close": 35.89},
+    {"date": "2026-11-23", "close": 26.62},
+    {"date": "2026-11-24", "close": 26.36}
+  ],
+  "vix_live_as_of": "2026-11-25 21:20",
+  "vix_daily_source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
   "nvda_close_usd": 155.38,
   "nvda_change_pct": -5.86,
   "spx_close": 7201.09,
@@ -194,7 +214,9 @@
   "boe_dec_hike_prob": "75%–80%",
   "boj_dec_hike_prob": "75%–84%",
   "bank_2027_yearend_median_usd": 5000,
-  "bank_2027_avg_median_usd": 4719,
+  "bank_2027_yearend_sample_count": 7,
+  "bank_2027_avg_median_usd": 4437.5,
+  "bank_2027_avg_sample_count": 4,
   "bank_2027_fx_median": 6.44,
   "etf_cn_1125": {
     "518880": {"close": 7.169, "chg_pct": -3.00, "nav": 7.1947, "flow_1124_100m": -2.41},
@@ -237,7 +259,7 @@
     {"label": "11月*", "o": 3875, "h": 4146, "l": 3486, "c": 3506}
   ],
   "mechanical_calendar": [
-    {"title": "① 11月下旬（现在）· 感恩节前排雷期", "line1": "• 今晚 21:30 美国核心通胀 + 22:15 英央行作证", "line2": "• 策略：四关全灭守红灯，等靴子落地与明晨官收", "bg": "#fff7ed", "brd": "#fb923c", "hdr": "#c2410c", "txt": "#7c2d12"},
+    {"title": "① 11月下旬（现在）· 感恩节前排雷期", "line1": "• 今晚 21:30 美国核心通胀 + 22:15 英央行作证", "line2": "• 策略：一关通过，维持红灯，等数据与明晨官收", "bg": "#fff7ed", "brd": "#fb923c", "hdr": "#c2410c", "txt": "#7c2d12"},
     {"title": "② 12/01 – 12/18 · 加息逆风砸坑期", "line1": "• 美欧英日四大央行 10 天内密集加息", "line2": "• 欧美机构年底卖亏本黄金抵税，容易砸出坑", "bg": "#fef2f2", "brd": "#f87171", "hdr": "#b91c1c", "txt": "#7f1d1d"},
     {"title": "③ 12/24 – 01/07 · 情绪拐点观察窗", "line1": "• 加息与年底抵税抛售结束，压力明显减轻", "line2": "• 盯着下方四步红绿灯，亮黄/绿再分批买", "bg": "#f0fdf4", "brd": "#4ade80", "hdr": "#15803d", "txt": "#14532d"},
     {"title": "④ 01/08 – 01/15 · 指数基金强制进货", "line1": "• 两大全球商品指数调高金银权重", "line2": "• 被动基金强制净买 33–48 亿美元金+25 亿银", "bg": "#dcfce7", "brd": "#15803d", "hdr": "#0f5132", "txt": "#14532d"}
@@ -249,9 +271,9 @@
     {"name": "高盛（27年末·11月修）", "lo": 3500, "hi": 4800, "base": 4650, "kind": "pt"},
     {"name": "澳新银行（27年末）", "lo": 3400, "hi": 5200, "base": 4800, "kind": "pt"},
     {"name": "美国银行（27年均价）", "lo": 3700, "hi": 5000, "base": 4813, "kind": "avg"},
-    {"name": "法国兴业（27年末）", "lo": 4200, "hi": 5400, "base": 5000, "kind": "pt"},
+    {"name": "法国兴业（27年末）", "lo": 4200, "hi": 5400, "base": 5000, "kind": "pt", "annual_average_usd": 4625},
     {"name": "瑞银集团（27年末）", "lo": 3750, "hi": 5400, "base": 5000, "kind": "pt"},
-    {"name": "花旗集团（6–12月）", "lo": 3500, "hi": 6000, "base": 5000, "kind": "pt"},
+    {"name": "花旗集团（6–12月）", "lo": 3500, "hi": 6000, "base": 5000, "kind": "horizon"},
     {"name": "汇丰银行（27年末）", "lo": 3950, "hi": 5300, "base": 5025, "kind": "pt"},
     {"name": "德意志银行（27均价·旧稿†）", "lo": 3950, "hi": 5600, "base": 5150, "kind": "stale"},
     {"name": "摩根士丹利（27年末）", "lo": 4200, "hi": 5600, "base": 5250, "kind": "pt"}

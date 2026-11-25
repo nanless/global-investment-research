@@ -78,13 +78,13 @@ python3 scripts/lint_site.py _site --strict
 
 ### 3. 一键构建、严检与发布（Automated Publish CLI）
 ```bash
-# 本地预演（构建 + 严检 + 预览 git 状态与待上传附件，不提交不推送）
+# 本地预演（临时目录构建 + 严检 + 预览 Git 状态和同刊附件）
 python3 scripts/publish_site.py --dry-run
 
 # 仅本地提交（不推送远程）
 python3 scripts/publish_site.py --no-push
 
-# 全自动发布（构建 -> 严检 -> 提交 -> pull-rebase 推送 -> 滚动更新 Release PDF/DOCX）
+# 全自动发布（验证最终提交树、推送 main，并逐件核对线上附件哈希）
 python3 scripts/publish_site.py
 
 # 仅推送网站源码，跳过 Release 附件上传
@@ -92,7 +92,17 @@ python3 scripts/publish_site.py --skip-release
 ```
 
 ### 4. 本机定时任务安装与漂移校验（Local Sidecar Sync）
-> 从 `automations/sidecars/*.template.json` 原子渲染安装至 `~/.gemini/config/sidecars/` 并校验零漂移：`python3 scripts/install_sidecars.py && python3 scripts/install_sidecars.py --check`
+
+使用同一个 Python 执行安装和两种检查。`--check` 比对配置文件，`--check-runtime` 另验 Antigravity 的启用、项目和授权。渲染目标是 `~/.gemini/config/sidecars/`。首次安装后，在 Antigravity 内启用这两个任务，已有任务会保留注册状态。
+
+```bash
+python3 scripts/install_sidecars.py
+python3 scripts/install_sidecars.py --check
+python3 scripts/install_sidecars.py --check-runtime
+python3 scripts/edition_run.py status
+```
+
+两条定时任务共享运行锁，状态记录包括研究、黄金、权益、发布和 Pages 结果。失败后在任务记录里核对当前阶段。若会话意外终止，确认它已结束后可用 `scripts/edition_run.py recover <班次ID> <原因>` 释放锁，再从已验证的材料继续。
 
 ---
 

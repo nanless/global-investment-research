@@ -27,6 +27,7 @@ import re
 import sys
 import urllib.parse
 from dataclasses import dataclass, field
+from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
@@ -325,6 +326,7 @@ GOLD_TIER0_LOCK_INDICATORS_RE = re.compile(
     re.IGNORECASE,
 )
 SCREENER_RAW_MARKUP_RE = re.compile(r"<br\b|\*\*|`", re.IGNORECASE)
+GOLD_STOCK_RE = re.compile(r"黄金|金矿|金饰|金业|招金|紫金矿业|\b(?:GLD|GDX|NEM|IAU|PAXG|XAUT)\b", re.IGNORECASE)
 SCREENER_VALID_COLORS = frozenset({"g", "b", "y", "r"})
 SCREENER_REQUIRED_FIELDS: tuple[str, ...] = (
     "market",
@@ -1226,27 +1228,28 @@ def _load_json_if_present(
         return None
 
 
-def _check_gold_tier0_mutex(index_doc: ParsedHtml, errors: list[str]) -> None:
-    """Ensure index.html enforces Gold Tier 0 mutex (no active buy-gold CTA/instructions)."""
-    vis = index_doc.visible_text
+def _check_gold_tier0_mutex(doc: ParsedHtml, errors: list[str]) -> None:
+    """Scan current public output, including text in embedded charts."""
+    vis = doc.visible_text
+    page = doc.rel_path
 
     # 1. Confirm Tier 0 / red-light lock status is visibly communicated on index.html.
-    if not GOLD_TIER0_LOCK_INDICATORS_RE.search(vis):
+    if page == "index.html" and not GOLD_TIER0_LOCK_INDICATORS_RE.search(vis):
         errors.append(
             "[S6] index.html: Gold new_buy_allowed is False, but no Tier 0 / 红灯停 / 暂不新买 "
             "lock indicator found in visible text"
         )
 
     # 2. Check all buttons / links for unguarded active buy-gold CTAs.
-    for cta in index_doc.ctas:
+    for cta in doc.ctas:
         if GOLD_CTA_BUY_RE.search(cta.text) and not GOLD_DEFER_GUARD_RE.search(cta.text):
             errors.append(
-                f"[S6] index.html:{cta.lineno}: Gold Tier 0 mutex violation — active buy-gold "
+                f"[S6] {page}:{cta.lineno}: Gold Tier 0 mutex violation — active buy-gold "
                 f"CTA <{cta.tag}>: {cta.text!r}"
             )
 
     # 3. Scan visible prose line-by-line for unguarded buy-gold directives.
-    for raw_line in vis.splitlines():
+    for raw_line in re.split(r"[\n。！？；]+", vis):
         line = " ".join(raw_line.split())
         if not line:
             continue
@@ -1254,7 +1257,7 @@ def _check_gold_tier0_mutex(index_doc: ParsedHtml, errors: list[str]) -> None:
             win = line[max(0, m.start() - 45) : min(len(line), m.end() + 45)]
             if not GOLD_DEFER_GUARD_RE.search(win):
                 errors.append(
-                    f"[S6] index.html: Gold Tier 0 mutex violation — unguarded buy-gold directive "
+                    f"[S6] {page}: Gold Tier 0 mutex violation — unguarded buy-gold directive "
                     f"in visible text: {win!r}"
                 )
                 return
@@ -1264,6 +1267,8 @@ def _validate_screener_json(
     screener_doc: ParsedHtml,
     expected_by_market: dict[str, int],
     errors: list[str],
+    *,
+    gold_new_buy_blocked: bool,
 ) -> None:
     """Parse and validate <script id='screener-data' type='application/json'> payload in screener.html."""
     if screener_doc.screener_json_raw is None:
@@ -1289,6 +1294,16 @@ def _validate_screener_json(
         )
 
     actual_by_market: dict[str, int] = {"a-share": 0, "hk-stock": 0, "us-stock": 0}
+    benchmarks: dict[str, str] = {}
+    for mk in actual_by_market:
+        meta_path = REPO_ROOT / "equity" / f"report_meta_{mk.replace('-', '_')}.json"
+        meta = _load_json_if_present(meta_path, "screener flagship metadata", errors)
+        baseline = str((meta or {}).get("benchmark_time") or "").split("（", 1)[0]
+        if not baseline or baseline not in screener_doc.visible_text:
+            errors.append(f"[S6] screener.html: missing {mk} flagship quote time")
+        benchmarks[mk] = baseline
+
+    seen: set[tuple[str, str]] = set()
     bad_entries = 0
     for idx, entry in enumerate(payload):
         if not isinstance(entry, dict):
@@ -1299,8 +1314,15 @@ def _validate_screener_json(
             continue
 
         mk = str(entry.get("market", "")).strip()
+        code = str(entry.get("code", "")).strip().upper()
         if mk in actual_by_market:
             actual_by_market[mk] += 1
+            if entry.get("benchmark_time") != benchmarks[mk]:
+                errors.append(f"[S6] screener.html: {mk}/{code} quote time differs from its flagship")
+        identity = (mk, code)
+        if identity in seen:
+            errors.append(f"[S6] screener.html: duplicate stock {mk}/{code}")
+        seen.add(identity)
 
         # Required fields non-empty
         for req_k in SCREENER_REQUIRED_FIELDS:
@@ -1322,6 +1344,8 @@ def _validate_screener_json(
                 bad_entries += 1
 
         col_val = str(entry.get("color", "")).strip()
+        if gold_new_buy_blocked and col_val == "g" and GOLD_STOCK_RE.search(f"{entry.get('name', '')} {code}"):
+            errors.append(f"[S6] screener.html: Gold Tier 0 stock marked as green base: {mk}/{code}")
         if col_val not in SCREENER_VALID_COLORS:
             errors.append(
                 f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) "
@@ -1349,6 +1373,52 @@ def _validate_screener_json(
                 f"[S6] screener.html: #screener-data market '{mk}' count ({act_cnt}) "
                 f"!= market_state.json stock_pool_count ({exp_cnt})"
             )
+
+
+def _check_household_weights(hcw: dict, visible_text: str, errors: list[str]) -> None:
+    keys = ("equity_total_pct", "convertible_bond_pct", "bonds_and_cash_pct", "gold_existing_hold_pct")
+    message = "[S6] market_state.json: household_composite_weights"
+    if any(type(hcw.get(k)) is not int or not 0 <= hcw[k] <= 100 for k in keys):
+        errors.append(f"{message} must have four nonnegative integer percentages")
+        return
+    actual = [hcw[k] for k in keys]
+    if sum(actual) != 100 or hcw.get("sum_pct", 100) != 100:
+        errors.append(f"{message} must sum to 100, got {sum(actual)}")
+    elif "100%" not in visible_text:
+        errors.append("[S6] index.html: missing household composite total '100%'")
+
+    accounts = hcw.get("accounts")
+    if accounts is None:  # Historic state before the structured recipe was introduced.
+        return
+    if not isinstance(accounts, dict) or not accounts:
+        errors.append(f"{message} accounts must be a nonempty object")
+        return
+    weighted = [Decimal(0)] * len(keys)
+    weight_sum = Decimal(0)
+    for name, account in accounts.items():
+        if not isinstance(account, dict) or any(
+            type(account.get(k)) not in (int, float) or not 0 <= account[k] <= 100
+            for k in ("weight_pct", *keys)
+        ):
+            errors.append(f"{message} invalid account recipe: {name}")
+            return
+        values = [Decimal(str(account[k])) for k in keys]
+        if sum(values) != 100:
+            errors.append(f"{message} account {name} must sum to 100")
+            return
+        share = Decimal(str(account["weight_pct"]))
+        weight_sum += share
+        for idx, value in enumerate(values):
+            weighted[idx] += share * value / 100
+    if weight_sum != 100:
+        errors.append(f"{message} account weights must sum to 100")
+        return
+    expected = [int(value) for value in weighted]
+    order = sorted(range(len(keys)), key=lambda idx: weighted[idx] - expected[idx], reverse=True)
+    for idx in order[:100 - sum(expected)]:
+        expected[idx] += 1
+    if actual != expected:
+        errors.append(f"{message} {actual} disagrees with the account recipe {expected}")
 
 
 def run_gate_s6(
@@ -1490,23 +1560,8 @@ def run_gate_s6(
                                     f"[S6] index.html: missing live vix_close={vix_val}"
                                 )
 
-                    if isinstance(hcw, dict):
-                        w_keys = (
-                            "equity_total_pct",
-                            "convertible_bond_pct",
-                            "bonds_and_cash_pct",
-                            "gold_existing_hold_pct",
-                        )
-                        if all(isinstance(hcw.get(k), (int, float)) for k in w_keys):
-                            w_sum = sum(int(hcw[k]) for k in w_keys)
-                            if w_sum != 100:
-                                errors.append(
-                                    f"[S6] market_state.json: household_composite_weights sum={w_sum} != 100"
-                                )
-                            elif f"{w_sum}%" not in index_doc.visible_text:
-                                errors.append(
-                                    f"[S6] index.html: missing household composite total '{w_sum}%'"
-                                )
+                    if isinstance(hcw, dict) and hcw:
+                        _check_household_weights(hcw, index_doc.visible_text, errors)
 
             # Screener total stock pool & embedded JSON fidelity across A / HK / US.
             expected_by_market: dict[str, int] = {}
@@ -1528,11 +1583,18 @@ def run_gate_s6(
                         f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) "
                         f"!= expected total ({expected_total})"
                     )
-                _validate_screener_json(screener_doc, expected_by_market, errors)
+                _validate_screener_json(
+                    screener_doc, expected_by_market, errors, gold_new_buy_blocked=gold_new_buy_blocked,
+                )
 
-    # 3. Gold Tier 0 mutex enforcement on index.html.
-    if gold_new_buy_blocked and index_doc is not None:
-        _check_gold_tier0_mutex(index_doc, errors)
+    # A dated archive preserves its original decisions. Check live pages and this edition's dated copies.
+    if gold_new_buy_blocked:
+        edition_slug = str((gold_snap or {}).get("edition_id", "")).replace("_", "-")
+        for path, doc in parsed_htmls.items():
+            if (path in {"index.html", "screener.html", "scorecard.html"}
+                    or path.startswith("reports/") or path.endswith("-latest.html")
+                    or (edition_slug and path.startswith("daily/") and path.endswith(f"-{edition_slug}.html"))):
+                _check_gold_tier0_mutex(doc, errors)
 
 
 # ---------------------------------------------------------------------------

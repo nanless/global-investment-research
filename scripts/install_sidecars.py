@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -33,6 +34,22 @@ DEFAULT_TARGET_DIR = Path.home() / ".gemini" / "config" / "sidecars"
 
 PLACEHOLDER_TOKENS = ("__REPO_ROOT__", "__PYTHON_BIN__")
 FORBIDDEN_GLOBAL_TOKENS = ("--permission-mode",)
+SCHEDULES = {
+    "daily-global-investment-research": "CRON_TZ=Asia/Shanghai 30 7 * * *",
+    "daily-global-investment-research-evening": "CRON_TZ=Asia/Shanghai 0 18 * * *",
+}
+RETIRED_IDS = frozenset({
+    "daily-gold-deep-research", "daily-gold-deep-research-evening",
+    "daily-a-us-equity-research", "daily-a-us-equity-research-evening",
+})
+
+
+def validate_paths(repo_root: Path, python_bin: str) -> None:
+    for path in (str(repo_root), python_bin):
+        if not Path(path).is_absolute() or re.search(r"[\s\"'\\;&|$`<>()[\]{}?#%*]", path):
+            raise ValueError("repository and Python paths must be absolute and usable as bare command arguments")
+    if not Path(python_bin).is_file() or not os.access(python_bin, os.X_OK):
+        raise ValueError(f"Python interpreter is missing or not executable: {python_bin}")
 
 
 def discover_templates(template_dir: Path) -> list[tuple[str, Path]]:
@@ -77,6 +94,14 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
 
     if not isinstance(data, dict):
         raise ValueError(f"{template_path.name}: top-level JSON must be an object")
+    sidecar_id = template_path.name[:-len(TEMPLATE_SUFFIX)]
+    args = data.get("args")
+    if (data.get("builtin") != "schedule" or data.get("restart_policy") != "always"
+            or not isinstance(args, list) or len(args) != 6
+            or not all(isinstance(arg, str) and arg.strip() for arg in args)
+            or args[0] != SCHEDULES.get(sidecar_id) or args[1:3] != ["agentapi", "new-conversation"]
+            or not args[3].startswith("--model=") or args[4] != "--"):
+        raise ValueError(f"{template_path.name}: invalid Antigravity schedule or new-conversation arguments")
 
     perms = data.get("agent_permissions")
     if not isinstance(perms, dict):
@@ -98,6 +123,8 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
     for uri in uris:
         if "*" in uri:
             raise ValueError(f"{template_path.name}: wildcard '*' forbidden in workspace_uri: {uri!r}")
+    if uris != [repo_root.as_uri()]:
+        raise ValueError(f"{template_path.name}: workspace URI must match the repository")
 
     final_text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
@@ -127,15 +154,38 @@ def atomic_write_text(dest: Path, content: str) -> None:
         raise
 
 
-def find_stale_sidecar_dirs(target_dir: Path, expected_ids: set[str]) -> list[str]:
-    """Return sorted list of unexpected non-hidden subdirectories in target_dir."""
+def find_stale_sidecar_dirs(target_dir: Path) -> list[str]:
+    """Only report definitions retired by this project."""
     if not target_dir.is_dir():
         return []
     stale: list[str] = []
     for entry in sorted(target_dir.iterdir()):
-        if entry.is_dir() and not entry.name.startswith(".") and entry.name not in expected_ids:
+        if entry.name in RETIRED_IDS and (entry / "sidecar.json").is_file():
             stale.append(entry.name)
     return stale
+
+
+def check_registry(registry_path: Path, rendered: dict[str, tuple[str, dict[str, Any]]]) -> list[str]:
+    """Check that Antigravity has enabled and resolved the installed definitions."""
+    try:
+        entries = json.loads(registry_path.read_text(encoding="utf-8"))["sidecars"]
+        if not isinstance(entries, dict):
+            raise ValueError("sidecars must be an object")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [f"Cannot read Antigravity registry: {exc}"]
+
+    problems = []
+    for sidecar_id, (_, definition) in rendered.items():
+        entry = entries.get(sidecar_id, {})
+        if not isinstance(entry, dict) or entry.get("enabled") is not True or not entry.get("projectId"):
+            problems.append(f"{sidecar_id}: register and enable this task in Antigravity")
+            continue
+        resolved = entry.get("resolvedPermissions") or {}
+        expected = definition["agent_permissions"]
+        if (not isinstance(resolved, dict) or resolved.get("workspaceUris") != expected["workspace_uris"]
+                or sorted(resolved.get("accessGrants") or []) != sorted(expected["access_grants"])):
+            problems.append(f"{sidecar_id}: Antigravity has not resolved the current workspace or command grants")
+    return problems
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -168,6 +218,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Exit 0 only if all installed sidecar.json files match rendered templates byte-for-byte and no stale sidecar dirs exist.",
     )
+    mode.add_argument("--check-runtime", action="store_true", help="Check both files and Antigravity's enablement/grants.")
+    parser.add_argument("--registry", type=Path, help="Registry path for --check-runtime (defaults beside sidecars).")
     return parser.parse_args(argv)
 
 
@@ -179,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     template_dir = repo_root / "automations" / "sidecars"
 
     try:
+        validate_paths(repo_root, python_bin)
         templates = discover_templates(template_dir)
     except Exception as exc:
         print(f"[FAIL] {exc}", file=sys.stderr)
@@ -192,10 +245,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[FAIL] {exc}", file=sys.stderr)
             return 1
 
-    expected_ids = set(rendered_map.keys())
-    stale_dirs = find_stale_sidecar_dirs(target_dir, expected_ids)
+    stale_dirs = find_stale_sidecar_dirs(target_dir)
 
-    if args.check:
+    if args.check or args.check_runtime:
         mismatches = 0
         for sidecar_id, (rendered_text, data) in rendered_map.items():
             dest = target_dir / sidecar_id / "sidecar.json"
@@ -217,6 +269,11 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             mismatches += 1
+        if args.check_runtime:
+            registry_path = args.registry or target_dir.parent / "config.json"
+            for problem in check_registry(registry_path, rendered_map):
+                print(f"[RUNTIME] {problem}", file=sys.stderr)
+                mismatches += 1
         if mismatches:
             print(f"[FAIL] Sidecar check failed ({mismatches} issue(s)).", file=sys.stderr)
             return 1

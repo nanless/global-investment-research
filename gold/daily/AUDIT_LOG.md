@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-11-26 黄金晚刊与主报告勘误来源
+
+- **波动与交易时点**：[Cboe 现货指数日线](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv) 覆盖 11/11–11/24 十个完整交易日。11/20 同时是收盘峰值 35.89 和盘中高点 40.03；11/24 数据为收盘 26.36、日高 32.38。复算的 30.99 引用原刊 11/25 21:20 盘前观测，分钟原档待补。观察时点晚于当日 19:59 金价破位，不据此判断其原因。[Cboe 指数与期货规格](https://www.cboe.com/tradable_products/vix/vix_futures/specifications)
+- **利率与期货**：[美国财政部实际收益率](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?field_tdr_date_value_month=202611&type=daily_treasury_real_yield_curve) 的 11/23、11/24 十年值同为 2.79%。[FRED 盈亏平衡通胀](https://fred.stlouisfed.org/series/T10YIE) 的 11/24 日期值为 2.12%。[CME 26-389 公告](https://www.cmegroup.com/content/dam/cmegroup/notices/clearing/2026/11/chadv26-389-1.pdf) 确认保证金新标准于 11/24 美国业务结束后生效。
+- **研究证据**：主报告原刊公布的双因子样本内决定系数、回测及六家均价中位缺完整复算材料。勘误明确区分年末点位与 6–12 月目标，仅汇总可从仓库辨认的样本。公开记分卡纠正了两项过于宽松的评分。
+
 ## 2026-11-25 100% 单仓库收敛工程架构升级留痕（统一技能库、脱敏定时模板与旧目录清零）
 
 - **全量技能与定时配置单仓收敛**：合并全部 3 套工作区 Skill 至根目录 `.agents/skills/`（零个人绝对路径 PII），新增脱敏模板 `automations/sidecars/*.template.json` 与原子安装/漂移校验脚本 `scripts/install_sidecars.py`，同步将 `.agents` 与 `automations` 纳入 `scripts/publish_site.py` 标准暂存清单。

@@ -1,6 +1,7 @@
 {
   "schema_version": "2.1",
   "as_of_cst": "2026-11-25T21:25:00+08:00",
+  "edition_id": "2026-11-25_1800_r2",
   "period_slug": "2026_11",
   "schedule_cst": ["07:30", "18:00"],
   "edition_slugs_cst": ["07:30", "18:00"],
@@ -9,7 +10,8 @@
   "rsi_enabled": true,
   "ssot_links": {
     "gold_snapshot_path": "../gold/data_snapshot.json",
-    "gold_snapshot_as_of": "2026-11-25 21:25"
+    "gold_snapshot_as_of": "2026-11-25 21:25",
+    "gold_edition_id": "2026-11-25_1800_r2"
   },
   "markets": {
     "a_share": {
@@ -32,7 +34,7 @@
       "erp_ttm_pct": 5.97,
       "erp_fwd_pct": 6.54,
       "stock_pool_count": 44,
-      "latest_daily": "daily/2026-11-25_1800_a_share.md",
+      "latest_daily": "daily/2026-11-25_1800_a_share_r2.md",
       "flagship_last_updated": "2026-11-25"
     },
     "hk_stock": {
@@ -66,7 +68,7 @@
       "erp_cny_anchor_fwd_pct": 8.84,
       "stock_pool_count": 45,
       "delisted_blocked_tickers": ["00011.HK"],
-      "latest_daily": "daily/2026-11-25_1800_hk_stock.md",
+      "latest_daily": "daily/2026-11-25_1800_hk_stock_r2.md",
       "flagship_last_updated": "2026-11-25"
     },
     "us_stock": {
@@ -90,7 +92,7 @@
       "erp_ttm_pct": -0.73,
       "erp_fwd_pct": 0.94,
       "stock_pool_count": 46,
-      "latest_daily": "daily/2026-11-25_1800_us_stock.md",
+      "latest_daily": "daily/2026-11-25_1800_us_stock_r2.md",
       "flagship_last_updated": "2026-11-25"
     },
     "gold_mirror_readonly": {
@@ -98,7 +100,8 @@
       "as_of_short": "2026-11-25 21:25",
       "tier_code": "Tier 0",
       "lamp": "red",
-      "gates_passed": "0/4",
+      "gates_passed": "1/4",
+      "edition_id": "2026-11-25_1800_r2",
       "new_buy_allowed": false,
       "spot_ny_close_usd": 3554.77,
       "spot_live_usd": 3506.12,
@@ -196,9 +199,14 @@
     },
     "household_composite_weights": {
       "formula_note": "基准按 45% 境内池(A股35%+转债9%+债现48%+存量金8%) + 20% 港股离岸池(港股35%+债现55%+存量金10%) + 35% 美股离岸池(美股28%+短债62%+存量金10%) 加权取整",
-      "equity_total_pct": 32,
+      "accounts": {
+        "a_share": {"weight_pct": 45, "equity_total_pct": 35, "convertible_bond_pct": 9, "bonds_and_cash_pct": 48, "gold_existing_hold_pct": 8},
+        "hk_stock": {"weight_pct": 20, "equity_total_pct": 35, "convertible_bond_pct": 0, "bonds_and_cash_pct": 55, "gold_existing_hold_pct": 10},
+        "us_stock": {"weight_pct": 35, "equity_total_pct": 28, "convertible_bond_pct": 0, "bonds_and_cash_pct": 62, "gold_existing_hold_pct": 10}
+      },
+      "equity_total_pct": 33,
       "convertible_bond_pct": 4,
-      "bonds_and_cash_pct": 55,
+      "bonds_and_cash_pct": 54,
       "gold_existing_hold_pct": 9,
       "sum_pct": 100
     },
@@ -262,13 +270,13 @@
     },
     {
       "market": "us_stock",
-      "item": "2026-11-25 Farside 官方比特币/以太坊 ETF 净流向（11/24 官流 BTC -$231.4M / 11 月 -$4.94B 已于本期封账）",
+      "item": "2026-11-25 Farside 汇编比特币/以太坊 ETF 净流向（11/24 BTC -$231.4M / 11 月 -$4.94B 已核；基金分项全为空时继续挂账）",
       "due_session": "2026-11-26_1800"
     }
   ],
   "calendar_overrides": [
     {"date_cst": "2026-11-26", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2026-11-26_1800", "2026-11-27_0730"], "mode": "mode_2_watch_brief", "note": "美国感恩节全天休市（11/26 07:30 CST 仍正常出美股 11/25 隔夜 4-5p 主刊；11/26 18:00 与 11/27 07:30 切模式 2 美股休市守望简报，A 股/港股正常）"},
-    {"date_cst": "2026-11-27", "type": "half_day", "markets_affected": ["us_stock"], "mode": "mode_2_watch_brief", "note": "美国黑五半日市（美股 11/28 02:00 CST 收、美债 03:00 CST；A/港正常，港股盯美团 Q3 财报与老铺除净）"},
+    {"date_cst": "2026-11-27", "type": "half_day", "markets_affected": ["us_stock"], "affected_sessions": ["2026-11-27_1800", "2026-11-28_0730"], "session_closes_cst": {"us_equities_regular": "2026-11-28T02:00:00+08:00", "us_bonds_sifma_recommendation": "2026-11-28T03:00:00+08:00", "nasdaq_equities_extended": "2026-11-28T06:00:00+08:00"}, "mode": "mode_2_watch_brief", "note": "美国黑五半日市（北京 11/28 02:00 美股常规收盘、03:00 SIFMA 债市建议早收、06:00 纳斯达克盘后终盘；A/港正常，港股盯美团 Q3 财报与老铺除净）"},
     {"date_cst": "2026-11-30", "type": "rebalance_and_policy", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "三市撞车：A 股降保 80% + MSCI 剔 22 A股/15 港股/MSTR + 财政部 2,180 亿美债集中交割（CMS 药价已于 11/23 提前落地）"},
     {"date_cst": "2026-12-01", "type": "monthly_rollover", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "rollover_2026_11_to_2026_12", "note": "三市跨月滚存（2026_11 -> 2026_12）"},
     {"date_cst": "2026-12-04", "type": "hk_major_rebalance", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "恒生系列合并季检尾盘调仓（恒指权重 + 恒科 30→50 超 125 亿美元流，16:06 不可撤单）+ NVDA 10-Q 延期死线"},

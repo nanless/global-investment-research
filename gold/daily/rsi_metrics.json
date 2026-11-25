@@ -11,6 +11,16 @@
     "research_efficiency_and_source_quality",
     "engine_and_guardrail_reliability"
   ],
+  "public_corrections": [
+    {
+      "recorded_on": "2026-11-26",
+      "run_id": "2026-11-25_1800",
+      "revision_edition_id": "2026-11-25_1800_r2",
+      "tier1_passed": 1,
+      "forecast_reclassification": "国内零售只证实日跌方向，未证逐家调价时点，降幅超原区间，改部分兑现",
+      "evidence": "Cboe 最近十个完整交易日最高收盘 35.89，晚刊盘前 30.99 较其低 13.65%，第三关仍通过。11/24 现货 VIX 日高为 32.38。原盲审及其得分保留。"
+    }
+  ],
   "runs": [
     {
       "run_id": "2026-11-24_1630",

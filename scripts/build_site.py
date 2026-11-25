@@ -20,9 +20,11 @@ import argparse
 import html as html_mod
 import importlib.util
 import json
+import os
 import re
 import shutil
 import sys
+import tempfile
 import types
 import urllib.parse
 from collections import defaultdict
@@ -1876,13 +1878,18 @@ def build_daily_sibling_bar(
     )
 
 
-def build_screener_page(stocks: list[dict[str, str]], eq_as_of: str) -> str:
+def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]) -> str:
     total = len(stocks)
     cnt_m = defaultdict(int)
     cnt_c = defaultdict(int)
     for st in stocks:
         cnt_m[st["market"]] += 1
         cnt_c[st["color"]] += 1
+        st["benchmark_time"] = benchmarks[st["market"]]
+    source_labels = " · ".join(
+        f"{label}（{cnt_m[slug]} 家，{esc(benchmarks[slug])}）"
+        for slug, label in (("a-share", "A 股"), ("hk-stock", "港股"), ("us-stock", "美股"))
+    )
 
     # Escape </script> safely inside embedded JSON
     safe_json = json.dumps(stocks, ensure_ascii=False).replace("</", "<\\/")
@@ -1890,7 +1897,7 @@ def build_screener_page(stocks: list[dict[str, str]], eq_as_of: str) -> str:
     return f"""
     <div class="sec-head" style="margin-top:4px;">
       <h2>🔍 全球 {total} 家核心龙头交互筛选器</h2>
-      <span class="sec-sub">自动同步自 A 股（{cnt_m["a-share"]}）、港股（{cnt_m["hk-stock"]}）、美股（{cnt_m["us-stock"]}）三本旗舰手册附表二 · 基准 {esc(eq_as_of)}</span>
+      <span class="sec-sub">各市场数据基准取自旗舰手册附表二 · {source_labels}</span>
     </div>
 
     <div class="screener-stats">
@@ -2164,6 +2171,33 @@ def _extract_summary_from_daily(md_text: str, meta: dict | None, is_gold: bool) 
 
 
 def build_site(out_dir: Path) -> dict[str, Any]:
+    """Build a complete tree before replacing the last usable preview."""
+    out_dir = out_dir.resolve()
+    protected = (GOLD_DIR, EQUITY_DIR, SCRIPT_DIR, REPO_ROOT / "automations",
+                 REPO_ROOT / ".git", REPO_ROOT / ".github", REPO_ROOT / ".agents")
+    if REPO_ROOT.is_relative_to(out_dir) or any(out_dir.is_relative_to(p) for p in protected):
+        raise ValueError(f"Refusing to build over repository sources: {out_dir}")
+    if out_dir.exists() and not out_dir.is_dir():
+        raise ValueError(f"Output is not a directory: {out_dir}")
+
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{out_dir.name}-build-", dir=out_dir.parent) as scratch:
+        staging = Path(scratch) / "new"
+        summary = _render_site(staging)
+        previous = Path(scratch) / "previous"
+        if out_dir.exists():
+            os.replace(out_dir, previous)
+        try:
+            os.replace(staging, out_dir)
+        except BaseException:
+            if previous.exists():
+                os.replace(previous, out_dir)
+            raise
+    summary["out_dir"] = str(out_dir)
+    return summary
+
+
+def _render_site(out_dir: Path) -> dict[str, Any]:
     R = load_renderers()
 
     # Load SSOT JSONs (read-only)
@@ -2201,13 +2235,10 @@ def build_site(out_dir: Path) -> dict[str, Any]:
         stock_counts[st["market"]] += 1
     total_pool = len(stocks)
 
-    # Prepare output tree cleanly
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # The renderer always receives a new output directory.
+    out_dir.mkdir(parents=True)
     for sub in ("assets", "reports", "daily"):
-        target = out_dir / sub
-        if target.exists():
-            shutil.rmtree(target)
-        target.mkdir(parents=True, exist_ok=True)
+        (out_dir / sub).mkdir()
 
     # Static assets + .nojekyll + manifest.json + favicon.svg
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
@@ -2364,7 +2395,11 @@ def build_site(out_dir: Path) -> dict[str, Any]:
         else:
             eq_key = item.market.replace("-", "_")
             meta, md_body = R.eq_daily.extract_daily_meta(raw_md, item.source_path)
-            charts = get_equity_charts(R, eq_key, meta_override=meta)
+            revision = f"_r{item.rev}" if item.rev > 1 else ""
+            edition_id = f"{item.date_str}_{item.hhmm}{revision}"
+            if edition_id == eq_state.get("edition_id") and (meta or {}).get("edition_id") != edition_id:
+                raise ValueError(f"{item.source_path.name}: missing or mismatched edition metadata")
+            charts = get_equity_charts(R, eq_key, meta_override=meta) if meta else {}
             mm = MARKET_META[item.market]
             fallback_t = f"{mm['name']}每日大白话投研简报"
             title, body_raw = R.eq_pdf_common.render_md_body(
@@ -2399,10 +2434,17 @@ def build_site(out_dir: Path) -> dict[str, Any]:
     latest_by_market: dict[str, DailyItem] = {}
     for mk, m_list in dailies_by_market.items():
         m_list.sort(key=lambda x: x.sort_key)
+        last_by_session = {(item.date_str, item.hhmm): item for item in m_list}
         for idx, item in enumerate(m_list):
             prev_it = m_list[idx - 1] if idx > 0 else None
             next_it = m_list[idx + 1] if idx + 1 < len(m_list) else None
             sib_bar = build_daily_sibling_bar(item, prev_it, next_it, stock_counts)
+            corrected = last_by_session[item.date_str, item.hhmm]
+            if item.rev < corrected.rev:
+                sib_bar += (
+                    '<p class="no-print">此页为原刊档案。'
+                    f'<a href="{corrected.slug}.html">查看本班次修订稿</a>。</p>'
+                )
             doc_html = render_doc_with_toc(
                 sibling_bar_html=sib_bar,
                 cover_html=item.cover_html,
@@ -2430,14 +2472,19 @@ def build_site(out_dir: Path) -> dict[str, Any]:
     # ------------------------------------------------------------------
     # C. Build Global Stock Screener (screener.html)
     # ------------------------------------------------------------------
+    screener_benchmarks = {
+        slug: str(eq_flagship_meta[key].get("benchmark_time") or "未标明").split("（", 1)[0]
+        for key, slug, *_ in eq_specs
+    }
+    unique_benchmarks = set(screener_benchmarks.values())
     screener_html = render_page_shell(
         title=f"全球 {total_pool} 家核心龙头筛选器",
         active_nav="screener",
         base_prefix="",
         market_attr="overview",
         total_pool=total_pool,
-        footer_ts=eq_as_of_disp,
-        content_html=build_screener_page(stocks, eq_as_of_disp),
+        footer_ts=next(iter(unique_benchmarks)) if len(unique_benchmarks) == 1 else "",
+        content_html=build_screener_page(stocks, screener_benchmarks),
     )
     (out_dir / "screener.html").write_text(screener_html, encoding="utf-8")
 

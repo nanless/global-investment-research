@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-11-25 晚刊勘误 · 统一修订场次 `2026-11-25_1800_r2`
+
+- **黄金镜像**：沿用 21:25 截点，VIX 30.99 较十个已完成交易日收盘峰 35.89 回落 13.65%，第三关通过。权益镜像修正为 1/4，新买黄金为零。
+- **A 股与港股**：分别标注上金所 Au99.99 与 Au(T+D) 夜盘。紫金矿业 `02899` 原柜台 500 股一手，按 22.60 港元约 11,300 港元，2,000 股旧手数仅限临时柜台。按主板成交额同分母扣除基金对冲后沽空占比为 13.55%。图表采用 21:18 夜期实际采样时点。
+- **美股与记分卡**：旗舰和晚刊校准 HPQ 北京时间 09:00 盘后终盘为 28.50 美元。27.13 美元为 08:30 中途报价。DELL 终盘两条留存读数为 297.91、297.98 美元，待独立核实。纳斯达克黑五盘后为北京时间 11 月 28 日 06:00 收市。拍卖条件未触发，从记分卡命中率中剔除，原判据保留。
+- **家庭总盘及来源**：三账户按 45/20/35 加权，原值为股 32.55、转债 4.05、债现 54.30、存量金 9.10，整数分配 33/4/54/9。Farside 归类为第三方汇编，基金分项缺失时继续挂账。
+- **证据**：[港交所公告](https://www.hkexnews.hk/listedco/listconews/sehk/2026/1023/2026102301439.pdf) · [Nasdaq 黑五时段公告](https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34) · [Cboe 官方日线](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv)。
+
+---
+
 ## 2026-11-25 23:05 CST · 100% 单仓库收敛留痕（统一 `.agents/skills/`、脱敏 Sidecar 模板与外部副本清理）
 
 1. **三 Skill 单仓统一与脱敏定时模板入库**：将 `equity/.agents/skills/*` 与原全局 `gold-research-publishing` 统一收口至根目录 `.agents/skills/`（零个人路径 PII），新增 `automations/sidecars/*.template.json` 与 `scripts/install_sidecars.py` 原子渲染/漂移校验引擎，并在 `scripts/publish_site.py`、`AGENTS.md`、`README.md`、`GEMINI.md` 与 `state/RSI_PLAYBOOK.md` 同步更新路径与 Tier C 护栏。

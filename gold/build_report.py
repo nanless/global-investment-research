@@ -12,7 +12,7 @@ Generates:
 Usage:
   python3 build_report.py                        # build PDF + Native DOCX using MASTER_BASELINE lock
   python3 build_report.py --check                # self-check environment, MASTER_BASELINE & snapshot
-  python3 build_report.py --snapshot <file.json> # override snapshot file explicitly
+  python3 build_report.py --check --snapshot <file.json> # check an alternate snapshot
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import argparse
 import json
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -41,7 +42,6 @@ OUT_DIR = Path(__file__).resolve().parent
 BASE_NAME = "黄金跨世纪周期与2026-2030终审研究报告"
 MD_PATH = OUT_DIR / f"{BASE_NAME}.md"
 DEFAULT_MASTER_SNAPSHOT = OUT_DIR / "master_snapshot.json"
-LEGACY_SNAPSHOT = OUT_DIR / "data_snapshot.json"
 PDF_PATH = OUT_DIR / f"{BASE_NAME}.pdf"
 DOCX_PATH = OUT_DIR / f"{BASE_NAME}.docx"
 CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -58,11 +58,14 @@ REPORT_SHORT_DATE = "2026-11-24 16:30"
 def parse_master_baseline(md_text: str) -> dict:
     m = MASTER_BASELINE_RE.search(md_text)
     if not m:
-        return {}
+        raise ValueError("Master Markdown is missing its MASTER_BASELINE lock")
     try:
-        return json.loads(m.group(1))
+        baseline = json.loads(m.group(1))
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid JSON in <!-- MASTER_BASELINE ... -->: {exc}") from exc
+    if baseline.get("snapshot") != DEFAULT_MASTER_SNAPSHOT.name or not baseline.get("as_of_short"):
+        raise ValueError("MASTER_BASELINE requires snapshot='master_snapshot.json' and as_of_short")
+    return baseline
 
 
 def load_master_snapshot(
@@ -72,14 +75,7 @@ def load_master_snapshot(
 ) -> tuple[dict, Path]:
     """Load dedicated master_snapshot.json and enforce MASTER_BASELINE timestamp lock."""
     baseline = parse_master_baseline(md_text)
-    if snapshot_override is not None:
-        snap_path = snapshot_override
-    elif baseline.get("snapshot"):
-        snap_path = OUT_DIR / str(baseline["snapshot"])
-    elif DEFAULT_MASTER_SNAPSHOT.exists():
-        snap_path = DEFAULT_MASTER_SNAPSHOT
-    else:
-        snap_path = LEGACY_SNAPSHOT
+    snap_path = snapshot_override or DEFAULT_MASTER_SNAPSHOT
 
     if not snap_path.exists():
         raise FileNotFoundError(f"Master Report snapshot missing: {snap_path}")
@@ -87,11 +83,13 @@ def load_master_snapshot(
 
     lock_ts = baseline.get("as_of_short")
     snap_ts = snap.get("as_of_short")
-    if lock_ts and snap_ts and str(lock_ts) != str(snap_ts) and not allow_drift:
+    if not snap_ts:
+        raise ValueError(f"{snap_path.name} is missing as_of_short")
+    if lock_ts != snap_ts and not allow_drift:
         raise RuntimeError(
             f"MASTER_BASELINE drift detected! Master MD locks as_of_short='{lock_ts}', "
             f"but {snap_path.name} has as_of_short='{snap_ts}'. "
-            f"Sync Master Report prose + MASTER_BASELINE + {snap_path.name} together (or pass --allow-drift)."
+            f"Sync Master Report prose, MASTER_BASELINE, and {snap_path.name} before publishing."
         )
     return snap, snap_path
 
@@ -557,12 +555,9 @@ def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
 def svg_chart_institutional_targets(fig_num: int = 7) -> str:
     """Global Audited Institutions — data-driven rows, separated * vs † legend symbols, dynamic collision avoidance."""
     spot = int(SNAP["spot_gold_ny_close_rounded"])
-    ye_med = int(SNAP.get("bank_2027_yearend_median_usd", 5000))
-    avg_med = int(SNAP.get("bank_2027_avg_median_usd", 4719))
-    up_pct = ((ye_med - spot) / spot) * 100.0
     _, _, _, _, _, _, _, time_word = _as_of_meta()
 
-    COL_MAP = {"pt": "#0f766e", "avg": "#b45309", "stale": "#64748b"}
+    COL_MAP = {"pt": "#0f766e", "avg": "#b45309", "horizon": "#475569", "stale": "#64748b"}
     default_banks = [
         {"name": "麦格理（27年均价）", "lo": 3500, "hi": 4600, "base": 4200, "kind": "avg"},
         {"name": "世界银行（27年均价）", "lo": 3650, "hi": 4600, "base": 4250, "kind": "avg"},
@@ -570,17 +565,19 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
         {"name": "澳新银行（27年末）", "lo": 3400, "hi": 5200, "base": 4800, "kind": "pt"},
         {"name": "美国银行（27年均价）", "lo": 3700, "hi": 5000, "base": 4813, "kind": "avg"},
         {"name": "摩根大通（27年末）", "lo": 4500, "hi": 6000, "base": 5000, "kind": "pt"},
-        {"name": "法国兴业（27年末）", "lo": 4200, "hi": 5400, "base": 5000, "kind": "pt"},
+        {"name": "法国兴业（27年末）", "lo": 4200, "hi": 5400, "base": 5000, "kind": "pt", "annual_average_usd": 4625},
         {"name": "瑞银集团（27年末）", "lo": 3750, "hi": 5400, "base": 5000, "kind": "pt"},
-        {"name": "花旗集团（6–12月）", "lo": 3500, "hi": 6000, "base": 5000, "kind": "pt"},
+        {"name": "花旗集团（6–12月）", "lo": 3500, "hi": 6000, "base": 5000, "kind": "horizon"},
         {"name": "汇丰银行（27年末）", "lo": 3950, "hi": 5300, "base": 5025, "kind": "pt"},
         {"name": "德意志银行（27均价·旧稿†）", "lo": 3950, "hi": 5600, "base": 5150, "kind": "stale"},
         {"name": "摩根士丹利（27年末）", "lo": 4200, "hi": 5600, "base": 5250, "kind": "pt"},
     ]
     banks = SNAP.get("institutional_targets") or default_banks
     pt_vals = [int(b["base"]) for b in banks if b.get("kind") == "pt"]
-    ye_mean = int(round(sum(pt_vals) / len(pt_vals))) if pt_vals else ye_med
-    n_banks = len(banks)
+    avg_vals = [int(b["base"]) for b in banks if b.get("kind") == "avg"]
+    avg_vals.extend(int(b["annual_average_usd"]) for b in banks if "annual_average_usd" in b)
+    ye_med = statistics.median(pt_vals)
+    avg_med = statistics.median(avg_vals)
 
     all_vals = [spot, ye_med, avg_med] + [int(b["hi"]) for b in banks] + [int(b["lo"]) for b in banks]
     x_min_val = min(3000.0, float((min(all_vals) // 500) * 500))
@@ -592,7 +589,7 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
 
     row_h = 26
     top_y = 42
-    bot_y = top_y + n_banks * row_h + 4
+    bot_y = top_y + len(banks) * row_h + 4
     vb_h = bot_y + 50
 
     grid = ""
@@ -639,22 +636,22 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
     leg_y = bot_y + 23
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：全球 {n_banks} 家大行对 2027 年末金价中位预测为 ${ye_med:,}（较{time_word}约有 +{up_pct:.0f}% 空间）</div>
-      <div class="chart-sub">严格区分 ● 2027 年末目标价（青绿 · 中位 ${ye_med:,}）与 ◆ 2027 全年均价（琥珀 · 全样本中位 ${avg_med:,}）· 美元/盎司</div>
+      <div class="chart-title">图 {fig_num}：{len(pt_vals)} 家年末点位记录的 2027 年金价中位为 ${ye_med:,.0f}</div>
+      <div class="chart-sub">2027 年末点位（青绿）、全年均价（琥珀）、其他期限及旧稿（灰色）· 美元/盎司</div>
       <svg viewBox="0 0 640 {vb_h}" width="100%" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="{vb_h}" fill="#ffffff" rx="6"/>
         {grid}
         <line x1="{x_spot}" y1="34" x2="{x_spot}" y2="{bot_y}" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="5,3"/>
         <text x="{x_spot}" y="24" text-anchor="middle" font-size="10.4" fill="#b91c1c" font-weight="800">{time_word} ${spot:,}</text>
         <line x1="{x_avg27}" y1="34" x2="{x_avg27}" y2="{bot_y}" stroke="#b45309" stroke-width="1.4" stroke-dasharray="4,3"/>
-        <text x="{round(x_avg27-6,1)}" y="24" text-anchor="end" font-size="10.2" fill="#b45309" font-weight="700">均价中位 ${avg_med:,}</text>
+        <text x="{round(x_avg27-6,1)}" y="24" text-anchor="end" font-size="10.2" fill="#b45309" font-weight="700">均价记录中位 ${avg_med:,.0f}</text>
         <line x1="{x_pt27}" y1="34" x2="{x_pt27}" y2="{bot_y}" stroke="#0f766e" stroke-width="1.5" stroke-dasharray="4,3"/>
-        <text x="{round(x_pt27+6,1)}" y="24" text-anchor="start" font-size="10.2" fill="#0f766e" font-weight="700">年末中位 ${ye_med:,}</text>
+        <text x="{round(x_pt27+6,1)}" y="24" text-anchor="start" font-size="10.2" fill="#0f766e" font-weight="700">年末中位 ${ye_med:,.0f}</text>
         {rows}
         <rect x="14" y="{leg_y}" width="612" height="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.9" rx="4"/>
-        <text x="320" y="{leg_y+14}" text-anchor="middle" font-size="10.0" fill="#334155">图例：● 2027 年末目标（图绘 {len(pt_vals)} 家中位 ${ye_med:,}）｜ ◆ 2027 全年均价（全样本 6 家中位 ${avg_med:,}*）｜ † 25.11 旧稿</text>
+        <text x="320" y="{leg_y+14}" text-anchor="middle" font-size="10.0" fill="#334155">● 年末目标：{len(pt_vals)} 条记录 ｜ ◆ 全年均价：{len(avg_vals)} 条记录 ｜ 灰色为其他期限或旧稿</text>
       </svg>
-      <div class="chart-note">数据来源：各机构 2026 年公开研报逐份核验。*注：每行仅绘各机构主口径；部分机构同时公布年末点位与全年均价（如法国兴业年末 $5,000 / 均价 $4,625），全样本 6 家最新均价中位为 ${avg_med:,}，图列 {len(pt_vals)} 家最新年末点位均值 ${ye_mean:,} / 中位 ${ye_med:,}；†德银 $5,150 为 2025.11 未更新之 2027 均价旧稿。</div>
+      <div class="chart-note">取自 2026 年 11 月 24 日主报告冻结记录。法国兴业全年均价 $4,625 计入均价统计，主标记为年末点位。花旗期限为 6–12 个月，德银为旧稿，两条单列。均价统计仅覆盖仓库中可辨认的 {len(avg_vals)} 条记录。</div>
     </div>
     '''
 
@@ -871,7 +868,7 @@ def build_cover_html() -> str:
       <div class="kpi-sub">首选 0.2% 费率基金 · 婚庆省 {ch['wedding_save_per_g_rmb']} 元</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">全球 12 大行 2027 年末中位</div>
+      <div class="kpi-label">机构 2027 年末点位中位</div>
       <div class="kpi-val">${ye_med:,}（约 {ye_rmb_med:,} 元）</div>
       <div class="kpi-sub">已按汇率升至 {fx_med:.2f} 扣除汇兑影响</div>
     </div>
@@ -888,6 +885,8 @@ def main():
     parser.add_argument("--snapshot", type=Path, default=None, help="Explicitly override snapshot JSON path.")
     parser.add_argument("--allow-drift", action="store_true", help="Bypass MASTER_BASELINE timestamp match check.")
     args = parser.parse_args()
+    if not args.check and (args.snapshot is not None or args.allow_drift):
+        parser.error("--snapshot and --allow-drift are limited to --check")
 
     if args.check:
         if not Path(CHROME_BIN).exists():

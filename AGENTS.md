@@ -33,6 +33,7 @@ global-investment-research/
 │   ├── lint_site.py                 # 6 道法证与安全门禁（S1–S6，--strict 零容忍）
 │   ├── publish_site.py              # 构建 -> 严检 -> 限域提交推送 -> 增量 Release 上传
 │   ├── install_sidecars.py          # 将脱敏定时模板渲染/原子安装至本机并做漂移校验
+│   ├── edition_run.py               # 两个班次共用的运行记录、阶段锁与 Pages 验收
 │   └── web_assets/                  # 站点样式与交互脚本
 └── .github/workflows/
     └── deploy-pages.yml             # push main 自动构建、严检并部署至 GitHub Pages
@@ -57,6 +58,9 @@ global-investment-research/
 
 每次 `07:30` 或 `18:00` 一体化班次必须严格按以下顺序在同一会话内串行推进，严禁跳步或乱序：
 
+- 启动研究前运行 `scripts/edition_run.py begin <edition_id>`，当且仅当命令成功返回 token 才继续。班次 ID 用北京时间日期与 `0730` 或 `1800`，同场修订追加 `_r2`、`_r3` 等。两个任务共用同一把锁。依次以 token 登记 `gold`、`equity`、`publish` 阶段。最终发布命令成功后再用 `complete` 核验当前提交的 Pages 部署。中途退出用 `fail` 记录失败阶段。会话意外退出时，由维护者确认旧会话结束后用 `recover` 释放锁，历史记录仍保留。
+- 当班黄金快照、黄金日报 `DAILY_META`、权益状态和新权益稿 `DAILY_META_JSON` 记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。班次 ID 表示同一次交接，数据的交易日、观测时刻与披露时刻另行注明。休市沿用旧稿时保留旧稿期号和时间，状态先刷新至当前班次。
+
 1. **Step 0｜双轨 RSI 经验库冷启动**：
    - 读取 `gold/daily/RSI_PLAYBOOK.md`（≤180 行）、`equity/state/RSI_PLAYBOOK.md`（≤180 行）及两轨 `rsi_metrics.json` 最近记录，继承高杠杆检索词、Linter 避坑清单与上期 `next_run_watch`。
 2. **Step 1｜跨市场日历、基线快照与账本冷启动**：
@@ -80,7 +84,7 @@ global-investment-research/
 7. **Step 5｜统一 RSI 盲审闭环 + 单次静态站与 Release 发布**：
    - 启动 **1 路独立只读 `research` 盲审子代理** 联合复盘黄金与三地权益本班次产出（各按 6 维 `/30` 独立打分与预判验真）；
    - 按 Tier A/B/C 安全权限分别更新 `gold/daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 与 `equity/state/{rsi_metrics.json,RSI_PLAYBOOK.md}`（**两份手册严格 ≤180 行**，Tier B 单次 ≤1 处 ≤40 行且验证失败即回滚，Tier C 含本文件 `AGENTS.md` 仅写提案待批）；
-   - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict` 确认全绿后，**每班次仅运行一次** `python3 scripts/publish_site.py`（自动编译 `_site/` → `scripts/lint_site.py _site --strict` → 限域提交推送 `main` → SHA256 增量更新 GitHub Release PDF/DOCX）。
+   - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict` 确认全绿后，**每班次仅运行一次** `python3 scripts/publish_site.py`（以最终待推送的提交树构建、严检，推送 `main` 并核对 GitHub Release PDF/DOCX 的 SHA256）。发布命令和 `edition_run.py complete` 均通过后，才汇报网页与附件发布成功。
 
 ---
 

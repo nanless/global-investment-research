@@ -22,7 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-from lint_equity import check_workspace_state, parse_daily_sort_key
+from lint_equity import check_daily_contract, check_workspace_state, parse_daily_sort_key
 from pdf_common import (
     BASE_DIR,
     CHROME_BIN,
@@ -54,6 +54,8 @@ def extract_daily_meta(md_text: str, md_path: Path) -> tuple[dict | None, str]:
 
 def load_optional_charts(market: str, meta_override: dict | None = None) -> dict[str, str]:
     """Render self-contained vector SVGs using this daily snapshot's own DAILY_META_JSON."""
+    if not meta_override:
+        return {}
     if str(BASE_DIR) not in sys.path:
         sys.path.insert(0, str(BASE_DIR))
     if market == "a_share":
@@ -111,6 +113,10 @@ def build_one(
     market = detect_market(md_path)
     raw_text = md_path.read_text(encoding="utf-8")
     meta, md_body = extract_daily_meta(raw_text, md_path)
+    if not no_lint:
+        errors = check_daily_contract(md_path, meta, md_body)
+        if errors:
+            raise ValueError("\n".join(errors))
     run_lint_gate(raw_text, str(md_path), is_flagship=False, meta=meta, no_lint=no_lint)
 
     defaults = {

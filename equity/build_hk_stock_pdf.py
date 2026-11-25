@@ -199,19 +199,24 @@ def svg_chart_h2_flow_and_rebalance(meta_override: dict | None = None) -> str:
     bars = ""
     y0 = 56
     for idx, row in enumerate(indices[:5]):
-        nm, d_pct, ytd = str(row[0]), float(row[1]), float(row[2])
+        nm, d_pct, ytd = str(row[0]), float(row[1]), row[2]
         yy = y0 + idx * 37
         zero_x = 248.0
         w = max(4.0, min(82.0, abs(d_pct) * px_per_pct))
-        is_blind = ("夜期" in nm) or (ytd == 0.0)
-        col = "#D97706" if is_blind else ("#009E73" if d_pct >= 0 else "#D55E00")
+        is_night = "夜期" in nm
+        col = "#D97706" if is_night else ("#009E73" if d_pct >= 0 else "#D55E00")
         bx = zero_x if d_pct >= 0 else zero_x - w
         tx = zero_x + w + 5 if d_pct >= 0 else zero_x - w - 5
         anc = "start" if d_pct >= 0 else "end"
-        ytd_str = "冬季03:00盲窗(勿轻信)" if is_blind else f"年内 {ytd:+.1f}%"
+        if len(row) > 3 and row[3]:
+            session_label = str(row[3])
+        elif is_night:
+            session_label = "03:00 夜期盲窗（勿轻信）" if "03:00" in nm else "夜期快照"
+        else:
+            session_label = f"年内 {float(ytd):+.1f}%" if ytd is not None else ""
         bars += (
             f'<text x="16" y="{yy+14}" font-size="9.1" fill="#0f172a" font-weight="700">{_svg_esc(nm)}</text>'
-            f'<text x="16" y="{yy+27}" font-size="8.4" fill="{"#B45309" if is_blind else "#64748b"}">{_svg_esc(ytd_str)}</text>'
+            f'<text x="16" y="{yy+27}" font-size="8.4" fill="{"#B45309" if is_night else "#64748b"}">{_svg_esc(session_label)}</text>'
             f'<rect x="{bx:.1f}" y="{yy+4}" width="{w:.1f}" height="15" fill="{col}" rx="2.5"/>'
             f'<text x="{tx:.1f}" y="{yy+15}" text-anchor="{anc}" font-size="9.0" fill="{col}" font-weight="700">{d_pct:+.2f}%</text>'
         )

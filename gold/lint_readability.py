@@ -12,14 +12,21 @@ Usage:
 
 from __future__ import annotations
 
+import html
 import json
+import math
 import re
+import statistics
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+DAILY_DIR = BASE_DIR / "daily"
+MASTER_FILENAME = "黄金跨世纪周期与2026-2030终审研究报告.md"
 DAILY_SNAPSHOT_PATH = BASE_DIR / "data_snapshot.json"
 MASTER_SNAPSHOT_PATH = BASE_DIR / "master_snapshot.json"
 MARKET_CALENDAR_PATH = BASE_DIR / "market_calendar.json"
@@ -106,6 +113,19 @@ KNOWN_DIRECTIVES = {
 
 ANY_DAILY_DIRECTIVE_RE = re.compile(r"<!--\s*(DAILY_[A-Z0-9_]+)\s*(.*?)\s*-->", re.DOTALL)
 MASTER_BASELINE_RE = re.compile(r"<!--\s*MASTER_BASELINE\s*(\{.*?\})\s*-->", re.DOTALL)
+DAILY_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_.*黄金深度研报(?:_r(\d+))?\.md$")
+EDITION_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})(?:_r([1-9]\d*))?")
+TIER_LABELS = ("红灯", "黄灯", "绿灯", "满格")
+GATE_COUNT_RE = re.compile(r"(?<!\d)([0-4])\s*[/／]\s*4(?!\d)")
+RED_LIGHT_CONFLICT_RE = re.compile(r"🟢|🟡|(?<!红)绿灯|黄灯|满格|允许新买|(?:新仓|新买|试仓)\s*[1-9]\d*(?:\.\d+)?\s*%")
+TIER_COLORS = ("#dc2626", "#d97706", "#16a34a", "#16a34a")
+RATIO_FIELDS = {
+    "gold_wti_ratio": ("wti_settle_usd", 0.15),
+    "gold_brent_ratio": ("brent_settle_usd", 0.15),
+    "gold_silver_ratio": ("spot_silver_usd", 0.15),
+    "gold_spx_ratio": ("spx_close", 0.015),
+    "gold_platinum_ratio": ("spot_platinum_usd", 0.05),
+}
 
 REQUIRED_KEYS = {
     "DAILY_META": ["tag", "kpis"],
@@ -173,98 +193,215 @@ def flatten_json_strings(obj, skip_style_keys: bool = True) -> str:
 
 
 def _parse_num_safe(val) -> float:
-    return float(str(val).replace("\u2212", "-").replace("\u2013", "-").replace(",", "").replace("%", "").replace("+", "").strip())
+    number = float(str(val).replace("\u2212", "-").replace("\u2013", "-").replace(",", "").replace("%", "").replace("+", "").strip())
+    if not math.isfinite(number):
+        raise ValueError("number must be finite")
+    return number
+
+
+def _parse_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", value):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+
+
+def _edition_key(edition_id: object) -> tuple[str, str, int] | None:
+    match = EDITION_ID_RE.fullmatch(edition_id) if isinstance(edition_id, str) else None
+    if not match:
+        return None
+    date, slot, revision = match.groups()
+    if revision == "1" or not _parse_timestamp(f"{date} {slot[:2]}:{slot[2:]}"):
+        return None
+    return date, slot, int(revision or 1)
+
+
+def _filename_edition(path: Path) -> str | None:
+    match = DAILY_FILENAME_RE.fullmatch(path.name)
+    if not match:
+        return None
+    date, slot, revision = match.groups()
+    return f"{date}_{slot}" + (f"_r{revision}" if revision else "")
+
+
+def _valid_number(value: object) -> bool:
+    return type(value) is int or (type(value) is float and math.isfinite(value))
+
+
+def _snapshot_numbers(data: dict, label: str, errors: list[str], keys: tuple[str, ...], *, positive: bool = False) -> bool:
+    invalid = [k for k in keys if not _valid_number(data.get(k)) or (positive and data[k] <= 0)]
+    if invalid:
+        errors.append(f"[Gate 5 数值字段缺失或非法] {label}: {', '.join(invalid)}")
+    return not invalid
+
+
+def _check_vix_snapshot(snap: dict, as_of: datetime | None, errors: list[str]) -> bool | None:
+    observations = snap.get("vix_10d_session_closes")
+    if not isinstance(observations, list) or len(observations) != 10 or any(
+        not isinstance(row, dict)
+        or not _parse_timestamp(f"{row.get('date')} 00:00")
+        or not _valid_number(row.get("close"))
+        or row["close"] <= 0
+        for row in observations
+    ):
+        errors.append("[Gate 5 VIX 回看区间非法] 须记录十个完整交易日的日期和收盘值")
+        return None
+    dates = [row["date"] for row in observations]
+    if dates != sorted(set(dates)) or (as_of is not None and dates[-1] > as_of.date().isoformat()):
+        errors.append("[Gate 5 VIX 回看日期非法] 日期须按交易日升序、不重复且不晚于快照")
+        return None
+    peak = max(row["close"] for row in observations)
+    peak_dates = {row["date"] for row in observations if row["close"] == peak}
+    if (
+        snap.get("vix_10d_window_end") != dates[-1]
+        or snap.get("vix_close") != observations[-1]["close"]
+        or snap.get("vix_10d_peak_close") != peak
+        or not isinstance(snap.get("vix_10d_peak_date"), str)
+        or snap["vix_10d_peak_date"] not in peak_dates
+    ):
+        errors.append("[Gate 5 VIX 回看数值冲突] 末日、官收或十日收盘峰未与交易日序列对齐")
+        return None
+    quote_key = "vix_live" if "vix_live" in snap else "vix_close"
+    if quote_key == "vix_live":
+        observed_at = _parse_timestamp(snap.get("vix_live_as_of"))
+        if observed_at is None or (as_of is not None and observed_at > as_of):
+            errors.append("[Gate 5 VIX 时间非法] vix_live_as_of 须为不晚于快照的有效观测时间")
+    if not _snapshot_numbers(snap, DAILY_SNAPSHOT_PATH.name, errors, (quote_key,), positive=True):
+        return None
+    return snap[quote_key] < 30 or snap[quote_key] <= peak * 0.9
+
+
+def _check_institutional_snapshot(snap: dict, label: str, errors: list[str]) -> None:
+    targets = snap.get("institutional_targets")
+    if not isinstance(targets, list) or not targets or any(
+        not isinstance(row, dict) or not isinstance(row.get("name"), str) or not row["name"].strip()
+        or row.get("kind") not in ("pt", "avg", "horizon", "stale")
+        or any(not _valid_number(row.get(k)) for k in ("lo", "base", "hi"))
+        or not 0 < row["lo"] <= row["base"] <= row["hi"]
+        or ("annual_average_usd" in row and (not _valid_number(row["annual_average_usd"]) or row["annual_average_usd"] <= 0))
+        for row in targets
+    ):
+        errors.append(f"[Gate 5 机构样本结构错] {label}: 须列示机构、期限及有效点位区间")
+        return
+    yearend = [row["base"] for row in targets if row["kind"] == "pt"]
+    annual = [row["base"] for row in targets if row["kind"] == "avg"]
+    annual.extend(row["annual_average_usd"] for row in targets if "annual_average_usd" in row)
+    for key, values in (("yearend", yearend), ("avg", annual)):
+        count = snap.get(f"bank_2027_{key}_sample_count")
+        mid = snap.get(f"bank_2027_{key}_median_usd")
+        if not values or type(count) is not int or count != len(values) or mid != statistics.median(values):
+            errors.append(f"[Gate 5 机构样本汇总冲突] {label}: {key} 样本数、中位须由同期限记录复算")
 
 
 def validate_snapshot_file(snap_path: Path, errors: list[str], warnings: list[str]) -> dict | None:
     label = snap_path.name
-    if not snap_path.exists():
-        warnings.append(f"[Gate 5 数据源缺失] 未找到 {label}")
-        return None
     try:
         snap = json.loads(snap_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        errors.append(f"[Gate 5 数据源损坏] {label} 解析失败: {exc}")
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"[Gate 5 数据源缺失或损坏] {label}: {exc}")
+        return None
+    if not isinstance(snap, dict) or not snap:
+        errors.append(f"[Gate 5 数据源非法] {label} 必须为非空 JSON 对象")
         return None
 
-    # Alert level, SSOT new_buy_allowed & A-class tranche invariants
-    if snap.get("daily_alert_level") not in (None, "L0", "L1", "L2"):
-        errors.append(f"[Gate 5 紧迫度非法] {label}: daily_alert_level={snap.get('daily_alert_level')} 非 L0/L1/L2")
-    if "new_buy_allowed" in snap:
-        nba = snap["new_buy_allowed"]
-        if not isinstance(nba, bool):
-            errors.append(f"[Gate 5 SSOT 开关非法] {label}: new_buy_allowed 必须为布尔值（实得 {nba!r}）")
-        elif snap.get("tier_code"):
-            expected_nba = str(snap["tier_code"]).strip() != "Tier 0"
-            if nba != expected_nba:
-                errors.append(
-                    f"[Gate 5 SSOT 开关冲突] {label}: tier_code='{snap['tier_code']}' 与 new_buy_allowed={nba} 矛盾"
-                )
-    if snap.get("a_class_tranche_split") and str(snap["a_class_tranche_split"]) != "30% + 45% + 25%":
-        errors.append(f"[Gate 5 分批比例错] {label}: a_class_tranche_split={snap['a_class_tranche_split']} != '30% + 45% + 25%'")
+    is_daily = snap_path == DAILY_SNAPSHOT_PATH
+    as_of = _parse_timestamp(snap.get("as_of_short"))
+    if as_of is None:
+        errors.append(f"[Gate 5 快照时间非法] {label}: as_of_short 须为有效 YYYY-MM-DD HH:MM")
+    tier = snap.get("tier_code")
+    if tier not in ("Tier 0", "Tier 1", "Tier 2", "Tier 3"):
+        errors.append(f"[Gate 5 档位非法] {label}: tier_code 必须为 Tier 0–3")
+    if snap.get("daily_alert_level") not in ("L0", "L1", "L2"):
+        errors.append(f"[Gate 5 紧迫度非法] {label}: daily_alert_level 必须为 L0/L1/L2")
+    if snap.get("a_class_tranche_split") != "30% + 45% + 25%":
+        errors.append(f"[Gate 5 分批比例错] {label}: 应为 30% + 45% + 25%")
+    if is_daily or "new_buy_allowed" in snap:
+        buy = snap.get("new_buy_allowed")
+        if type(buy) is not bool or buy != (tier != "Tier 0"):
+            errors.append(f"[Gate 5 SSOT 开关冲突] {label}: new_buy_allowed 必须为布尔值并与 {tier!r} 一致")
 
-    # Tier 1 gates invariant
     gates = snap.get("tier1_gates")
-    if isinstance(gates, list):
-        if len(gates) != 4:
-            errors.append(f"[Gate 5 红绿灯数量错] {label}: tier1_gates 应为 4 项，实际 {len(gates)} 项")
-        passed_cnt = sum(1 for g in gates if bool(g.get("passed", False)))
-        if "tier1_passed" in snap and int(snap["tier1_passed"]) != passed_cnt:
-            errors.append(f"[Gate 5 红绿灯计数冲突] {label}: tier1_passed={snap['tier1_passed']} != sum(passed)={passed_cnt}")
-        if "tier1_total" in snap and int(snap["tier1_total"]) != len(gates):
-            errors.append(f"[Gate 5 红绿灯总数冲突] {label}: tier1_total={snap['tier1_total']} != {len(gates)}")
+    if not isinstance(gates, list) or len(gates) != 4 or any(
+        not isinstance(g, dict) or type(g.get("passed")) is not bool
+        or any(not isinstance(g.get(k), str) or not g[k].strip() for k in ("name", "reading", "threshold", "detail"))
+        for g in gates
+    ):
+        errors.append(f"[Gate 5 红绿灯结构错] {label}: 四项须含布尔 passed 及非空 name/reading/threshold/detail")
+        gates = None
+    if gates is not None and (
+        type(snap.get("tier1_passed")) is not int
+        or snap["tier1_passed"] != sum(g["passed"] for g in gates)
+        or type(snap.get("tier1_total")) is not int
+        or snap["tier1_total"] != 4
+    ):
+        errors.append(f"[Gate 5 红绿灯计数冲突] {label}: tier1_passed/tier1_total 须与四项明细一致")
+    if tier in ("Tier 1", "Tier 2", "Tier 3") and snap.get("tier1_passed") != 4:
+        errors.append(f"[Gate 5 档位与关卡冲突] {label}: 开放新仓前须先满足四项安全条件")
 
-    # Legacy dated cross_ratios key check
-    for k in snap:
-        if re.match(r"^cross_ratios_\d{4}$", k):
-            warnings.append(f"[Gate 5 遗留日期键] {label} 仍含过时键 '{k}'，应统一使用无日期键 'cross_ratios'")
+    if is_daily:
+        if _edition_key(snap.get("edition_id")) is None:
+            errors.append(f"[Gate 5 刊期非法] {label}: edition_id 须为 YYYY-MM-DD_HHMM[_rN]")
+        fixing_date = snap.get("cfets_fixing_date")
+        fixing_dt = _parse_timestamp(f"{fixing_date} 00:00")
+        if fixing_dt is None or (as_of is not None and fixing_dt.date() > as_of.date()):
+            errors.append(f"[Gate 5 中间价日期非法] {label}: cfets_fixing_date 须为不晚于快照的交易日期")
+        _snapshot_numbers(snap, label, errors, ("us10y_pct", "dfii10_live_pct", "dxy", "cfets_cny_fixing", "vix_close", "on_rrp_usd_m", "comex_copper_usd_lb"))
+        passed = _check_vix_snapshot(snap, as_of, errors)
+        if gates is not None and passed is not None and gates[2]["passed"] != passed:
+            errors.append(f"[Gate 5 VIX 第三关冲突] {label}: 应过关={passed}（低于 30 或较十日收盘峰回落至少 10%）")
 
-    # Spot NY close % self-consistency
-    try:
-        ny_close = float(snap["spot_gold_ny_close_usd"])
-        prev_raw = snap.get("spot_gold_prev_close_usd", snap.get("spot_gold_fri_close_usd"))
-        if prev_raw is not None:
-            prev_close = float(prev_raw)
-            chg_pct = float(snap["spot_gold_ny_change_pct"])
-            calc_chg = ((ny_close / prev_close) - 1.0) * 100.0
-            if abs(chg_pct - calc_chg) > 0.05:
-                errors.append(
-                    f"[Gate 5 快照算术冲突] {label}: spot_gold_ny_change_pct={chg_pct} 与 {prev_close}->{ny_close} 精确涨幅 {calc_chg:.2f}% 偏差超过 0.05%"
-                )
-    except (KeyError, ValueError, ZeroDivisionError):
-        pass
+    for key in snap:
+        if re.fullmatch(r"cross_ratios_\d{4}", key):
+            warnings.append(f"[Gate 5 遗留日期键] {label} 保留旧键 {key!r}，请使用 cross_ratios")
 
-    ch = snap.get("rmb_channels", {})
-    if ch:
-        brand = int(ch["brand_store_rmb"])
-        exp_save = brand - int(ch["bank_bar_plus_craft_rmb"])
-        if int(ch["wedding_save_per_g_rmb"]) != exp_save:
-            errors.append(f"[Gate 5 快照渠道算术错] {label}: wedding_save_per_g_rmb={ch['wedding_save_per_g_rmb']} != {exp_save}")
-        if int(ch["wedding_save_50g_rmb"]) != exp_save * 50:
-            errors.append(f"[Gate 5 快照 50g 算术错] {label}: wedding_save_50g_rmb={ch['wedding_save_50g_rmb']} != {exp_save * 50}")
-        if "wedding_save_pct" in ch and brand > 0:
-            exp_pct = (exp_save / brand) * 100.0
-            if abs(float(ch["wedding_save_pct"]) - exp_pct) > 0.15:
-                errors.append(f"[Gate 5 省钱百分比偏差] {label}: wedding_save_pct={ch['wedding_save_pct']} != {exp_pct:.1f}%")
+    prices = ("spot_gold_ny_close_usd", "spot_gold_ny_close_rounded", "spot_gold_prev_close_usd")
+    if _snapshot_numbers(snap, label, errors, prices, positive=True) and _snapshot_numbers(snap, label, errors, ("spot_gold_ny_change_pct",)):
+        ny_close, rounded, prev_close = (snap[k] for k in prices)
+        calc_chg = ((ny_close / prev_close) - 1.0) * 100.0
+        if type(rounded) is not int or abs(rounded - ny_close) > 0.5:
+            errors.append(f"[Gate 5 现货四舍五入冲突] {label}: {rounded} 与 {ny_close} 不一致")
+        if abs(snap["spot_gold_ny_change_pct"] - calc_chg) > 0.05:
+            errors.append(f"[Gate 5 快照算术冲突] {label}: 现货涨跌幅应约为 {calc_chg:.2f}%")
 
-    cr = snap.get("cross_ratios") or snap.get("cross_ratios_1124")
-    if cr:
-        spot = float(snap["spot_gold_ny_close_usd"])
-        checks = [
-            ("gold_wti_ratio", spot / float(snap["wti_settle_usd"]), 0.15),
-            ("gold_brent_ratio", spot / float(snap["brent_settle_usd"]), 0.15),
-            ("gold_silver_ratio", spot / float(snap["spot_silver_usd"]), 0.15),
-            ("gold_spx_ratio", spot / float(snap["spx_close"]), 0.015),
-        ]
-        if snap.get("spot_platinum_usd"):
-            checks.append(("gold_platinum_ratio", spot / float(snap["spot_platinum_usd"]), 0.05))
-        for k, expected, tol in checks:
-            if k in cr and abs(float(cr[k]) - expected) > tol:
-                errors.append(f"[Gate 5 跨资产比值偏差] {label}: {k}={cr[k]} 与精确比值 {expected:.3f} 偏差超过 {tol}")
+    channels = snap.get("rmb_channels")
+    if not isinstance(channels, dict):
+        errors.append(f"[Gate 5 渠道数据缺失] {label}: rmb_channels 须为对象")
+    elif _snapshot_numbers(channels, f"{label}.rmb_channels", errors, ("brand_store_rmb", "bank_bar_plus_craft_rmb"), positive=True) and _snapshot_numbers(channels, f"{label}.rmb_channels", errors, ("wedding_save_per_g_rmb", "wedding_save_50g_rmb", "wedding_save_pct")):
+        brand = channels["brand_store_rmb"]
+        save = brand - channels["bank_bar_plus_craft_rmb"]
+        for key, expected, tolerance in (
+            ("wedding_save_per_g_rmb", save, 0.01),
+            ("wedding_save_50g_rmb", save * 50, 0.01),
+            ("wedding_save_pct", save / brand * 100, 0.15),
+        ):
+            if abs(channels[key] - expected) > tolerance:
+                errors.append(f"[Gate 5 快照渠道算术错] {label}: {key} 应约为 {expected:.2f}")
+
+    ratios = snap.get("cross_ratios")
+    if not isinstance(ratios, dict):
+        errors.append(f"[Gate 5 跨资产比值缺失] {label}: cross_ratios 须为对象")
+    else:
+        for key, (denominator, tolerance) in RATIO_FIELDS.items():
+            if not _snapshot_numbers(ratios, f"{label}.cross_ratios", errors, (key,), positive=True):
+                continue
+            if _snapshot_numbers(snap, label, errors, ("spot_gold_ny_close_usd", denominator), positive=True):
+                expected = snap["spot_gold_ny_close_usd"] / snap[denominator]
+                if abs(ratios[key] - expected) > tolerance:
+                    errors.append(f"[Gate 5 跨资产比值偏差] {label}: {key} 应约为 {expected:.3f}")
+    _check_institutional_snapshot(snap, label, errors)
     return snap
 
 
-def check_pdf_and_docx_artifacts(md_path: Path, raw_md: str, errors: list[str], warnings: list[str]) -> None:
+def check_pdf_and_docx_artifacts(
+    md_path: Path,
+    raw_md: str,
+    errors: list[str],
+    warnings: list[str],
+    *,
+    is_current_daily: bool = False,
+) -> None:
     """Gate 6: Verify both PDF & Native OOXML DOCX freshness, headers, ECMA-376 order, rels, and embedded PNGs."""
     pdf_path = md_path.with_suffix(".pdf")
     docx_path = md_path.with_suffix(".docx")
@@ -292,7 +429,7 @@ def check_pdf_and_docx_artifacts(md_path: Path, raw_md: str, errors: list[str], 
 
     # Mobile responsive HTML check for daily reports
     is_daily_report = (
-        md_path.resolve().parent == (BASE_DIR / "daily").resolve()
+        md_path.resolve().parent == DAILY_DIR.resolve()
         and re.match(r"^\d{4}-\d{2}-\d{2}_", md_path.name) is not None
     )
     if is_daily_report:
@@ -312,6 +449,16 @@ def check_pdf_and_docx_artifacts(md_path: Path, raw_md: str, errors: list[str], 
                     errors.append(
                         f"[Gate 6 手机端 HTML 缺视口声明] daily/{LATEST_MOBILE_HTML_PATH.name} 缺少 <meta name=\"viewport\""
                     )
+
+                if is_current_daily:
+                    title_md = re.search(r"(?m)^#\s+(.+)$", raw_md)
+                    title_html = re.search(r"<title>([^<]+)</title>", mob_text)
+                    if (
+                        not title_md or not title_html
+                        or title_md.group(1).strip() != html.unescape(title_html.group(1)).strip()
+                        or LATEST_MOBILE_HTML_PATH.stat().st_mtime < md_mtime - 2.0
+                    ):
+                        errors.append("[Gate 6 手机端 HTML 错刊] 最新手机端页面标题或修改时间与当前日报不一致")
 
     if not docx_path.exists():
         if expected_charts > 0:
@@ -482,12 +629,14 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
 
     if kind == "DAILY_META":
         kpis = parsed.get("kpis")
-        if isinstance(kpis, list):
+        if not isinstance(kpis, list):
+            errors.append("[Gate 0 KPI 结构错] DAILY_META.kpis 须为数组")
+        else:
             if len(kpis) != 6:
                 warnings.append(f"[Gate 0 KPI 数量] DAILY_META.kpis 建议为 6 张卡，实际 {len(kpis)} 张")
             for idx, k in enumerate(kpis, 1):
-                if not isinstance(k, dict) or not all(f in k for f in ("label", "val", "sub")):
-                    errors.append(f"[Gate 0 KPI 结构错] DAILY_META.kpis[{idx}] 缺少 label/val/sub")
+                if not isinstance(k, dict) or any(not isinstance(k.get(f), str) for f in ("label", "val", "sub")):
+                    errors.append(f"[Gate 0 KPI 结构错] DAILY_META.kpis[{idx}] 须含 label/val/sub 文本")
                 elif _vis_width(k.get("sub", "")) > 17.5:
                     warnings.append(f"[Gate 0 KPI sub 偏长] DAILY_META.kpis[{idx}].sub='{k['sub']}' 视觉宽 {_vis_width(k['sub']):.1f} > 17.5 汉字当量")
     elif kind == "DAILY_VERDICT":
@@ -518,6 +667,10 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
         tone = parsed.get("tone")
         if tone is not None and tone not in ("deep", "pro"):
             errors.append(f"[Gate 0 分层标非法] DAILY_LAYER_BADGE.tone='{tone}' 必须为 deep 或 pro")
+    elif kind == "DAILY_TRUST_BAR":
+        items = parsed.get("items")
+        if not isinstance(items, list) or len(items) != 3 or any(not isinstance(item, str) or not item.strip() for item in items):
+            errors.append("[Gate 0 质检徽章结构错] DAILY_TRUST_BAR.items 须为三条非空文字")
     elif kind == "DAILY_CHART_TIMELINE":
         if "zones" in parsed and "highlight_zones" not in parsed:
             errors.append("[Gate 0 时间轴错键] DAILY_CHART_TIMELINE 请使用 highlight_zones 而非 zones")
@@ -530,12 +683,12 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
                     errors.append(f"[Gate 0 时间轴缺值] points[{idx}] 缺少 val")
                 else:
                     try:
-                        float(p["val"])
+                        _parse_num_safe(p["val"])
                     except (TypeError, ValueError):
                         errors.append(f"[Gate 0 时间轴非数字] points[{idx}].val={p['val']}")
         if "y_min" in parsed and "y_max" in parsed:
             try:
-                if float(parsed["y_min"]) >= float(parsed["y_max"]):
+                if _parse_num_safe(parsed["y_min"]) >= _parse_num_safe(parsed["y_max"]):
                     errors.append("[Gate 0 纵轴颠倒] DAILY_CHART_TIMELINE y_min 必须小于 y_max")
             except (TypeError, ValueError):
                 errors.append("[Gate 0 纵轴非数字] DAILY_CHART_TIMELINE y_min/y_max 须为数字")
@@ -543,9 +696,17 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
         checks = parsed.get("checks", [])
         if isinstance(checks, list) and len(checks) != 4:
             errors.append(f"[Gate 0 四步红绿灯数量错] DAILY_CHART_SWITCH.checks 应为 4 项，实际 {len(checks)} 项")
-        if not isinstance(checks, list) or any(not isinstance(c, dict) or not all(f in c for f in ("name", "passed", "line1", "line2")) for c in checks):
-            errors.append("[Gate 0 红绿灯项错] DAILY_CHART_SWITCH.checks 每项须含 name/passed/line1/line2")
-        for idx, g in enumerate(parsed.get("gauges", []), 1):
+        if not isinstance(checks, list) or any(
+            not isinstance(c, dict) or type(c.get("passed")) is not bool
+            or any(not isinstance(c.get(f), str) for f in ("name", "line1", "line2"))
+            for c in checks
+        ):
+            errors.append("[Gate 0 红绿灯项错] DAILY_CHART_SWITCH.checks 每项须含布尔 passed 及 name/line1/line2 文本")
+        gauges = parsed.get("gauges")
+        if not isinstance(gauges, list) or not gauges:
+            errors.append("[Gate 0 水位尺空] DAILY_CHART_SWITCH.gauges 须为非空数组")
+            return
+        for idx, g in enumerate(gauges, 1):
             if not isinstance(g, dict) or not all(f in g for f in ("label", "value_text", "pct")) or ("safe_pct" in g and "threshold_pct" not in g):
                 errors.append(f"[Gate 0 水位尺项错] gauges[{idx}] 须含 label/value_text/pct（且用 threshold_pct 非 safe_pct）")
                 continue
@@ -573,7 +734,10 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
                     _parse_num_safe(it["pct"])
                 except Exception:
                     errors.append(f"[Gate 0 涨跌幅非数字] DAILY_CHART_CROSS.items[{idx}].pct 非法")
-        if any(not isinstance(ri, dict) or not all(f in ri for f in ("label", "detail")) for ri in parsed.get("reverse_items", [])):
+        reverse_items = parsed.get("reverse_items", [])
+        if not isinstance(reverse_items, list) or any(
+            not isinstance(ri, dict) or not all(f in ri for f in ("label", "detail")) for ri in reverse_items
+        ):
             errors.append("[Gate 0 反向指标项错] DAILY_CHART_CROSS.reverse_items 每项须含 label/detail")
 
 
@@ -587,36 +751,109 @@ def _strip_code_and_neq(s: str) -> str:
     return t.replace("!=", "")
 
 
+def _check_report_structure(raw: str, directives: dict[str, list[dict]], *, is_master: bool, errors: list[str]) -> None:
+    visible = _strip_comments_keep_lines(raw)
+    for part in ("第一部分", "第三部分"):
+        if not re.search(rf"^#\s*{part}", visible, re.MULTILINE):
+            errors.append(f"[Gate 0 缺章节] 缺少 {part} 标题")
+    if find_layer01_end(raw) == len(raw):
+        errors.append("[Gate 0 缺章节] 缺少深读分层边界")
+    required_card_counts = {"DAILY_VERDICT": 1, "DAILY_PERSONA": 1, "DAILY_TRUST_BAR": 1}
+    if not is_master:
+        required_card_counts.update({
+            "DAILY_META": 1,
+            "DAILY_SIGNAL_NOISE": 1,
+            "DAILY_CHART_TIMELINE": 1,
+            "DAILY_CHART_CROSS": 1,
+            "DAILY_CHART_SWITCH": 1,
+        })
+    for kind, count in required_card_counts.items():
+        if len(directives.get(kind, [])) != count:
+            errors.append(f"[Gate 0 组件数量错] {kind} 必须出现 {count} 次")
+    if not directives.get("DAILY_GLOSSARY"):
+        errors.append("[Gate 0 缺组件] 至少需要一处 DAILY_GLOSSARY")
+    if is_master:
+        tokens = re.findall(r"(?m)^\s*<!--\s*CHART_(\d+|1_AND_2)\s*-->\s*$", raw)
+        counts = Counter(n for token in tokens for n in (("1", "2") if token == "1_AND_2" else (token,)))
+        if counts != Counter(str(n) for n in range(1, 8)):
+            errors.append("[Gate 0 主报告图数错误] 七张主报告图必须各出现一次")
+
+
+def _check_daily_verdict(directives: dict[str, list[dict]], snap: dict, errors: list[str]) -> None:
+    tier = snap.get("tier_code")
+    passed = snap.get("tier1_passed")
+    expected_checks = snap.get("tier1_gates")
+    if tier not in ("Tier 0", "Tier 1", "Tier 2", "Tier 3") or type(passed) is not int or not isinstance(expected_checks, list):
+        return
+    verdict = next(iter(directives.get("DAILY_VERDICT", [])), {})
+    if (
+        verdict.get("tier_code") != tier
+        or type(verdict.get("new_buy_allowed")) is not bool
+        or verdict["new_buy_allowed"] != snap.get("new_buy_allowed")
+        or type(verdict.get("tier1_passed")) is not int
+        or verdict["tier1_passed"] != passed
+    ):
+        errors.append("[Gate 5 裁决卡与快照冲突] DAILY_VERDICT 的档位、开关或过关数与快照不一致")
+    if str(verdict.get("level", "")).upper() != snap.get("daily_alert_level"):
+        errors.append("[Gate 5 紧迫度与快照冲突] DAILY_VERDICT.level 与快照不一致")
+    chart = next(iter(directives.get("DAILY_CHART_SWITCH", [])), {})
+    if "status_color" in chart and str(chart["status_color"]).lower() != TIER_COLORS[int(tier[-1])]:
+        errors.append("[Gate 5 图 3 色值冲突] status_color 须采用对应档位的圆点颜色")
+    checks = chart.get("checks", [])
+    if not isinstance(checks, list) or [
+        c.get("passed") for c in checks if isinstance(c, dict) and type(c.get("passed")) is bool
+    ] != [g.get("passed") for g in expected_checks if isinstance(g, dict)]:
+        errors.append("[Gate 5 图 3 与快照冲突] 四项过关状态或顺序与快照不一致")
+    meta = next(iter(directives.get("DAILY_META", [])), {})
+    kpis = meta.get("kpis", [])
+    kpi = next(
+        (k for k in kpis if isinstance(k, dict) and "红绿灯" in str(k.get("label", ""))),
+        {},
+    ) if isinstance(kpis, list) else {}
+    expected_label = TIER_LABELS[int(tier[-1])]
+    for source, value in (
+        ("封面", kpi.get("val")),
+        ("裁决卡", verdict.get("traffic_light")),
+        ("图 3", chart.get("status_line")),
+    ):
+        if not isinstance(value, str) or expected_label not in value or GATE_COUNT_RE.findall(value) != [str(passed)]:
+            errors.append(f"[Gate 5 {source}口径冲突] 须显示 {expected_label} 与 {passed}/4")
+        elif tier == "Tier 0" and RED_LIGHT_CONFLICT_RE.search(value):
+            errors.append(f"[Gate 5 {source}动作冲突] 黄金处于红灯，不得标注开新仓")
+
+
 def check_file(
     md_path: Path,
     daily_snap: dict | None,
     master_snap: dict | None,
-    snap_cache: dict[Path, dict | None],
     precheck: bool = False,
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     raw = md_path.read_text(encoding="utf-8")
 
-    # Select dedicated snapshot for this file (MASTER_BASELINE -> master_snapshot.json, else data_snapshot.json)
-    baseline_m = MASTER_BASELINE_RE.search(raw)
-    baseline_meta: dict = {}
-    if baseline_m:
+    baseline_matches = list(MASTER_BASELINE_RE.finditer(raw))
+    is_master = md_path.name == MASTER_FILENAME or bool(baseline_matches)
+    filename_edition = _filename_edition(md_path)
+    if filename_edition and baseline_matches:
+        errors.append("[Gate 0 基线分轨冲突] 日报不应包含 MASTER_BASELINE")
+    if is_master:
+        baseline_meta = {}
+        snap = master_snap
         try:
-            baseline_meta = json.loads(baseline_m.group(1))
+            if len(baseline_matches) == 1:
+                baseline_meta = json.loads(baseline_matches[0].group(1))
         except json.JSONDecodeError as exc:
             errors.append(f"[Gate 0 MASTER_BASELINE JSON 错] {exc}")
-        target_snap_path = BASE_DIR / str(baseline_meta.get("snapshot", "master_snapshot.json"))
-        if target_snap_path not in snap_cache:
-            snap_cache[target_snap_path] = validate_snapshot_file(target_snap_path, errors, warnings)
-        snap = snap_cache[target_snap_path]
-        if snap and baseline_meta.get("as_of_short") and str(snap.get("as_of_short")) != str(baseline_meta["as_of_short"]):
-            errors.append(
-                f"[Gate 5 主报告基线锁冲突] MASTER_BASELINE.as_of_short='{baseline_meta['as_of_short']}' "
-                f"!= {target_snap_path.name}.as_of_short='{snap.get('as_of_short')}'"
-            )
+        if not _parse_timestamp(baseline_meta.get("as_of_short")) or baseline_meta.get("snapshot") != MASTER_SNAPSHOT_PATH.name:
+            errors.append("[Gate 5 主报告基线锁缺失或非法] 须有唯一的 MASTER_BASELINE，指定 master_snapshot.json 和合法时间")
+        elif not snap or snap.get("as_of_short") != baseline_meta["as_of_short"]:
+            errors.append("[Gate 5 主报告基线锁冲突] MASTER_BASELINE.as_of_short 与独立快照不一致")
     else:
         snap = daily_snap
+    filename_key = _edition_key(filename_edition)
+    snapshot_key = _edition_key(daily_snap.get("edition_id")) if daily_snap else None
+    is_current_daily = filename_edition is not None and (filename_key is None or snapshot_key is None or filename_key >= snapshot_key)
 
     layer01_end = find_layer01_end(raw)
     if len(raw) > 3000 and layer01_end == len(raw):
@@ -628,6 +865,7 @@ def check_file(
 
     # Gate 0: Catch & Schema-validate ALL DAILY_* directives (including typos & malformed payloads!)
     daily_meta: dict = {}
+    directives: dict[str, list[dict]] = {}
     l01_widget_texts: list[tuple[str, str]] = []
     all_widget_texts: list[tuple[str, str]] = []
     for m in ANY_DAILY_DIRECTIVE_RE.finditer(raw):
@@ -644,12 +882,28 @@ def check_file(
             errors.append(f"[Gate 0 JSON 语法错] <!-- {kind} --> 解析失败: {exc}")
             continue
         _validate_directive_schema(kind, parsed, errors, warnings)
+        if not isinstance(parsed, dict):
+            continue
+        directives.setdefault(kind, []).append(parsed)
         if kind == "DAILY_META":
             daily_meta = parsed
         flat = flatten_json_strings(parsed, skip_style_keys=True)
         all_widget_texts.append((kind, flat))
         if m.start() < layer01_end or kind in ("DAILY_META", "DAILY_VERDICT", "DAILY_SIGNAL_NOISE"):
             l01_widget_texts.append((kind, flat))
+
+    if is_master or filename_edition:
+        _check_report_structure(raw, directives, is_master=is_master, errors=errors)
+    if is_current_daily or daily_meta.get("edition_id") is not None:
+        if filename_key is None or daily_meta.get("edition_id") != filename_edition:
+            errors.append("[Gate 0 日报刊期不匹配] DAILY_META.edition_id 须与文件名含修订号一致")
+        if _parse_timestamp(daily_meta.get("as_of_short")) is None:
+            errors.append("[Gate 0 日报数据时间非法] DAILY_META.as_of_short 须为有效 YYYY-MM-DD HH:MM")
+    if is_current_daily:
+        if not daily_snap or daily_snap.get("edition_id") != filename_edition or daily_meta.get("as_of_short") != daily_snap.get("as_of_short"):
+            errors.append("[Gate 5 日报快照错刊] 文件名、DAILY_META 与 data_snapshot 的 edition_id/as_of_short 须一致")
+        else:
+            _check_daily_verdict(directives, daily_snap, errors)
 
     # Gate 1: Zero bare Wall Street codes / internal meta-noise / raw HTML leaks in Layer 0-1
     found_tokens = _find_banned_layer01_tokens(layer01_vis)
@@ -720,23 +974,15 @@ def check_file(
         if stale_tok in full_combined:
             errors.append(f"[Gate 5 过时/冲突事实] 检出 '{stale_tok}' — {reason}")
 
-    if snap:
-        snap_ts = str(snap.get("as_of_short", ""))
-        snap_bjt = str(snap.get("as_of_bjt", ""))
-        file_ts = str(baseline_meta.get("as_of_short") or daily_meta.get("timestamp") or "")
-        is_current_edition = (
-            (not file_ts)
-            or (bool(snap_ts) and snap_ts in file_ts)
-            or (bool(snap_bjt) and snap_bjt in file_ts)
-        )
-        if is_current_edition:
-            spot_r = int(snap["spot_gold_ny_close_rounded"])
+    if snap and (is_master or is_current_daily):
+        spot_r = snap.get("spot_gold_ny_close_rounded")
+        if type(spot_r) is int:
             if f"{spot_r:,}" not in full_combined and str(spot_r) not in full_combined:
                 warnings.append(f"[Gate 5 基准价缺失] 正文未检测到最新现货基准价 {spot_r}")
-            ch = snap.get("rmb_channels", {})
-            if ch:
-                brand_r = int(ch["brand_store_rmb"])
-                save_r = int(ch["wedding_save_per_g_rmb"])
+            ch = snap.get("rmb_channels")
+            if isinstance(ch, dict) and _valid_number(ch.get("brand_store_rmb")) and _valid_number(ch.get("wedding_save_per_g_rmb")):
+                brand_r = round(ch["brand_store_rmb"])
+                save_r = round(ch["wedding_save_per_g_rmb"])
                 if f"{brand_r:,}" not in full_combined and str(brand_r) not in full_combined:
                     warnings.append(f"[Gate 5 金店价未对齐] 正文未检测到快照品牌金店价 {brand_r:,}")
                 if str(save_r) not in full_combined:
@@ -744,7 +990,7 @@ def check_file(
 
     # Gate 6: PDF & Native OOXML DOCX forensic verification (skipped in --precheck mode)
     if not precheck:
-        check_pdf_and_docx_artifacts(md_path, raw, errors, warnings)
+        check_pdf_and_docx_artifacts(md_path, raw, errors, warnings, is_current_daily=is_current_daily)
 
     return errors, warnings
 
@@ -848,18 +1094,17 @@ def main():
     exit_code = 0
 
     for snap_path in (DAILY_SNAPSHOT_PATH, MASTER_SNAPSHOT_PATH):
-        if snap_path.exists():
-            s_errs: list[str] = []
-            s_warns: list[str] = []
-            snap_cache[snap_path] = validate_snapshot_file(snap_path, s_errs, s_warns)
-            if s_errs or s_warns:
-                print(f"=== Data Snapshot Consistency Check: {snap_path.name} ===")
-                for e in s_errs:
-                    print(f"  [FAIL] {e}")
-                for w in s_warns:
-                    print(f"  [WARN] {w}")
-                if s_errs or (strict and s_warns):
-                    exit_code = 1
+        s_errs: list[str] = []
+        s_warns: list[str] = []
+        snap_cache[snap_path] = validate_snapshot_file(snap_path, s_errs, s_warns)
+        if s_errs or s_warns:
+            print(f"=== Data Snapshot Consistency Check: {snap_path.name} ===")
+            for e in s_errs:
+                print(f"  [FAIL] {e}")
+            for w in s_warns:
+                print(f"  [WARN] {w}")
+            if s_errs or (strict and s_warns):
+                exit_code = 1
 
     rsi_errs: list[str] = []
     rsi_warns: list[str] = []
@@ -893,7 +1138,7 @@ def main():
             print(f"[ERROR] File not found: {p}")
             exit_code = 1
             continue
-        errs, warns = check_file(p, daily_snap, master_snap, snap_cache, precheck=precheck)
+        errs, warns = check_file(p, daily_snap, master_snap, precheck=precheck)
         mode_label = "Pre-Compile Gate 0–5 Check (--precheck)" if precheck else "7-Gate Readability, Accuracy & OOXML Lint"
         print(f"=== {mode_label}: {p.name} ===")
         if not errs and not warns:
