@@ -29,6 +29,7 @@ import types
 import urllib.parse
 from collections import defaultdict
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -1212,6 +1213,16 @@ def _fmt_chg_span(val: float) -> str:
     return f'<span class="{cls}">{val:+.2f}%</span>'
 
 
+def _positive_quote(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        quote = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return quote if isfinite(quote) and quote > 0 else None
+
+
 def _render_release_downloads_grid(
     stock_counts: dict[str, int],
     *,
@@ -1498,8 +1509,30 @@ def build_cockpit_page(
         btc_chg = float(gold_snap.get("btc_change_pct") or 0)
         btc_sub_html = f'{_fmt_chg_span(btc_chg)} · 流动敏感风向标'
 
-    usd_cny = float(rates.get("usd_cnh", rates.get("usd_cny_1630", gold_snap.get("usd_cny", 0))))
-    usd_hkd = float(rates.get("usd_hkd", 7.842))
+    usd_cnh = _positive_quote(rates.get("usd_cnh"))
+    usd_cny = _positive_quote(rates.get("usd_cny_1630"))
+    if usd_cnh is None and usd_cny is None:
+        stamp = r"^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})"
+        gold_stamp = re.match(stamp, gold_as_of_short)
+        equity_stamp = re.match(stamp, str(eq_state.get("as_of_cst") or ""))
+        if (gold_stamp and equity_stamp and gold_stamp[1] == equity_stamp[1]
+                and min(gold_stamp[2], equity_stamp[2]) >= "16:30"):
+            usd_cny = _positive_quote(gold_snap.get("usd_cny_1630"))
+    if usd_cnh is not None:
+        rmb_label = "美元 / 离岸人民币"
+        rmb_value = f"{usd_cnh:.4f}"
+    elif usd_cny is not None:
+        rmb_label = "美元 / 在岸人民币（16:30 收盘）"
+        rmb_value = f"{usd_cny:.4f}"
+    else:
+        rmb_label = "美元 / 人民币"
+        rmb_value = "待核"
+    usd_hkd = _positive_quote(rates.get("usd_hkd"))
+    usd_hkd_value = f"{usd_hkd:.3f}" if usd_hkd is not None else "待核"
+    cfets = _positive_quote(rates.get("cfets_cny_fixing"))
+    cfets_value = f"{cfets:.4f}" if cfets is not None else "待核"
+    hibor = rates.get("hibor_1m_pct")
+    hibor_value = f"{float(hibor):.3f}%" if hibor is not None else "待核"
 
     # Latest Daily Feed Grid (4 markets)
     feed_cards_html = ""
@@ -1641,8 +1674,8 @@ def build_cockpit_page(
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">HIBOR 1M / 总结余</div>
-            <div class="m-metric-val">{float(rates.get("hibor_1m_pct", 2.879)):.3f}% / {hkma_bal:.1f}亿</div>
-            <div class="m-metric-sub">美元/港元 {usd_hkd:.3f}（紧盯 7.85）</div>
+            <div class="m-metric-val">{hibor_value} / {hkma_bal:.1f}亿</div>
+            <div class="m-metric-sub">美元/港元 {usd_hkd_value}（紧盯 7.85）</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">美元 / 人民币锚前瞻 ERP</div>
@@ -1799,13 +1832,13 @@ def build_cockpit_page(
             <div class="mirror-sub">{btc_sub_html}</div>
           </div>
           <div class="mirror-chip">
-            <div class="mirror-lbl">美元 / 离岸人民币</div>
-            <div class="mirror-val">{usd_cny:.4f}</div>
-            <div class="mirror-sub">CFETS 中间价 {float(rates.get("cfets_cny_fixing", 6.7088)):.4f}</div>
+            <div class="mirror-lbl">{rmb_label}</div>
+            <div class="mirror-val">{rmb_value}</div>
+            <div class="mirror-sub">CFETS 中间价 {cfets_value}</div>
           </div>
           <div class="mirror-chip">
             <div class="mirror-lbl">美元 / 港元</div>
-            <div class="mirror-val">{usd_hkd:.3f}</div>
+            <div class="mirror-val">{usd_hkd_value}</div>
             <div class="mirror-sub">弱方兑换保证线 7.850</div>
           </div>
         </div>

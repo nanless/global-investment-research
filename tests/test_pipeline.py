@@ -170,6 +170,29 @@ class EditionRunTest(unittest.TestCase):
 
 
 class OperationalRegressionTest(unittest.TestCase):
+    def test_cockpit_labels_verified_fx_and_preserves_missing_quotes(self):
+        gold = {"as_of_short": "2026-11-25 21:25", "usd_cny_1630": 6.6736, "usd_cny": 9.9999}
+        for as_of, rates, label, value in (
+            ("2026-11-25T21:25:00+08:00", {"usd_cnh": 6.673, "usd_cny_1630": 6.6736, "usd_hkd": 7.838},
+             "美元 / 离岸人民币", "6.6730"),
+            ("2026-11-25T21:25:00+08:00", {"usd_cnh": None, "usd_cny_1630": 6.6712, "usd_hkd": None},
+             "美元 / 在岸人民币（16:30 收盘）", "6.6712"),
+            ("2026-11-25T21:25:00+08:00", {"usd_cnh": None, "usd_cny_1630": None},
+             "美元 / 在岸人民币（16:30 收盘）", "6.6736"),
+            ("2026-11-25T07:30:00+08:00", {}, "美元 / 人民币", "待核"),
+            ("2026-11-26T21:25:00+08:00", {}, "美元 / 人民币", "待核"),
+        ):
+            with self.subTest(as_of=as_of, rates=rates):
+                equity = {"as_of_cst": as_of, "cross_market_linkages": {"rates_fx_chain": rates}}
+                page = build_site.build_cockpit_page(gold, equity, {}, {})
+                self.assertIn(f'<div class="mirror-lbl">{label}</div>', page)
+                self.assertIn(f'<div class="mirror-val">{value}</div>', page)
+                hkd = "7.838" if rates.get("usd_hkd") is not None else "待核"
+                self.assertIn(f'美元/港元 {hkd}（紧盯 7.85）', page)
+                self.assertIn(f'<div class="mirror-val">{hkd}</div>', page)
+                self.assertIn("CFETS 中间价 待核", page)
+                self.assertNotIn("9.9999", page)
+
     def test_renderer_keeps_current_and_archived_urls_and_rejects_duplicates(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
