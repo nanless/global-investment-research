@@ -654,7 +654,9 @@ def svg_chart_a6_sector_heatmap(meta_override: dict | None = None) -> str:
             wf = max(round(flw * px_flw, 1), 2.0)
             fcol = "#b45309" if is_contra else "#0072B2"
             bars += f'<rect x="{x_flw0}" y="{y+1.5}" width="{wf}" height="13" fill="{fcol}" opacity="0.85" rx="2"/>'
-            lbl_f = f"+{flw:.1f}亿（逆势抄底!）" if is_contra else f"+{flw:.1f}亿"
+            lbl_f = f"+{flw:.1f}亿"
+            if is_contra and flw > 0:
+                lbl_f += "（净流入）"
             bars += f'<text x="{x_flw0+wf+5}" y="{y+12.5}" font-size="8.9" fill="{fcol}" font-weight="700">{lbl_f}</text>'
         else:
             wf = max(round(abs(flw) * px_flw, 1), 2.0)
@@ -668,7 +670,7 @@ def svg_chart_a6_sector_heatmap(meta_override: dict | None = None) -> str:
     )
     title_a6 = _norm_chart_title(
         a6_nest.get("title") or cl.get("a6_title")
-        or "11/23 完整申万 16 行业归档——科技吸金但情绪过热，银行边跌边获主力逆势净买！"
+        or "申万行业涨跌与主力资金净额"
     )
     sub_a6 = html_mod.escape(clean_svg_text(str(
         a6_nest.get("sub") or cl.get("a6_sub")
@@ -676,7 +678,7 @@ def svg_chart_a6_sector_heatmap(meta_override: dict | None = None) -> str:
     )))
     takeaway = html_mod.escape(clean_svg_text(str(
         a6_nest.get("takeaway") or cl.get("a6_takeaway")
-        or "11/23 完整归档显示电子（+74 亿）和通信（+68 亿）吸金最多但短线偏热，次日 11/24 即印证高开剧烈分化；标黄银行连续逆势吸金，说明大资金趁别人追高时悄悄布局低估高分红底座！"
+        or "左列显示行业涨跌，右列显示按数据来源口径统计的主力资金净额。"
     )))
     note_a6 = html_mod.escape(clean_svg_text(str(
         a6_nest.get("note") or cl.get("a6_note")
@@ -690,8 +692,8 @@ def svg_chart_a6_sector_heatmap(meta_override: dict | None = None) -> str:
       <svg viewBox="0 0 850 {svg_h}" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="{svg_h}" fill="#ffffff" rx="6"/>
         {bg_rects}
-        <text x="16" y="23" font-size="9.8" fill="#0f172a" font-weight="700">A. 行业涨跌（别只看第一名去追高！）</text>
-        <text x="458" y="23" font-size="9.8" fill="#0f172a" font-weight="700">B. 大资金真金白银流向（亿元）</text>
+        <text x="16" y="23" font-size="9.8" fill="#0f172a" font-weight="700">A. 行业涨跌（%）</text>
+        <text x="458" y="23" font-size="9.8" fill="#0f172a" font-weight="700">B. 主力资金净额（亿元）</text>
         {axes}
         {bars}
       </svg>

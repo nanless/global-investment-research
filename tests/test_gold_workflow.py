@@ -290,6 +290,20 @@ class GoldWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "须为有限数值"):
             build_daily.render_chart_timeline({"points": [{"val": "3,55"}]})
 
+    def test_numeric_table_column_keeps_its_class_at_the_width_limit(self):
+        price = "**3,635**（顶 5,596 / 低 3,503）"
+        table = [
+            "| 年份 | 国际年末价（美元） |",
+            "| :--- | :---: |",
+            "| **2020** | 1,898 |",
+            f"| **2026** | {price} |",
+        ]
+
+        self.assertEqual(build_daily._vis_len(price), 15.0)
+        html = build_daily.render_md_table(table)
+        self.assertIn('<th class="ta-c col-num">', html)
+        self.assertIn('<td class="ta-c col-num">1,898</td>', html)
+
     def test_new_report_requires_ledger_and_legacy_reports_keep_reading(self):
         snap = _fixture()
         master = _read_json(GOLD / "master_snapshot.json")

@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from math import fsum
 from pathlib import Path
 
 from chart_input import normalize_chart
@@ -175,7 +176,7 @@ def _vis_len(md_cell: str) -> float:
     for ln in raw_lines:
         plain = re.sub(r"\*\*|\*|`", "", ln)
         plain = re.sub(r"<[^>]+>", "", plain).strip()
-        w = sum(1.0 if ord(ch) > 127 else 0.55 for ch in plain)
+        w = fsum(1.0 if ord(ch) > 127 else 0.55 for ch in plain)
         if w > best:
             best = w
     return best
