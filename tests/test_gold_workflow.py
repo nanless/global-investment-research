@@ -255,11 +255,14 @@ class GoldWorkflowTests(unittest.TestCase):
         self.assertEqual(self._validate(snap, validated_on=date(2026, 11, 26)), [])
         errors = self._validate(snap, validated_on=date(2026, 11, 25))
         self.assertTrue(any("日历核证日期过晚" in error for error in errors))
-        snap["edition_id"] = "2026-11-25_1800"
-        self.assertTrue(any("日历核证日期过晚" in error for error in self._validate(snap)))
-        snap["edition_id"] = "2026-11-25_1800_r3"
         snap["vix_live_as_of"] = "2026-11-25 21:30"
         self.assertTrue(any("VIX 盘口过时" in error for error in self._validate(snap)))
+        snap["vix_live_as_of"] = "2026-11-25 21:20"
+        snap["vix_10d_session_closes"][-1]["date"] = snap["vix_10d_window_end"] = "2026-11-25"
+        self.assertTrue(any("VIX 完整交易日不符" in error for error in self._validate(snap)))
+        self.calendar["coverage"]["verified_on"] = "2026-11-27"
+        self.calendar_path.write_text(json.dumps(self.calendar))
+        self.assertTrue(any("日历核证日期过晚" in error for error in self._validate(_fixture())))
 
     def test_spread_uses_exact_difference_and_gate_four_requires_confirmed_close(self):
         snap = _fixture()
