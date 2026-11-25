@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BEIJING = timezone(timedelta(hours=8))
 EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
 PHASES = ("research", "gold", "equity", "publish")
+GOLD_HISTORY_LEDGERS = ("gold/daily/AUDIT_LOG.md", "gold/daily/CHANGELOG.md")
 SHA_RE = re.compile(r"[a-f0-9]{40}")
 DIGEST_RE = re.compile(r"[a-f0-9]{64}")
 REPOSITORY_RE = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
@@ -211,6 +212,24 @@ def publication_commit(token: str) -> str | None:
         return receipt["sha"] if receipt else None
 
 
+def _ledger_lines(sha: str, path: str) -> list[bytes]:
+    result = subprocess.run(
+        ["git", "cat-file", "blob", f"{sha}:{path}"], cwd=ROOT, capture_output=True, timeout=15,
+    )
+    if result.returncode:
+        raise ValueError(f"Cannot verify the Gold ledger {path} in commit {sha}.")
+    return [line for line in result.stdout.split(b"\n") if line.strip()]
+
+
+def _check_gold_ledger_history(base: str, candidate: str) -> None:
+    for path in GOLD_HISTORY_LEDGERS:
+        # Searching the remaining iterator consumes each match and preserves the old order.
+        remaining = iter(_ledger_lines(candidate, path))
+        for line in _ledger_lines(base, path):
+            if line not in remaining:
+                raise ValueError(f"{path} must preserve every prior nonblank line in its original order.")
+
+
 def _check_publication_candidate(runs: sqlite3.Connection, token: str, sha: str, repository: str) -> None:
     if not SHA_RE.fullmatch(sha) or not REPOSITORY_RE.fullmatch(repository):
         raise ValueError("Invalid publication commit or GitHub repository.")
@@ -221,6 +240,7 @@ def _check_publication_candidate(runs: sqlite3.Connection, token: str, sha: str,
     _check_edition_document(row["edition"], "gold/data_snapshot.json", sha)
     _check_edition_document(row["edition"], "equity/state/market_state.json", sha)
     check_edition_reviews(row["edition"], sha=sha)
+    _check_gold_ledger_history(attempt["base_sha"], sha)
     receipt = _publication(runs, token)
     if receipt is not None and (receipt["sha"], receipt["repository"]) != (sha, repository):
         raise ValueError("A published edition cannot switch commit or repository during recovery.")

@@ -17,7 +17,12 @@ class EditionRunTest(unittest.TestCase):
         repository.start()
         self.addCleanup(repository.stop)
         self.git("init", "-q")
-        self.git("commit", "--allow-empty", "-qm", "Previous deployment")
+        for relative in edition_run.GOLD_HISTORY_LEDGERS:
+            ledger = self.root / relative
+            ledger.parent.mkdir(parents=True, exist_ok=True)
+            ledger.write_text("## Previous edition\n\n- Original evidence\n", encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Previous deployment")
         self.runs = edition_run.open_runs()
         self.addCleanup(self.runs.close)
         self.edition = "2026-11-26_1800"
@@ -74,6 +79,36 @@ class EditionRunTest(unittest.TestCase):
         deploy.assert_called_once_with(sha, "example/project", 180)
         self.assertEqual(edition_run.status(self.runs)[0]["status"], "complete")
 
+    def test_candidate_preserves_the_actual_gold_ledger_history(self):
+        originals = {}
+        for relative in edition_run.GOLD_HISTORY_LEDGERS:
+            source = Path(__file__).resolve().parents[1] / relative
+            originals[relative] = source.read_bytes()
+            (self.root / relative).write_bytes(originals[relative])
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Existing Gold ledger history")
+        token = self.reach_publish()
+
+        for relative, content in originals.items():
+            ledger = self.root / relative
+            lines = [line for line in content.split(b"\n") if line.strip()]
+            changes = {
+                "truncated tail": lines[:-1],
+                "overwritten old line": [*lines[:-1], b"Overwritten evidence"],
+                "reordered old lines": [lines[1], lines[0], *lines[2:]],
+            }
+            for problem, changed_lines in changes.items():
+                with self.subTest(ledger=relative, problem=problem):
+                    ledger.write_bytes(b"\n".join(changed_lines) + b"\n")
+                    candidate = self.committed_edition()
+                    ledger.write_bytes(content)
+                    with self.assertRaisesRegex(ValueError, f"{Path(relative).stem}.*preserve"):
+                        edition_run.check_publication_candidate(token, sha=candidate, repository="example/project")
+            ledger.write_bytes(b"## New edition\n\n" + b"\n".join(lines) + b"\n")
+
+        candidate = self.committed_edition()
+        edition_run.check_publication_candidate(token, sha=candidate, repository="example/project")
+
     def test_old_recovery_does_not_release_reopened_attempt(self):
         original = edition_run.begin(self.runs, self.edition)
         with self.runs:
@@ -98,7 +133,7 @@ class EditionRunTest(unittest.TestCase):
         with self.runs:
             edition_run.advance(self.runs, token, "gold")
         path = self.root / "gold" / "data_snapshot.json"
-        path.parent.mkdir()
+        path.parent.mkdir(exist_ok=True)
         path.write_text('{"edition_id":"2026-11-25_1800_r2"}')
         with self.assertRaisesRegex(ValueError, "does not belong"), self.runs:
             edition_run.advance(self.runs, token, "equity")
