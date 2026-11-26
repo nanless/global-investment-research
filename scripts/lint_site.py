@@ -1661,21 +1661,31 @@ def run_gate_s6(
                             errors.append(f"[S6] etfs.html: ETF {cd} field '{k}' contains raw markup")
                             break
 
-    # Verify all 8 personal multi-asset channels are rendered in detail on index.html.
+    # Verify all 8 personal multi-asset channels have separate overview cards on index.html AND dedicated detail pages.
     channels_obj = _load_json_if_present(
         MULTI_ASSET_CHANNELS_PATH, "equity/state/multi_asset_channels.json", errors
     )
     if index_doc is not None and isinstance(channels_obj, dict):
         ch_items = channels_obj.get("channels")
         if isinstance(ch_items, list) and ch_items:
+            index_hrefs = {lk.value for lk in index_doc.links if lk.tag == "a"}
             for ch in ch_items:
                 if not isinstance(ch, dict):
                     continue
                 ch_id = str(ch.get("id", "")).strip()
                 ch_name = str(ch.get("name", "")).strip()
+                detail_rel = f"channels/{ch_id}.html"
                 if ch_id and f"ch-{ch_id}" not in index_doc.ids:
                     errors.append(
-                        f"[S6] index.html: missing detailed channel section #ch-{ch_id} ({ch_name})"
+                        f"[S6] index.html: missing channel overview card #ch-{ch_id} ({ch_name})"
+                    )
+                if ch_id and detail_rel not in index_hrefs:
+                    errors.append(
+                        f"[S6] index.html: missing link to separate channel detail page {detail_rel}"
+                    )
+                if ch_id and detail_rel not in parsed_htmls:
+                    errors.append(
+                        f"[S6] Missing dedicated channel detail page: {detail_rel}"
                     )
                 if ch_name and ch_name not in index_doc.visible_text:
                     errors.append(
@@ -1687,7 +1697,7 @@ def run_gate_s6(
         edition_slug = str((gold_snap or {}).get("edition_id", "")).replace("_", "-")
         for path, doc in parsed_htmls.items():
             if (path in {"index.html", "channels.html", "etfs.html", "screener.html", "scorecard.html"}
-                    or path.startswith("reports/") or path.endswith("-latest.html")
+                    or path.startswith(("reports/", "channels/")) or path.endswith("-latest.html")
                     or (edition_slug and path.startswith("daily/") and path.endswith(f"-{edition_slug}.html"))):
                 _check_gold_tier0_mutex(doc, errors)
 

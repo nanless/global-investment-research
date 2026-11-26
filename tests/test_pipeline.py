@@ -909,11 +909,10 @@ class OperationalRegressionTest(unittest.TestCase):
 
         ch_html = build_site.build_channels_page(ch_data)
         self.assertEqual(len(ch_data["channels"]), 8)
-        self.assertIn("储蓄国债", ch_html)
-        self.assertIn("table-wrap", ch_html)
+        self.assertIn("channels/bonds.html", ch_html)
         self.assertIn("data-channel-cat", ch_html)
 
-        # Homepage (cockpit) renders ALL 8 investment channels in detail + ETF showcase + ZERO PDF/Word links
+        # Homepage (cockpit) renders concise separate overview cards for ALL 8 channels + 5 ETF groups + ZERO PDF/Word links
         cockpit_html = build_site.build_cockpit_page(
             {"as_of_short": "2026-11-26 18:30", "tier_code": "Tier 0", "new_buy_allowed": False},
             {"as_of_cst": "2026-11-26T18:30:00+08:00"},
@@ -924,8 +923,13 @@ class OperationalRegressionTest(unittest.TestCase):
         )
         for ch in ch_data["channels"]:
             self.assertIn(f'id="ch-{ch["id"]}"', cockpit_html)
+            self.assertIn(f'href="channels/{ch["id"]}.html"', cockpit_html)
             self.assertIn(ch["name"], cockpit_html)
+            detail_html = build_site.build_channel_detail_page(ch, ch_data["channels"], ch_data, etf_data=etf_data)
+            self.assertIn("table-wrap", detail_html)
+            self.assertIn("核心制度、税费与避坑红线", detail_html)
         self.assertIn('id="sec-etf-radar"', cockpit_html)
+        self.assertIn('etfs.html#market=a-share', cockpit_html)
         for forbidden in ("PDF ↗", "Word ↗", "latest-reports", "离线下载中心"):
             self.assertNotIn(forbidden, cockpit_html)
 

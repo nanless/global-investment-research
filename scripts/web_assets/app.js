@@ -1464,9 +1464,9 @@
   }
 
   /* ------------------------------------------------------------------------
-     12. Multi-Asset Channels Category Filter (channels.html)
+     12. Multi-Asset Channels Category Filter (index.html & channels.html)
      ------------------------------------------------------------------------ */
-  const chCards = Array.from(document.querySelectorAll(".channel-card[data-channel-cat]"));
+  const chCards = Array.from(document.querySelectorAll(".ch-overview-card[data-channel-cat], .channel-card[data-channel-cat]"));
   if (chCards.length > 0) {
     const chBtns = Array.from(document.querySelectorAll("[data-ch-cat]"));
     const chCount = document.getElementById("ch-count");
@@ -1757,9 +1757,30 @@
       });
     });
 
+    function applyEtfHash() {
+      const raw = (window.location.hash || "").replace(/^#/, "").trim();
+      if (!raw) return;
+      raw.split("&").forEach(function (pair) {
+        const eq = pair.indexOf("=");
+        if (eq <= 0) return;
+        const k = safeDecode(pair.slice(0, eq));
+        const v = safeDecode(pair.slice(eq + 1));
+        if (k === "market" && ["all", "a-share", "hk-stock", "us-stock", "global", "multi-asset"].indexOf(v) !== -1) {
+          etfState.market = v;
+        } else if (k === "preset" && ["all", "low-fee", "base", "cash-shield", "high-risk", "hide-gold"].indexOf(v) !== -1) {
+          etfState.preset = v;
+        }
+      });
+    }
+
     if (allEtfs.length > 0) {
+      applyEtfHash();
       renderEtfs();
       root.classList.add("etf-enhanced");
+      window.addEventListener("hashchange", function () {
+        applyEtfHash();
+        renderEtfs();
+      });
     }
   }
 })();
