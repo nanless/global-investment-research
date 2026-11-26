@@ -2,8 +2,8 @@
 
 ## 开始与出刊计划
 
-1. 运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py begin --scheduled __RUN_SLOT__`。只在返回 JSON 中同时取得 `edition_id` 和 `token` 后继续。它会先尝试收尾已有完整发布凭据的班次。锁被占、时段不对、同一期已经完成或命令失败时，报告具体提示和尝试编号，停止写入。定时会话不执行 `recover`、`resume`、改日期、创造修订号或绕过权限。
-2. 执行 `__PYTHON_BIN__ __REPO_ROOT__/equity/lint_equity.py --plan <edition_id>` 获取各市应发刊型或沿用安排。读仓库顶层 AGENTS.md、黄金和权益子轨规则、三项研究与出版技能、两个市场日历、现有快照和最新挂账、两套复盘手册和上一期观察项。确认有官方日历覆盖本期，仓库记录与官方节假日或品种盘时冲突时保留来源和时区，先解决错误或报告阻塞。
+1. 运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py begin --scheduled __RUN_SLOT__`（定时运行窗为 6 小时：早班 07:25–13:30、晚班 17:55–23:59 北京时间）。只在返回 JSON 中同时取得 `edition_id` 和 `token` 后继续。它会先尝试收尾已有完整发布凭据的班次，并自动安全清理较早期号且超 2 小时无进展、尚未进入推送的僵尸锁（绝不触碰活跃中或已开始推送的班次）。锁被占、时段不对、同一期已经完成或命令失败时，报告具体提示和尝试编号，停止写入。定时会话不执行 `recover`、`resume`、改日期、创造修订号或绕过权限。
+2. 执行 `__PYTHON_BIN__ __REPO_ROOT__/equity/lint_equity.py --plan <edition_id>` 获取各市应发刊型或沿用安排。工作日 07:30 与 18:00 班次，黄金与 A 股、港股、美股原则上均发布结构统一、精炼易懂的**完整主刊（`main`）**（休市/半日市与周末遵循 `--plan <edition_id>` 输出的 `holiday_watch` 或沿用安排）；面向“懂一点基础财经的理性投资者”写作，收敛篇幅、去居高临下口号、去生僻行话与内部工程词。读仓库顶层 AGENTS.md、黄金和权益子轨规则、三项研究与出版技能、两个市场日历、现有快照和最新挂账、两套复盘手册和上一期观察项。确认有官方日历覆盖本期，仓库记录与官方节假日或品种盘时冲突时保留来源和时区，先解决错误或报告阻塞。
 3. 对 Markdown 和 JSON 使用 `write_file` 全量写入，每次只写一份文件。先确认快照已落盘且期号正确，再写本轨正文和台账。模型响应中断后，先读磁盘和运行账本，确认最后一次成功的写入或编译。对未完成的文件在同一会话内聚焦重试一次，沿用已返回的调研和独立复核。再次失败时，保留证据并报告失败阶段；按阶段 4 根据推送状态收尾。运行 Python 只使用以上配置的解释器和仓库绝对脚本路径，以独立命令调用。保持黄金先编完、权益再开始编译。不得为通过检查临时改规则、填造数据、清除历史记录或编辑定时任务。各阶段有进展时可执行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py heartbeat <token>` 更新时间。
 
 ## 阶段 1 共享调研和独立复核
@@ -16,9 +16,9 @@
 
 ## 阶段 2 黄金先落盘并编译
 
-运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py advance <token> gold`。确定共同观测截点，更新黄金权威快照、本班黄金日报、公开记分卡、变化日志和审计台账。按 `gold/daily/DAILY_FORMAT_SPEC.md` 与黄金技能附录的精确字段，写入四关证据、四个固定关卡 ID、本期 `GOLD_EDITION_REVIEW` 证据块以及记分卡和变化日志的期号标记。封面写真实数据截点，正文、快照、图表和操作卡按同一套值。审计证据在第一次预检前写齐。
+运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py advance <token> gold`。确定共同观测截点，更新黄金权威快照、本班黄金日报、公开记分卡、变化日志和审计台账（`AUDIT_LOG.md` 与 `CHANGELOG.md` 严禁截断旧记录，跨月可无损归档至 `gold/daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）。按 `gold/daily/DAILY_FORMAT_SPEC.md` 与黄金技能附录的精确字段，写入四关证据、四个固定关卡 ID、本期 `GOLD_EDITION_REVIEW` 证据块以及记分卡和变化日志的期号标记。凡存在待发布、暂用官网收盘（`provisional_close`）、单源或口径分歧的数据项，须在 `gold/data_snapshot.json` 写入面向读者的结构化 `data_caveats` 数组（纯中文可读说明，零内部文件名，写清项目、原因、对核心裁决的影响及下次复核班次），由网站自动展示“数据完整性与可能遗漏说明”模块，不阻塞按时发刊。封面写真实数据截点，正文、快照、图表和操作卡按同一套值。审计证据在第一次预检前写齐。
 
-从 Cboe 官方日线核对截至截点最近十个已完成交易日的收盘。早报（北京时间 07:30，美东同日盘后）时 Cboe `VIX_History.csv` 通常尚未批量更新当日行，或早/晚报任一班次遇该 CSV 延迟或暂不可取时，均不为此等待或阻塞发刊：优先采信 Cboe 官网产品页（或两家以上权威行情源交叉一致）的 16:15 美东官方收盘读数计入十日末行，并在 `vix_daily_row_checks` 标记 `status: "provisional_close"`（记来源链接、北京时间查询时刻与说明）；若连收盘读数亦无法核实，则标记 `status: "pending"` 暂沿用最近十个已发布 CSV 日收，在报告、台账及给用户的最终汇报中如实披露，下一班次（如 18:00 晚报）再核对官方 CSV 终值与日内高低并清零挂账，不能用盘中行情替代或伪造 CSV 行。日历列有日线核验起点的节日另行实查，按黄金规范写入 `vix_daily_row_checks`，等待披露时记录查询时间和说明，在报告披露并下一班复查。无有效盘中报价时，黄金与权益同时省略或写空盘中值和时间。只有相对截点仍在同一发布窗口内的有效盘中报价才可录入。
+从 Cboe 官方日线核对截至截点最近十个已完成交易日的收盘。早报（北京时间 07:30，美东同日盘后）时 Cboe `VIX_History.csv` 通常尚未批量更新当日行，或早/晚报任一班次遇该 CSV 延迟或暂不可取时，均不为此等待或阻塞发刊：优先采信 Cboe 官网产品页（或两家以上权威行情源交叉一致）的 16:15 美东官方收盘读数计入十日末行，并在 `vix_daily_row_checks` 标记 `status: "provisional_close"`（记来源链接、北京时间查询时刻与说明）；若连收盘读数亦无法核实，则标记 `status: "pending"` 暂沿用最近十个已发布 CSV 日收，在报告、台账、`data_caveats` 及给用户的最终汇报中如实披露，下一班次（如 18:00 晚报）再核对官方 CSV 终值与日内高低并清零挂账，不能用盘中行情替代或伪造 CSV 行。日历列有日线核验起点的节日另行实查：Cboe 半日市（如 `2026-11-27`、`2026-12-24`）同样接受 `provisional_close`；全休市确认无日线时，`no_row_confirmed` 除 Cboe 官方公告外也接受官方 CSV 后续交易日自证（`next_published_date > day`）；等待披露时记录查询时间和说明，在报告与 `data_caveats` 披露并下一班复查。无有效盘中报价时，黄金与权益同时省略或写空盘中值和时间。只有相对截点仍在同一发布窗口内的有效盘中报价才可录入。
 
 快照写入后、编图前，复核从上一期沿用的行情、净值和日期。已核实的上一期数据标原交易日，已知较早的当日报价标原观测时间及来源。缺证的当期盘中值、开盘、高低点和区间数据留空或省略。用整段可追溯的价格序列或同口径官方聚合值计算区间高低与开收，未收盘的月线须注明统计截止；单个报价不能推出整段价格。确定主报告触发条件成立后才刷新主报告及独立基线。
 
@@ -26,7 +26,7 @@
 
 ## 阶段 3 权益接力
 
-运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py advance <token> equity`。按实际出刊计划落盘权益状态、日报、指数总看板、变化日志、记分卡和审计账，黄金快照严格只读。权益标注同一班次、沿用稿的原期号和真实数据时间；只有规则明确允许的故障或突发事件才能写结构化出版例外，保留证据和回补期限。无新刊的市场沿用旧稿及原附件。旗舰进入新周期时逐市场核验源稿、元数据和附件；归档不得让曾公开的地址失效。
+运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py advance <token> equity`。按实际出刊计划落盘权益状态、日报、指数总看板、变化日志、记分卡和审计账，黄金快照严格只读。凡存在待披露、暂定收盘（`provisional_close`）、单源或口径分歧的数据项，须在 `equity/state/market_state.json` 同步写入面向读者的结构化 `data_caveats` 数组（纯中文、零内部文件名，说明项目、原因、对裁决影响与下班复核计划），使网站首页与日报页清晰展示“数据完整性与可能遗漏说明”而不阻塞发刊。权益标注同一班次、沿用稿的原期号和真实数据时间；只有规则明确允许的故障或突发事件才能写结构化出版例外，保留证据和回补期限。无新刊的市场沿用旧稿及原附件。旗舰进入新周期时逐市场核验源稿、元数据和附件；归档不得让曾公开的地址失效。
 
 执行 `__PYTHON_BIN__ __REPO_ROOT__/equity/lint_equity.py --precheck --strict`，只编计划发的日报，并在需要时用 `__PYTHON_BIN__ __REPO_ROOT__/equity/build_a_share_pdf.py`、`__PYTHON_BIN__ __REPO_ROOT__/equity/build_hk_stock_pdf.py`、`__PYTHON_BIN__ __REPO_ROOT__/equity/build_us_stock_pdf.py` 串行重编对应旗舰。用 `__PYTHON_BIN__ __REPO_ROOT__/equity/build_daily.py` 生成当期权益日报附件，再运行 `__PYTHON_BIN__ __REPO_ROOT__/equity/lint_equity.py --strict` 并抽检 PDF。若发布器明确要求为仍在使用的旧附件补编译凭据，限于现存稿与同口径依赖，通过真实编译入口串行生成并复验，不能手填凭据或为此改写历史稿。
 
@@ -34,7 +34,7 @@
 
 启动独立只读盲审，对黄金、权益分别按既定六项评分核验当期和前期观察项，逐条对照新旧数据及其来源和时间。除了正文、图表和附件，也逐项检查当期 `INDEX.md`、`SCORECARD.md`、状态 JSON 与黄金快照的关键数字和行动指令。等评审实际返回，再在两轨自己的 `rsi_metrics.json` 各追加一条本期复盘，`run_id` 精确等于本期 ID（含修订号）。保留首次检查、重跑和人工补核的真实记录。最后一次检查通过不能改写此前出现的错误。
 
-每条本期复盘须有 `review_closure: {"reviewer_completed": true, "findings": [...]}`。`findings` 登记盲审指出的所有当期发布问题，逐条写 `description`、`status`、`evidence`。未处理的标 `open` 并暂停发布。确定修正并复验的标 `resolved`，写清文件、改动和验证结果。仅当数据确实未发布或可靠来源暂不可取，且本期已省略该值或明确挂账时，可用 `deferred_data`，其 `evidence` 用对象登记 `source`（原数据来源的 HTTP(S) URL）、`due_edition`（接续的有效期号）、`disposition`（当期如何处理）。已经证实稿件有误时须修正相关载体，不能用待补数据状态放行错误。有错的金或权益正文、图表改正后，按黄金在先、权益在后的顺序重编并抽检；两轨严格检查须重新通过。盲审确无当期发布问题，`findings` 可为空。手册各不超过 180 行。Tier B 仅在按纪律验证并获得安全的修改依据时实施，研究过程中不得改程序取巧，Tier C 只提案。
+每条本期复盘须有 `review_closure: {"reviewer_completed": true, "findings": [...]}`。`findings` 登记盲审指出的所有当期发布问题，逐条写 `description`、`status`、`evidence`。未处理的标 `open` 并暂停发布。确定修正并复验的标 `resolved`，写清文件、改动和验证结果。仅当数据确实未发布或可靠来源暂不可取，且本期已省略该值或明确挂账时，可用 `deferred_data`，其 `evidence` 用对象登记 `source`（原数据来源的 HTTP(S) URL）、`due_edition`（接续的有效期号）、`disposition`（当期如何处理）。当属于非阻断性口径分歧、薄量提示或信息缺口且已在报告与网站 `data_caveats` 透明披露时，可用 `disclosed_caveat`，其 `evidence` 用对象登记必填的 `disposition`（已披露方式）以及可选的合法 HTTP(S) `source` 与未来 `due_edition`。已经证实的事实或结构硬错仍须修正相关载体并重验，不能用 `deferred_data` 或 `disclosed_caveat` 放行错误。有错的金或权益正文、图表改正后，按黄金在先、权益在后的顺序重编并抽检；两轨严格检查须重新通过。盲审确无当期发布问题，`findings` 可为空。手册各不超过 180 行。Tier B 仅在按纪律验证并获得安全的修改依据时实施，研究过程中不得改程序取巧，Tier C 只提案。
 
 运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py advance <token> publish`，再用 `__PYTHON_BIN__ __REPO_ROOT__/scripts/publish_site.py --edition-token <token>` 执行本期发布。发布器验证最终 Git 提交、研报和附件凭据；任何附件未验证时，发布环节仍未结束。推送后遇到可确认的临时故障，只续相同 token 和提交，最多重试一次。远端身份、冲突、已发布版本不明或权限异常时停止重试，记录状态。不得另开班次、另造提交、更改远端或覆盖新版。发布成功后运行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py complete <token>`，以本期推送、下载验证及对应 Pages 部署为准。若返回等待，只允许复查同次 complete 一次，仍等待则报告待部署并保留锁。已开始推送或发布的异常也应保留锁并说明恢复所需的尝试编号；明确未开始推送且不再继续时才执行 `__PYTHON_BIN__ __REPO_ROOT__/scripts/edition_run.py fail <token> <具体原因>`。
 

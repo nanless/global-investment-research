@@ -10,7 +10,7 @@
     "__UNIFIED_PROMPT__"
   ],
   "display_name": "全球大类资产深度投研（18:00 一体化晚报 · 黄金×A/港/美）",
-  "description": "每天北京时间 18:00 单会话串行执行全球大类资产晚报全流程（黄金 SSOT 优先落盘 → 0 分钟零滞后接力 A/港/美股，彻底消除跨任务时差竞态与重复站点发布）：共享 6+1 一手源调研红队、外置双日历与四市场独立休市/周末晚报融合去重、双模块 Chrome PDF + 原生 ECMA-376 OOXML Word + 手机端 HTML、双严格门禁、统一 RSI 盲审与单次 GitHub Pages + Release 发布。",
+  "description": "每天北京时间 18:00 单会话串行执行全球大类资产晚报全流程（黄金 SSOT 优先落盘 → 零滞后接力 A/港/美股）：全面升级四市完整收敛主刊（All-4-Main，休市/半日市切守望刊，周末融合去重）、231 只跨三市扩容股票池与外置双日历驱动、共享 6+1 一手源调研红队、网站端数据完整性与遗漏透明披露（data_caveats）、Chrome PDF + 原生 ECMA-376 OOXML Word + 响应式 HTML、双严格门禁、统一 RSI 盲审与单次 GitHub Pages + Release 发布。",
   "agent_permissions": {
     "workspace_uris": [
       "file://__REPO_ROOT__"
