@@ -244,9 +244,25 @@ class GoldWorkflowTests(unittest.TestCase):
                 "note": "黑五半日市 CSV 尚未批量更新，暂采 Cboe 官网 13:00 EST 读数。",
             },
         }
-        self.assertEqual(self._validate(snap, validated_on=date(2026, 11, 28)), [])
+        # When 2026-11-27 is still provisional_close, it cannot serve as CSV self-proof for 2026-11-26.
+        self.assertTrue(any("无日线证据缺失" in e for e in self._validate(snap, validated_on=date(2026, 11, 28))))
 
-        bad_next = deepcopy(snap)
+        # With explicit Cboe confirmation_source, provisional_close on 11/27 + no_row_confirmed on 11/26 passes.
+        with_confirm = deepcopy(snap)
+        with_confirm["vix_daily_row_checks"]["2026-11-26"]["confirmation_source"] = "https://www.cboe.com/about/hours/us-options/"
+        self.assertEqual(self._validate(with_confirm, validated_on=date(2026, 11, 28)), [])
+
+        # Once 2026-11-27 is published in official CSV, next_published_date alone self-proves 2026-11-26.
+        with_csv_published = deepcopy(snap)
+        with_csv_published["vix_daily_row_checks"]["2026-11-27"] = {
+            "status": "published",
+            "checked_at": "2026-11-28 07:10",
+            "source": rules.VIX_DAILY_SOURCE,
+            "note": "黑五半日市 CSV 终值已发布。",
+        }
+        self.assertEqual(self._validate(with_csv_published, validated_on=date(2026, 11, 28)), [])
+
+        bad_next = deepcopy(with_csv_published)
         bad_next["vix_daily_row_checks"]["2026-11-26"]["next_published_date"] = "2026-11-26"
         self.assertTrue(any("无日线证据缺失" in e for e in self._validate(bad_next, validated_on=date(2026, 11, 28))))
 
@@ -576,7 +592,7 @@ class GoldWorkflowTests(unittest.TestCase):
             as_of_bjt="2026年11月30日（周一）18:00",
             cfets_fixing_date="2026-11-30",
             spot_gold_ny_close_date="2026-11-27",
-            tier1_gate4_threshold_date="2026-11-26",
+            tier1_gate4_threshold_date="2026-11-25",
             tier1_gate4_target_date="2026-11-27",
             vix_close=29.80,
             vix_10d_window_end="2026-11-27",
@@ -589,8 +605,9 @@ class GoldWorkflowTests(unittest.TestCase):
                 "status": "no_row_confirmed",
                 "checked_at": "2026-11-30 17:50",
                 "source": rules.VIX_DAILY_SOURCE,
+                "confirmation_source": "https://www.cboe.com/about/hours/us-options/",
                 "next_published_date": "2026-11-27",
-                "note": "官方 CSV 后续交易日已跳至 11/27，自证感恩节 11/26 无日线。",
+                "note": "Cboe 节假日日程确认感恩节 11/26 无常规现货收盘行。",
             },
             "2026-11-27": {
                 "status": "provisional_close",
@@ -600,6 +617,13 @@ class GoldWorkflowTests(unittest.TestCase):
             },
         }
         self.assertEqual(self._validate(within, validated_on=date(2026, 11, 30)), [])
+
+        # US full holiday (2026-11-26 Thanksgiving) cannot be used as gate-4 threshold reference date.
+        bad_holiday_ref = deepcopy(within)
+        bad_holiday_ref["tier1_gate4_threshold_date"] = "2026-11-26"
+        self.assertTrue(
+            any("第四关比较日期错" in e for e in self._validate(bad_holiday_ref, validated_on=date(2026, 11, 30)))
+        )
 
         # Exceeding 3 days (cutoff 2026-12-01 18:00 BJT == 2026-12-01 05:00 EST -> 4 days > 3 days): MUST fail.
         expired = deepcopy(within)
@@ -808,6 +832,34 @@ class GoldWorkflowTests(unittest.TestCase):
         bad["data_caveats"][0]["category"] = "unknown_category"
         errors = self._validate(bad)
         self.assertTrue(any("信息缺口枚举错" in e and "unknown_category" in e for e in errors), errors)
+
+    def test_svg_geometry_detects_overlap_and_oob_and_passes_clean_svg(self):
+        from scripts import svg_geometry
+
+        clean_svg = (
+            '<svg viewBox="0 0 640 240" xmlns="http://www.w3.org/2000/svg">'
+            '<text x="24" y="30" font-size="12">顶部标题</text>'
+            '<text x="24" y="120" font-size="12">下方标签</text>'
+            '</svg>'
+        )
+        self.assertEqual(svg_geometry.check_svg_text_geometry(clean_svg), [])
+
+        overlap_svg = (
+            '<svg viewBox="0 0 640 240" xmlns="http://www.w3.org/2000/svg">'
+            '<text x="100" y="60" font-size="12">重叠标签甲</text>'
+            '<text x="105" y="62" font-size="12">重叠标签乙</text>'
+            '</svg>'
+        )
+        ov_issues = svg_geometry.check_svg_text_geometry(overlap_svg)
+        self.assertTrue(any("重叠" in i for i in ov_issues), ov_issues)
+
+        oob_svg = (
+            '<svg viewBox="0 0 640 240" xmlns="http://www.w3.org/2000/svg">'
+            '<text x="610" y="60" font-size="12">这段文字明显超出画布右边界</text>'
+            '</svg>'
+        )
+        oob_issues = svg_geometry.check_svg_text_geometry(oob_svg)
+        self.assertTrue(any("越界" in i for i in oob_issues), oob_issues)
 
 
 if __name__ == "__main__":

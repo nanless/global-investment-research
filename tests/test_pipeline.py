@@ -8,7 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts import build_site, edition_run, install_sidecars, lint_site
+import shutil
+from scripts import build_site, edition_run, install_sidecars, lint_site, patch_state_dbs, publish_site
 
 
 class EditionRunTest(unittest.TestCase):
@@ -1299,6 +1300,182 @@ class OperationalRegressionTest(unittest.TestCase):
             )
             self.assertEqual(clean_errors, [])
             self.assertEqual(clean_warnings, [])
+
+    def test_edition_run_ledger_char_diff_and_early_equity_check(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(edition_run, "ROOT", root):
+                def _git(*args):
+                    subprocess.run(
+                        ["git", "-c", "user.name=Test", "-c", "user.email=fixture@example.invalid", *args],
+                        cwd=root, capture_output=True, text=True, check=True,
+                    )
+                _git("init", "-q")
+                for relative in edition_run.GOLD_HISTORY_LEDGERS:
+                    ledger = root / relative
+                    ledger.parent.mkdir(parents=True, exist_ok=True)
+                    ledger.write_text("## Previous edition\n\n- Original evidence\n", encoding="utf-8")
+                _git("add", "gold")
+                _git("commit", "-qm", "Previous deployment")
+                runs = edition_run.open_runs()
+                try:
+                    ed = "2026-11-26_1800"
+                    token = edition_run.begin(runs, ed)
+                    with runs:
+                        edition_run.advance(runs, token, "gold")
+                    for name in ("gold/data_snapshot.json", "equity/state/market_state.json"):
+                        path = root / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text(json.dumps({"edition_id": ed}), encoding="utf-8")
+                    # Tamper 2 characters in historical CHANGELOG line before equity phase
+                    cl = root / "gold/daily/CHANGELOG.md"
+                    cl.write_text("## Previous edition\n\n- Original evXXence\n", encoding="utf-8")
+                    with self.assertRaises(ValueError) as ctx, runs:
+                        edition_run.advance(runs, token, "equity")
+                    msg = str(ctx.exception)
+                    self.assertIn("must preserve every prior nonblank line in its original order", msg)
+                    self.assertIn("[MODIFIED]", msg)
+                finally:
+                    runs.close()
+
+    def test_publish_site_blocks_temp_patch_files(self):
+        self.assertTrue(publish_site._is_forbidden_stage_path("equity/state/_edition_patch.json"))
+        self.assertTrue(publish_site._is_forbidden_stage_path("gold/daily/_ledger_patch.json"))
+        self.assertFalse(publish_site._is_forbidden_stage_path("scripts/patch_state_dbs.py"))
+
+    def test_glossary_24_terms_and_sidecar_42_grants(self):
+        self.assertGreaterEqual(len(build_site.GLOSSARY_TERMS), 24)
+        terms_text = " ".join(f"{t['key']} {t['term']}" for t in build_site.GLOSSARY_TERMS)
+        for key in ("DXY", "COT", "CDS", "ERP", "IRR"):
+            self.assertIn(key, terms_text, f"Missing glossary term: {key}")
+        root = Path(install_sidecars.__file__).resolve().parent.parent
+        templates = dict(install_sidecars.discover_templates(root / "automations" / "sidecars"))
+        self.assertEqual(len(templates), 2)
+        for _, path in templates.items():
+            _, definition = install_sidecars.render_template(path, root, "/usr/bin/python3")
+            grants = definition["agent_permissions"]["access_grants"]
+            self.assertEqual(len(grants), 42)
+            self.assertTrue(any("patch_state_dbs.py --apply" in str(g) for g in grants))
+            self.assertTrue(any("patch_state_dbs.py --prepend-gold-ledgers" in str(g) for g in grants))
+
+    def test_patch_state_dbs_apply_rollback_and_prepend_gold_ledgers(self):
+        real_root = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as temporary:
+            sandbox = Path(temporary)
+            (sandbox / "gold" / "daily").mkdir(parents=True)
+            (sandbox / "equity" / "state").mkdir(parents=True)
+            for rel in (
+                "gold/data_snapshot.json",
+                "gold/daily/CHANGELOG.md",
+                "gold/daily/AUDIT_LOG.md",
+                "equity/state/market_state.json",
+                "equity/state/multi_asset_channels.json",
+                "equity/state/etf_universe.json",
+                "equity/state/deep_dossiers.json",
+            ):
+                shutil.copy2(real_root / rel, sandbox / rel)
+
+            next_ed = "2026-11-26_1800_r2"
+            for rel in ("gold/data_snapshot.json", "equity/state/market_state.json"):
+                obj = json.loads((sandbox / rel).read_text(encoding="utf-8"))
+                obj["edition_id"] = next_ed
+                (sandbox / rel).write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+
+            # 1. Dry-run & real apply
+            patch_path = sandbox / "equity/state/_edition_patch.json"
+            good_patch = {
+                "edition_id": next_ed,
+                "as_of_date": "2026-11-26",
+                "as_of_label": "2026-11-26 23:55 CST",
+                "gold_tier0_locked": True,
+                "multi_asset_channels": {
+                    "channels_patch": {
+                        "reverse_repo": {
+                            "beginner_one_liner": "活钱工具测试更新：严禁新买黄金，优先国债逆回购。",
+                        }
+                    }
+                },
+                "etf_universe": {
+                    "etfs_upsert": [
+                        {"code": "511360", "premium_note": "银行间短融平价复核通过"}
+                    ]
+                },
+                "deep_dossiers": {
+                    "dossiers_patch": {
+                        "a-share:600519": {
+                            "catalysts": "【2026-11-26 补丁核验】跟踪年末经销商回款与飞天批价节奏。"
+                        }
+                    }
+                },
+            }
+            patch_path.write_text(json.dumps(good_patch, ensure_ascii=False), encoding="utf-8")
+            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox):
+                rc_dry = patch_state_dbs.main(["--apply", "--dry-run"])
+                self.assertEqual(rc_dry, 0)
+                self.assertTrue(patch_path.exists())
+                rc_apply = patch_state_dbs.main(["--apply"])
+                self.assertEqual(rc_apply, 0)
+                self.assertFalse(patch_path.exists())
+
+            ch_after = json.loads((sandbox / "equity/state/multi_asset_channels.json").read_text(encoding="utf-8"))
+            etf_after = json.loads((sandbox / "equity/state/etf_universe.json").read_text(encoding="utf-8"))
+            dos_after = json.loads((sandbox / "equity/state/deep_dossiers.json").read_text(encoding="utf-8"))
+            self.assertEqual(ch_after["edition_id"], next_ed)
+            self.assertEqual(etf_after["edition_id"], next_ed)
+            self.assertEqual(dos_after["edition_id"], next_ed)
+            self.assertEqual(dos_after["dossiers"]["a-share:600519"]["updated_at"], "2026-11-26")
+
+            # 2. Gold Tier-0 violation must abort with zero file mutation
+            before_bytes = (sandbox / "equity/state/multi_asset_channels.json").read_bytes()
+            bad_patch = {
+                "edition_id": next_ed,
+                "as_of_date": "2026-11-26",
+                "gold_tier0_locked": True,
+                "multi_asset_channels": {
+                    "channels_patch": {
+                        "reverse_repo": {"beginner_one_liner": "今日立即买入黄金 518880。"}
+                    }
+                },
+            }
+            patch_path.write_text(json.dumps(bad_patch, ensure_ascii=False), encoding="utf-8")
+            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox):
+                rc_bad = patch_state_dbs.main(["--apply"])
+                self.assertNotEqual(rc_bad, 0)
+            self.assertEqual((sandbox / "equity/state/multi_asset_channels.json").read_bytes(), before_bytes)
+            patch_path.unlink()
+
+            # 3. Prepend gold ledgers lossless + idempotent
+            ledger_patch = sandbox / "gold/daily/_ledger_patch.json"
+            ledger_payload = {
+                "edition_id": next_ed,
+                "changelog_entry_md": (
+                    f"<!-- GOLD_EDITION_CHANGELOG {next_ed} -->\n\n"
+                    f"### {next_ed} 修订刊记录\n\n- 完成测试无损头插验收。\n"
+                ),
+                "audit_review_block_md": (
+                    f'<!-- GOLD_EDITION_REVIEW {{"edition_id": "{next_ed}", "as_of_short": "2026-11-26 23:55", '
+                    f'"passed": true, "checked_by": "test"}} -->\n'
+                    f"### {next_ed} 审计记录\n\n- 审计测试通过。\n"
+                ),
+            }
+            orig_cl_lines = [l for l in (sandbox / "gold/daily/CHANGELOG.md").read_text(encoding="utf-8").splitlines() if l.strip()]
+            ledger_patch.write_text(json.dumps(ledger_payload, ensure_ascii=False), encoding="utf-8")
+            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox):
+                rc_led = patch_state_dbs.main(["--prepend-gold-ledgers"])
+                self.assertEqual(rc_led, 0)
+                self.assertFalse(ledger_patch.exists())
+                # Duplicate edition_id must be rejected idempotently
+                ledger_patch.write_text(json.dumps(ledger_payload, ensure_ascii=False), encoding="utf-8")
+                rc_dup = patch_state_dbs.main(["--prepend-gold-ledgers"])
+                self.assertNotEqual(rc_dup, 0)
+
+            new_cl = (sandbox / "gold/daily/CHANGELOG.md").read_text(encoding="utf-8")
+            self.assertIn(f"<!-- GOLD_EDITION_CHANGELOG {next_ed} -->", new_cl)
+            new_cl_lines = [l for l in new_cl.splitlines() if l.strip()]
+            # Every prior nonblank line preserved in exact original order
+            it = iter(new_cl_lines)
+            for orig in orig_cl_lines:
+                self.assertTrue(any(line == orig for line in it), f"Lost line: {orig}")
 
 
 if __name__ == "__main__":

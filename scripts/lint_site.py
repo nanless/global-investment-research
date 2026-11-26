@@ -33,6 +33,13 @@ from pathlib import Path
 from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+try:
+    from svg_geometry import check_svg_text_geometry  # type: ignore[import-not-found]
+except ImportError:
+    check_svg_text_geometry = None  # type: ignore[assignment]
 DEFAULT_SITE_DIR = REPO_ROOT / "_site"
 GOLD_SNAPSHOT_PATH = REPO_ROOT / "gold" / "data_snapshot.json"
 MARKET_STATE_PATH = REPO_ROOT / "equity" / "state" / "market_state.json"
@@ -267,7 +274,8 @@ S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|"
+    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|"
+    r"_edition_patch\.json|_ledger_patch\.json|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing)(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
@@ -1454,6 +1462,22 @@ def run_gate_s4(
                 f"[S4] {rel_path}: {ed_type} edition has only {chart_count} data <svg> chart(s) "
                 f"(required >= {min_req})"
             )
+
+    # SVG <text> out-of-bounds & pairwise overlap check (non-legacy pages: 4 flagships + 4 latest + >= ALL_MAIN_CUTOVER dailies).
+    if check_svg_text_geometry is not None:
+        latest_pages = {DAILY_GOLD_LATEST_PAGE} | {p for _, p in DAILY_EQUITY_LATEST_PAGES}
+        for rel_path, doc in sorted(parsed_htmls.items()):
+            check_geom = rel_path in FLAGSHIP_MIN_CHARTS or rel_path in latest_pages
+            if not check_geom:
+                m_dated = DAILY_DATED_RE.fullmatch(rel_path)
+                if m_dated:
+                    _, date_s, hhmm_s, rev_s = m_dated.groups()
+                    if (date_s, int(hhmm_s), int(rev_s or 1)) >= ALL_MAIN_CUTOVER:
+                        check_geom = True
+            if not check_geom:
+                continue
+            for issue in check_svg_text_geometry(doc.raw_text, label=rel_path):
+                errors.append(f"[S4] {issue}")
 
 
 def run_gate_s5(

@@ -28,8 +28,9 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 | `daily/RSI_PLAYBOOK.md` | 活体 RSI 动态经验手册（软限 **≤180 行** / 硬上限 **200 行**防膨胀，每班次启动必读、末尾滚动精炼） |
 | `daily/rsi_metrics.json` | 结构化 RSI 6 维自评与上期预判回验账本（只追加不删，每满 10 刊触发 Meta-RSI 总复盘） |
 | `lint_readability.py` | 自动化 **6 道纯网页源稿门禁（Gate 0–5）** 质检器（`--strict` 零错零警退出码 `0`；涵盖组件 Schema、三档词表与全篇内部词/文件名拦截、感叹号与 13 煽动词、平行打分、加粗 ≤14%、裸数字反引号、双快照算术与四关复算、金店休市/`data_caveats` 放行、外置日历、记分卡与 RSI 180/200 行校验） |
-| `edition_validation.py` | 新刊时点与市场数据校验引擎（6h 班次截点宽限、4h 节日 `pending` 复查、半日市 `provisional_close`、`no_row_confirmed` 公告/CSV 自证、普通交易日 3 自然日核销、30min VIX 盘中窗、30d/90d 日历校验与四关精确复算） |
+| `edition_validation.py` | 新刊时点与市场数据校验引擎（`[-5 分钟, +6 小时]` 单向班次截点宽限、4h 节日 `pending` 复查、半日市 `provisional_close`、`no_row_confirmed` 公告/CSV 自证、普通交易日 3 自然日核销、30min VIX 盘中窗、30d/90d 日历校验与四关精确复算） |
 | `chart_input.py` | `lint_readability.py` 与站内 640px 矢量 SVG 渲染模块共享的图表数值解析与区间规范化模块 |
+| `<REPO_ROOT>/scripts/patch_state_dbs.py` | 权益三大扩展大 JSON（~830 KB）原子合并与黄金历史双账本（`CHANGELOG.md` / `AUDIT_LOG.md`）无损头插引擎（防 300s 流式超时） |
 | `<REPO_ROOT>/scripts/publish_site.py` | 全仓库统一纯网页静态门户构建（`build_site.py`）、6 道安全站点门禁（`lint_site.py --strict`）与 Git 限域提交推送引擎（一体化单会话流程末尾全绿后仅执行一次） |
 
 ---
@@ -39,7 +40,7 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 > **独立 vs 一体化步骤映射**：本节 `Step 1–5` 为黄金轨逻辑编号；在根宪章 `<REPO_ROOT>/AGENTS.md` 与 `07:30`/`18:00` 一体化单会话任务中，对应映射为 `Step 0–1`（双轨 RSI 经验库与双日历/SSOT 冷启动）→ `Step 2A/2B`（**一体化 10+1 日常主力**共享调研红队）→ `Step 3`（对应本节 Step 3–4 黄金 SSOT 优先落盘与 6 门禁严检）→ `Step 4`（权益三市 + 12 大渠道 + 140+ ETF + 231 股 7 维深研 0 分钟零滞后接力）→ `Step 5`（对应本节 Step 5 统一 RSI 盲审 + 单次 `publish_site.py` 纯网页发布）。
 
 ### Step 1：继承基线（外置日历驱动 + 惰性主报告加载 + 防卡壳红线）
-1. 直接依据系统当前本地时间（`+08:00`）并读取 `market_calendar.json`（覆盖至 `2027-06-30`）判定工作日/周末、早刊（`12:00` 前）/晚刊（`12:00` 后）、当日局部休市叠加模式（A/B/C/GLOBAL）与北美冬/夏令时换算；**定时任务中严禁调用 `date`/`ls`/`curl` 等未授权 shell 命令，亦严禁调用 `edit_file`（所有 Markdown/JSON 落盘一律使用 `write_file` 全量写盘防权限拦截）**。
+1. 直接依据系统当前本地时间（`+08:00`）并读取 `market_calendar.json`（覆盖至 `2027-06-30`）判定工作日/周末、早刊（`12:00` 前）/晚刊（`12:00` 后）、当日局部休市叠加模式（A/B/C/GLOBAL）与北美冬/夏令时换算；**定时任务中严禁调用 `date`/`ls`/`curl` 等未授权 shell 命令，亦严禁调用 `edit_file`：中小 Markdown 与快照一律使用 `write_file` 全量写盘，历史双账本（`daily/CHANGELOG.md` / `daily/AUDIT_LOG.md`）统一写微型补丁 `_ledger_patch.json` 并调用预授权 `scripts/patch_state_dbs.py` 无损头插（防 300s 超时）**。
 2. 按序读取：`market_calendar.json` → `daily/RSI_PLAYBOOK.md`（≤180 行）与 `daily/rsi_metrics.json` 最近 5 条记录 → `daily/SCORECARD.md` → `daily/CHANGELOG.md`（超 150 行仅读前 150 行）→ `data_snapshot.json` 与轻量级 `master_snapshot.json` → `CHANGELOG.md` 顶部记录的最新一期日报。
 3. **惰性主报告加载**：常规班次仅凭 `master_snapshot.json` 核验主报告 5 大实质更新触发条件，**仅当命中阈值需同步修订主报告时，才全量读取主报告 Markdown**，节省上下文防模型退化。
 
@@ -53,13 +54,12 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 3. 详见 [./references/5-plus-1-research-playbook.md](./references/5-plus-1-research-playbook.md)。
 
 ### Step 3：双快照更新、三账本沉淀与小白友好收敛主刊写作
-新刊先核对北京刊期与数据截点（班次后 6 小时内）、Cboe 现货指数独立日历（含半日市 `provisional_close`、节日 4h `pending`、`no_row_confirmed` 自证及普通交易日 3 个自然日核销）和四关精确输入，再记录红队来源、预判核验结果并同步三个账本。休市或无合格盘中 VIX 读数时 `vix_live` 与 `vix_live_as_of` 同时留空。字段及台账示例见 [黄金快照契约](./references/directives-and-snapshot-schema.md)。
+新刊先核对北京刊期与数据截点（所标班次 **`[-5 分钟, +6 小时]`** 单向窗口内）、Cboe 现货指数独立日历（含半日市 `provisional_close`、节日 4h `pending`、`no_row_confirmed` 自证及普通交易日 3 个自然日核销）和四关精确输入，再记录红队来源、预判核验结果并同步三个账本。休市或无合格盘中 VIX 读数时 `vix_live` 与 `vix_live_as_of` 同时留空。字段及台账示例见 [黄金快照契约](./references/directives-and-snapshot-schema.md)。
 1. **先更跨项目 SSOT 日报数据源**：用 `write_file` 全量更新 `data_snapshot.json`（标准无日期键 `cross_ratios` 与 `etf_cn`、纯读者中文缺口数组 `data_caveats`、SSOT 裁决字段 `tier_code`/`new_buy_allowed`、四关精确输入、`vix_10d_session_closes`/`vix_daily_row_checks`、`spot_gold_ny_close_date`/`tier1_gate4_*`、`usd_cny_1630`、`bank_2027_*_sample_count`、`rmb_channels` 与算术自洽）。
 2. **撰写本刊收敛主刊 Markdown（含同场 `_r2` 防覆写锁）**：贯彻 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级硬核证据」**，封面 4 张核心 KPI 卡（`.kpi-strip.cols-4`，兼容 4–6 张）→ Layer 0 静默牌 + 唯一红绿灯 → Layer 1 `.sn-grid` 信号/噪音 + 四步灯 + 双刻度钱包账 + A/B/D/C 紧凑行动卡 → Layer 2 精炼深度专题 + 3 张 `DAILY_CHART_*`（图 2 显式标 `"highlight"`）→ Layer 3 `[进阶复核]`；`DAILY_TRUST_BAR` 与 `DAILY_GLOSSARY`（「关键词白话速查」）可选（0–1 次）；严格执行升级版三档词汇（`DXY`/`COT`/`CDS` 首现必配简短白话括注或交由站内术语浮窗）、全篇零内部词/文件名泄露、加粗 ≤14% 与零裸数字反引号。
-3. **物理分离三账本（支持月度归档）**：
-   - 将本刊相对路径、`GOLD_EDITION_CHANGELOG` 与【新增 / 更新 / 修正 / 删除】置顶追加至 `daily/CHANGELOG.md`；
-   - 将 `GOLD_EDITION_REVIEW`、三大信任资产增量与官方来源索引沉淀至 `daily/AUDIT_LOG.md`（两者均支持跨月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md` 并保持历史非空行原序）；
-   - 在 `daily/SCORECARD.md` 写入 `GOLD_EDITION_SCORECARD`、公开回验到期预判并追加新追踪项（零内部工程/RSI/脚本词、历史零篡改）。
+3. **物理分离三账本（大账本补丁无损头插 + 支持月度归档）**：
+   - 将本刊相对路径、`GOLD_EDITION_CHANGELOG`、【新增 / 更新 / 修正 / 删除】以及 `GOLD_EDITION_REVIEW`、三大信任资产增量与官方来源索引写入微型补丁 `_ledger_patch.json`，调用预授权 `scripts/patch_state_dbs.py` 无损头插至 `daily/CHANGELOG.md` 与 `daily/AUDIT_LOG.md`（两者均支持跨月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md` 并保持历史非空行原序，避免全量回写撞 300s 超时）；
+   - 用 `write_file` 在 `daily/SCORECARD.md` 写入 `GOLD_EDITION_SCORECARD`、公开回验到期预判并追加新追踪项（零内部工程/RSI/脚本词、历史零篡改）。
 4. **主报告按 5 大触发条件原子同步**（仅当①红绿灯切换档位；②现货较主报告基线变动 `≥3%` 或国内料价 `≥25 元/克`；③12 大行中位或 G4 路径实质变动；④深熊红线或 60 日新高硬止损触发；⑤重大税制/渠道/结构升级时触发）：此时方全量读取主报告 MD，同步更新对称结构的 `master_snapshot.json`、`MASTER_BASELINE` 与正文。
 
 ### Step 4：强制 6 道纯网页源稿门禁严格验收（绝对路径裸命令，严禁 `cd &&`）
@@ -85,8 +85,8 @@ python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<�
 
 - **跨项目单一权威源（SSOT）与同刊期顺序交接**：每日 `07:30`/`18:00` 一体化单会话班次 Step 3 先由黄金模块写入 `data_snapshot.json`（含 `edition_id`/`as_of_short`/`tier_code`/`new_buy_allowed`/`data_caveats`/`etf_cn` 等），Step 4 权益与三大深研库模块只读校验同刊期快照并严守黄金红灯互斥锁，Step 5 统一盲审后单次纯网页发布。
 - **小白友好三层写作与升级版词汇标准**：贯彻 **30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级硬核证据**；`DXY`/`COT`/`CDS` 及 `DFII10`/`2Y−FF`/`ON RRP`/`HY/CCC OAS`/`IOPV`/`bp` 首次出现必配简短白话括注或交由站内术语浮窗；严禁生僻卖方量化词/赌徒口语/跨市涨跌色混用/居高临下说教/平行 `X/6`；鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；**全篇（含 Layer 2/3）零内部工程词、版本号与内部文件名泄露**；Layer 0–1 感叹号 0 个、全篇 ≤5 个；加粗 ≤14%，裸数字不套反引号；全文禁用 13 个煽动词。
-- **跨轨统一费率与离岸税务口径**：`008142`/`008143` 同步 2026 销售费改（A 申购上限 0.30%/1 折 0.03%【过渡 0.06%】、运营 0.20%/年；C 销服上限 0.20%/年且 2027-01-01 起满 1 年先收后返免收，但长持 ≥1 年仍 1 折 A 更省；未整改旧合同 `008143` 现仍 0.55%/年满 30 天免赎回）；大额离岸黄金须预警 `02840.HK` 美国遗产税（红灯解除后改选 `IGLN.L`/`3081.HK`）及中国居民 20% 境外所得与 CRS 合规。
-- **无人值守防卡壳与抗阻塞核验**：定时任务全程严禁 `edit_file`（一律 `write_file` 全量写盘）；日历（延展至 `2027-06-30`）与 `edition_validation.py` 统一校验 6h 班次截点、4h 节日 `pending`、半日市 `provisional_close`、普通交易日 3 日核销与 `no_row_confirmed` 自证；常规班次惰性只读 `master_snapshot.json`；同场修订加 `_r2`。
+- **跨轨统一费率与离岸税务口径**：`008142`/`008143` 同步 2026 销售费改（A 申购上限 0.30%/1 折 0.03%【过渡 0.06%】、运营 0.20%/年；C 销服上限 0.20%/年且 2027-01-01 起满 1 年先收后返免收，但长持 ≥1 年仍 1 折 A 更省；未整改旧合同 `008143` 现仍 0.55%/年满 30 天免赎回）；大额离岸黄金须预警 `02840.HK` 美国遗产税（红灯解除后改选 `IGLN.L`/`03081.HK`）及中国居民 20% 境外所得与 CRS 合规。
+- **无人值守防卡壳与抗阻塞核验**：定时任务全程严禁 `edit_file`——中小 Markdown/快照用 `write_file` 全量写盘，历史双账本（`CHANGELOG.md`/`AUDIT_LOG.md`）写 `_ledger_patch.json` 经 `scripts/patch_state_dbs.py` 无损头插（防 300s 超时）；日历（延展至 `2027-06-30`）与 `edition_validation.py` 统一校验 `[-5 分钟, +6 小时]` 单向班次截点、4h 节日 `pending`、半日市 `provisional_close`、普通交易日 3 日核销与 `no_row_confirmed` 自证；常规班次惰性只读 `master_snapshot.json`；同场修订加 `_r2`。
 - **零幻觉与跨时区真实**：休市/未出项必须如实标注并写入纯读者中文的 `data_caveats`；严守官收白名单与禁用 `Barchart` 远月滞后价；禁止将 `02:30` 国内夜盘与 `06:00` 纽约收盘时差混充国内溢价，禁止 `05:00` 讲话倒推归因 `02:30` 收盘。
 - **单一真相刻度与比例统一**：全系统统一 `Tier 0–3` 四步红绿灯（四关全过方亮黄灯，严禁部分过关开仓话术）与 A 类 **`30% + 45% + 25%`** 分批配比；静默紧迫度牌禁用绿色；四象限情景概率之和恒等于 100%。
 
@@ -97,7 +97,7 @@ python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<�
 | 报错现象 / 门禁编号 | 根因 | 标准修复动作 |
 | :--- | :--- | :--- |
 | `[Gate 0 JSON 语法错 / 缺必填键]` | `<!-- DAILY_* {...} -->` 非法 JSON、漏必填键（如 `edition_id`/`as_of_short`/`checks[].id`）或收敛版可选组件超 1 次 | 核对 [./references/directives-and-snapshot-schema.md](./references/directives-and-snapshot-schema.md) 修复 JSON 与必填键 |
-| `[Gate 1 术语/自嗨逃逸 / 内部工程词泄露]` | Layer 0–1 混入禁词（生僻量化词/赌徒口语/收红收绿/说教口号），或全篇任意层泄露 `V2.x/V7.x`、`Subagent`、`红队`、`法证`、内部文件名/`*.py` | 清除全部内部工程词与文件名；生僻量化词改用白话或附简短括号释义 |
+| `[Gate 1 术语/自嗨逃逸 / 内部工程词泄露]` | Layer 0–1 混入禁词（生僻量化词/赌徒口语/收红收绿/说教口号），或全篇任意层泄露 `V2.x/V5.x/V6.x/V7.x`、`Subagent`、`红队`、`法证`、内部文件名/`*.py` | 清除全部内部工程词与文件名；生僻量化词改用白话或附简短括号释义 |
 | `[Gate 2 感叹号 / 夸张词]` | Layer 0–1 含 `!`/`！`、收敛新刊全篇感叹号 `>5`（旧刊 `>2`）或全文含 13 个煽动词 | 替换为句号或克制客观表述，区分事实/推论/概率 |
 | `[Gate 3 平行打分残留]` | Layer 0–1 出现 `X/6` 或 `六灯` | 删除平行打分，改用四步红绿灯 `满足 X/4 项` |
 | `[Gate 4 段落偏长 / 加粗密度偏高 / 裸数字反引号]` | Layer 0–1 自然段 `>240` 字；收敛新刊加粗占比 `>14%` 或用反引号包裸数字/金额/百分比 | 拆短段落、收敛加粗重点、仅对证券/期货代码（如 `518660`）使用反引号 |

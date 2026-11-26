@@ -619,6 +619,7 @@ _BANNED_INTERNAL_RE = re.compile(
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
     r"edition_(?:run|plan|validation)\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|"
+    r"patch_state_dbs\.py|_edition_patch\.json|_ledger_patch\.json|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"master_snapshot\.json|data_snapshot\.json|unified-edition\.prompt\.md|permissions\.json|"
@@ -658,6 +659,11 @@ _TIER2_GLOSS_PATTERNS: tuple[tuple[str, re.Pattern[str], re.Pattern[str], int], 
     ("ON RRP", re.compile(r"\bON\s+RRP\b", re.IGNORECASE), re.compile(r"(?:隔夜逆回购|逆回购)"), 20),
     ("IOPV", re.compile(r"\bIOPV\b", re.IGNORECASE), re.compile(r"(?:参考净值|盘中净值)"), 20),
     ("bp", re.compile(r"\d+\s*bp\b", re.IGNORECASE), re.compile(r"基点"), 16),
+    ("DXY", re.compile(r"\bDXY\b", re.IGNORECASE), re.compile(r"美元指数"), 24),
+    ("COT", re.compile(r"\bCOT\b", re.IGNORECASE), re.compile(r"(?:持仓|期货持仓|投机净多|仓位报告)"), 24),
+    ("CDS", re.compile(r"\bCDS\b", re.IGNORECASE), re.compile(r"(?:违约互换|信用违约|违约保险|主权违约)"), 24),
+    ("ERP", re.compile(r"\bERP\b", re.IGNORECASE), re.compile(r"(?:风险溢价|股权溢价|股债性价比)"), 24),
+    ("IRR", re.compile(r"\bIRR\b", re.IGNORECASE), re.compile(r"(?:内部收益率|年化复利|复利收益|到期收益|真实年化)"), 24),
 )
 _US_0730_AFTERHOURS_RE = re.compile(
     r"(?:09:00.{0,8}盘后终盘|盘后终盘.{0,12}09:00|20:00\s*EST.{0,8}盘后终盘|"

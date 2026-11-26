@@ -32,7 +32,7 @@ description: >-
 
 - **Step 0｜双轨 RSI 经验冷启动**：动笔前先读 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录（一体化班次同步读黄金 RSI 手册与 `gold/market_calendar.json`），直接继承高杠杆一手源检索词、Linter 避坑清单与上期 `next_run_watch` 必验真项。
 - **Step 1｜状态与三大深研数据库冷启动**：
-  - 冷启动读取 `state/market_state.json`、`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`、两轨日历及前序黄金基线，并以 `lint_equity.py --plan <edition_id>` 获取三市当班交付计划；核对核心龙头池弹性规模（**65–85 只/市**，当前基准 **A 股 76 / 港股 75 / 美股 80，合计 231 只**）与规范无日期状态键。黄金新快照落盘后，在权益入口核验同一 `edition_id`、**6 小时数据时限**与黄金行动锁。
+  - 冷启动读取 `state/market_state.json`、`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`、两轨日历及前序黄金基线，并以 `lint_equity.py --plan <edition_id>` 获取三市当班交付计划；核对核心龙头池弹性规模（**65–85 只/市**，当前基准 **A 股 76 / 港股 75 / 美股 80，合计 231 只**）与规范无日期状态键。黄金新快照落盘后，在权益入口核验同一 `edition_id`、所标班次 **`[-5 分钟, +6 小时]`** 单向窗口（跨轨间隔 `0–6 小时`）与黄金行动锁。
   - 读 `daily/INDEX.md`（前 60 行）与 `daily/SCORECARD.md`（检查到期预判并客观回填；新登检验日禁落周末）。
   - 仅命中旗舰 5 条触发阈值时，全量读取对应旗舰手册与 `report_meta_*.json`。
 - **Step 2｜两阶段共享 10+1 调研与统一发前对抗红队**：
@@ -41,8 +41,8 @@ description: >-
     - **⑦B 跨境、固收增强、另类与风控专线**：境内外币存款与外币理财（`fx_deposits_wm`）、场内外 QDII/香港互认与理财通（`qdii_mrf`，禁推停申 `968118`、MRF 累计份额避 20% 税、2027 LOF 退市线）、可转债（`convertible_bonds`）、公募 REITs 与不动产租金对比（`c_reits`，产权 NOI vs 特许经营权中债 IRR）、非黄金大宗商品与白银/铂钯渠道（`commodity_etfs`）、合规私募与标品信托 300 万专享（`private_funds_trust`），以及横向「全市场打新工具箱」与「双层风控警示墙」；
     - **⑧A 全市场 140+ 重点 ETF 实时溢价/停牌/规模/费率专线**：跨 6 大交易通道核验最新规模、费率调整、折溢价率、临停公告、分红与重仓变化；
     - **⑧B 当班 4–6 只焦点股（及周日 6–10 只全池轮换）7 维深研专线**：逐一落实商业护城河与收入利润拆解、财务质量/FCF-CapEx/债墙、估值分位与无风险锚/AH 比价、股东回报与筹码、政策/监管/季检与财报日历、空头证伪底线、IF→THEN 锚点与低费 ETF 替身，杜绝模板化空话。
-  - **阶段 2B（1 路统一发前独立红队对抗子代理）**：10 路返回后先跨轨对抗审校再落盘，专项拦截核心硬伤：① A/H 同股 PE 与股息率物理学一致；② 全部配置表 100% 闭环且 10 点条总和 = 10；③ 全部 `🔵 🔒未来主攻` 买点锚严格低于现价；④ 黄金红灯锁覆盖正文 + JSON + 三大扩展数据库 + 网页 + SVG（严禁将黄金/金矿标的标绿或下达新买指令）；⑤ 冬/夏令时、07:30 禁写盘后终盘、SIFMA 半日市与工作日日历零错；⑥ 跨轨统一税费与规则红线（`008142`/`008143` 费率口径、禁推停申 `968118`、二手大额存单禁二次转让与提前支取亏本、交易所公司债 ETF 底层 20% 税、中国居民 20% 境外所得与 CRS、`02840.HK` 美国遗产税改选 `IGLN.L`/`3081.HK`、零退市股 `00011`、零 ETF 通道/代码误标、零 3 项已证伪税务/转债误导）；⑦ 三大扩展库 `edition_id` 同期锁与小白友好三层白话清晰度（`DXY`/`COT`/`CDS`/`ERP`/`IRR` 首现配简短白话括注或交给站内术语浮窗、零内部工程词泄露）。
-- **Step 4｜核验黄金快照、三库同期落盘与纯网页严检**：在黄金落盘严检后核验同一 `edition_id`、6 小时数据时限与黄金行动锁，再按[十项门禁](references/pre_flight_10_gates.md)及[双账户与 12 大多元渠道规则](references/dual_account_tax_and_rules.md)落盘应发日报、状态账簿并按分层刷新矩阵同步推进 `state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json` 的 `edition_id` 与最新数据，随后运行 `lint_equity.py --strict`（0 错 0 警）。
+  - **阶段 2B（1 路统一发前独立红队对抗子代理）**：10 路返回后先跨轨对抗审校再落盘，专项拦截核心硬伤：① A/H 同股 PE 与股息率物理学一致；② 全部配置表 100% 闭环且 10 点条总和 = 10；③ 全部 `🔵 🔒未来主攻` 买点锚严格低于现价；④ 黄金红灯锁覆盖正文 + JSON + 三大扩展数据库 + 网页 + SVG（严禁将黄金/金矿标的标绿或下达新买指令）；⑤ 冬/夏令时、07:30 禁写盘后终盘、SIFMA 半日市与工作日日历零错；⑥ 跨轨统一税费与规则红线（`008142`/`008143` 费率口径、禁推停申 `968118`、二手大额存单禁二次转让与提前支取亏本、交易所公司债 ETF 底层 20% 税、中国居民 20% 境外所得与 CRS、`02840.HK` 美国遗产税改选 `IGLN.L`/`03081.HK`、零退市股 `00011`、零 ETF 通道/代码误标、零 3 项已证伪税务/转债误导）；⑦ 三大扩展库 `edition_id` 同期锁与小白友好三层白话清晰度（`DXY`/`COT`/`CDS`/`ERP`/`IRR` 首现配简短白话括注或交给站内术语浮窗、零内部工程词泄露）。
+- **Step 4｜核验黄金快照、三库同期落盘与纯网页严检**：在黄金落盘严检后核验同一 `edition_id`、所标班次 **`[-5 分钟, +6 小时]`** 单向窗口（跨轨 `0–6 小时`）与黄金行动锁，再按[十项门禁](references/pre_flight_10_gates.md)及[双账户与 12 大多元渠道规则](references/dual_account_tax_and_rules.md)用 `write_file` 全量落盘中小日报与状态账簿（禁 `edit_file`），**三大扩展大 JSON（合计 ~830 KB）写微型补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py` 原子合并**同步推进 `edition_id` 与最新数据，随后运行 `lint_equity.py --strict`（0 错 0 警）。
 - **Step 5｜盲审、复检与纯网页发布**：按[三层 RSI 协议](references/rsi_self_review_protocol.md)由独立子代理盲审（第 4 维核验纯网页视觉清晰度、SVG 零碰撞与小白 3 分钟可读性），修正并闭环登记 `review_closure` 后复跑双轨严检，按令牌完成 `publish_site.py` 纯网页发布与 `edition_run.py complete` 部署校验。
 
 ---

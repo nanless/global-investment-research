@@ -7,6 +7,7 @@ import argparse
 from bisect import bisect_left
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
+import difflib
 import fcntl
 import json
 import os
@@ -393,16 +394,24 @@ def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = 
 
 
 def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
-    runs.execute("BEGIN IMMEDIATE")
+    # Perform read-only state and filesystem checks before acquiring the SQLite write lock.
     row = active_run(runs, token)
     if PHASES.index(phase) != PHASES.index(row["phase"]) + 1:
         raise ValueError(f"Cannot advance from {row['phase']} to {phase}.")
+    attempt = runs.execute("SELECT base_sha FROM attempts WHERE token = ?", (token,)).fetchone()
     if phase in ("equity", "publish"):
         _check_edition_document(row["edition"], "gold/data_snapshot.json")
+    if phase == "equity" and attempt is not None:
+        _check_gold_ledger_history(attempt["base_sha"], None)
     if phase == "publish":
         _check_edition_document(row["edition"], "equity/state/market_state.json")
         _check_extended_equity_documents(row["edition"])
         check_edition_reviews(row["edition"], root=ROOT)
+
+    runs.execute("BEGIN IMMEDIATE")
+    current = active_run(runs, token)
+    if PHASES.index(phase) != PHASES.index(current["phase"]) + 1:
+        raise ValueError(f"Cannot advance from {current['phase']} to {phase}.")
     runs.execute("UPDATE runs SET phase = ?, updated = ? WHERE token = ?", (phase, utc_now(), token))
     return phase
 
@@ -433,15 +442,33 @@ def publication_commit(token: str) -> str | None:
         return receipt["sha"] if receipt else None
 
 
-def _ledger_lines(sha: str, path: str) -> list[bytes]:
-    result = subprocess.run(
-        ["git", "cat-file", "blob", f"{sha}:{path}"],
-        cwd=ROOT, env=_clean_env(), capture_output=True, timeout=15,
-    )
-    if result.returncode:
-        raise ValueError(f"Cannot verify the Gold ledger {path} in commit {sha}.")
-    normalized = result.stdout.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-    return [line for line in normalized.split(b"\n") if line.strip()]
+def _ledger_indexed_lines(sha: str | None, path: str) -> list[tuple[int, bytes]]:
+    if sha is None:
+        disk_path = ROOT / path
+        if not disk_path.is_file():
+            raise ValueError(f"Cannot verify the Gold ledger {path} in working tree.")
+        try:
+            raw = disk_path.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"Cannot read the Gold ledger {path} in working tree: {exc}") from exc
+    else:
+        result = subprocess.run(
+            ["git", "cat-file", "blob", f"{sha}:{path}"],
+            cwd=ROOT, env=_clean_env(), capture_output=True, timeout=15,
+        )
+        if result.returncode:
+            raise ValueError(f"Cannot verify the Gold ledger {path} in commit {sha}.")
+        raw = result.stdout
+    normalized = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return [
+        (lineno, line)
+        for lineno, line in enumerate(normalized.split(b"\n"), start=1)
+        if line.strip()
+    ]
+
+
+def _ledger_lines(sha: str | None, path: str) -> list[bytes]:
+    return [line for _, line in _ledger_indexed_lines(sha, path)]
 
 
 def _preserves_order(prior: list[bytes], candidate_lines: list[bytes]) -> bool:
@@ -492,10 +519,20 @@ def _preserves_partitioned_order(
     return True
 
 
-def _archived_ledger_paths(sha: str, path: str) -> list[str]:
+def _archived_ledger_paths(sha: str | None, path: str) -> list[str]:
     ledger = Path(path)
     archive_dir = f"{ledger.parent.as_posix()}/archive"
     prefix = f"{ledger.stem}_"
+    if sha is None:
+        archive_root = ROOT / archive_dir
+        if not archive_root.is_dir():
+            return []
+        matches = [
+            entry.relative_to(ROOT).as_posix()
+            for entry in archive_root.rglob("*.md")
+            if entry.is_file() and entry.name.startswith(prefix)
+        ]
+        return sorted(matches, key=lambda entry: (Path(entry).name, entry))
     result = subprocess.run(
         ["git", "ls-tree", "-r", "--name-only", sha, "--", archive_dir],
         cwd=ROOT, env=_clean_env(), capture_output=True, text=True, timeout=15,
@@ -510,16 +547,104 @@ def _archived_ledger_paths(sha: str, path: str) -> list[str]:
     return sorted(matches, key=lambda entry: (Path(entry).name, entry))
 
 
-def _check_gold_ledger_history(base: str, candidate: str) -> None:
+def _format_char_diff(base_text: str, cand_text: str, *, max_hunks: int = 3, context: int = 14) -> str:
+    matcher = difflib.SequenceMatcher(None, base_text, cand_text, autojunk=False)
+    hunks: list[str] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        left = base_text[max(0, i1 - context) : i1]
+        right = base_text[i2 : min(len(base_text), i2 + context)]
+        old_seg = base_text[i1:i2]
+        new_seg = cand_text[j1:j2]
+        if len(old_seg) > 48:
+            old_seg = old_seg[:45] + "..."
+        if len(new_seg) > 48:
+            new_seg = new_seg[:45] + "..."
+        parts = [left]
+        if old_seg:
+            parts.append(f"[-{old_seg}]")
+        if new_seg:
+            parts.append(f"[+{new_seg}]")
+        parts.append(right)
+        hunks.append("".join(parts))
+        if len(hunks) >= max_hunks:
+            break
+    return " | ".join(hunks) if hunks else base_text[:80]
+
+
+def _diagnose_ledger_mismatch(
+    prior_indexed: list[tuple[int, bytes]],
+    candidate_indexed: list[tuple[str, int, bytes]],
+    *,
+    max_items: int = 5,
+) -> str:
+    cand_positions: dict[bytes, list[int]] = {}
+    cand_decoded: list[tuple[str, int, str]] = []
+    for idx, (src_lbl, cand_ln, line_bytes) in enumerate(candidate_indexed):
+        cand_positions.setdefault(line_bytes, []).append(idx)
+        cand_decoded.append((src_lbl, cand_ln, line_bytes.decode("utf-8", errors="replace")))
+
+    diagnostics: list[str] = []
+    pos = 0
+    for base_ln, line_bytes in prior_indexed:
+        positions = cand_positions.get(line_bytes)
+        if positions:
+            k = bisect_left(positions, pos)
+            if k < len(positions):
+                pos = positions[k] + 1
+                continue
+            first_src, first_ln, first_str = cand_decoded[positions[0]]
+            preview = first_str.strip()[:80]
+            diagnostics.append(
+                f"  - [REORDERED] base L{base_ln} -> found earlier at {first_src}L{first_ln}: {preview!r}"
+            )
+        else:
+            base_str = line_bytes.decode("utf-8", errors="replace")
+            best_ratio = 0.0
+            best_match: tuple[str, int, str] | None = None
+            sm = difflib.SequenceMatcher(None, base_str, "", autojunk=False)
+            for src_lbl, cand_ln, cand_str in cand_decoded:
+                sm.set_seq2(cand_str)
+                if sm.real_quick_ratio() < max(0.55, best_ratio):
+                    continue
+                if sm.quick_ratio() < max(0.55, best_ratio):
+                    continue
+                ratio = sm.ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_match = (src_lbl, cand_ln, cand_str)
+            if best_match is not None and best_ratio >= 0.55:
+                src_lbl, cand_ln, cand_str = best_match
+                snippet = _format_char_diff(base_str, cand_str)
+                diagnostics.append(
+                    f"  - [MODIFIED] base L{base_ln} -> closest {src_lbl}L{cand_ln} "
+                    f"(similarity {best_ratio:.1%}): {snippet}"
+                )
+            else:
+                preview = base_str.strip()[:90]
+                diagnostics.append(f"  - [MISSING] base L{base_ln}: {preview!r}")
+        if len(diagnostics) >= max_items:
+            break
+    if not diagnostics:
+        return ""
+    return "\n" + "\n".join(diagnostics)
+
+
+def _check_gold_ledger_history(base: str, candidate: str | None) -> None:
     for path in GOLD_HISTORY_LEDGERS:
-        prior = _ledger_lines(base, path)
-        active = _ledger_lines(candidate, path)
+        prior_indexed = _ledger_indexed_lines(base, path)
+        active_indexed = _ledger_indexed_lines(candidate, path)
+        prior = [line for _, line in prior_indexed]
+        active = [line for _, line in active_indexed]
         if _preserves_order(prior, active):
             continue
         archived_paths = _archived_ledger_paths(candidate, path)
+        archived_indexed: list[tuple[str, int, bytes]] = []
         if archived_paths:
-            archived_chrono = [line for ap in archived_paths for line in _ledger_lines(candidate, ap)]
-            archived_rev = [line for ap in reversed(archived_paths) for line in _ledger_lines(candidate, ap)]
+            archived_by_path = [(ap, _ledger_indexed_lines(candidate, ap)) for ap in archived_paths]
+            archived_chrono = [line for _, rows in archived_by_path for _, line in rows]
+            archived_rev = [line for _, rows in reversed(archived_by_path) for _, line in rows]
             if (
                 _preserves_order(prior, archived_chrono + active)
                 or _preserves_order(prior, active + archived_rev)
@@ -527,7 +652,24 @@ def _check_gold_ledger_history(base: str, candidate: str) -> None:
                 or _preserves_partitioned_order(prior, active, archived_rev)
             ):
                 continue
-        raise ValueError(f"{path} must preserve every prior nonblank line in its original order.")
+            for ap, rows in archived_by_path:
+                prefix = f"{Path(ap).name}:"
+                archived_indexed.extend((prefix, ln, line) for ln, line in rows)
+        candidate_pool: list[tuple[str, int, bytes]] = [("", ln, line) for ln, line in active_indexed]
+        candidate_pool.extend(archived_indexed)
+        diag = _diagnose_ledger_mismatch(prior_indexed, candidate_pool, max_items=5)
+        raise ValueError(f"{path} must preserve every prior nonblank line in its original order.{diag}")
+
+
+def check_gold_ledger_history_for_token(token: str, candidate_ref: str | None = None) -> None:
+    """Verify Gold ledger history against the active run's base_sha for a commit/tree ref or working tree."""
+    with closing(open_runs()) as runs:
+        active_run(runs, token)
+        attempt = runs.execute("SELECT base_sha FROM attempts WHERE token = ?", (token,)).fetchone()
+        if attempt is None:
+            raise ValueError("This run has no recorded base commit for Gold ledger history verification.")
+        base_sha = attempt["base_sha"]
+    _check_gold_ledger_history(base_sha, candidate_ref)
 
 
 def _check_publication_candidate(runs: sqlite3.Connection, token: str, sha: str, repository: str) -> None:

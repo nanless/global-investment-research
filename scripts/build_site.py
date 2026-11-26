@@ -9,7 +9,7 @@ Works identically on macOS and GitHub Actions Ubuntu:
 
 Safety guarantee:
   - Reads gold/ and equity/ strictly READ-ONLY.
-  - Loads gold/ and equity/ renderers in isolated module namespaces with stubbed docx_embed
+  - Loads gold/ and equity/ renderers in isolated module namespaces
     so gold/build_daily.py and equity/build_daily.py never collide and never invoke Chrome or write files.
   - Writes all static web output exclusively inside --out <dir>.
 """
@@ -25,7 +25,6 @@ import re
 import shutil
 import sys
 import tempfile
-import types
 import urllib.parse
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -181,16 +180,10 @@ def load_renderers() -> Renderers:
     """Load gold & equity Python renderers in completely isolated module namespaces."""
     saved = {
         k: sys.modules.get(k)
-        for k in ("docx_embed", "build_daily", "pdf_common", "lint_equity", "chart_input", "edition_plan")
+        for k in ("build_daily", "pdf_common", "lint_equity", "chart_input", "edition_plan")
     }
     try:
-        # 1. Compatibility shim for legacy renderer imports (pure web build needs zero bs4/PIL/Chrome)
-        stub_docx = types.ModuleType("docx_embed")
-        stub_docx.build_native_docx = lambda *a, **kw: None  # type: ignore[attr-defined]
-        stub_docx.render_chart_to_png = lambda *a, **kw: None  # type: ignore[attr-defined]
-        stub_docx.resolve_chrome_bin = lambda *a, **kw: ""  # type: ignore[attr-defined]
-        stub_docx.__getattr__ = lambda name: (lambda *a, **kw: None)  # type: ignore[attr-defined]
-        sys.modules["docx_embed"] = stub_docx
+        # 1. Load gold modules cleanly (pure web build needs zero bs4/PIL/Chrome)
         _load_module_from_path("chart_input", GOLD_DIR / "chart_input.py")
 
         gold_daily = _load_module_from_path("_gir_gold_daily", GOLD_DIR / "build_daily.py")
@@ -199,7 +192,6 @@ def load_renderers() -> Renderers:
 
         # Clear temporary gold aliases before loading equity modules
         sys.modules.pop("build_daily", None)
-        sys.modules.pop("docx_embed", None)
 
         # 2. Load equity modules cleanly
         _load_module_from_path("edition_plan", EQUITY_DIR / "edition_plan.py")
@@ -909,9 +901,9 @@ def _split_md_cells(line: str) -> list[str]:
     inner = line.strip()
     if inner.startswith("|"):
         inner = inner[1:]
-    if inner.endswith("|"):
+    if inner.endswith("|") and not inner.endswith(r"\|"):
         inner = inner[:-1]
-    return [c.strip() for c in inner.split("|")]
+    return [c.replace(r"\|", "|").strip() for c in re.split(r"(?<!\\)\|", inner)]
 
 
 def _is_sep_row(cells: list[str]) -> bool:
@@ -1166,12 +1158,13 @@ def extract_all_stocks(
 
     stocks: list[dict[str, Any]] = []
 
-    # --- 1. A-Share: map colors from ### 5.2, then merge with ## 附表二 ---
-    a_color_map: dict[str, tuple[str, str]] = {}
-    s52_start = a_md.find("### 5.2")
-    s52_end = a_md.find("### 5.3", s52_start if s52_start != -1 else 0)
-    if s52_start != -1:
-        s52_block = a_md[s52_start : (s52_end if s52_end != -1 else len(a_md))]
+    # --- 1. A-Share: ## 附表二 cells[4] is color first truth; 5.2 supplies anchor & cross-check ---
+    a_s52_map: dict[str, tuple[str, str]] = {}
+    m_s52 = re.search(r"(?m)^#{2,3}\s*5\.2\b", a_md)
+    if m_s52:
+        m_s53 = re.search(r"(?m)^#{2,3}\s*5\.3\b", a_md[m_s52.end() :])
+        s52_end = m_s52.end() + m_s53.start() if m_s53 else len(a_md)
+        s52_block = a_md[m_s52.start() : s52_end]
         for raw in s52_block.splitlines():
             st = raw.strip()
             if not (st.startswith("|") and st.endswith("|")):
@@ -1183,10 +1176,10 @@ def extract_all_stocks(
             if not m_code:
                 continue
             code = m_code.group(1)
-            col = _detect_color(cells[4])
+            col_52 = _detect_color(cells[4])
             anchor_m = re.search(r"(安全锚|重估锚|极值锚)[：:]\s*([^<|]+)", cells[3])
             anchor_txt = f"{anchor_m.group(1)} {anchor_m.group(2).strip()}" if anchor_m else ""
-            a_color_map[code] = (col, anchor_txt)
+            a_s52_map[code] = (col_52, anchor_txt)
 
     for cells in _parse_app2_rows(a_md):
         if len(cells) < 5:
@@ -1197,9 +1190,17 @@ def extract_all_stocks(
         name = clean_md_inline_plain(re.sub(r"`[^`]+`", "", cells[1]))
         price = clean_md_inline_plain(cells[2])
         valuation = clean_md_inline_plain(cells[3])
+        col = _detect_color(cells[4])
         summary_raw = clean_md_inline_plain(cells[4])
         summary = _LEADING_RATING_PREFIX_RE.sub("", summary_raw).strip()
-        col, anchor_txt = a_color_map.get(code, ("y", ""))
+        anchor_txt = ""
+        if code in a_s52_map:
+            col_52, anchor_txt = a_s52_map[code]
+            if col_52 != col:
+                raise RuntimeError(
+                    f"A-share color drift for {code} ({name}): "
+                    f"附表二={col!r} vs 5.2={col_52!r}"
+                )
         if anchor_txt and anchor_txt not in summary:
             summary = f"{summary}｜{anchor_txt}"
         stocks.append(
@@ -1860,7 +1861,7 @@ THEME_INIT_SCRIPT = (
     "}catch(e){}})();</script>"
 )
 
-# Shared Top-20 beginner-friendly glossary (rendered statically on guide.html & synced with app.js tooltip)
+# Shared Top-24 beginner-friendly glossary (rendered statically on guide.html & synced with app.js tooltip)
 GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
     {
         "key": "four_buckets",
@@ -2008,6 +2009,27 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "cat": "债券与固收",
         "plain": "产权类 REITs（保租房/商场）像买房收租看分派率与出租率；特许经营权类（高速/能源）到期资产无偿移交，高分派里混有本金归还。",
         "avoid": "避坑提醒：绝不能把高速 REITs 8%–12% 的表面分派率当成高股息，必须核对中债真实内部收益率（IRR）与薄量限价挂单。",
+    },
+    {
+        "key": "dxy",
+        "term": "美元指数（DXY）",
+        "cat": "大盘信号",
+        "plain": "衡量美元相对欧元、日元、英镑等一篮子主要货币综合强弱的标尺。美元走强往往意味着全球流动性偏紧，压制黄金与非美股市；走弱则利于非美资产回暖。",
+        "avoid": "避坑提醒：美元指数偏强或汇兑价差较大时，切忌冲动新换汇做外币定存或重仓未锁汇的境外资产，务必把汇率波动算进总收益。",
+    },
+    {
+        "key": "cot",
+        "term": "期货大资金持仓报告（COT）",
+        "cat": "大盘信号",
+        "plain": "美国商品期货交易委员会（CFTC）每周公布的机构与投机资金持仓明细，可用来观察黄金、原油和美债期货里的多空拥挤程度。",
+        "avoid": "避坑提醒：当投机多头净持仓极端拥挤时，哪怕基本面未变也很容易因获利回吐触发急跌，切忌在极端拥挤区追高。",
+    },
+    {
+        "key": "cds",
+        "term": "债务违约保险费率（CDS）",
+        "cat": "债券与固收",
+        "plain": "给公司债或主权债买的「违约保险」年保费（通常按基点计）。费率越低说明市场认为还本付息越稳，飙升则预示信用违约风险快速升温。",
+        "avoid": "避坑提醒：当某发行主体或行业的信用违约保险费率急剧跳升时，切忌只盯着高票面利率去接盘高收益债或弱资质可转债。",
     },
 )
 
@@ -2917,7 +2939,19 @@ def _short_yield_for_card(yield_range: str) -> str:
     if not txt:
         return "详见详情页"
     first = re.split(r"[｜|]", txt, maxsplit=1)[0].strip()
-    return first if len(first) <= 28 else (first[:26].rstrip("，、；： （(") + "等")
+    if len(first) <= 28:
+        return first
+    before_paren = re.split(r"[（(]", first, maxsplit=1)[0].strip()
+    if before_paren and 4 <= len(before_paren) <= 28:
+        return before_paren
+    cand = before_paren if len(before_paren) >= 8 else first
+    punct_matches = list(re.finditer(r"[，、；：·\s]", cand[:27]))
+    if punct_matches and punct_matches[-1].start() >= 8:
+        cut = cand[: punct_matches[-1].start()].rstrip("，、；：· （(")
+    else:
+        cut = re.sub(r"[（(][^）)]*$", "", cand[:26]).strip()
+        cut = re.sub(r"[+\-−~–—]?[0-9]+(?:\.[0-9]*)?%?$", "", cut).rstrip("，、；：· （(")
+    return (cut or cand[:24].rstrip("，、；：· （(")) + "等"
 
 
 def _short_threshold_for_card(ch: dict[str, Any]) -> str:
@@ -3274,10 +3308,11 @@ def build_channel_detail_page(
     expl = _channel_explainer(ch)
     # Stage 2: 3-step buying guide
     steps = _channel_steps(ch)
+    _step_prefix_re = re.compile(r"^(?:第\s*[1-3一二三]\s*步\s*[：:]\s*|[1-3]\s*\.\s*)")
     steps_html = "".join(
         f'<div class="ch-step-card">'
         f'<div class="ch-step-num">STEP {i:02d}</div>'
-        f'<div class="ch-step-title">{esc(st_title)}</div>'
+        f'<div class="ch-step-title">{esc(_step_prefix_re.sub("", st_title).strip() or st_title)}</div>'
         f'<div class="ch-step-detail">{esc(st_detail)}</div>'
         f"</div>"
         for i, (st_title, st_detail) in enumerate(steps, start=1)
@@ -3523,7 +3558,7 @@ def _render_home_etf_showcase(etf_data: dict[str, Any] | None, total_pool: int) 
         ("a-share", "🇨🇳 A 股核心 ETF", by_market["a-share"], "宽基 A500 · 自由现金流 · 红利低波 · 行业地板费", "etfs.html#market=a-share"),
         ("hk-stock", "🇭🇰 港股三通道 ETF", by_market["hk-stock"], "离岸免印花税 · 境内非 QDII 港股通 · 境内 QDII", "etfs.html#market=hk-stock"),
         ("us-stock", "🇺🇸 美股核心 ETF", by_market["us-stock"], "0.02%–0.08% 地板费宽基 · 11 行业 · 美元短债盾", "etfs.html#market=us-stock"),
-        ("global", "🌐 爱尔兰 UCITS 与全球", by_market["global"], "免美国 40% 遗产税 · VWRA / IB01 · 日印欧非美", "etfs.html#market=global"),
+        ("global", "🌐 爱尔兰 UCITS / 全球", by_market["global"], "免美国 40% 遗产税 · VWRA / IB01 · 日印欧非美", "etfs.html#market=global"),
         ("multi-asset", "🛡️ 债券 / 转债 / 商品", by_market["multi-asset"], "短融/科创债 · 投资级转债 · 豆粕贴水与 LOF 排雷", "etfs.html#market=multi-asset"),
     ]
     summary_cards: list[str] = []
@@ -3548,8 +3583,8 @@ def _render_home_etf_showcase(etf_data: dict[str, Any] | None, total_pool: int) 
     high_risks = [x for x in etfs if x.get("premium_status") == "high_risk" and not x.get("gold_locked")]
     alert_html = ""
     if high_risks:
-        codes_str = "、".join(f'{x.get("code", "")}（{x.get("name", "")}）' for x in high_risks[:4])
-        extra = f" 等 {len(high_risks)} 只" if len(high_risks) > 4 else ""
+        codes_str = "、".join(f'{x.get("code", "")}（{x.get("name", "")}）' for x in high_risks[:3])
+        extra = f" 等 {len(high_risks)} 只" if len(high_risks) > 3 else ""
         alert_html = (
             f'<a class="home-etf-alert" href="etfs.html#preset=high-risk">'
             f'<span>⚠️ <strong>高溢价 / 高危预警</strong>：{esc(codes_str)}{extra} — 点击进入排雷清单</span>'
@@ -3559,7 +3594,7 @@ def _render_home_etf_showcase(etf_data: dict[str, Any] | None, total_pool: int) 
 
     return f"""
     <div class="sec-head" id="sec-etf-radar">
-      <h2>全球 {len(etfs)} 只重点 ETF 通道分类入口（基准 {esc(as_of)}）</h2>
+      <h2>全球 {len(etfs)} 只重点 ETF 市场分类入口（基准 {esc(as_of)}）</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <a href="etfs.html" class="btn btn-sm btn-primary">全部 {len(etfs)} 只 ETF 雷达 →</a>
         <a href="screener.html" class="btn btn-sm">全部 {total_pool} 股 7 维深研 →</a>
@@ -4191,15 +4226,21 @@ def build_cockpit_page(
             "远离高溢价接盘：跨境美股 QDII 与商品 LOF 场内溢价超 3% 坚决不追，情绪回落或退市将令溢价归零。",
             "不把波动产品当保本存款：避开破净隐忧重的伪稳健固收+理财，切忌重仓 30 年超长国债当活钱。",
         ]
+    def _fmt_action_light_li(text: str) -> str:
+        if "：" in text:
+            head, rest = text.split("：", 1)
+            return f"<li><strong>{esc(head)}：</strong>{esc(rest)}</li>"
+        return f"<li>{esc(text)}</li>"
+
     action_lights_html = (
         '<section class="action-lights-grid" aria-label="今日行动红绿灯">'
         '<div class="action-light-card al-do">'
         '<div class="al-head"><span>🟢 今天可以做的 3 件事</span><a href="guide.html" class="al-link">新手 3 分钟指南 →</a></div>'
-        f'<ul class="al-list">{"".join(f"<li>{esc(x)}</li>" for x in al_do_items[:3])}</ul>'
+        f'<ul class="al-list">{"".join(_fmt_action_light_li(x) for x in al_do_items[:3])}</ul>'
         "</div>"
         '<div class="action-light-card al-avoid">'
         '<div class="al-head"><span>🔴 今天先别碰的 3 件事</span><a href="channels.html#sec-warning-wall" class="al-link">看双层风控警示墙 →</a></div>'
-        f'<ul class="al-list">{"".join(f"<li>{esc(x)}</li>" for x in al_avoid_items[:3])}</ul>'
+        f'<ul class="al-list">{"".join(_fmt_action_light_li(x) for x in al_avoid_items[:3])}</ul>'
         "</div>"
         "</section>"
     )
@@ -4277,10 +4318,7 @@ def build_cockpit_page(
             for a in ch_anchors
             if isinstance(a, dict)
         )
-        ch_filter_html = _render_channel_filter_panel(
-            ch_list,
-            right_cta_html='<a href="channels.html" class="btn btn-sm">一眼对比总表、模板与风控墙 →</a>',
-        )
+        ch_filter_html = _render_channel_filter_panel(ch_list)
         home_channels_section_html = f"""
     <div class="sec-head" id="sec-multi-channels">
       <h2>中国大陆 {ch_count_num} 大个人合规多元投资渠道（点击进 1 分钟指南）</h2>
@@ -4306,7 +4344,7 @@ def build_cockpit_page(
     if home_channels_section_html:
         jump_pills.append(f'<a class="home-jump-pill" href="#sec-multi-channels">③ {ch_count_num} 大多元渠道卡片</a>')
     if home_etf_section_html:
-        jump_pills.append('<a class="home-jump-pill" href="#sec-etf-radar">④ 5 大 ETF 通道入口</a>')
+        jump_pills.append('<a class="home-jump-pill" href="#sec-etf-radar">④ 5 大 ETF 市场入口</a>')
     jump_pills.append('<a class="home-jump-pill" href="#sec-risk-radar">⑤ 风险雷达与家庭总账</a>')
     jump_pills.append('<a class="home-jump-pill" href="#sec-latest-dailies">⑥ 最新早晚报与手册</a>')
     jump_bar_html = f'<nav class="home-jump-bar" aria-label="首页版块快捷导航">{"".join(jump_pills)}</nav>'
@@ -4337,7 +4375,6 @@ def build_cockpit_page(
           <a class="hero-cta" href="guide.html">新手 3 分钟指南</a>
           <a class="hero-cta" href="etfs.html">全球 ETF 雷达</a>
           <a class="hero-cta" href="screener.html">{total_pool} 股 7 维筛选器</a>
-          <a class="hero-cta" href="scorecard.html">公开记分卡</a>
         </div>
       </div>
       <div class="hero-pulse" aria-label="四市场实时水温速览">
@@ -4390,8 +4427,8 @@ def build_cockpit_page(
             <div class="m-hero-num">{gold_spot_val}</div>
             <div class="m-hero-sub">{esc(gold_asia_sub)}</div>
           </div>
+          {gold_gate_strip_html}
         </div>
-        {gold_gate_strip_html}
         <div class="m-stat-strip">
           <div class="m-stat">
             <div class="m-stat-lbl">{esc(sge_main_lbl)}</div>
@@ -5282,6 +5319,27 @@ def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) 
         if isinstance(r, str) and r.strip()
     )
 
+    rules_box_html = ""
+    if rules_html:
+        rules_box_html = (
+            '<details class="disclosure-bar etf-rules-box">'
+            '<summary class="disclosure-summary">'
+            '<span class="disclosure-summary-main">'
+            '<span class="disclosure-icon" aria-hidden="true">📐</span>'
+            '<span class="disclosure-heading">'
+            '<span class="disclosure-title">2026 全球 ETF 5 条核心铁律（费改 · 港股三通道税差 · 爱尔兰免遗产税 · 跨境溢价死线）</span>'
+            '<span class="disclosure-sub">下单前速查公募费改、税负通道对比与场内高溢价纪律</span>'
+            "</span>"
+            "</span>"
+            '<span class="disclosure-summary-meta">'
+            f'<span class="disclosure-toggle-lbl">{len(rules)} 条规则 · 展开查阅</span>'
+            '<span class="disclosure-chev" aria-hidden="true">▾</span>'
+            "</span>"
+            "</summary>"
+            f'<div class="etf-rules-body"><div class="etf-rules-grid">{rules_html}</div></div>'
+            "</details>"
+        )
+
     return f"""
     <div class="sec-head" style="margin-top:4px;">
       <h2>全球 {total} 只重点 ETF 多通道深度雷达</h2>
@@ -5289,7 +5347,7 @@ def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) 
     </div>
 
     {f'<div class="etf-lock-banner">🛑 {esc(lock_notice)}</div>' if lock_notice else ''}
-    {f'<div class="etf-rules-grid">{rules_html}</div>' if rules_html else ''}
+    {rules_box_html}
 
     <div class="screener-stats">
       <div class="stat-tile stat-total active" data-etf-stat-market="all" role="button" tabindex="0" aria-pressed="true">
@@ -5534,7 +5592,7 @@ def build_guide_page(
     etf_data: dict[str, Any] | None,
     total_pool: int = 0,
 ) -> str:
-    """Render standalone Beginner 3-Minute Guide & Top-20 Financial Terms Page (guide.html)."""
+    """Render standalone Beginner 3-Minute Guide & Top-24 Financial Terms Page (guide.html)."""
     gs = gold_snap if isinstance(gold_snap, dict) else {}
     gold_blocked = (gs.get("new_buy_allowed") is False) or (str(gs.get("tier_code") or "").strip() == "Tier 0")
     gold_status_text = (
@@ -5646,17 +5704,17 @@ def build_guide_page(
     </div>
     <section class="guide-lamp-grid">
       <div class="guide-lamp-card gl-green">
-        <div class="gl-badge"><span class="lamp-pill lamp-green"><span class="lamp-dot"></span>绿灯 · 条件齐备</span></div>
+        <span class="lamp-pill lamp-green"><span class="lamp-dot"></span>绿灯 · 条件齐备</span>
         <h3>性价比划算，按计划分批配置</h3>
         <p>说明该市场的估值安全边际、利率环境与趋势条件同步达标，可把对应期限的长钱分 3–4 批稳步建仓。</p>
       </div>
       <div class="guide-lamp-card gl-amber">
-        <div class="gl-badge"><span class="lamp-pill lamp-amber"><span class="lamp-dot"></span>黄灯 · 分歧观察</span></div>
+        <span class="lamp-pill lamp-amber"><span class="lamp-dot"></span>黄灯 · 分歧观察</span>
         <h3>多空拉锯，小步按锚不追高</h3>
         <p>说明机会与风险并存，仅在回落至关键安全锚附近小额分批，严禁看到单日大涨就冲动追买。</p>
       </div>
       <div class="guide-lamp-card gl-red">
-        <div class="gl-badge"><span class="lamp-pill lamp-red"><span class="lamp-dot"></span>红灯停 · 防守控仓</span></div>
+        <span class="lamp-pill lamp-red"><span class="lamp-dot"></span>红灯停 · 防守控仓</span>
         <h3>老底仓稳拿不乱割，新钱先放稳钱池</h3>
         <p>红灯停不是要你恐慌清仓，而是防止在风险报酬比偏弱时把新钱急着买在半山腰。{esc(gold_status_text)}</p>
       </div>
@@ -6065,7 +6123,11 @@ def build_archive_page(
 
     <section class="filter-panel">
       <div class="arc-search-row">
-        <input type="search" id="arc-search" class="search-input" placeholder="搜索历史早晚报标题、日期或关键词（如 感恩节、核心通胀、两融、红灯）…" autocomplete="off">
+        <div class="search-wrap">
+          <input type="search" id="arc-search" class="search-input" placeholder="搜索历史早晚报标题、日期或关键词（如 感恩节、核心通胀、两融、红灯）…" autocomplete="off">
+          <button type="button" id="arc-clear-x" class="search-clear" aria-label="清空搜索" hidden>×</button>
+          <kbd class="kbd-hint" aria-hidden="true">/</kbd>
+        </div>
         <button type="button" class="btn btn-sm" id="arc-reset">重置筛选</button>
       </div>
       <div class="filter-row">
@@ -6260,7 +6322,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     # A1. Gold Master Report
     gold_md_path = GOLD_DIR / "黄金跨世纪周期与2026-2030终审研究报告.md"
     gold_md = gold_md_path.read_text(encoding="utf-8")
-    g_snap_master, _ = R.gold_report.load_master_snapshot(gold_md, allow_drift=True)
+    g_snap_master, _ = R.gold_report.load_master_snapshot(gold_md, allow_drift=False)
     R.gold_report.SNAP = g_snap_master
     R.gold_report.REPORT_VERSION = str(g_snap_master.get("master_version", "普通人终审定版"))
     R.gold_report.REPORT_TIMESTAMP = str(g_snap_master.get("as_of_bjt", ""))

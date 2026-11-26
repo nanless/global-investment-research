@@ -123,7 +123,7 @@ def md_inline(text: str) -> str:
         return f"___LINK_{len(link_tokens)-1}___"
 
     s = re.sub(
-        r"\[([^\]]+)\]\((https?://[^)\s]+|(?!file:|javascript:|data:)(?:\.\.?/|/)?[^)\s:]+\.(?:md|html|pdf|docx)(?:#[^)\s]+)?|#[A-Za-z0-9_-]+)\)",
+        r"\[([^\]]+)\]\((https?://[^)\s]+|(?!file:|javascript:|data:)(?:\.\.?/|/)?[^)\s:]+\.(?:md|html)(?:#[^)\s]+)?|#[A-Za-z0-9_-]+)\)",
         save_link,
         s,
     )
@@ -506,6 +506,35 @@ def _clamp_label_x(
     return round(tx, 1)
 
 
+def _ref_crossing_penalty(
+    val: float,
+    bbox: tuple[float, float, float, float],
+    ref_coords: list[tuple[float, float]],
+) -> float:
+    """Penalize point labels that cross or straddle a horizontal reference line.
+
+    SVG y increases downward: val < ref_val means the point sits below the ref line
+    (higher y), so its label must not cross above ry (lower y), and vice versa.
+    """
+    pen = 0.0
+    cy = (bbox[1] + bbox[3]) / 2.0
+    for ref_val, ry in ref_coords:
+        if val < ref_val - 1e-9:
+            if cy <= ry:
+                pen += 10000.0
+            elif bbox[1] < ry:
+                pen += 2000.0
+        elif val > ref_val + 1e-9:
+            if cy >= ry:
+                pen += 10000.0
+            elif bbox[3] > ry:
+                pen += 2000.0
+        else:
+            if bbox[1] < ry < bbox[3]:
+                pen += 2000.0
+    return pen
+
+
 def render_chart_timeline(cfg: dict) -> str:
     cfg = normalize_chart("DAILY_CHART_TIMELINE", cfg)
     title = esc(cfg.get("title", "金价走势核心结论"))
@@ -541,6 +570,12 @@ def render_chart_timeline(cfg: dict) -> str:
     else:
         xs = [round(76.0 + i * (512.0 / (n - 1)), 1) for i in range(n)]
 
+    placed_boxes: list[tuple[float, float, float, float]] = []
+    all_dot_boxes: list[tuple[float, float, float, float]] = [
+        (xs[j] - 5.5, y_w(vals[j]) - 5.5, xs[j] + 5.5, y_w(vals[j]) + 5.5)
+        for j in range(n)
+    ]
+
     zone_svg = ""
     for z in zones:
         i0 = max(0, min(n - 1, int(z.get("start_idx", 0))))
@@ -552,12 +587,16 @@ def render_chart_timeline(cfg: dict) -> str:
         cx = round((x0 + x1) / 2.0, 1)
         z_fill = sanitize_hex_color(z.get("fill"), "#f1f5f9")
         z_txt = sanitize_hex_color(z.get("text_color"), "#334155")
+        z_lbl = str(z.get("label", ""))
         zone_svg += (
             f'<rect x="{x0}" y="24" width="{round(max(x1-x0, 4.0),1)}" height="190" '
             f'fill="{z_fill}" opacity="0.72" rx="4"/>'
             f'<text x="{cx}" y="38" text-anchor="middle" font-size="10.6" '
-            f'fill="{z_txt}" font-weight="700">{svg_esc(z.get("label", ""))}</text>'
+            f'fill="{z_txt}" font-weight="700">{svg_esc(z_lbl)}</text>'
         )
+        if z_lbl.strip():
+            _, z_bbox = _svg_label_pill(cx, 38.0, z_lbl, 10.6, "middle")
+            placed_boxes.append(z_bbox)
 
     grid_svg = ""
     for tv in y_ticks:
@@ -566,11 +605,13 @@ def render_chart_timeline(cfg: dict) -> str:
         tick_str = _fmt_axis_val(tv, span, unit_prefix, unit_suffix)
         grid_svg += f'<text x="50" y="{y+4}" text-anchor="end" font-size="10.6" fill="#64748b">{svg_esc(tick_str)}</text>'
 
-    placed_boxes: list[tuple[float, float, float, float]] = []
+    ref_coords: list[tuple[float, float]] = []
     ref_lines_svg = ""
     ref_labels_svg = ""
     for rl in ref_lines:
-        ry = y_w(rl["val"])
+        rval = float(rl["val"])
+        ry = y_w(rval)
+        ref_coords.append((rval, ry))
         col = sanitize_hex_color(rl.get("color"), "#b45309")
         anchor = _sanitize_svg_anchor(rl.get("align"), "end")
         raw_ref_lbl = str(rl.get("label", ""))
@@ -595,6 +636,7 @@ def render_chart_timeline(cfg: dict) -> str:
             for cand_y in dict.fromkeys(ref_cands):
                 pill, bbox = _svg_label_pill(rx, cand_y, raw_ref_lbl, 10.6, anchor)
                 pen = sum(_boxes_overlap_area(bbox, ob) for ob in placed_boxes)
+                pen += 2.0 * sum(_boxes_overlap_area(bbox, db, pad_x=0.5, pad_y=0.5) for db in all_dot_boxes)
                 if pen < best_pen:
                     best_pen = pen
                     best_ry = cand_y
@@ -624,39 +666,64 @@ def render_chart_timeline(cfg: dict) -> str:
         y_default = round(max(34.0, min(212.0, (y - 11.0 if pos == "above" else y + 17.5) + dy_extra)), 1)
         y_alt = round(max(34.0, min(212.0, (y + 17.5 if pos == "above" else y - 11.0) + dy_extra)), 1)
         val_txt = p.get("val_label") or _fmt_axis_val(vals[i], span, unit_prefix, unit_suffix)
-        x_lbl = _clamp_label_x(max(66.0, min(614.0, x + dx)), val_txt, 11.0, anc)
+        x_default = _clamp_label_x(max(66.0, min(614.0, x + dx)), val_txt, 11.0, anc)
         r = "5.0" if p.get("highlight") else "4.2"
         dots_svg += f'<circle cx="{x}" cy="{y}" r="{r}" fill="{col}" stroke="#ffffff" stroke-width="1.5"/>'
 
-        dot_box = (x - 5.5, y - 5.5, x + 5.5, y + 5.5)
-        cands_y = [
+        def _cy(val_y: float) -> float:
+            return round(max(34.0, min(212.0, val_y)), 1)
+
+        cands_2d: list[tuple[float, float, str]] = []
+        # 1. Same-x vertical offsets (preserving preferred anchor)
+        for cy in (
             y_default,
             y_alt,
-            round(max(34.0, min(212.0, y_default - 15.0)), 1),
-            round(max(34.0, min(212.0, y_default + 15.0)), 1),
-            round(max(34.0, min(212.0, y_alt - 15.0)), 1),
-            round(max(34.0, min(212.0, y_alt + 15.0)), 1),
-            round(max(34.0, min(212.0, y_default - 28.0)), 1),
-            round(max(34.0, min(212.0, y_default + 28.0)), 1),
-        ]
+            _cy(y_default - 15.0),
+            _cy(y_default + 15.0),
+            _cy(y_alt - 15.0),
+            _cy(y_alt + 15.0),
+            _cy(y_default - 28.0),
+            _cy(y_default + 28.0),
+        ):
+            cands_2d.append((x_default, cy, anc))
+        # 2. Lateral side-shift x±10 flipping anchor to end/start
+        cx_left = _clamp_label_x(x - 10.0, val_txt, 11.0, "end")
+        cx_right = _clamp_label_x(x + 10.0, val_txt, 11.0, "start")
+        for cx_side, anc_side in ((cx_left, "end"), (cx_right, "start")):
+            for dy_s in (4.0, -9.0, 16.0, -20.0, 26.0):
+                cands_2d.append((cx_side, _cy(y + dy_s), anc_side))
+        # 3. Horizontal dx ±26 / ±38 shifts with clamped x
+        for dx_shift in (-26.0, 26.0, -38.0, 38.0):
+            cx_sh = _clamp_label_x(x + dx_shift, val_txt, 11.0, anc)
+            for cy in (y_default, y_alt, _cy(y + 4.0), _cy(y - 15.0), _cy(y + 20.0)):
+                cands_2d.append((cx_sh, cy, anc))
+
+        best_key: tuple[float, float] = (float("inf"), float("inf"))
+        best_x = x_default
         best_y = y_default
+        best_anc = anc
         best_pill = ""
         best_bbox = (0.0, 0.0, 0.0, 0.0)
-        best_pen = float("inf")
-        for cand_y in dict.fromkeys(cands_y):
-            pill, bbox = _svg_label_pill(x_lbl, cand_y, val_txt, 11.0, anc)
-            pen = sum(_boxes_overlap_area(bbox, ob) for ob in placed_boxes)
-            pen += 2.0 * _boxes_overlap_area(bbox, dot_box, pad_x=0.5, pad_y=0.5)
-            if pen < best_pen:
-                best_pen = pen
+        for cand_x, cand_y, cand_anc in dict.fromkeys(cands_2d):
+            pill, bbox = _svg_label_pill(cand_x, cand_y, val_txt, 11.0, cand_anc)
+            overlap_pen = sum(_boxes_overlap_area(bbox, ob) for ob in placed_boxes)
+            dot_pen = 2.0 * sum(_boxes_overlap_area(bbox, db, pad_x=0.5, pad_y=0.5) for db in all_dot_boxes)
+            cross_pen = _ref_crossing_penalty(vals[i], bbox, ref_coords)
+            hard_pen = cross_pen + overlap_pen * 10.0 + dot_pen * 5.0
+            dist_pen = abs(cand_x - x_default) * 1.2 + abs(cand_y - y_default) + (4.0 if cand_anc != anc else 0.0)
+            key = (hard_pen, dist_pen)
+            if key < best_key:
+                best_key = key
+                best_x = cand_x
                 best_y = cand_y
+                best_anc = cand_anc
                 best_pill = pill
                 best_bbox = bbox
-            if pen == 0.0:
+            if hard_pen == 0.0 and dist_pen == 0.0:
                 break
         placed_boxes.append(best_bbox)
         point_labels_svg += best_pill
-        point_labels_svg += f'<text x="{x_lbl}" y="{best_y}" text-anchor="{anc}" font-size="11" fill="{col}" font-weight="800">{svg_esc(val_txt)}</text>'
+        point_labels_svg += f'<text x="{best_x}" y="{best_y}" text-anchor="{best_anc}" font-size="11" fill="{col}" font-weight="800">{svg_esc(val_txt)}</text>'
         axis_labels_svg += f'<text x="{x}" y="234" text-anchor="middle" font-size="10.5" fill="#0f172a" font-weight="700">{svg_esc(p.get("time", ""))}</text>'
         for li, dl in enumerate(str(p.get("desc", "")).split("\n")[:2]):
             axis_labels_svg += f'<text x="{x}" y="{250 + li*14}" text-anchor="middle" font-size="10.4" fill="#475569">{svg_esc(dl)}</text>'

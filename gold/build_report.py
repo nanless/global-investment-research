@@ -636,6 +636,11 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
         else ""
     )
     leg_y = bot_y + 23
+    stagger_spot = (x_avg27 - x_spot < 145.0) or (abs(x_pt27 - x_spot) < 135.0)
+    x_spot_lbl = round(max(60.0, min(580.0, x_spot)), 1)
+    y_spot_lbl = 13 if stagger_spot else 24
+    y_med_lbl = 27 if stagger_spot else 24
+    ref_y1 = 35 if stagger_spot else 34
     return f'''
     <div class="chart-box">
       <div class="chart-title">图 {fig_num}：{len(pt_vals)} 家年末点位记录的 2027 年金价中位为 ${ye_med:,.0f}</div>
@@ -643,12 +648,12 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
       <svg viewBox="0 0 640 {vb_h}" width="100%" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="{vb_h}" fill="#ffffff" rx="6"/>
         {grid}
-        <line x1="{x_spot}" y1="34" x2="{x_spot}" y2="{bot_y}" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="5,3"/>
-        <text x="{x_spot}" y="24" text-anchor="middle" font-size="10.4" fill="#b91c1c" font-weight="800">{time_word} ${spot:,}</text>
-        <line x1="{x_avg27}" y1="34" x2="{x_avg27}" y2="{bot_y}" stroke="#b45309" stroke-width="1.4" stroke-dasharray="4,3"/>
-        <text x="{round(x_avg27-6,1)}" y="24" text-anchor="end" font-size="10.2" fill="#b45309" font-weight="700">均价记录中位 ${avg_med:,.0f}</text>
-        <line x1="{x_pt27}" y1="34" x2="{x_pt27}" y2="{bot_y}" stroke="#0f766e" stroke-width="1.5" stroke-dasharray="4,3"/>
-        <text x="{round(x_pt27+6,1)}" y="24" text-anchor="start" font-size="10.2" fill="#0f766e" font-weight="700">年末中位 ${ye_med:,.0f}</text>
+        <line x1="{x_spot}" y1="{ref_y1}" x2="{x_spot}" y2="{bot_y}" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="5,3"/>
+        <text x="{x_spot_lbl}" y="{y_spot_lbl}" text-anchor="middle" font-size="10.4" fill="#b91c1c" font-weight="800">{time_word} ${spot:,}</text>
+        <line x1="{x_avg27}" y1="{ref_y1}" x2="{x_avg27}" y2="{bot_y}" stroke="#b45309" stroke-width="1.4" stroke-dasharray="4,3"/>
+        <text x="{round(x_avg27-6,1)}" y="{y_med_lbl}" text-anchor="end" font-size="10.2" fill="#b45309" font-weight="700">均价记录中位 ${avg_med:,.0f}</text>
+        <line x1="{x_pt27}" y1="{ref_y1}" x2="{x_pt27}" y2="{bot_y}" stroke="#0f766e" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="{round(x_pt27+6,1)}" y="{y_med_lbl}" text-anchor="start" font-size="10.2" fill="#0f766e" font-weight="700">年末中位 ${ye_med:,.0f}</text>
         {rows}
         <rect x="14" y="{leg_y}" width="612" height="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.9" rx="4"/>
         <text x="320" y="{leg_y+14}" text-anchor="middle" font-size="10.0" fill="#334155">● 年末目标：{len(pt_vals)} 条记录 ｜ ◆ 全年均价：{len(avg_vals)} 条记录 ｜ 灰色为其他期限或旧稿</text>
@@ -666,8 +671,8 @@ def svg_chart_fx_and_cross_ratios(fig_num: int = 6) -> str:
     spot_exact = float(SNAP.get("spot_gold_ny_close_usd", SNAP["spot_gold_ny_close_rounded"]))
     ye_med = float(SNAP.get("bank_2027_yearend_median_usd", 5000))
     usd_up = ((ye_med - spot_exact) / spot_exact) * 100.0
-    cr = SNAP.get("cross_ratios") or SNAP.get("cross_ratios_1124", {})
-    _, _, _, _, mmdd, _, _, time_word = _as_of_meta()
+    cr = SNAP.get("cross_ratios", {})
+    as_short, _, _, _, mmdd, _, _, time_word = _as_of_meta()
     brent_v = float(SNAP["brent_settle_usd"])
     wti_v = float(SNAP["wti_settle_usd"])
     silver_v = float(SNAP["spot_silver_usd"])
@@ -774,7 +779,7 @@ def svg_chart_fx_and_cross_ratios(fig_num: int = 6) -> str:
         <text x="14" y="221" font-size="11.2" fill="#1e3a8a" font-weight="800">二、50 年跨资产比价尺：黄金目前仅相对高估美股便宜，相对油/铂/银仍明显偏贵</text>
         {bot_bars}
       </svg>
-      <div class="chart-note">数据来源：中国外汇交易中心（{mmdd} 汇率 {fx_now:.2f}）、各大行 2027 汇率预测及 {esc(REPORT_SHORT_DATE)} 国际大宗与美股收盘（布油 ${brent_v:.2f}、WTI ${wti_v:.2f}、白银 ${silver_v:.2f}、标普 {spx_v:,.0f}）。</div>
+      <div class="chart-note">数据来源：中国外汇交易中心（{mmdd} 汇率 {fx_now:.2f}）、各大行 2027 汇率预测及 {esc(as_short)} 国际大宗与美股收盘（布油 ${brent_v:.2f}、WTI ${wti_v:.2f}、白银 ${silver_v:.2f}、标普 {spx_v:,.0f}）。</div>
     </div>
     '''
 

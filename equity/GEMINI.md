@@ -28,7 +28,7 @@
 每次新会话或一体化定时班次（**北京时间 `07:30` 一体化早报 / `18:00` 一体化晚报**，单会话内 Step 3 黄金 SSOT 落盘严检后由本轨 Step 4 顺序接力）启动，必须按序完成对齐后再动笔：
 0. **读 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录**：第一时间继承一手源检索词雷达、一次过 Linter 避坑清单与 `next_run_watch` 必验真追踪项。
 1. **读 `state/market_state.json`（单一事实源）、三大扩展数据库（`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`）及前序基线 `<REPO_ROOT>/gold/data_snapshot.json`**：锁定 **A 股 × 港股 × 美股** 三市当前灯号、体检分、唯一防踏空阈值、核心龙头池实时总数（**弹性 65–85 只/市**，扩容基准 **A 股 76 只 / 港股 75 只 / 美股 80 只，合计 231 只全行业龙头**，实时总数以 `state/market_state.json` 的 `stock_pool_count` 为唯一事实源）、**12 大个人多元合规渠道**（外加横向「全市场打新工具箱」与「双层风控警示墙」）、**140+ 只跨 6 大通道重点 ETF**、规范无日期后缀状态键（A 股 `margin_balance_100m` + `margin_balance_date`、`pboc_total_net_100m` + `pboc_op_date`；港股 `hkma_agg_bal_hkd_100m`）、结构化 `data_caveats` 透明披露队列、跨市场 AI 同源总仓上限（≤ 总资产 20%）、三市危机总熔断三阀（`VIX 连 2 日 > 30` / 日元 3 日急升 `>3%` / 10 年美债 `>5.25%`，港股叠加金管局总结余 `<400 亿港元`）、待回补 `pending_backfills` 队列及未来 60 天休市日历。
-   - **跨项目黄金快照与 6 小时数据时限**：权益入口校验同一 `edition_id`，黄金截点早于或同分钟于权益，间隔最多 **6 小时**，两轨截点与日报 `chart_live.as_of_full` 各须在所标班次前后 **6 小时内**。核对 `brent_settle_usd`、`cfets_cny_fixing`（含日期）等共享键；假日或周末无盘中观测时，允许双轨 `brent_live_usd` 与 `vix_live` 同口径同时留空。黄金红灯时，三市正文、封面元数据、三大扩展 JSON、全站网页与 SVG 均不得下达新买或补齐黄金/金矿的指令。
+   - **跨项目黄金快照与单向时间窗**：权益入口校验同一 `edition_id`，黄金截点早于或同分钟于权益且跨轨间隔最多 **6 小时**，两轨截点与日报 `chart_live.as_of_full` 各须落在所标班次 **`[-5 分钟, +6 小时]`** 单向窗口内。核对 `brent_settle_usd`、`cfets_cny_fixing`（含日期）等共享键；假日或周末无盘中观测时，允许双轨 `brent_live_usd` 与 `vix_live` 同口径同时留空。黄金红灯时，三市正文、封面元数据、三大扩展 JSON、全站网页与 SVG 均不得下达新买或补齐黄金/金矿的指令。
 2. **读 `daily/INDEX.md`（前 60 行）**：核对三市场 + 黄金总水位驾驶舱、同日同场次防覆写状态（已存在须走 `_r2`）与连续脉络。
 3. **读 `daily/SCORECARD.md`**：检查有无今日到期或已出结果的历史预判需客观回填胜负（统一用 `✅ 兑现` / `⚠️ 部分兑现` / `❌ 证伪`；新登到期检验日严禁落在非交易日周末）。
 4. **按需读旗舰手册**：仅当命中《全景手册》5 条硬触发阈值（见 `DAILY_REPORT_SPEC.md` 第五节）时，再全量读取对应 `{a_share,hk_stock,us_stock}_market_report_latest.md` 与 `report_meta_*.json` 执行同步大修。
@@ -61,7 +61,7 @@
   12. **合规私募与标品信托 300 万专享（`private_funds_trust`）**：严守合格投资者门槛（金融资产/年收入硬线）、单只起投门槛、冷静期与回访确认、私募管理费+业绩报酬结构、锁定期流动性折价与标品信托净值化排雷（严禁非标资金池与刚兑幻想）；
   - 另配横向 **「全市场打新工具箱」**（A 股新股/转债/北交所/REITs/港股打新规则与破发纪律）与 **「双层风控警示墙」**（宏观熔断阀 + 个人防骗反诈与高危产品黑名单）。
 - **离岸美股 / 港股与跨境税务合规红线**：
-  - **美股与爱尔兰 UCITS**：核查 2026 最新低费率（`SPYM`/`VOO`/`VTV`/`VUG`/`VTIP`/`VIG`/`VBIL`/`SPDR 11 行业`/`QQQM`/`QQQ`/`RSP` 与爱尔兰 `CSPX`/`VUAA`/`IB01`/`IGLN`/`VWRA`/`CNDX`，实时费率与收益率见 `etf_universe.json`）。写清 W-8BEN 协定资格与有效期、QII 自动退税券商差异（`IB01` 源头零预扣且免美国遗产税），以及非美居民 **6 万美元**美国遗产税申报门槛；**特别警示香港挂牌 `02840.HK`（SPDR 金 ETF）底层为美国注册信托、同样计入 6 万美元美国遗产税范围，大额离岸黄金（红灯解除后）改选爱尔兰 `IGLN.L` 或香港本土实物金 `3081.HK`**；
+  - **美股与爱尔兰 UCITS**：核查 2026 最新低费率（`SPYM`/`VOO`/`VTV`/`VUG`/`VTIP`/`VIG`/`VBIL`/`SPDR 11 行业`/`QQQM`/`QQQ`/`RSP` 与爱尔兰 `CSPX`/`VUAA`/`IB01`/`IGLN`/`VWRA`/`CNDX`，实时费率与收益率见 `etf_universe.json`）。写清 W-8BEN 协定资格与有效期、QII 自动退税券商差异（`IB01` 源头零预扣且免美国遗产税），以及非美居民 **6 万美元**美国遗产税申报门槛；**特别警示香港挂牌 `02840.HK`（SPDR 金 ETF）底层为美国注册信托、同样计入 6 万美元美国遗产税范围，大额离岸黄金（红灯解除后）改选爱尔兰 `IGLN.L` 或香港本土实物金 `03081.HK`**；
   - **港股精确通道分类（严防代码/QDII 误标）**：① 内地个人港股通股息通常按 20% 代扣个税，另按发行人公告、名册登记方式与持有渠道核验源头代扣（**严禁笼统写“红筹股一律 28% 税”**）；② 严格区分**非 QDII 港股通 ETF**（`159545`/`159792`/`520900`/`159570`/`513750`/`513980`，买前仍须查折溢价、**严禁写“零溢价”**）与 **QDII 港股 ETF**（`513260`/`513010`/`513180`/`513530`/`513950`/`513970`，占外汇额度须防溢价），**严禁把沙特 `520830`、A 股电力 `159611`、亚洲半导体 `03119` 或亚投债 `03141` 误作港股红利**；③ 离岸免印花税恒科首选 **`03067`** 替代高费 `03033`，宽基选 `02800`/`02801`，高息看 `03110`/`03070`/`03437`；④ **绝不列入已于 2026-01-27 退市的恒生银行 `00011`**（银行替补用渣打 `02888`）；
   - **外汇、全球征税与 CRS 底线**：境内个人年度等值 5 万美元便利化购汇不得用于境外证券投资；**中国居民个人境外所得须依法按 20% 全球申报纳税（按类别核算抵免），并在 CRS 金融账户涉税信息自动交换框架下保持账户合规与完整完税凭证**；跨 A+港+美 AI/半导体同源科技敞口合并严控 **≤ 家庭总资产 20%**、单只个股 **≤ 8%**。
 
@@ -69,7 +69,7 @@
 
 ## 3. 读者可见文档绝对禁令（红线摘要）
 
-1. **零内部工程、审计/RSI 噪声与说教口号**：读者可见正文、封面 JSON、`data_caveats`、三大扩展 JSON（`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`）、SVG、`INDEX.md`、`CHANGELOG.md`、`SCORECARD.md` 中**严禁出现**版本号（`V9.x`/`V10.x`）、`Subagent`、`红队`/`法证`、Python 脚本名、内部规范/快照/账本/RSI 文件名与术语（`AGENTS.md`/`GEMINI.md`/`DAILY_REPORT_SPEC.md`/`SKILL.md`/`sidecar.json`/`market_state.json`/`data_snapshot.json`/`audit_ledger.md`/`RSI_PLAYBOOK`/`rsi_metrics.json`/`Meta-RSI`/`next_run_watch`/`Tier A/B/C`）、API/公告编号、原始 CSV 名及内部 Diff 表；禁用居高临下口号（`1 分钟定心丸`/`小白词典`/`直接抄`/`蠢事`/`保命铁律`）。
+1. **零内部工程、审计/RSI 噪声与说教口号**：读者可见正文、封面 JSON、`data_caveats`、三大扩展 JSON（`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`）、SVG、`INDEX.md`、`CHANGELOG.md`、`SCORECARD.md` 中**严禁出现**版本号（`V9.x`/`V10.x`）、`Subagent`、`红队`/`法证`、Python 脚本名（含 `patch_state_dbs.py`/`svg_geometry.py`）、内部规范/快照/补丁/账本/RSI 文件名与术语（`AGENTS.md`/`GEMINI.md`/`DAILY_REPORT_SPEC.md`/`SKILL.md`/`sidecar.json`/`market_state.json`/`data_snapshot.json`/`_edition_patch.json`/`_ledger_patch.json`/`audit_ledger.md`/`RSI_PLAYBOOK`/`rsi_metrics.json`/`Meta-RSI`/`next_run_watch`/`Tier A/B/C`）、API/公告编号、原始 CSV 名及内部 Diff 表；禁用居高临下口号（`1 分钟定心丸`/`小白词典`/`直接抄`/`蠢事`/`保命铁律`）。
 2. **代码反引号白名单**：严禁对普通数字、涨跌幅、金额、中文公司名或口诀套反引号；**仅允许对股票/ETF/可转债/期货/指数代码**轻标。
 3. **四色锁仓、物理学一致、3 项税务误导拦截与正向自检卡**：执行四色锁仓；**`🔵 🔒未来主攻` 买点解锁锚点必须严格低于现价/现估值**；**同一家 A/H 上市公司同口径 PE 与股息率满足数学物理学一致**；严禁出现 3 项已证伪税务/ETF/转债误导；配置表 100% 算术闭环；自检卡 100% 正向“全选是”。
 4. **中式本土化与精准冬/夏令时换算**：全篇以**北京时间（CST）**为主、美东时间括号轻附；**全年铁律：07:30 CST 美股早刊严禁提前写盘后终盘，统一由当日 18:00 晚刊封账**；涨跌一律写“上涨/下跌/由跌转涨”配正负号（严禁 `收红/收绿/翻红/翻绿`）；每只美股必带中文名 + ≤10 字白话业务标签；大宗期货严禁混用近月与次月合约价。
@@ -89,9 +89,9 @@
 
 ## 5. 工具、独立法证 Linter 与纯网页发布铁律
 
-- **写文件铁律**：修改或创建任何工作区文件一律使用 `write_file` 全量写入，**严禁调用 `edit_file`**。
-- **纯网页零离线附件交付**：不生成、不托管、不链接任何离线二进制文档附件；由 `scripts/build_site.py` 读取 Markdown 源稿、21 张 SVG 矢量图表模块与三大深研 JSON，统一编译为响应式静态网页（首页 4 市场 + 小白导览 + 12 大渠道概览卡 + 5 大 ETF 通道卡、12 个独立 `channels/<id>.html` 详情页、`channels.html`、`etfs.html`、`screener.html`、`guide.html`、`scorecard.html`、`archive.html`）。
-- **定时任务命令**：定时模板以绝对路径逐条执行预授权命令（`lint_equity.py`、`build_site.py`、`lint_site.py`、`edition_run.py`、`publish_site.py` 及排障用 `unittest`）。
+- **分级写盘铁律（防 300s 超时）**：无人值守全程**严禁调用 `edit_file`**——中小 Markdown 与轻量状态文件（三市日报、`INDEX.md`、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`、`state/RSI_*`）一律使用 `write_file` 全量写入；**三大扩展大 JSON（`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`，合计 ~830 KB）统一由 `write_file` 写微型补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py` 原子合并**，严禁整块回写。
+- **纯网页零离线附件交付**：不生成、不托管、不链接任何离线二进制文档附件；由 `scripts/build_site.py` 读取 Markdown 源稿、21 张 SVG 矢量图表模块与三大深研 JSON，统一编译为响应式静态网页（首页 4 市场 + 小白导览 + 12 大渠道概览卡 + 5 大市场/资产分组 ETF 概览卡【底层覆盖 6 大交易通道】、12 个独立 `channels/<id>.html` 详情页、`channels.html`、`etfs.html`、`screener.html`、`guide.html`、`scorecard.html`、`archive.html`）。
+- **定时任务命令**：定时模板以绝对路径逐条执行预授权命令（`patch_state_dbs.py`、`lint_equity.py`、`build_site.py`、`lint_site.py`、`edition_run.py`、`publish_site.py` 及排障用 `unittest`）。
 - **统一工作区 Skill 分工（`../.agents/skills/`）**：
   - 出版结构、独立 Linter、**21 张矢量 SVG 图**、三市休市/跨月滚存与模板 → `../.agents/skills/equity-report-publishing`；
   - 投研写作、小白三层结构、7 维度大盘、10+1 深研、12 大多元渠道、140+ ETF 与 231 股 7 维审校、10 项门禁、双账户税费与 Step 5 受控 RSI 盲审 → `../.agents/skills/equity-research-editorial-qa`。

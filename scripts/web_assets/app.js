@@ -166,6 +166,27 @@
     backToTopBtn.addEventListener("click", scrollPageTop);
   }
 
+  /* Delegated Smooth Scroll for Same-Page Anchor Links (replaces global CSS scroll-behavior) */
+  document.addEventListener("click", function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+    const link = e.target.closest('a[href^="#"]');
+    if (!link) return;
+    const href = link.getAttribute("href") || "";
+    if (href.length <= 1 || href.indexOf("=") !== -1) return;
+    const targetId = safeDecode(href.slice(1));
+    const targetEl = targetId ? document.getElementById(targetId) : null;
+    if (!targetEl || targetEl.classList.contains("tab-panel")) return;
+    e.preventDefault();
+    targetEl.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+    if (history.replaceState) {
+      try {
+        history.replaceState(null, "", "#" + encodeURIComponent(targetId));
+      } catch (_) {}
+    }
+  });
+
   /* ------------------------------------------------------------------------
      5. Shared Accessible Modal / Dialog Focus Manager
      ------------------------------------------------------------------------ */
@@ -465,9 +486,16 @@
     if (zLbl) zLbl.textContent = zoomPct + "%";
   }
 
+  function getChartSvg(chartBox) {
+    return (
+      chartBox.querySelector(".svg-scroll svg, .chart-svg-stage svg") ||
+      chartBox.querySelector("svg:not(.zoom-icon)")
+    );
+  }
+
   function openChartModal(chartBox) {
     if (!chartModal || !chartModalCanvas) return;
-    const svg = chartBox.querySelector("svg");
+    const svg = getChartSvg(chartBox);
     if (!svg) return;
     const titleEl = chartBox.querySelector(".chart-title");
     if (chartModalTitle) {
@@ -490,14 +518,19 @@
     hideDialog(chartModal);
   }
 
+  const ZOOM_ICON_HTML =
+    '<svg class="zoom-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" ' +
+    'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<circle cx="7" cy="7" r="4.6"></circle><path d="M10.5 10.5L14 14"></path></svg><span>放大</span>';
+
   document.querySelectorAll(".chart-box").forEach(function (box) {
-    const svg = box.querySelector("svg");
+    const svg = getChartSvg(box);
     if (!svg) return;
     if (!box.querySelector(".chart-zoom-btn")) {
       const zbtn = document.createElement("button");
       zbtn.type = "button";
       zbtn.className = "chart-zoom-btn";
-      zbtn.textContent = "🔍 放大";
+      zbtn.innerHTML = ZOOM_ICON_HTML;
       zbtn.addEventListener("click", function () { openChartModal(box); });
       box.insertBefore(zbtn, box.firstChild);
     }
@@ -638,6 +671,21 @@
       term: "公募 REITs 分派率 vs 中债真实 IRR",
       plain: "产权类 REITs（保租房/商场）像买房收租看分派率与出租率；特许经营权类（高速/能源）到期资产无偿移交，高分派里混有本金归还。",
       avoid: "避坑提醒：绝不能把高速 REITs 8%–12% 的表面分派率当成高股息，必须核对中债真实内部收益率（IRR）与薄量限价挂单。",
+    },
+    dxy: {
+      term: "美元指数（DXY）",
+      plain: "衡量美元相对欧元、日元、英镑等一篮子主要货币综合强弱的标尺。美元走强往往意味着全球流动性偏紧，压制黄金与非美股市；走弱则利于非美资产回暖。",
+      avoid: "避坑提醒：美元指数偏强或汇兑价差较大时，切忌冲动新换汇做外币定存或重仓未锁汇的境外资产，务必把汇率波动算进总收益。",
+    },
+    cot: {
+      term: "期货大资金持仓报告（COT）",
+      plain: "美国商品期货交易委员会（CFTC）每周公布的机构与投机资金持仓明细，可用来观察黄金、原油和美债期货里的多空拥挤程度。",
+      avoid: "避坑提醒：当投机多头净持仓极端拥挤时，哪怕基本面未变也很容易因获利回吐触发急跌，切忌在极端拥挤区追高。",
+    },
+    cds: {
+      term: "债务违约保险费率（CDS）",
+      plain: "给公司债或主权债买的「违约保险」年保费（通常按基点计）。费率越低说明市场认为还本付息越稳，飙升则预示信用违约风险快速升温。",
+      avoid: "避坑提醒：当某发行主体或行业的信用违约保险费率急剧跳升时，切忌只盯着高票面利率去接盘高收益债或弱资质可转债。",
     },
   };
 
@@ -794,7 +842,17 @@
         document.getElementById("guide-term-search");
       if (searchBox) {
         e.preventDefault();
-        searchBox.focus();
+        if (searchBox.id === "guide-term-search") {
+          const panel = searchBox.closest(".filter-panel") || searchBox;
+          const rect = panel.getBoundingClientRect();
+          const header = document.querySelector(".site-header");
+          const headerH = header ? header.offsetHeight : 64;
+          if (rect.top < headerH + 6 || rect.bottom > window.innerHeight - 140) {
+            const top = window.scrollY + rect.top - headerH - 12;
+            window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+          }
+        }
+        searchBox.focus({ preventScroll: searchBox.id === "guide-term-search" });
         searchBox.select();
       }
     }
@@ -1566,6 +1624,7 @@
     const arcSesBtns = Array.from(document.querySelectorAll("[data-arc-session]"));
     const arcTypeBtns = Array.from(document.querySelectorAll("[data-arc-type]"));
     const arcSearchInput = document.getElementById("arc-search");
+    const arcClearBtn = document.getElementById("arc-clear-x");
     const arcCountEl = document.getElementById("arc-count");
     const arcEmptyEl = document.getElementById("arc-empty");
     const arcResetBtn = document.getElementById("arc-reset");
@@ -1602,6 +1661,11 @@
 
     function applyArchiveFilter() {
       syncArchiveButtons();
+      if (arcClearBtn) {
+        const hasQ = !!arcState.q;
+        arcClearBtn.hidden = !hasQ;
+        arcClearBtn.style.display = hasQ ? "" : "none";
+      }
       const tokens = arcState.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
       let shown = 0;
 
@@ -1673,8 +1737,24 @@
     if (arcSearchInput) {
       arcSearchInput.addEventListener("input", function () {
         arcState.q = arcSearchInput.value;
+        if (arcClearBtn) {
+          const hasQ = !!arcState.q;
+          arcClearBtn.hidden = !hasQ;
+          arcClearBtn.style.display = hasQ ? "" : "none";
+        }
         window.clearTimeout(arcSearchTimer);
         arcSearchTimer = window.setTimeout(applyArchiveFilter, 60);
+      });
+    }
+    if (arcClearBtn) {
+      arcClearBtn.addEventListener("click", function () {
+        window.clearTimeout(arcSearchTimer);
+        arcState.q = "";
+        if (arcSearchInput) {
+          arcSearchInput.value = "";
+          arcSearchInput.focus();
+        }
+        applyArchiveFilter();
       });
     }
     if (arcResetBtn) arcResetBtn.addEventListener("click", resetArchiveFilters);
@@ -2278,7 +2358,19 @@
     const gState = { cat: "all", q: "" };
     let gTimer = 0;
 
-    function applyGuideFilter() {
+    function ensureGuideSearchVisible() {
+      if (!gSearch) return;
+      const panel = gSearch.closest(".filter-panel") || gSearch;
+      const rect = panel.getBoundingClientRect();
+      const header = document.querySelector(".site-header");
+      const headerH = header ? header.offsetHeight : 64;
+      if (rect.top < headerH + 6 || rect.bottom > window.innerHeight - 140) {
+        const top = window.scrollY + rect.top - headerH - 12;
+        window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+      }
+    }
+
+    function applyGuideFilter(ensureVisible) {
       gCatBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-guide-cat") || "all") === gState.cat);
       });
@@ -2304,6 +2396,9 @@
         gEmpty.hidden = shown > 0;
         gEmpty.style.display = shown === 0 ? "" : "none";
       }
+      if (ensureVisible) {
+        ensureGuideSearchVisible();
+      }
     }
 
     function resetGuideFilter() {
@@ -2311,7 +2406,7 @@
       gState.cat = "all";
       gState.q = "";
       if (gSearch) gSearch.value = "";
-      applyGuideFilter();
+      applyGuideFilter(true);
     }
 
     if (gSearch) {
@@ -2322,7 +2417,7 @@
           gClear.style.display = gState.q ? "" : "none";
         }
         window.clearTimeout(gTimer);
-        gTimer = window.setTimeout(applyGuideFilter, 50);
+        gTimer = window.setTimeout(function () { applyGuideFilter(true); }, 50);
       });
     }
     if (gClear) {
@@ -2330,7 +2425,7 @@
         window.clearTimeout(gTimer);
         gState.q = "";
         if (gSearch) { gSearch.value = ""; gSearch.focus(); }
-        applyGuideFilter();
+        applyGuideFilter(true);
       });
     }
     if (gReset) gReset.addEventListener("click", resetGuideFilter);
@@ -2338,9 +2433,9 @@
     gCatBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         gState.cat = b.getAttribute("data-guide-cat") || "all";
-        applyGuideFilter();
+        applyGuideFilter(true);
       });
     });
-    applyGuideFilter();
+    applyGuideFilter(false);
   }
 })();

@@ -8,7 +8,7 @@
 
 ## 一、读者可见五大绝对红线与纯网页量化排版标准
 
-1. **零工程、后台/RSI 噪声与说教口号泄露**：面向读者的全部文档、JSON（含 `multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）、`data_caveats` 与渲染后 SVG（含正文、`kpis`、`chart_live`、页眉页脚）中，严禁出现版本号（`V9.x`/`V10.x`）、`Subagent`、`红队`/`法证`、Python 脚本名、内部规范或状态/快照/账本/RSI 文件名与术语（`AGENTS.md`/`GEMINI.md`/`DAILY_REPORT_SPEC.md`/`DAILY_FORMAT_SPEC.md`/`SKILL.md`/`sidecar.json`/`permissions.json`/`unified-edition.prompt.md`/`market_state.json`/`data_snapshot.json`/`master_snapshot.json`/`audit_ledger.md`/`RSI_PLAYBOOK`/`rsi_metrics.json`/`Meta-RSI`/`next_run_watch`/`Tier A/B/C`）、API 公告编号、原始 CSV 名及内部 Diff 表。禁用居高临下的说教口号（`1 分钟定心丸`、`小白词典`、`直接抄`、`蠢事`、`保命铁律`）。全部溯源隔离写入 `state/audit_ledger.md`，自评与进化隔离写入 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`。
+1. **零工程、后台/RSI 噪声与说教口号泄露**：面向读者的全部文档、JSON（含 `multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）、`data_caveats` 与渲染后 SVG（含正文、`kpis`、`chart_live`、页眉页脚）中，严禁出现版本号（`V9.x`/`V10.x`）、`Subagent`、`红队`/`法证`、Python 脚本名（含 `patch_state_dbs.py`/`svg_geometry.py`）、内部规范或状态/快照/补丁/账本/RSI 文件名与术语（`AGENTS.md`/`GEMINI.md`/`DAILY_REPORT_SPEC.md`/`DAILY_FORMAT_SPEC.md`/`SKILL.md`/`sidecar.json`/`permissions.json`/`unified-edition.prompt.md`/`market_state.json`/`data_snapshot.json`/`master_snapshot.json`/`_edition_patch.json`/`_ledger_patch.json`/`audit_ledger.md`/`RSI_PLAYBOOK`/`rsi_metrics.json`/`Meta-RSI`/`next_run_watch`/`Tier A/B/C`）、API 公告编号、原始 CSV 名及内部 Diff 表。禁用居高临下的说教口号（`1 分钟定心丸`、`小白词典`、`直接抄`、`蠢事`、`保命铁律`）。全部溯源隔离写入 `state/audit_ledger.md`，自评与进化隔离写入 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`。
 2. **反引号代码白名单**：严禁对普通数字、涨跌幅、金额、股票中文名、口诀或概念套反引号 `` ` ``；**仅允许对股票、ETF、可转债、期货、指数代码**（如 `601398`、`03067`、`563020`、`113050`、`IF2612`、`BRK.B`、`SGOV`）轻标。
 3. **纯网页排版密度与 Gate 3B 量化目标与警告线**：
    - **封面主标题**：写作目标 **日报 ≤ 27 字 / 旗舰手册 ≤ 36 字**；Gate 3B 门禁警告线 **日报 > 32 字 / 旗舰 > 38 字**；
@@ -58,7 +58,7 @@
 12. **合规私募与标品信托 300 万专享（`private_funds_trust`）**：合格投资者门槛、策略分类、双层费用、锁定期/冷静期与非标排雷纪律。
 
 ### 3. 「全市场 140+ 重点 ETF（跨 6 大交易通道）」与「231 股零模板化 7 维机构级深研」标准
-- **重点 ETF 矩阵（`state/etf_universe.json` → 首页 5 大通道概览卡跳转预筛选 `etfs.html` + 旗舰与日报 ETF 雷达）**：
+- **重点 ETF 矩阵（`state/etf_universe.json` → 首页 5 大市场/资产分组 ETF 概览卡【底层覆盖 6 大交易通道】跳转预筛选 `etfs.html` + 旗舰与日报 ETF 雷达）**：
   - 全量覆盖 **140+ 只** 跨 **6 大交易通道** 重点 ETF（A 股宽基/A500/自由现金流/科创综指/红利低波/行业；境内非 QDII 港股通；境内 QDII 跨境与商品；香港离岸免印花税；美股原版低费；爱尔兰注册 UCITS 免美国遗产税；以及债券/转债/非金商品核心 ETF）；
   - 每只 ETF 必须具备结构化字段：代码、名称、所属市场与通道属性、跟踪指数、最新规模、综合年费率、流动性档位、前五大重仓、估值或股息/到期收益率、折溢价与停牌风险、税费与门槛绕过规则（含 `02840.HK` 美国遗产税提示）、深度配置逻辑、风控边界与角色标签（严格受黄金红灯互斥锁约束）。
 - **个股 7 维机构级深度档案（`state/deep_dossiers.json` → 门户 `screener.html` 7 维深研弹窗 + 日报焦点股 + 旗舰精选）**：
@@ -120,9 +120,9 @@
 ## 六、T+1 滞后数据透明披露、三大深度扩展数据库与四大协同文件
 
 1. **反阻塞透明披露（`pending_backfills` + `data_caveats`）与规范无日期状态键**：未披露或暂不可取数据严禁编造、亦不阻塞准点发刊，须挂入 `pending_backfills` 并同步写入纯读者中文 `data_caveats` 数组供门户自动披露；状态键坚持无日期后缀规范键。
-2. **三大结构化深度扩展数据库（`equity/state/`，强制同期 `edition_id`、全纯读者中文、零内部文件名、严守黄金红灯互斥锁）**：
+2. **三大结构化深度扩展数据库（`equity/state/`，合计 ~830 KB，强制同期 `edition_id`、全纯读者中文、零内部文件名、严守黄金红灯互斥锁；无人值守统一由 `write_file` 写微型补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py` 原子合并，严禁整块回写防 300s 超时）**：
    - **`state/multi_asset_channels.json`**：全部 **12 大个人多元合规渠道** + 横向「全市场打新工具箱」+「双层风控警示墙」实盘数据、小白一句话、今日避坑提醒、统一红/黄/绿灯与税费/退市/存保红线（驱动首页 12 张概览卡与 12 个独立 `channels/<id>.html` 详情页）；
-   - **`state/etf_universe.json`**：**140+ 只** 跨 **6 大通道** 重点 ETF 深度矩阵（驱动首页 5 大通道概览卡与预筛选 `etfs.html`）；
+   - **`state/etf_universe.json`**：**140+ 只** 跨 **6 大通道** 重点 ETF 深度矩阵（驱动首页 5 大市场/资产分组 ETF 概览卡【底层覆盖 6 大交易通道】与预筛选 `etfs.html`）；
    - **`state/deep_dossiers.json`**：全部 **231 只** 池内股票的零模板化 7 维机构级深度档案（以 `market:code` 为键，每班增量更新 4–6 只焦点/财报/变色股，每周日轮换精修 6–10 只重点龙头）。
 3. **`daily/SCORECARD.md`、`daily/INDEX.md`、`daily/CHANGELOG.md` 与分层归档**：严格遵守既有格式、纯网页/Markdown 链接（禁用离线附件链接）、工作日到期检验日、纯读者中文观点演进及月初无损归档规范。
 

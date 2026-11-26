@@ -8,7 +8,7 @@
 
 `2026-11-25_1800_r2` 为沿用旧字段的最后已刊版本；`2026-11-26_1800` 为收敛主刊架构切分线（`CONVERGED_CUTOVER`）。新刊及同场修订按 [日报规格](../../../../gold/daily/DAILY_FORMAT_SPEC.md) 记录北京时间 `edition_id`、`as_of_short` 及显示时间：
 
-- **班次与 6 小时截点宽限（`MAX_EDITION_LAG = 6h`）**：新刊仅支持 `0730` 或 `1800` 班次，北京时间 `as_of_short` 须落在所标班次开始至随后 **6 小时**内；封面 `DAILY_META.timestamp` 与快照 `as_of_bjt` 均须展示与 `as_of_short` 一致的北京时间（支持 ISO `YYYY-MM-DD HH:MM` 或中文 `YYYY年M月D日... HH:MM`）。
+- **班次与单向截点宽限（`MAX_EDITION_EARLY = 5min`、`MAX_EDITION_LAG = 6h`）**：新刊仅支持 `0730` 或 `1800` 班次，北京时间 `as_of_short` 须落在所标班次 **`[-5 分钟, +6 小时]`** 单向窗口内；封面 `DAILY_META.timestamp` 与快照 `as_of_bjt` 均须展示与 `as_of_short` 一致的北京时间（支持 ISO `YYYY-MM-DD HH:MM` 或中文 `YYYY年M月D日... HH:MM`）。
 - **四关固定 `id` 顺序**：`tier1_gates` 与 `DAILY_CHART_SWITCH.checks` 必须严格使用 `("real_yield", "rate_spread", "vix", "ny_close")` 固定顺序，由 `edition_validation.recheck_entry_gates()` 根据原始精度输入复算。
 - **外置日历覆盖与抗阻塞容忍（`market_calendar.json`）**：
   - `market_calendar.json` 覆盖已延展至 **`2027-06-30`**（含耶稣受难日 `2027-03-26`、清明 `2027-04-05`、劳动节 `2027-05-01..05`、阵亡将士纪念日 `2027-05-31`、六月节补休 `2027-06-18` 等），`coverage` 必填 `start_date`、`end_date`、`verified_on`、`vix_schedule_source`（HTTPS）；
@@ -58,7 +58,7 @@
 
 ### 1.1 `DAILY_META`（封面横幅 + 4–6 张核心 KPI 卡）
 - **必填键（Gate 0）**：`tag`, `kpis`；新刊（及同场修订）同时必填 **`edition_id`**, **`as_of_short`**（并与文件名、快照及 `timestamp` 展示时间严格一致）
-- **完整字段**：
+- **完整字段**（以下 `kpis` 报价与日期仅作 **Schema 历史示例**，实时值一律以 `data_snapshot.json` 为准）：
   ```json
   {
     "edition_id": "2026-11-26_1800",
@@ -76,7 +76,7 @@
     ]
   }
   ```
-- **硬限制**：收敛新刊（`>= 2026-11-26_1800`）合法数量为 **4–6 张卡**（4 张自动触发 `.kpi-strip.cols-4` 单排高密度横条，手机端自动折为 2×2）；每条 `sub` 严控 **≤17 个汉字当量**（`>17.5` 报 WARN）；含 `红绿灯` 字样的 KPI `val` 须与快照档位及 `X/4` 一致；`footer_title` 严禁含 `V2.x/V7.x`。
+- **硬限制**：收敛新刊（`>= 2026-11-26_1800`）合法数量为 **4–6 张卡**（4 张自动触发 `.kpi-strip.cols-4` 单排高密度横条，手机端自动折为 2×2）；每条 `sub` 严控 **≤17 个汉字当量**（`>17.5` 报 WARN）；含 `红绿灯` 字样的 KPI `val` 须与快照档位及 `X/4` 一致；`footer_title` 严禁含 `V2.x/V5.x/V6.x/V7.x`。
 
 ### 1.2 `DAILY_VERDICT`（Layer 0 首屏 30 秒白话行动裁决卡）
 - **必填键（Gate 0）**：`level`, `headline`, `traffic_light`, `bullets` (数组), `risk_line`；新刊同时必填 **`tier_code`** (`"Tier 0"|"Tier 1"|"Tier 2"|"Tier 3"`), **`new_buy_allowed`** (bool), **`tier1_passed`** (int)（三项与快照逐项校验一致）
@@ -150,10 +150,10 @@
 1. **班次、紧迫度与 SSOT 裁决元信息**：`edition_id`, `as_of_bjt`, `as_of_short`, `master_version`, `daily_alert_level` (`L0`/`L1`/`L2`), `daily_alert_label`, `tier_code` (`Tier 0`/`Tier 1`/`Tier 2`/`Tier 3`), **`new_buy_allowed` (bool，与 `tier_code != "Tier 0"` 强制一致)**, `tier_label`, `tier_status_sub`, `tier_cover_sub`, `tier1_passed`, `tier1_total`, `a_class_tranche_split` (`"30% + 45% + 25%"`)。
 2. **四步红绿灯明细 (`tier1_gates`)**：严格长度 4 的数组，新刊与主报告均按固定 `id` 顺序（`real_yield`, `rate_spread`, `vix`, `ny_close`），每项含 `id`, `name`, `passed` (bool), `reading`, `threshold`, `detail`。
 3. **全球贵金属、内盘实盘与第 4 关日期锚**：`spot_gold_ny_close_usd`, `spot_gold_ny_close_rounded`, **`spot_gold_ny_close_date`**, `spot_gold_ny_change_pct`, `spot_gold_live_usd`, `spot_gold_intraday_high_usd`, `spot_gold_intraday_low_usd`, `spot_gold_prev_close_usd`, `spot_gold_2026_peak_usd`, **`tier1_gate4_threshold_usd`**, **`tier1_gate4_threshold_date`**, **`tier1_gate4_target_date`**, `tier1_gate4_next_threshold_usd`, `comex_front_settle_usd`, `comex_copper_usd_lb`（官结）, `spot_silver_usd`, `spot_platinum_usd`, `shfe_gold_night_rmb`/`day_rmb`, `sge_am_fix_rmb`/`pm_fix_rmb`, `sge_autd_*`, `sge_au9999_*`, `sge_same_ts_premium_rmb`。
-4. **利率、汇率与长期估值锚**：`usd_cny`, **`usd_cny_1630`**（16:30 在岸人民币官收）, `usd_cny_short`, `usd_cnh_live`, `cfets_cny_fixing`, **`cfets_fixing_date`**, `dxy`, `us2y_pct`, `us10y_pct`, `us30y_pct`, `effr_pct`, `spread_2y_ff_bp`, `dfii10_live_pct`, `dfii10_fred_official_pct`, `t10yie_fred_pct`, `dfii10_20d_peak_pct`, `dfii10_60d_peak_pct`, `dfii10_percentile_20y`, `fair_value_usd`/`rmb`, `cpi_u_index`, `cpi_1980_anchor_usd`, `gold_mcap_to_us_m2_pct`, `etf_2y_avg_cost_usd`, `sma_200w_*`。
+4. **利率、汇率与长期估值锚**：`usd_cny`, **`usd_cny_1630`**（16:30 在岸人民币官收）, `usd_cny_short`, `usd_cnh_live`, `cfets_cny_fixing`, **`cfets_fixing_date`**, `dxy`, `us2y_pct`, `us10y_pct`, `us30y_pct`, `effr_pct`, `spread_2y_ff_bp`, `dfii10_live_pct`, `dfii10_fred_official_pct`, `t10yie_fred_pct`, `dfii10_20d_peak_pct`, `dfii10_60d_peak_pct`, `dfii10_percentile_20y`, `fair_value_usd`/`rmb`, `cpi_u_index`, `cpi_1980_anchor_usd`, `gold_mcap_to_us_m2_pct`（线性乘算仅限月内快算；每月第 4 个周二 FRED `M2SL` 变动 ≥1% 或 WGC 年度地上存量更新时必须重锚定分母常数）, `etf_2y_avg_cost_usd`, `sma_200w_*`。
 5. **VIX 独立日线与盘中校验域**：`vix_close`, `vix_change_pct`, **`vix_live`** (num | null), **`vix_live_as_of`** (str | null，与 `vix_live` 成对), `vix_10d_peak_close`, `vix_10d_peak_date`, `vix_10d_window_end`, **`vix_10d_session_closes`** (`[{"date": "YYYY-MM-DD", "close": num} × 10]`), **`vix_daily_row_checks`**（按美东日期键记录 `status`/`checked_at`/`source`/`note` 及可选 `confirmation_source`/`next_published_date`）, `vix_daily_source`。
 6. **能源、风险资产、海外金矿/ETF 与信用配管**：`brent_settle_usd`, `wti_settle_usd`, `ttf_gas_eur`, `nvda_close_usd`, `spx_close`, `ndx_close`, `btc_usd`, `gdx_close_usd`, `gld_close_usd`, `gld_holdings_tonnes`, `gld_daily_flow_tonnes`, `gdx_gld_ratio`, `hy_oas_bp`, `ccc_oas_bp`, `coreweave_cds_bp`, `sofr_iorb_bp`, `on_rrp_usd_m`。
-7. **国内黄金 ETF 标准无日期键 (`etf_cn`)**：
+7. **国内黄金 ETF 标准无日期键 (`etf_cn`)**（以下数值仅作 **Schema 历史示例**，实时值一律以 `data_snapshot.json` 为准）：
    ```json
    "etf_cn": {
      "as_of_date": "2026-11-25",

@@ -31,6 +31,7 @@ CANONICAL_STAGE_PATHS = (
     "scripts", "tests", "README.md", ".gitignore", ".github",
 )
 FORBIDDEN_STAGE_SUFFIXES = (".pdf", ".docx", ".artifacts.json")
+FORBIDDEN_STAGE_FILENAMES = ("_edition_patch.json", "_ledger_patch.json")
 EXTENDED_EQUITY_STATE_FILES = (
     "equity/state/multi_asset_channels.json",
     "equity/state/etf_universe.json",
@@ -209,7 +210,8 @@ def _scoped(path: str, scope: tuple[str, ...] = CANONICAL_STAGE_PATHS) -> bool:
 
 def _is_forbidden_stage_path(path: str) -> bool:
     low = path.lower()
-    return any(low.endswith(suffix) for suffix in FORBIDDEN_STAGE_SUFFIXES)
+    name = Path(path).name.lower()
+    return name in FORBIDDEN_STAGE_FILENAMES or any(low.endswith(suffix) for suffix in FORBIDDEN_STAGE_SUFFIXES)
 
 
 def _check_tree_no_forbidden_files(env: dict[str, str], tree: str) -> None:
@@ -218,7 +220,7 @@ def _check_tree_no_forbidden_files(env: dict[str, str], tree: str) -> None:
     if forbidden:
         sample = ", ".join(forbidden[:10])
         raise RuntimeError(
-            f"Forbidden binary/receipt file(s) cannot enter web-only publication commit: {sample}"
+            f"Forbidden binary/receipt file(s) or temporary patch file(s) cannot enter web-only publication commit: {sample}"
         )
 
 
@@ -402,6 +404,8 @@ def _push_main(
     edition: str | None = None,
     before_push: Callable[[str], None] | None = None,
     on_push_rejected: Callable[[str], None] | None = None,
+    validated_tree: str | None = None,
+    validated_output: Path | None = None,
 ) -> str:
     for attempt in (1, 2):
         try:
@@ -422,8 +426,27 @@ def _push_main(
         if _git(env, "diff", "--name-only", "--diff-filter=U", "-z"):
             raise RuntimeError("Rebase left unmerged paths. Resolve them before continuing.")
         commit = _git(env, "rev-parse", "HEAD").strip()
-        print(f"[git] Validating final commit {commit[:12]} before push {attempt}/2.")
-        _validate_revision(commit, output, env, edition=edition)
+        commit_tree = _git(env, "rev-parse", f"{commit}^{{tree}}").strip()
+        prebuilt = validated_output or output
+        if (
+            validated_tree is not None
+            and commit_tree == validated_tree
+            and prebuilt.is_dir()
+            and (prebuilt / "index.html").is_file()
+        ):
+            if prebuilt != output:
+                if output.exists():
+                    shutil.rmtree(output)
+                shutil.copytree(prebuilt, output)
+            print(
+                f"[git] Reusing pre-validated tree {commit_tree[:12]} for commit {commit[:12]} "
+                f"before push {attempt}/2."
+            )
+        else:
+            print(f"[git] Validating final commit {commit[:12]} before push {attempt}/2.")
+            _validate_revision(commit, output, env, edition=edition)
+            validated_tree = commit_tree
+            validated_output = output
         if before_push is not None:
             before_push(commit)
         try:
@@ -468,14 +491,17 @@ def _prepare_commit(
     message: str | None,
     automated: bool = False,
     explicit_stage: list[str] | None = None,
-) -> None:
+    token: str | None = None,
+) -> tuple[str, Path]:
     current_tree = _git(env, "rev-parse", "HEAD^{tree}").strip()
     tree, automatic = _publication_tree(
         env, work / "publish-index", automated=automated, explicit_stage=explicit_stage,
     )
+    if token is not None:
+        edition_run.check_gold_ledger_history_for_token(token, tree)
     _validate_revision(tree, output, env, edition=edition)
     if tree == current_tree:
-        return
+        return tree, output
     if (current_tree if automatic else tree) != _git(env, "write-tree").strip():
         raise RuntimeError("The staged tree changed during validation. Retry with the intended changes.")
     if automatic:
@@ -492,6 +518,7 @@ def _prepare_commit(
         raise
     if tree != _git(env, "rev-parse", "HEAD^{tree}").strip():
         raise RuntimeError("The committed tree changed during validation. The commit was not pushed.")
+    return tree, output
 
 
 def _push_edition(
@@ -537,10 +564,16 @@ def _push_edition(
                 before_push=remember, on_push_rejected=forget,
             )
     else:
-        _prepare_commit(env, work, output, edition=edition, message=message, automated=True)
+        prepared = _prepare_commit(
+            env, work, output, edition=edition, message=message, automated=True, token=token,
+        )
+        validated_tree, validated_output = (
+            prepared if isinstance(prepared, tuple) and len(prepared) == 2 else (None, output)
+        )
         sha = _push_main(
             env, output, git_dir, edition=edition,
             before_push=remember, on_push_rejected=forget,
+            validated_tree=validated_tree, validated_output=validated_output,
         )
     edition_run.record_push(token, sha=sha, repository=repository)
     intent.unlink(missing_ok=True)
@@ -618,12 +651,18 @@ def main(argv: list[str] | None = None) -> int:
                         output=output, message=args.message,
                     )
                 else:
-                    _prepare_commit(
+                    prepared = _prepare_commit(
                         env, work, output, edition=None, message=args.message,
                         automated=False, explicit_stage=args.stage,
                     )
+                    validated_tree, validated_output = (
+                        prepared if isinstance(prepared, tuple) and len(prepared) == 2 else (None, output)
+                    )
                     if not args.no_push:
-                        pushed_sha = _push_main(env, output, git_dir)
+                        pushed_sha = _push_main(
+                            env, output, git_dir,
+                            validated_tree=validated_tree, validated_output=validated_output,
+                        )
 
                 try:
                     _install_site(output)

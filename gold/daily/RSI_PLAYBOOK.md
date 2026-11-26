@@ -21,22 +21,22 @@
 - **官收白名单、跨日分母防串位与抗阻塞日历时限**：
   - 美股 `GLD`/`GDX` 官收须交叉校验 **`StockAnalysis` / `Investing` / Yahoo / 腾讯历史收盘表 + `SSGA .xlsx` / `VanEck` 官方 NAV**，严禁误采盘中快照（如 `3:39 PM` 滞后价）或第三方未刷新持仓；COMEX 检索直加 `"official settlement"`，**拉黑 `Barchart` 远月滞后合约快照**；
   - 国内夜盘涨跌必以上金所/上期所**前一日官方日终清算表**为分母；补录滞后项直加 `site:shfe.com.cn`、`site:lbma.org.uk`、`"基金份额" "518880"`，国内 ETF 统一写快照无日期键 **`etf_cn`**；
-  - **抗阻塞校验参数（`edition_validation.py`）**：班次截点宽限 **6 小时**；节日 `pending` 复查间隔 **4 小时**；普通交易日与半日市（黑五 `11/27`、平安夜 `12/24`）均支持 VIX `provisional_close`（普通日须在 **3 个自然日**内用官方 CSV 核销，次日班次在 6h 窗口内重查）；`no_row_confirmed` 支持 Cboe 官方公告或自证 CSV `next_published_date > day`；`market_calendar.json` 已延展至 `2027-06-30`（覆盖硬底线 30 天 / `<60` 天提示 / 核证 90 天）；
+  - **抗阻塞校验参数（`edition_validation.py`）**：单向班次截点宽限 **`[-5 分钟, +6 小时]`**；节日 `pending` 复查间隔 **4 小时**；普通交易日与半日市（黑五 `11/27`、平安夜 `12/24`）均支持 VIX `provisional_close`（普通日须在 **3 个自然日**内用官方 CSV 核销，次日班次在 6h 窗口内重查）；`no_row_confirmed` 支持 Cboe 官方公告或自证 CSV `next_published_date > day`；`market_calendar.json` 已延展至 `2027-06-30`（覆盖硬底线 30 天 / `<60` 天提示 / 核证 90 天）；
   - **北美冬/夏令时统一由 `market_calendar.json` 驱动**：当前冬令时锁定 `EST = BJT − 13h`、`CST = BJT − 14h`（COMEX `13:30 EST` = `02:30 BJT`，感恩节 CME 停盘周五 `03:30–07:00 BJT`）；12 月 FOMC 美东为 `12/08–09`（北京 `12/10 03:00` 决议）。
 - **同时间戳溢价与透明缺口 `data_caveats`**：算国内溢价必用同分钟 `国际金 × 汇率 ÷ 31.1035` 对比上海金、`Au(T+D)` 15:30 或 `02:30` COMEX 官结；未披露/暂定项写入纯读者中文的 `data_caveats`（零内部文件名；国内休市或 `data_caveats` 明示金店未开盘时自动放行金店价对齐预警）。
-- **18:00 晚报封账与防卡壳红线**：18:00 须封账 SGE 日终表、SHFE 龙虎榜、`usd_cny_1630`、当日四大行金条/金店牌价与 `09:15` CFETS 中间价；阿联酋已于 2026-05-01 退出 OPEC+；CME `26-389` 已生效（金 6%/银 9%）；**无人值守禁 `edit_file` 一律 `write_file` 全量写盘**，常规班次惰性只读 `master_snapshot.json`，同场修订加 `_r2`。
+- **18:00 晚报封账与防卡壳红线**：18:00 须封账 SGE 日终表、SHFE 龙虎榜、`usd_cny_1630`、当日四大行金条/金店牌价与 `09:15` CFETS 中间价；阿联酋已于 2026-05-01 退出 OPEC+；CME `26-389` 已生效（金 6%/银 9%）；**无人值守禁 `edit_file`：中小 Markdown/快照用 `write_file` 全量写盘，历史双账本（`CHANGELOG.md`/`AUDIT_LOG.md`）统一写 `_ledger_patch.json` 经 `scripts/patch_state_dbs.py` 无损头插（防 300s 超时）**，常规班次惰性只读 `master_snapshot.json`，同场修订加 `_r2`。
 
 ### 2. 小白友好三层写作、跨轨统一口径与一次过 `--strict` 避坑
 - **组件校验与 6 门禁秒检铁律**：写 `DAILY_*` 必核 `DAILY_FORMAT_SPEC.md` 必填键（`DAILY_META.edition_id/as_of_short`、`DAILY_VERDICT.tier_code/new_buy_allowed/tier1_passed`、`DAILY_CHART_SWITCH.checks[].id`）；写完 MD 直接跑 `lint_readability.py --strict`（纯网页 6 门禁 Gate 0–5），必须 0 错 0 警。
 - **小白友好三层结构与升级版词汇标准**：
   - 落实 **30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级硬核证据**；`DXY`/`COT`/`CDS` 及 `DFII10`/`2Y−FF`/`ON RRP`/`HY/CCC OAS`/`IOPV`/`bp` 首次出现必配简短白话括注或交由站内术语浮窗；
-  - **全篇（含 Layer 2/3）硬拦内部文件名、版本号（`V2.x/V6.x/V7.x`）与工程词（`Subagent`/`红队`/`法证`/`*.py`）**；Layer 0–1 硬拦生僻卖方量化词（`stop-through`/`IFRS 9`/`HQLA`/`FVOCI`/`ROTCE`/`Call Wall`/`Put Wall`/`负 Gamma`/`R²=`）、赌徒口语（`梭哈`/`做T`/`短线波段`/`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）、居高临下说教（`小白词典`/`直接抄`/`蠢事`/`1 分钟定心丸`/`保命铁律`）及平行 `X/6`（`六灯`）与部分过关开仓话术；鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；
+  - **全篇（含 Layer 2/3）硬拦内部文件名、版本号（`V2.x/V5.x/V6.x/V7.x`）与工程词（`Subagent`/`红队`/`法证`/`*.py`）**；Layer 0–1 硬拦生僻卖方量化词（`stop-through`/`IFRS 9`/`HQLA`/`FVOCI`/`ROTCE`/`Call Wall`/`Put Wall`/`负 Gamma`/`R²=`）、赌徒口语（`梭哈`/`做T`/`短线波段`/`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）、居高临下说教（`小白词典`/`直接抄`/`蠢事`/`1 分钟定心丸`/`保命铁律`）及平行 `X/6`（`六灯`）与部分过关开仓话术；鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；
   - **感叹号、加粗与反引号**：Layer 0–1 感叹号 **0** 个、全篇 **≤5** 个；加粗密度 **≤14%**；**裸数字/金额/百分比不套反引号**（仅代码可用）；写 `VIX` 用“冲破 30”vs“稳守 30 下方”，央行概率写“概率持稳”，白银明标现货或期银。
 - **公式直算、卡片一致性、跨轨统一费率与双账本保序铁律**：
-  - `gold_mcap_to_us_m2_pct` 直接按 **`111.9 × (spot_ny_close / 3635.24)`** 直算；
+  - `gold_mcap_to_us_m2_pct` **仅限月内快算**时按 **`111.9 × (spot_ny_close / 3635.24)`** 缩放；**每月第 4 个周二 FRED `M2SL` 公布变动 ≥1% 或 WGC 年度地上黄金存量修订时，必须重新锚定常数**，严禁长期沿用静态乘数；
   - `DAILY_PERSONA` 发前必核标题/副标题计数 == `actions` 实际条数，且 B 类卡同时提及矿股与国内克价时必写明“国内金价…元/克”防股价歧义；
-  - `AUDIT_LOG.md` 与 `CHANGELOG.md` 严守历史非空行原序（跨月可按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）；`AUDIT_LOG.md` 增量须落齐顶区 + 信任资产分表 + 官方源索引；
-  - **跨轨统一费率与离岸税务口径**：`008142`/`008143` 同步 2026 销售费改（A 申购上限 0.30%/1 折 0.03%【过渡 0.06%】、运营 0.20%/年；C 销服上限 0.20%/年且 2027-01-01 起满 1 年先收后返免收，但长持 ≥1 年仍 1 折 A 更省；旧合同 `008143` 现仍 0.55%/年且满 30 天免赎回）；大额离岸黄金须预警 `02840.HK` 美国遗产税（红灯解除后改选 `IGLN.L` / `3081.HK`）及中国居民 20% 境外所得与 CRS 合规；`L1` 一律写 `🟡 L1` 并明示非买点。
+  - `AUDIT_LOG.md` 与 `CHANGELOG.md` 统一经 `_ledger_patch.json` + `scripts/patch_state_dbs.py` 无损头插以严守历史非空行原序（跨月可按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）；`AUDIT_LOG.md` 增量须落齐顶区 + 信任资产分表 + 官方源索引；
+  - **跨轨统一费率与离岸税务口径**：`008142`/`008143` 同步 2026 销售费改（A 申购上限 0.30%/1 折 0.03%【过渡 0.06%】、运营 0.20%/年；C 销服上限 0.20%/年且 2027-01-01 起满 1 年先收后返免收，但长持 ≥1 年仍 1 折 A 更省；旧合同 `008143` 现仍 0.55%/年且满 30 天免赎回）；大额离岸黄金须预警 `02840.HK` 美国遗产税（红灯解除后改选 `IGLN.L` / `03081.HK`）及中国居民 20% 境外所得与 CRS 合规；`L1` 一律写 `🟡 L1` 并明示非买点。
 
 ### 3. 纯网页视觉清晰度与 640px 零碰撞矢量图
 - **封面与可选组件**：支持 **4 张高密度核心 KPI 卡**（`.kpi-strip.cols-4`，兼容 4–6 张，`sub` ≤17 汉字当量），封面 `summary` 控 62–78 字，H1 控 ≤34 字防孤行；`DAILY_TRUST_BAR` 与 `DAILY_GLOSSARY` 可选（0–1 次）；`DAILY_SIGNAL_NOISE` 采用 `.sn-grid` 双栏自适应网格（单条控 ≤3 核心锚点数字）。

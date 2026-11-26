@@ -20,7 +20,7 @@
 | `footer_note` | 必填 | `string` | 页面底部合规与纪律提醒，纯读者中文（黄金红灯停期严禁出现买金措辞，统一写 `黄金红灯停新仓 0%`）。 |
 | `kpis` | 必填 | `array[4]` | 固定 4 张首屏核心状态卡片，每项 `{ "label": string, "val": string, "sub": string }`；**JSON 字段内建议移除原始 Emoji（如 `🛡️`），使用纯中文如 `"红灯防守期"`**。 |
 | `data_caveats` | 日报可选 | `array` | 当期数据透明披露清单（未到披露时点、暂用收盘、来源口径分歧或节假薄盘），每项 `{ "id", "market", "category", "severity", "item", "detail", "impact", "next_review" }`；**必须全部为纯读者中文、严禁含任何内部文件名或工程词**。 |
-| `chart_live` | 必填 | `object` | 驱动全部 21 张矢量 SVG 图表的实时快照与覆写字典（见下文）；其中 `as_of_full` 须以 `YYYY-MM-DD HH:MM` 开头、位于班次前后 **6 小时内**，并与 `state/market_state.json` 时间戳一致。 |
+| `chart_live` | 必填 | `object` | 驱动全部 21 张矢量 SVG 图表的实时快照与覆写字典（见下文）；其中 `as_of_full` 须以 `YYYY-MM-DD HH:MM` 开头、落在所标班次 **`[-5 分钟, +6 小时]`** 单向窗口内，并与 `state/market_state.json` 时间戳一致。 |
 
 > **尾置、唯一性与全载体黄金锁校验**：日报 `<!-- DAILY_META_JSON { ... } -->` 必须置于 `.md` **文件最末尾**，严禁同一图表混写平铺旧键与嵌套新键，须为严格标准 JSON。所有图表标题使用 `图 {{CHART_NUM}}：` 占位符由渲染引擎按正文顺序自动顺编。**凡正文嵌入的图表（除依赖平铺指数键的 `A1`/`A5` 外），必须在 `chart_live` 中提供对应的非空嵌套对象（如 `a2`/`a6`/`h2`/`h6`/`u3`/`u6`）。当黄金快照为 `Tier 0` 红灯或 `new_buy_allowed == false` 时，`lint_equity.py` Gate C2 与 `lint_site.py` Gate S6 将连同 JSON 字段（`kpis`/`status_line2`/`a4.cards`/`h4.cards`/`u4.cards`/`u7.points`）与渲染后网页/SVG 文本一并扫描拦停！**
 
@@ -32,11 +32,11 @@
 
 | 键名 | 类型 | 驱动图表 | 说明与示例 |
 | :--- | :--- | :--- | :--- |
-| `as_of_short` / `as_of_full` | `string` | `A1`, `A2`, `A4`, `A5`, `A6` | 短日期（如 `"11/26盘前"` / `"11/26官收"`）与完整北京时间标注（班次前后 6 小时内） |
+| `as_of_short` / `as_of_full` | `string` | `A1`, `A2`, `A4`, `A5`, `A6` | 短日期（如 `"11/26盘前"` / `"11/26官收"`）与完整北京时间标注（落在所标班次 `[-5 分钟, +6 小时]` 单向窗口内） |
 | `as_of_year_float` | `number` | `A1` | 比例时间轴年份浮点坐标（`年 + 当年第几天/365`，如 `2026.905`，跨月必推进） |
 | `csi300` / `sse` / `csi300_200w` / `sse_200w` | `number` | `A1`, `A5` | 沪深 300、上证指数及各自 200 周均线（4 年平均成本线） |
 | `stock_pool_count` | `number` | `A7` & Gate 3B | 核心代表龙头池实时总数（**弹性 65–85 只**，扩容基准 **`76`**），须与 `state/market_state.json`、`state/deep_dossiers.json` 及旗舰附表二实际行数 100% 一致 |
-| `score` / `tier_short` / `status_line1` / `status_line2` | `number` / `string` | `A4` | 体检分（`0–6`）、四灯纯中文名（免原始 Emoji）与总开关下方两行诊断与纪律 |
+| `score` / `tier_short` / `status_line1` / `status_line2` | `number` / `string` | `A4` | 体检分（`0–6`）、四灯纯中文名（**A4 自动拼接 `当前 {score} 分 · {tier_short}`，须仅填纯灯号如 `"红灯防守期"` 避免重复拼分**）与总开关下方两行诊断与纪律 |
 | `a2` | `object` | `A2` | `{ "title", "sub", "indices": [[name, pct, hex], ...], "futures": [[name, ann_disc, headline, sub, col, bg], ...], "takeaway", "note" }`（`ann_disc` 为 `null` 时渲染灰卡；拆分结算待补核与席位待补核避免误标） |
 | `a3` | `object` | `A3` | 中国宏观冷热 K 型六维动态覆写：`{ "title", "sub", "cold": [[label, val, desc], ...], "hot": [[label, val, desc], ...], "takeaway", "note" }`（向下兼容 `cold_items`/`hot_items`） |
 | `a4` | `object` | `A4` | 未来窗口阶段卡覆写：`{ "title", "sub", "horizon", "cards": [{"header","color","bg","border","items":[...]}], "takeaway", "note" }`（须覆盖跨年至 3 月全国两会；**黄金红灯期卡片严禁写“补足/新买黄金”，统一写“黄金待亮黄灯后再分批转入”**） |
@@ -47,14 +47,14 @@
 
 | 键名 | 类型 | 驱动图表 | 说明与示例 |
 | :--- | :--- | :--- | :--- |
-| `as_of_short` / `as_of_full` / `as_of_year_float` | `string` / `number` | `H1`–`H6` | 短日期、完整北京时间标注（班次前后 6 小时内）与比例时间轴年份浮点坐标 |
+| `as_of_short` / `as_of_full` / `as_of_year_float` | `string` / `number` | `H1`–`H6` | 短日期、完整北京时间标注（落在所标班次 `[-5 分钟, +6 小时]` 单向窗口内）与比例时间轴年份浮点坐标 |
 | `hsi` / `hsi_200d` / `hstech` / `hstech_200d` | `number` | `H1`, `H5` | 恒生指数、恒指 200 日年线、恒生科技与恒科 200 日年线（偏离率按公式动态算，杜绝手工算错） |
 | `hsahp` | `number` | `H6` | 恒生沪深港通 AH 股溢价指数 |
 | `usd_hkd` | `number` | `H3` | 美元兑港元即期汇率（用于绘制 7.75–7.85 联汇标尺） |
 | **`hkma_agg_bal_hkd_100m`** | `number` | `H3` | **香港金管局银行体系总结余，唯一规范键，显式单位：亿港元**。 |
 | `hibor_1m_pct` / `sofr_pct` / `us10y_pct` | `number` | `H3`, `H5` | 1 个月港元拆息、美元隔夜担保融资利率与 10 年期美债收益率（须与全局状态 100% 对齐） |
 | `stock_pool_count` | `number` | `H7` & Gate 3B | 港股代表龙头池实时总数（**弹性 65–85 只**，扩容基准 **`75`**），须与 `state/market_state.json`、`state/deep_dossiers.json` 及旗舰附表二实际行数 100% 一致 |
-| `score` / `tier_short` / `status_line1` / `status_line2` | `number` / `string` | `H4` | 港股体检分（`0–6`，动态绑定 H4 底框颜色）、四灯纯中文名与行动纪律 |
+| `score` / `tier_short` / `status_line1` / `status_line2` | `number` / `string` | `H4` | 港股体检分（`0–6`，动态绑定 H4 底框颜色）、四灯纯中文名（**H4 显式提供 `status_line1` 时直接渲染该行，`tier_short` 统一填纯灯号如 `"红灯防守期"` 并在 `status_line1` 写明体检分**）与行动纪律 |
 | `h1`–`h5`, `h7` | `object` | `H1`–`H5`, `H7` | 各图结构化覆写：`h1`（周期拐点）、`h2`（5 宽基 + 03:00 夜期盲窗警告卡与南向/沽空卡，夜期盲窗禁标亮绿）、`h3`（联汇与拆息）、`h4`（4 阶段卡片，每条 ≤18 字等宽）、`h5`（四情景整数 10 点条总和 = 10 + 投行目标）、`h7`（像素坐标四象限，同股 PE 必与 A 股满足物理学一致，禁列退市股 `00011`） |
 | **`h6`** | `object` | `H6` | AH 溢价/倒挂路由 + 板块强弱覆写：`{ "title", "sub", "items": [[name, finite_pct, route_tag], ...], "sector_strip": string, "takeaway", "note" }`。**`h6.items`（非空数组，每行 `[名称, 有限百分比, 说明]`，按实际行数动态全量渲染、不截断，并自动计算 `svg_h`）与 `h6.sector_strip`（非空本期板块说明字符串）均为必填硬校验字段！** |
 
@@ -62,11 +62,11 @@
 
 | 键名 | 类型 | 驱动图表 | 说明与示例 |
 | :--- | :--- | :--- | :--- |
-| `as_of_short` / `as_of_full` / `as_of_year_float` | `string` / `number` | `U1`–`U6` | 短标签、完整北京时间标注（班次前后 6 小时内；07:30 早刊禁写 09:00/08:00 盘后终盘）与年份浮点坐标 |
+| `as_of_short` / `as_of_full` / `as_of_year_float` | `string` / `number` | `U1`–`U6` | 短标签、完整北京时间标注（落在所标班次 `[-5 分钟, +6 小时]` 单向窗口内；07:30 早刊禁写 09:00/08:00 盘后终盘）与年份浮点坐标 |
 | `spx` / `spx_200d` / `spx_high` | `number` | `U1`, `U2`, `U5` | 标普 500 点位、200 日年线与阶段高点 |
 | `us10y` / `us10y_zone` | `number` / `string` | `U4`, `U7` | 10 年期美债收益率（自动计算美债等效市盈率 `100/us10y` 并动态定位 U7 蓝虚线）与分区（`"low"` / `"mid"` / `"high"`，严格对应 `<4.5%`/`4.5%–4.85%`/`>4.85%`） |
 | `stock_pool_count` | `number` | `U7` & Gate 3B | 美股代表龙头池实时总数（**弹性 65–85 只**，扩容基准 **`80`**），须与 `state/market_state.json`、`state/deep_dossiers.json` 及旗舰附表二实际行数 100% 一致 |
-| `score` / `tier_short` / `status_line1` / `status_line2` | `number` / `string` | `U4` | 体检分、美股四灯纯中文名与两行行动纪律（口语配比加总必 = 100%） |
+| `score` / `tier_short` / `status_line1` / `status_line2` | `number` / `string` | `U4` | 体检分、美股四灯纯中文名（**U4 B 行直接拼接 `总开关 · {tier_short}` 而不自动拼 `score`；为与三市模板统一口径，推荐统一填纯灯号 `"红灯防守期"` 并在 `status_line1` 写明精确体检分**）与两行行动纪律（口语配比加总必 = 100%） |
 | `u1` / `u2` / `u3` | `object` | `U1`, `U2`, `U3` | 危机阶梯（`u1`）、风暴时间轴（`u2`，含动态 `zone_label` 防过时文案残留）、信用水面上下（`u3`） |
 | `u4` | `object` | `U4` | 北京时间未来窗口阶段卡：`{ "title", "sub", "horizon", "cards": [{"header","color","bg","border","items":[...]}], "takeaway", "note" }`（**每条 bullet 去圆点后严控 ≤18 汉字等宽防右框溢字，且禁写裸 `10Y` 等缩写**） |
 | **`u5`** | `object` | `U5` | 华尔街大行 2027 目标对比：`{ "title", "sub", "banks": [[name, target_int, hex], ...], "takeaway", "note" }`；**动态行高与画布高度（`svg_h = max(288, 68 + len(banks) * 24)`），全量渲染不截断并自动重算均值与涨跌空间 %**。 |

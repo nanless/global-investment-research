@@ -2,7 +2,7 @@
 
 本文件是 `global-investment-research` 单仓库（Monorepo）的**顶层唯一编排宪章**，统一约束 **黄金深度研报（`gold/`）**、**全球三市权益与重点 ETF 研报（`equity/`：中国 A 股 × 中国香港股市 × 美国股市，覆盖 231 只全行业龙头 7 维机构级深研与 140+ 只跨 6 大通道重点 ETF）** 以及 **中国大陆 12 大个人多元合规投资渠道（MECE 全覆盖 + 横向「全市场打新工具箱」与「双层风控警示墙」）** 在一体化双定时任务下的协同调研、纯网页严检、跨轨门禁、受控 RSI 自我复盘与静态门户发布。
 
-> **纯网页唯一交付原则**：本项目**仅发布纯网页静态门户（GitHub Pages）**，不编译、不托管、不链接任何离线二进制文档附件。门户首页（`index.html`）呈现 **4 大核心市场红绿灯**、小白 **「今日行动红绿灯 + 钱怎么分四笔」** 导览、**全部 12 大个人多元合规投资渠道简洁概览卡**（点击进入各自独立详情页 `channels/<id>.html`）、**5 大 ETF 通道概览卡**（跳转预筛选 `etfs.html`）、**《新手 3 分钟指南》（`guide.html`）** 与 **站内术语白话浮窗**。
+> **纯网页唯一交付原则**：本项目**仅发布纯网页静态门户（GitHub Pages）**，不编译、不托管、不链接任何离线二进制文档附件。门户首页（`index.html`）呈现 **4 大核心市场红绿灯**、小白 **「今日行动红绿灯 + 钱怎么分四笔」** 导览、**全部 12 大个人多元合规投资渠道简洁概览卡**（点击进入各自独立详情页 `channels/<id>.html`）、**5 大市场/资产分组 ETF 概览卡（底层覆盖 6 大交易通道）**（跳转预筛选 `etfs.html`）、**《新手 3 分钟指南》（`guide.html`）** 与 **站内术语白话浮窗**。
 >
 > **实时数值唯一真相源原则（SSOT）**：所有宪法、规则与技能文档只锁定制度口径、风控红线与计算方法，**严禁硬编码随时变动的实盘利率、收益率、溢价率、规模、点位或比例数字**；一切实时数值以 **`gold/data_snapshot.json`** 与 **`equity/state/*.json`** 为唯一真相源。
 
@@ -31,6 +31,8 @@ global-investment-research/
 │   └── daily/                       # 三市日报、总看板 INDEX、SCORECARD、CHANGELOG
 ├── scripts/                         # 零依赖静态门户构建、严格门禁、纯网页发布与本地定时安装引擎
 │   ├── build_site.py                # 零第三方依赖生成双端响应式门户（首页导览/12 独立渠道页/ETF 雷达/231 股 7 维/新手指南/记分卡/档案）
+│   ├── svg_geometry.py              # SVG 矢量文本边界框解析与零碰撞/零越界几何校验引擎
+│   ├── patch_state_dbs.py           # 权益三大扩展大 JSON（~830 KB）原子合并与黄金双账本无损头插工具（防 300s 超时）
 │   ├── lint_site.py                 # 6 道法证与安全门禁（S1–S6，--strict 零容忍，禁用离线附件链接）
 │   ├── publish_site.py              # 源稿严检 -> 静态站构建严检 -> 限域提交推送（GitHub Pages 自动部署）
 │   ├── install_sidecars.py          # 将脱敏定时模板渲染/原子安装至本机并做漂移校验
@@ -82,7 +84,7 @@ global-investment-research/
 
 每次 `07:30` 或 `18:00` 一体化班次必须严格按以下顺序在同一会话内串行推进，严禁跳步或乱序：
 
-- **运行锁、6 小时窗口与僵尸锁清理**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` 或 `--scheduled 1800`，**定时运行窗与跨轨截点容差统一为 6 小时（`07:25–13:30` / `17:55–23:59` CST）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**超 2 小时无进展且未进入推送**的其他期号僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。
+- **运行锁、单向时间窗与僵尸锁清理**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` 或 `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**严格较早期号**、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。
 - **期号交接与三库同期锁**：当班黄金快照、黄金日报 `DAILY_META`、权益状态、新权益稿 `DAILY_META_JSON` 以及三大扩展数据库（`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。休市沿用旧稿时保留旧稿期号与时间，状态与三大数据库仍刷新至当班期号。
 
 1. **Step 0｜双轨 RSI 经验库冷启动**：
@@ -94,14 +96,14 @@ global-investment-research/
 4. **Step 2B｜1 路统一发前红队对抗核验（10+1 架构）**：
    - 跨轨交叉审计共享宏观数字、黄金红灯全载体锁、A/H 物理一致、100% 配置闭环、12 大多元渠道制度与风险红线、140+ ETF 6 通道分类与溢价防错、焦点股 7 维财报催化日期及小白友好白话清晰度。
 5. **Step 3｜黄金 SSOT 优先落盘与 6 门禁严检（纯网页）**：
-   - 先更新 `gold/data_snapshot.json`（含纯读者中文 `data_caveats`），全量写入黄金日报 Markdown、三账本与本期 `GOLD_EDITION_REVIEW` 标记。仅命中 5 大阈值时同步主报告与 `master_snapshot.json`。
+   - 先用 `write_file` 全量更新 `gold/data_snapshot.json`（含纯读者中文 `data_caveats`）、当期黄金日报 Markdown 与 `gold/daily/SCORECARD.md`；持续增长的历史双账本（`gold/daily/CHANGELOG.md`、`gold/daily/AUDIT_LOG.md`，含本期 `GOLD_EDITION_REVIEW` 标记）通过 `write_file` 写微型补丁 `gold/daily/_ledger_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（防 300s 超时）。仅命中 5 大阈值时同步主报告与 `master_snapshot.json`。
    - 运行：`python3 gold/lint_readability.py --strict <本刊路径>`（必须 `0 errors, 0 warnings`）。
 6. **Step 4｜全球权益三市、12 大多元渠道、140+ ETF 与 231 股 7 维深研库接力落盘与严检（纯网页）**：
-   - 只读校验本期黄金快照（6 小时容差）和 Tier-0 行动互斥锁。落盘本期日报 Markdown、`INDEX.md`（纯网页/Markdown 链接，禁用离线附件链接）、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`（含 `data_caveats`）、**强制同步 `edition_id` 并增量更新 `state/multi_asset_channels.json`（12 大渠道，含小白一句话、今日避坑与红/黄/绿灯）、`state/etf_universe.json`（140+ ETF）与 `state/deep_dossiers.json`（231 股零模板化 7 维深研）**，并更新 `state/audit_ledger.md`。
+   - 只读校验本期黄金快照（两轨截点均须在所标班次 `[-5 分钟, +6 小时]` 单向窗口内且黄金早于或同分钟于权益、差值 `0–6 小时`）和 Tier-0 行动互斥锁。用 `write_file` 全量落盘本期日报 Markdown、`INDEX.md`（纯网页/Markdown 链接，禁用离线附件链接）、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`（含 `data_caveats`）与 `state/audit_ledger.md`；**权益三大扩展大 JSON（`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`，合计 ~830 KB）统一写微型补丁 `equity/state/_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --apply` 原子合并，强制同步 `edition_id` 并按分层矩阵增量更新 12 大渠道（含小白一句话、今日避坑与红/黄/绿灯）、140+ ETF 与 231 股零模板化 7 维深研**。
    - 运行：`python3 equity/lint_equity.py --strict`（校验源稿、21 张 SVG 防重叠、三大深研库、跨项目黄金 SSOT 与旗舰 Markdown 同步，必须 `0 errors, 0 warnings`）。
 7. **Step 5｜统一 RSI 盲审闭环 + 单次纯网页门户发布**：
    - 启动 **1 路独立只读 `research` 盲审子代理**，按两轨各 6 维 `/30` 打分（第 4 维聚焦**纯网页视觉清晰度、SVG 零碰撞与小白 3 分钟可读性**）与预判验真，更新 `gold/daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 与 `equity/state/{rsi_metrics.json,RSI_PLAYBOOK.md}`（`findings` 支持 `resolved`、`deferred_data`、`disclosed_caveat`；仅 `open` 或未修硬错拦截发布）。
-   - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict`，随后进入 `publish` 阶段运行 `python3 scripts/publish_site.py --edition-token <token>`（构建完整静态门户——首页 4 市场 + 小白导览 + 12 大渠道概览卡 + 5 大 ETF 通道卡、12 个独立 `channels/<id>.html` 详情页、`channels.html`、`etfs.html`、`screener.html`、`guide.html`、`scorecard.html`、`archive.html`——通过 S1–S6 严检后单提交推送至 `origin/main`），最后运行 `python3 scripts/edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功即闭环。
+   - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict`，随后进入 `publish` 阶段运行 `python3 scripts/publish_site.py --edition-token <token>`（构建完整静态门户——首页 4 市场 + 小白导览 + 12 大渠道概览卡 + 5 大市场/资产分组 ETF 概览卡【底层覆盖 6 大交易通道】、12 个独立 `channels/<id>.html` 详情页、`channels.html`、`etfs.html`、`screener.html`、`guide.html`、`scorecard.html`、`archive.html`——通过 S1–S6 严检后单提交推送至 `origin/main`），最后运行 `python3 scripts/edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功即闭环。
 
 ---
 
@@ -112,24 +114,24 @@ global-investment-research/
    - 当 `tier_code == "Tier 0"` 或 `new_buy_allowed == false` 时，全仓库公开正文、三大扩展 JSON 与全站网页（含首页、`channels.html`、`channels/*.html`、`etfs.html`、`screener.html`、`guide.html`）严禁出现新买/补齐黄金指令或将黄金/金矿标的标为绿色底座（由 `equity/lint_equity.py` Gate C2 与 `scripts/lint_site.py` Gate S6 强制阻断）。
 2. **纯网页零离线附件交付与首页全渠道透明**：
    - 全站严禁输出或链接任何离线二进制文档附件（由 `scripts/lint_site.py` Gate S2 与 `equity/lint_equity.py` Gate 4 强制阻断）；
-   - 门户首页 `index.html` 必须清晰呈现四大核心市场、小白导览、全部 12 大个人多元渠道概览卡（直链各独立详情页 `channels/<id>.html`）与 5 大 ETF 通道概览卡（由 `scripts/lint_site.py` Gate S6 强制核验）。
+   - 门户首页 `index.html` 必须清晰呈现四大核心市场、小白导览、全部 12 大个人多元渠道概览卡（直链各独立详情页 `channels/<id>.html`）与 5 大市场/资产分组 ETF 概览卡（底层覆盖 6 大交易通道）（由 `scripts/lint_site.py` Gate S6 强制核验）。
 3. **跨轨核心合规与费率口径完全统一**：
    - **黄金联接 `008142` / `008143`**：依据 2026 公募销售费改（商品基参照债基），A 类申购上限 0.30%（1 折 0.03%，旧合同过渡期 0.06%）、运营费 0.20%/年；C 类销售服务费上限 0.20%/年且自 2027-01-01 起满 1 年“先收后返”免收，但长持 ≥1 年仍以 1 折 A 类（`008142`）更省；现行尚未完成整改的旧合同 `008143` 仍按 0.55%/年（含 0.35% 销服费）且满 30 天免赎回费（严禁误写 7 天免赎回）；
    - **MRF 禁推停申基金**：严禁推荐已暂停申购的 `968118`；
    - **二手大额存单**：多数国有大行禁止二次转让，且二手接盘单严禁直接提前支取（否则仅按原票面本金 + 活期计息致本金实亏）；
    - **债券 ETF 底层税负区分**：交易所公司债/科创债 ETF 底层债券付息环节仍扣 20% 税（区别于银行间市场的短融 ETF `511360` 等银行间标的）；
-   - **离岸资产与跨境合规**：中国居民个人境外所得须依法按 20% 全球申报纳税（含 CRS 金融账户涉税信息自动交换透明合规）；香港挂牌的 `02840.HK` 底层为美国注册信托，计入非美居民 6 万美元美国遗产税应税范围，大额离岸黄金（黄灯解锁后）应改选爱尔兰 `IGLN.L` 或香港本土注册实物金 `3081.HK`。
+   - **离岸资产与跨境合规**：中国居民个人境外所得须依法按 20% 全球申报纳税（含 CRS 金融账户涉税信息自动交换透明合规）；香港挂牌的 `02840.HK` 底层为美国注册信托，计入非美居民 6 万美元美国遗产税应税范围，大额离岸黄金（黄灯解锁后）应改选爱尔兰 `IGLN.L` 或香港本土注册实物金 `03081.HK`。
 4. **小白友好三层写作与零本地路径/内部词泄露**：
    - 确立 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据」** 三层结构；`DXY`/`COT`/`CDS`/`ERP`/`IRR` 等专业词移出“可不解释裸用”名单，首现配简短白话括注或交由站内术语浮窗解释；禁用居高临下说教口号，鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；
    - 所有公开文件与生成静态网页严禁出现本地绝对路径、密钥或内部工程/脚本/RSI 文件名（由 `scripts/lint_site.py` Gate S3 严守）。
-5. **无人值守全量写盘、预授权绝对路径裸命令与三道严格门禁零容忍**：
-   - 定时无人值守任务修改 Markdown/JSON 一律使用 `write_file` 全量写盘（禁 `edit_file`），且仅运行 `sidecar.json` 预授权的绝对路径裸命令；
+5. **无人值守分级写盘、预授权绝对路径裸命令与三道严格门禁零容忍**：
+   - 定时无人值守任务严禁调用 `edit_file`：中小 Markdown 与轻量快照（日报、记分卡、`INDEX.md`、`data_snapshot.json`、`market_state.json`、`rsi_metrics.json`、`RSI_PLAYBOOK.md` 等）一律使用 `write_file` 全量写盘；**权益三大扩展大 JSON（合计 ~830 KB）与黄金历史双账本（`CHANGELOG.md` / `AUDIT_LOG.md`）统一写微型补丁（`_edition_patch.json` / `_ledger_patch.json`）并调用预授权 `scripts/patch_state_dbs.py` 原子合并或无损头插**（彻底杜绝 300s 流式超时）；所有命令行操作仅运行 `sidecar.json` 预授权的绝对路径裸命令；
    - 交付与发布前，以下**三道严格门禁必须全部退出码 `0`（`0 errors, 0 warnings`）**：
      - `python3 gold/lint_readability.py --strict gold/daily/<最新黄金日报>.md`
      - `python3 equity/lint_equity.py --strict`
      - `python3 scripts/build_site.py --out _site && python3 scripts/lint_site.py _site --strict`
 6. **准点发刊不阻塞与信息缺口全透明（Anti-Blocker & Data-Caveats Transparency）**：
-   - 定时运行窗与跨轨截点容差均为 **6 小时**；`begin --scheduled` 自动清理超 **2 小时**无进展且未开始推送的其他期号僵尸锁；
+   - 定时运行窗与单向截点宽限均为 **`[-5 分钟, +6 小时]`**（黄金早于或同分钟于权益且跨轨差值 `0–6 小时`）；`begin --scheduled` 自动清理**严格较早期号**、超 **2 小时**无进展且尚未进入推送的僵尸锁；
    - 两轨同步维护纯读者中文、零内部文件名的结构化 **`data_caveats`** 数组，在首页与日报页自动披露信息缺口及对核心裁决的影响。
 
 ---

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -251,11 +253,17 @@ def _has_holiday_daily_row(
             and (urlsplit(confirmation).hostname or "").endswith(".cboe.com")
         )
         next_pub = parse_day(check.get("next_published_date"))
+        next_check = checks.get(next_pub.isoformat()) if next_pub is not None else None
+        next_pub_csv_ok = (
+            next_check is None
+            or (isinstance(next_check, dict) and next_check.get("status") == "published")
+        )
         has_csv_proof = (
             source == VIX_DAILY_SOURCE
             and next_pub is not None
             and day < next_pub <= cutoff.date()
             and (recorded_dates is None or next_pub.isoformat() in recorded_dates)
+            and next_pub_csv_ok
         )
         if not (has_cboe_confirm or has_csv_proof):
             errors.append(
@@ -351,7 +359,48 @@ def check_vix_period(snap: dict, as_of: datetime, observed_at: datetime | None, 
     return len(errors) == initial_errors
 
 
-def recheck_entry_gates(snap: dict, as_of: datetime, vix_passed: bool | None, errors: list[str]) -> None:
+def _load_default_exceptions() -> dict[date, VixSession]:
+    cal_path = Path(__file__).with_name("market_calendar.json")
+    try:
+        raw = json.loads(cal_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    rows = raw.get("vix_session_exceptions") if isinstance(raw, dict) else None
+    if not isinstance(rows, dict):
+        return {}
+    out: dict[date, VixSession] = {}
+    for key, row in rows.items():
+        day = parse_day(key)
+        if day is None or not isinstance(row, dict) or not isinstance(row.get("windows_et"), list):
+            continue
+        windows = tuple(
+            (s, e)
+            for pair in row["windows_et"]
+            if isinstance(pair, list) and len(pair) == 2
+            for s, e in ((_parse_clock(pair[0]), _parse_clock(pair[1])),)
+            if s is not None and e is not None
+        )
+        out[day] = VixSession(
+            windows,
+            _parse_clock(row.get("official_close_et")),
+            _parse_clock(row.get("daily_row_check_after_et")),
+        )
+    return out
+
+
+def _is_us_full_holiday(day: date, exceptions: dict[date, VixSession]) -> bool:
+    ex = exceptions.get(day)
+    return ex is not None and not ex.windows and ex.close is None
+
+
+def recheck_entry_gates(
+    snap: dict,
+    as_of: datetime,
+    vix_passed: bool | None,
+    errors: list[str],
+    *,
+    exceptions: dict[date, VixSession] | None = None,
+) -> None:
     gates = snap.get("tier1_gates")
     if not isinstance(gates, list) or len(gates) != 4 or any(not isinstance(gate, dict) for gate in gates):
         return
@@ -375,11 +424,12 @@ def recheck_entry_gates(snap: dict, as_of: datetime, vix_passed: bool | None, er
         )
     )
     cutoff = as_of.replace(tzinfo=BEIJING).astimezone(NEW_YORK)
+    exc_map = _load_default_exceptions() if exceptions is None else exceptions
     breakout = None
     if (
         None in (observed_date, reference, target) or not reference < target or not reference <= observed_date <= target
         or cutoff.date() - observed_date > timedelta(days=7) or target - reference > timedelta(days=7)
-        or any(day.weekday() >= 5 for day in (observed_date, reference, target))
+        or any(day.weekday() >= 5 or _is_us_full_holiday(day, exc_map) for day in (observed_date, reference, target))
         or datetime.combine(observed_date, time(17), NEW_YORK) > cutoff
     ):
         errors.append("[Gate 5 第四关比较日期错] 已完成的纽约日收和前一有效交易日高点须对应同一次突破检验")

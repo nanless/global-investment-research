@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import html
+import importlib.util
 import json
 import math
 import re
@@ -55,7 +56,8 @@ SCORECARD_BANNED_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|lint_(?:readability|equity|site)\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|"
+    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|"
+    r"_edition_patch\.json|_ledger_patch\.json|"
     r"63\s*路|红队|法证|\bGate\s*[0-6]\b)",
     flags=re.IGNORECASE,
 )
@@ -64,6 +66,7 @@ _INTERNAL_FILENAME_LEAK_RE = re.compile(
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"audit_ledger\.md|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
+    r"patch_state_dbs\.py|_edition_patch\.json|_ledger_patch\.json|"
     r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_-]*\.py(?![A-Za-z0-9_])|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|"
@@ -472,7 +475,10 @@ def validate_snapshot_file(
             if not cutoff_displayed(snap.get("as_of_bjt"), as_of):
                 errors.append("[Gate 5 快照展示时间错] as_of_bjt 须展示与 as_of_short 一致的北京时间")
             passed = _check_vix_snapshot(snap, as_of, errors, schedule=schedule) if schedule is not None else None
-            recheck_entry_gates(snap, as_of, passed, errors)
+            recheck_entry_gates(
+                snap, as_of, passed, errors,
+                exceptions=schedule[1] if schedule is not None else {},
+            )
         else:
             passed = _check_vix_snapshot(snap, as_of, errors)
             if gates is not None and passed is not None and gates[2]["passed"] != passed:
@@ -937,7 +943,9 @@ def check_file(
             check_edition_time(filename_key, cutoff, errors)
             if not cutoff_displayed(daily_meta.get("timestamp"), cutoff):
                 errors.append("[Gate 0 封面截点错] DAILY_META.timestamp 须展示与 as_of_short 一致的北京时间")
-        _check_edition_ledgers(filename_edition, daily_meta.get("as_of_short"), errors)
+        _check_edition_ledgers(
+            filename_edition, daily_meta.get("as_of_short"), errors, is_current=is_current_daily,
+        )
         _check_partial_entry_claims(full_vis, all_widget_texts, errors)
     if is_current_daily:
         if not daily_snap or daily_snap.get("edition_id") != filename_edition or daily_meta.get("as_of_short") != daily_snap.get("as_of_short"):
@@ -1070,9 +1078,119 @@ def check_file(
                 if str(save_r) not in full_combined:
                     warnings.append(f"[Gate 5 省钱差额未对齐] 正文未检测到快照婚庆省钱差额 {save_r} 元/克")
 
+    # Gate 4B: Vector SVG text bounding-box geometry & collision check (3 daily SVGs or 7 master SVGs)
+    if not any("[Gate 0 图表数值结构错]" in e or "[Gate 0 JSON 语法错]" in e for e in errors):
+        _check_svg_geometry(directives, is_master=is_master, master_snap=master_snap, errors=errors)
+
     # Web-only publishing mode: Gates 0–5 cover all manuscript, chart-input, snapshot, and ledger gates.
     # Binary PDF/DOCX artifacts are no longer produced or required.
     return errors, warnings
+
+
+_SVG_GEOM_CACHE: dict[str, object] = {}
+
+
+def _load_gold_module(mod_name: str, file_path: Path):
+    cached = _SVG_GEOM_CACHE.get(mod_name)
+    if cached is not None:
+        return cached
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+    existing = sys.modules.get(mod_name)
+    existing_file = getattr(existing, "__file__", None)
+    if existing is not None and existing_file and Path(existing_file).resolve() == file_path.resolve():
+        _SVG_GEOM_CACHE[mod_name] = existing
+        return existing
+    spec = importlib.util.spec_from_file_location(f"_gold_lint_{mod_name}", file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {file_path}")
+    mod = importlib.util.module_from_spec(spec)
+    prev = sys.modules.get("build_daily")
+    if mod_name == "build_report":
+        gold_daily = _load_gold_module("build_daily", BASE_DIR / "build_daily.py")
+        sys.modules["build_daily"] = gold_daily
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        if mod_name == "build_report":
+            if prev is None:
+                sys.modules.pop("build_daily", None)
+            else:
+                sys.modules["build_daily"] = prev
+    _SVG_GEOM_CACHE[mod_name] = mod
+    return mod
+
+
+def _check_svg_geometry(
+    directives: dict[str, list[dict]],
+    *,
+    is_master: bool,
+    master_snap: dict | None,
+    errors: list[str],
+) -> None:
+    """Render vector SVGs (3 daily charts or 7 master charts) and verify 0 OOB & 0 text overlap."""
+    scripts_path = BASE_DIR.parent / "scripts"
+    if not scripts_path.is_dir():
+        return
+    scripts_dir = str(scripts_path)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    try:
+        from svg_geometry import check_svg_text_geometry
+    except Exception as exc:
+        errors.append(f"[Gate 4 SVG 几何检失败] 无法导入 scripts/svg_geometry.py: {exc}")
+        return
+
+    svg_items: list[tuple[str, str]] = []
+    if is_master:
+        if not isinstance(master_snap, dict) or not master_snap:
+            return
+        try:
+            br = _load_gold_module("build_report", BASE_DIR / "build_report.py")
+        except Exception as exc:
+            errors.append(f"[Gate 4 SVG 几何检失败] 无法加载 build_report.py: {exc}")
+            return
+        prev_snap = br.SNAP
+        try:
+            br.SNAP = master_snap
+            svg_items = [
+                ("Master图1", br.svg_chart_real_vs_nominal(1)),
+                ("Master图2", br.svg_chart_2026_bear_and_vacuum(2)),
+                ("Master图3", br.svg_chart_china_tax_channels(3)),
+                ("Master图4", br.svg_chart_48h_crash_and_weekend(4)),
+                ("Master图5", br.svg_chart_mechanical_clock_and_switch(5)),
+                ("Master图6", br.svg_chart_institutional_targets(6)),
+                ("Master图7", br.svg_chart_fx_and_cross_ratios(7)),
+            ]
+        except Exception as exc:
+            errors.append(f"[Gate 4 SVG 几何检失败] 主报告 SVG 渲染异常: {exc}")
+            return
+        finally:
+            br.SNAP = prev_snap
+    else:
+        chart_kinds = (
+            ("DAILY_CHART_TIMELINE", "render_chart_timeline"),
+            ("DAILY_CHART_CROSS", "render_chart_cross"),
+            ("DAILY_CHART_SWITCH", "render_chart_switch"),
+        )
+        if not any(directives.get(k) for k, _ in chart_kinds):
+            return
+        try:
+            bd = _load_gold_module("build_daily", BASE_DIR / "build_daily.py")
+        except Exception as exc:
+            errors.append(f"[Gate 4 SVG 几何检失败] 无法加载 build_daily.py: {exc}")
+            return
+        for kind, fn_name in chart_kinds:
+            for idx, cfg in enumerate(directives.get(kind, []), 1):
+                lbl = f"{kind}#{idx}" if len(directives.get(kind, [])) > 1 else kind
+                try:
+                    svg_items.append((lbl, getattr(bd, fn_name)(cfg)))
+                except Exception as exc:
+                    errors.append(f"[Gate 4 SVG 渲染错] {lbl}: {exc}")
+
+    for lbl, svg_html in svg_items:
+        for issue in check_svg_text_geometry(svg_html, label=lbl):
+            errors.append(f"[Gate 4 SVG 几何碰撞] {issue}")
 
 
 def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
@@ -1155,16 +1273,36 @@ def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
         errors.append("[RSI 账本缺失] 未找到 daily/rsi_metrics.json")
 
 
-def _check_edition_ledgers(edition: str, as_of: str | None, errors: list[str]) -> None:
+def _check_edition_ledgers(
+    edition: str, as_of: str | None, errors: list[str], *, is_current: bool = True,
+) -> None:
     """Require red-team evidence and synchronized public/internal records before building new reports."""
-    for path, marker in ((CHANGELOG_PATH, "GOLD_EDITION_CHANGELOG"), (SCORECARD_PATH, "GOLD_EDITION_SCORECARD")):
-        try:
-            raw = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            errors.append(f"[黄金刊期台账缺失] {path.name}: {exc}")
-            continue
-        if len(re.findall(rf"<!--\s*{marker}\s+{re.escape(edition)}\s*-->", raw)) != 1:
-            errors.append(f"[黄金刊期台账错] {path.name} 须含一条 {marker} {edition} 标记")
+    try:
+        cl_raw = CHANGELOG_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"[黄金刊期台账缺失] {CHANGELOG_PATH.name}: {exc}")
+    else:
+        if len(re.findall(rf"<!--\s*GOLD_EDITION_CHANGELOG\s+{re.escape(edition)}\s*-->", cl_raw)) != 1:
+            errors.append(f"[黄金刊期台账错] {CHANGELOG_PATH.name} 须含一条 GOLD_EDITION_CHANGELOG {edition} 标记")
+
+    try:
+        sc_raw = SCORECARD_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"[黄金刊期台账缺失] {SCORECARD_PATH.name}: {exc}")
+    else:
+        if is_current:
+            if len(re.findall(rf"<!--\s*GOLD_EDITION_SCORECARD\s+{re.escape(edition)}\s*-->", sc_raw)) != 1:
+                errors.append(f"[黄金刊期台账错] {SCORECARD_PATH.name} 须含一条 GOLD_EDITION_SCORECARD {edition} 标记")
+        else:
+            target_key = _edition_key(edition)
+            sc_keys = [
+                k for m in re.findall(r"<!--\s*GOLD_EDITION_SCORECARD\s+(\S+)\s*-->", sc_raw)
+                if (k := _edition_key(m)) is not None
+            ]
+            if target_key is None or not any(k >= target_key for k in sc_keys):
+                errors.append(
+                    f"[黄金刊期台账错] {SCORECARD_PATH.name} 须含不早于 {edition} 的 GOLD_EDITION_SCORECARD 标记"
+                )
 
     try:
         raw = AUDIT_LOG_PATH.read_text(encoding="utf-8")

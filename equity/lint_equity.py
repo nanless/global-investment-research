@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 from collections import Counter
+import importlib.util
 import json
 import re
 import sys
@@ -419,16 +420,17 @@ def _check_gate_3b(md_text: str, path: Path, *, is_flagship: bool, meta: dict | 
         if len(t_clean) > cap:
             warns.append(f"{path.name}: Gate 3B 封面主标题偏长 ({len(t_clean)} 字 > {cap} 字)")
 
-    # 2. One-sentence verdict length check
+    # 2. Opening verdict length check (一句话 / 3 分钟速读结论 / 30 秒结论)
+    verdict_re = re.compile(r"(?:一句话[^：:]*|3\s*分钟速读结论[^：:]*|30\s*秒[^：:]*)[：:]\s*(.+)$")
     for ln in body.splitlines():
         st = ln.strip()
-        if st.startswith(">") and ("一句话" in st):
-            m_v = re.search(r"一句话[^：:]*[：:]\s*(.+)$", st)
+        if st.startswith(">"):
+            m_v = verdict_re.search(st)
             if m_v:
                 v_plain = re.sub(r"[*`]", "", m_v.group(1)).strip()
                 if len(v_plain) > 60:
-                    warns.append(f"{path.name}: Gate 3B 一句话总判断偏长 ({len(v_plain)} 字，建议 ≤50 字 / 硬上限 60 字)")
-            break
+                    warns.append(f"{path.name}: Gate 3B 开篇总判断偏长 ({len(v_plain)} 字，建议 ≤50 字 / 硬上限 60 字)")
+                break
 
     # 3. Gigerenzer 10-dot probability bar sum check per table
     cur_table: list[str] = []
@@ -788,48 +790,11 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
                 except Exception as exc:
                     errs.append(f"Gate C2 失败：{mf.name} 解析异常: {exc}")
         # Also scan rendered flagship & daily SVGs directly so hardcoded SVG cards can never bypass C2!
-        try:
-            if str(BASE_DIR) not in sys.path:
-                sys.path.insert(0, str(BASE_DIR))
-            import build_a_share_pdf as mod_a
-            import build_hk_stock_pdf as mod_h
-            import build_us_stock_pdf as mod_u
-            import build_daily as mod_d
-            svg_checks = [
-                ("SVG:A1", mod_a.svg_chart_a1_cycles()),
-                ("SVG:A2", mod_a.svg_chart_a2_split_and_futures()),
-                ("SVG:A3", mod_a.svg_chart_a3_macro_k_split()),
-                ("SVG:A4", mod_a.svg_chart_a4_clock()),
-                ("SVG:A5", mod_a.svg_chart_a5_targets_and_math()),
-                ("SVG:A6", mod_a.svg_chart_a6_sector_heatmap()),
-                ("SVG:A7", mod_a.svg_chart_a7_stock_quadrant()),
-                ("SVG:H1", mod_h.svg_chart_h1_cycles()),
-                ("SVG:H2", mod_h.svg_chart_h2_flow_and_rebalance()),
-                ("SVG:H3", mod_h.svg_chart_h3_peg_and_erp()),
-                ("SVG:H4", mod_h.svg_chart_h4_clock()),
-                ("SVG:H5", mod_h.svg_chart_h5_targets_and_scenarios()),
-                ("SVG:H6", mod_h.svg_chart_h6_ah_arbitrage_and_sectors()),
-                ("SVG:H7", mod_h.svg_chart_h7_stock_quadrant()),
-                ("SVG:U1", mod_u.svg_chart_u1_crises_and_mas()),
-                ("SVG:U2", mod_u.svg_chart_u2_storm_timeline()),
-                ("SVG:U3", mod_u.svg_chart_u3_credit_split()),
-                ("SVG:U4", mod_u.svg_chart_u4_clock()),
-                ("SVG:U5", mod_u.svg_chart_u5_wall_street_forensic()),
-                ("SVG:U6", mod_u.svg_chart_u6_sector_heatmap()),
-                ("SVG:U7", mod_u.svg_chart_u7_stock_quadrant()),
-            ]
-            for p in targets:
-                if not _detect_is_flagship(p):
-                    d_meta, _ = _extract_meta(p.read_text(encoding="utf-8"), p)
-                    if d_meta:
-                        d_charts = mod_d.load_optional_charts(_detect_market(p), meta_override=d_meta)
-                        for ck, c_html in d_charts.items():
-                            svg_checks.append((f"{p.name}:{ck}", c_html))
-            for lbl, svg_html in svg_checks:
-                plain_svg = re.sub(r"<[^>]+>", "\n", svg_html)
-                errs.extend(_scan_text_for_gold_buy(lbl, plain_svg))
-        except Exception as exc:
-            warns.append(f"Gate C2 SVG 预扫跳过: {exc}")
+        svg_checks, svg_warns = _collect_rendered_svgs(targets)
+        warns.extend(svg_warns)
+        for lbl, svg_html in svg_checks:
+            plain_svg = re.sub(r"<[^>]+>", "\n", svg_html)
+            errs.extend(_scan_text_for_gold_buy(lbl, plain_svg))
 
     # Gate C3: Commodity shock propagation check (Copper >= 3.5% shock must be noted in A/HK dailies & flagships)
     if abs(gold_copper_chg) >= 3.5:
@@ -841,6 +806,90 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
                         f"Gate C3 大宗跨市联动提醒 ({p.name})：COMEX 铜异动 {gold_copper_chg:+.2f}%，"
                         "A股/港股报告须评估对有色/紫金/洛钼的传导"
                     )
+    return errs, warns
+
+
+def _load_equity_build_daily():
+    target_path = (BASE_DIR / "build_daily.py").resolve()
+    existing = sys.modules.get("build_daily")
+    existing_file = getattr(existing, "__file__", None)
+    if existing is not None and existing_file and Path(existing_file).resolve() == target_path:
+        return existing
+    spec = importlib.util.spec_from_file_location("_equity_lint_build_daily", target_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {target_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _collect_rendered_svgs(targets: list[Path]) -> tuple[list[tuple[str, str]], list[str]]:
+    """Render all 21 flagship vector SVGs plus embedded charts for non-flagship daily targets."""
+    svg_checks: list[tuple[str, str]] = []
+    warns: list[str] = []
+    try:
+        if str(BASE_DIR) not in sys.path:
+            sys.path.insert(0, str(BASE_DIR))
+        import build_a_share_pdf as mod_a
+        import build_hk_stock_pdf as mod_h
+        import build_us_stock_pdf as mod_u
+        mod_d = _load_equity_build_daily()
+        svg_checks = [
+            ("SVG:A1", mod_a.svg_chart_a1_cycles()),
+            ("SVG:A2", mod_a.svg_chart_a2_split_and_futures()),
+            ("SVG:A3", mod_a.svg_chart_a3_macro_k_split()),
+            ("SVG:A4", mod_a.svg_chart_a4_clock()),
+            ("SVG:A5", mod_a.svg_chart_a5_targets_and_math()),
+            ("SVG:A6", mod_a.svg_chart_a6_sector_heatmap()),
+            ("SVG:A7", mod_a.svg_chart_a7_stock_quadrant()),
+            ("SVG:H1", mod_h.svg_chart_h1_cycles()),
+            ("SVG:H2", mod_h.svg_chart_h2_flow_and_rebalance()),
+            ("SVG:H3", mod_h.svg_chart_h3_peg_and_erp()),
+            ("SVG:H4", mod_h.svg_chart_h4_clock()),
+            ("SVG:H5", mod_h.svg_chart_h5_targets_and_scenarios()),
+            ("SVG:H6", mod_h.svg_chart_h6_ah_arbitrage_and_sectors()),
+            ("SVG:H7", mod_h.svg_chart_h7_stock_quadrant()),
+            ("SVG:U1", mod_u.svg_chart_u1_crises_and_mas()),
+            ("SVG:U2", mod_u.svg_chart_u2_storm_timeline()),
+            ("SVG:U3", mod_u.svg_chart_u3_credit_split()),
+            ("SVG:U4", mod_u.svg_chart_u4_clock()),
+            ("SVG:U5", mod_u.svg_chart_u5_wall_street_forensic()),
+            ("SVG:U6", mod_u.svg_chart_u6_sector_heatmap()),
+            ("SVG:U7", mod_u.svg_chart_u7_stock_quadrant()),
+        ]
+        for p in targets:
+            if not _detect_is_flagship(p) and p.exists():
+                p_txt = p.read_text(encoding="utf-8")
+                d_meta, _ = _extract_meta(p_txt, p)
+                if d_meta:
+                    d_charts = mod_d.load_optional_charts(_detect_market(p), meta_override=d_meta)
+                    for ck, c_html in d_charts.items():
+                        tok_m = re.search(r"CHART_[A-Z0-9_]+", ck)
+                        if tok_m and re.search(rf"<!--\s*{re.escape(tok_m.group(0))}\s*-->", p_txt):
+                            svg_checks.append((f"{p.name}:{ck}", c_html))
+    except Exception as exc:
+        warns.append(f"SVG 渲染预扫跳过: {exc}")
+    return svg_checks, warns
+
+
+def _check_svg_geometry_all(targets: list[Path]) -> tuple[list[str], list[str]]:
+    """Run scripts/svg_geometry.py text OOB & collision checks across all 21 flagship & embedded daily SVGs."""
+    errs: list[str] = []
+    scripts_path = BASE_DIR.parent / "scripts"
+    if not scripts_path.is_dir():
+        return [], []
+    scripts_dir = str(scripts_path)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    try:
+        from svg_geometry import check_svg_text_geometry
+    except Exception as exc:
+        return [f"Gate 3B SVG 几何检失败：无法导入 scripts/svg_geometry.py ({exc})"], []
+
+    svg_checks, warns = _collect_rendered_svgs(targets)
+    for lbl, svg_html in svg_checks:
+        for issue in check_svg_text_geometry(svg_html, label=lbl):
+            errs.append(f"Gate 3B SVG 几何碰撞: {issue}")
     return errs, warns
 
 
@@ -1643,6 +1692,10 @@ def main() -> None:
     we, ww = check_workspace_state(precheck=precheck)
     all_errors.extend(we)
     all_warnings.extend(ww)
+
+    ge, gw = _check_svg_geometry_all(targets)
+    all_errors.extend(ge)
+    all_warnings.extend(gw)
 
     if not skip_cross:
         ce, cw = _check_cross_project_gold(targets, precheck=precheck)

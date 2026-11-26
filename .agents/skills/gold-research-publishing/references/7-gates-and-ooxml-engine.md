@@ -18,7 +18,7 @@
 ### Gate 0：全量指令语法、拼写、结构与嵌套 Schema 校验（FAIL / WARN）
 - 捕获**一切** `<!-- DAILY_* ... -->` 注释，拦截拼写错误与非 JSON 载荷；图表数值经共享模块 `chart_input.py` 统一校验；
 - **收敛主刊结构规则（`CONVERGED_CUTOVER = 2026-11-26_1800`）**：
-  - `DAILY_META.kpis` 合法数量为 **4–6 张卡**（推荐 4 张触发 `.kpi-strip.cols-4`），每项含 `label/val/sub` 且 `sub` 视觉宽 `≤17.5`；新刊必填 `edition_id`、`as_of_short` 且 `timestamp` 须展示一致北京时间，并通过 `edition_validation.check_edition_time()`（6 小时截点宽限）；
+  - `DAILY_META.kpis` 合法数量为 **4–6 张卡**（推荐 4 张触发 `.kpi-strip.cols-4`），每项含 `label/val/sub` 且 `sub` 视觉宽 `≤17.5`；新刊必填 `edition_id`、`as_of_short` 且 `timestamp` 须展示一致北京时间，并通过 `edition_validation.check_edition_time()`（`[-5 分钟, +6 小时]` 单向截点宽限）；
   - `DAILY_TRUST_BAR` 与 `DAILY_GLOSSARY`（「关键词白话速查」）在收敛新刊中为**可选（`0` 或 `1` 次，`>1` 报 FAIL）**；旧刊保持向下兼容；
   - `DAILY_VERDICT` 限 `L0/L1/L2`、`badge` 禁用 `🟢`、含 `traffic_light/risk_line/数组 bullets`；新刊同步校验 `tier_code`/`new_buy_allowed`/`tier1_passed`；
   - `DAILY_SIGNAL_NOISE.signals/noises` 每项含 `head/body` 且 `signals ≤2`；`DAILY_PERSONA.cards` 含 `group/heading/数组 actions`；`DAILY_LAYER_BADGE.tone` 限 `deep`/`pro`；
@@ -30,14 +30,14 @@
    - **第一档（日常极高频词与代码）**：`ETF`、`VIX`（首现建议顺带附“恐慌指数”）、`GLD`/`GDX`（仅代码）、`鹰派`、`鸽派`、`提保`、`轧空`、`逼空`、`上影线`；
    - **第二档（首次出现必配简短白话括注或交由站内术语白话浮窗，`DXY`/`COT`/`CDS` 移出裸用名单）**：`DXY`（美元指数）、`COT`（期货大资金持仓报告）、`CDS`（债务违约保险费率）、`CFTC`（美国期交委）、`DFII10`（10 年美债扣除通胀后的真实利率）、`2Y−FF`（2 年美债减政策利率利差）、`ON RRP`（联储隔夜逆回购余额）、`HY/CCC OAS`（高收益信用利差）、`IOPV`（盘中实时参考净值）、`bp`（基点，1% 的百分之一）；
    - **第三档 · ASCII/版本禁用表（`CONVERGED_BANNED_LAYER01_ASCII` + 版本正则）**：
-     `Subagent`, `stop-through`, `IFRS 9`, `HQLA`, `FVOCI`, `ROTCE`, `Call Wall`, `Put Wall`, `Daniel Ghali`, `Michael Hsueh`, `V[267].\d+`
+     `Subagent`, `stop-through`, `IFRS 9`, `HQLA`, `FVOCI`, `ROTCE`, `Call Wall`, `Put Wall`, `Daniel Ghali`, `Michael Hsueh`, `V[2567].\d+`
    - **第三档 · 中文/混合禁用表（`CONVERGED_BANNED_LAYER01_LITERAL`）**：
      `子代理`, `63 路`, `63路`, `负 Gamma`, `负Gamma`, `R²=`, `R² =`, `梭哈`, `做T`, `做 T`, `短线波段`, `高弹性`, `收红`, `收绿`, `翻红`, `翻绿`, `六灯`
    - **全篇说教口号硬拦（`CONVERGED_BANNED_SLOGANS`，扫描 Layer 0–3 全部正文与全部组件 JSON，含 `DAILY_GLOSSARY`）**：
      `小白词典`, `直接抄`, `蠢事`, `1分钟定心丸`, `1 分钟定心丸`, `保命铁律`（平等温和的「3 分钟速读结论」「关键词白话速查」不仅允许而且鼓励使用！）
    - *(历史旧刊 `< 2026-11-26_1800` 保持向后兼容。)*
 2. **全篇内部工程词、版本号与文件名硬拦（扫描 Layer 0–3 全部正文与全部组件 JSON）**：
-   - `_INTERNAL_FILENAME_LEAK_RE` 全篇阻断：`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`unified-edition.prompt.md`、`DAILY_FORMAT_SPEC.md`、`DAILY_REPORT_SPEC.md`、`AGENTS.md`、`GEMINI.md`、`SKILL.md`、任意 `*.py` 脚本名、`V[267].\d+`、`Subagent(s)`、`红队`、`法证`。
+   - `_INTERNAL_FILENAME_LEAK_RE` 全篇阻断：`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`、`market_calendar.json`、`_edition_patch.json`、`_ledger_patch.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`unified-edition.prompt.md`、`DAILY_FORMAT_SPEC.md`、`DAILY_REPORT_SPEC.md`、`AGENTS.md`、`GEMINI.md`、`SKILL.md`、`patch_state_dbs.py`/`svg_geometry.py` 等任意 `*.py` 脚本名、`V[2567].\d+`、`Subagent(s)`、`红队`、`法证`。
 3. **裸 HTML 标签泄露检查**：正文代码块外 + 所有组件 JSON 内禁止出现未转义的 `div`/`span`/`table`/`tr`/`td`/`th`/`svg`/`rect`/`path`/`p`/`ul`/`ol`/`li`/`script`/`style`/`iframe`/`img`/`h1–h6`/`font`/`center` 等标签（组件内仅允许 `<br/>`、`<strong>`、`<code>`）。
 
 ### Gate 2：克制理性语调与感叹号红线
@@ -57,7 +57,7 @@
 ### Gate 5：双快照算术、抗阻塞四关复算、部分过关拦截与全局治理
 - 含 `<!-- MASTER_BASELINE {...} -->` 的主报告自动校验 `master_snapshot.json` 且锁定 `as_of_short` 一致；日报校验 `data_snapshot.json`（均含 `edition_id`/`new_buy_allowed`/`cfets_fixing_date`/`tier1_gates[].id` 对称结构）；
 - 校验现货涨跌幅（`≤0.05`）、婚庆 1g/50g/百分比（`≤0.15`）、`tier1_gates` 长度 4 与求和、`tier_code`/`new_buy_allowed` 一致性、`a_class_tranche_split`、5 项 `cross_ratios`（检出 `cross_ratios_\d{4}` 报 WARN）、`etf_cn` 为对象、`institutional_targets` 同期限样本数与中位数复算；
-- **抗阻塞市场校验（`edition_validation.py`）**：6 小时班次截点、4 小时节日 `pending` 复查、半日市 `provisional_close`、普通交易日 `provisional_close` **3 个自然日**核销、`no_row_confirmed` 支持 `*.cboe.com` 公告或 CSV `next_published_date > day`、30 分钟 VIX 盘中窗、四关固定 `id` 精确复算；
+- **抗阻塞市场校验（`edition_validation.py`）**：`[-5 分钟, +6 小时]` 单向班次截点、4 小时节日 `pending` 复查、半日市 `provisional_close`、普通交易日 `provisional_close` **3 个自然日**核销、`no_row_confirmed` 支持 `*.cboe.com` 公告或 CSV `next_published_date > day`、30 分钟 VIX 盘中窗、四关固定 `id` 精确复算；
 - **部分过关开仓话术拦截（`PARTIAL_ENTRY_CLAIM_RE`）**：全篇（正文 + 组件，自动排除明确否定/反例语境）禁止宣称“通过 0–3 关即可转黄/开新仓”；
 - **当期正文与金店对齐放行（`_skip_domestic_brand_check`）**：核验正文含 `spot_gold_ny_close_rounded`；`data_caveats.category` 标准枚举为 `provisional_close`/`delayed_official`/`single_source`/`source_conflict`/`holiday_thin`/`publication_exception`，当处于中国内地 B 类休市或 `data_caveats` 含 `delayed_official`/`holiday_thin` 且明示金店/国内牌价/内盘/春节未开盘时，自动跳过 `brand_store_rmb` 与 `wedding_save_per_g_rmb` 对齐预警；
 - **全局治理校验**：`market_calendar.json` 覆盖硬底线 **30 天**（`<60 天` 输出 `[INFO]` 提示）、核证有效期 **90 天**；`daily/SCORECARD.md` 零内部工程/RSI/脚本文件名词（`SCORECARD_BANNED_RE`）；`daily/RSI_PLAYBOOK.md` **软限 180 行（WARN）/ 硬上限 200 行（FAIL）** 及 Tier B/C 边界声明；`daily/rsi_metrics.json` 6 维求和自洽。
@@ -66,7 +66,7 @@
 
 ## 2. 纯网页响应式组件与 640px 矢量 SVG 防碰撞引擎架构
 
-所有黄金日报与全景主报告由 **`scripts/build_site.py`** 零第三方依赖直接渲染为双端响应式网页（并经 **`scripts/lint_site.py _site --strict`** 6 道 S1–S6 安全门禁验收，严禁离线附件链接）：
+所有黄金日报与全景主报告由 **`scripts/build_site.py`** 零第三方依赖直接渲染为双端响应式网页（并经 **`scripts/lint_site.py _site --strict`** 6 道 S1–S6 安全门禁与 **`scripts/svg_geometry.py`** SVG 文本几何零碰撞校验验收，严禁离线附件链接）：
 
 - **封面 4–6 张 KPI 网格（`.kpi-strip.cols-4`）**：`len(kpis) == 4` 时自动挂载 `.kpi-strip.cols-4` 渲染 4 列高密度单排卡片（5–6 张沿用 3 列网格），手机端 `max-width: 680px` 统一折为 2 列清晰排布；
 - **信号/噪音双栏自适应网格（`.sn-grid`）**：采用 CSS Grid `minmax(0, 46fr) minmax(0, 54fr)` 双栏卡片，手机端 `max-width: 680px` 自动折为单栏堆叠；
