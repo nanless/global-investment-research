@@ -66,7 +66,7 @@ global-investment-research/
 2. **Step 1｜跨市场日历、基线快照与账本冷启动**：
    - 读取 `gold/market_calendar.json`、前序基线 `gold/data_snapshot.json`、独立主报告基线 `gold/master_snapshot.json`、`equity/state/market_state.json`、两轨 `SCORECARD.md`、`gold/daily/CHANGELOG.md` 与 `equity/daily/INDEX.md`。核对日历有效期和出刊计划，按官方品种交易日、实际观测时间、披露时间和来源记录数据。
 3. **Step 2A｜共享 6 路并行 `research` 深度调研**：
-   - 启动 **6 路只读 `research` 子代理**，容量不足时分组完成，覆盖双轨全部 7 类一手官方信源。各路最多重试一次，关键证据仍缺或无法启动独立核查时停止并记录阻塞：
+   - 启动 **6 路只读 `research` 子代理**，容量不足时分组完成，覆盖双轨全部 7 类一手官方信源。各路最多重试一次；早/晚报遇单项数据尚未发布或暂不可取时严禁编造、亦不阻塞本期研报发布（按规范省略、标 `provisional_close`/`pending` 或沿用最近已核实官收并标注原交易日/观测时间，写入台账挂账并在终报向用户逐项汇报）；仅在无法启动独立核查、权限/锁异常或严格门禁无法通过时才停止并记录阻塞：
      1. **黄金与贵金属专线**（现货/COMEX 官结、SGE/SHFE 日终与龙虎榜、GLD/GDX 官收白名单、实物金店/水贝与央行动向）；
      2. **中国 A 股专线**（宽基/申万资金、中金所 `cffex.com.cn` 结算与前 20 席位、T-1 两融终值、央行操作与政策雷达）；
      3. **中国香港股市专线**（恒指/恒科/南向终值、沽空比、HIBOR 与金管局总结余 `hkma_agg_bal_hkd_100m`、AH 溢价与夜期盲窗校正）；

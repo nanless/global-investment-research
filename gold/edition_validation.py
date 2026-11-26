@@ -189,19 +189,21 @@ def _vix_session(day: date, exceptions: dict) -> VixSession:
     return VixSession(DEFAULT_VIX_WINDOWS, DEFAULT_VIX_WINDOWS[-1][1])
 
 
+def _parse_bjt_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", value):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=BEIJING)
+    except ValueError:
+        return None
+
+
 def _has_holiday_daily_row(day: date, eligible: datetime, cutoff: datetime, checks: dict, errors: list[str]) -> bool:
     check = checks.get(day.isoformat())
     if not isinstance(check, dict):
         errors.append(f"[Gate 5 VIX 节日日线待核] {day} 须记录官方 CSV 当日行状态")
         return False
-    checked_at = check.get("checked_at")
-    if not isinstance(checked_at, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", checked_at):
-        checked = None
-    else:
-        try:
-            checked = datetime.strptime(checked_at, "%Y-%m-%d %H:%M").replace(tzinfo=BEIJING)
-        except ValueError:
-            checked = None
+    checked = _parse_bjt_timestamp(check.get("checked_at"))
     status = check.get("status")
     note = check.get("note")
     if (
@@ -220,13 +222,41 @@ def _has_holiday_daily_row(day: date, eligible: datetime, cutoff: datetime, chec
     return status == "published"
 
 
+def _has_ordinary_daily_row(day: date, close_dt: datetime, cutoff: datetime, checks: dict, errors: list[str]) -> bool:
+    check = checks.get(day.isoformat())
+    if check is None:
+        return True
+    if not isinstance(check, dict):
+        errors.append(f"[Gate 5 VIX 日线证据错] {day} 的 vix_daily_row_checks 记录须为对象")
+        return True
+    status = check.get("status")
+    note = check.get("note")
+    checked = _parse_bjt_timestamp(check.get("checked_at"))
+    source = check.get("source")
+    if status not in ("published", "provisional_close", "pending"):
+        errors.append(f"[Gate 5 VIX 日线证据错] {day} 仅允许状态 published/provisional_close/pending")
+        return True
+    valid_source = evidence_url(source) if status == "provisional_close" else source == VIX_DAILY_SOURCE
+    if (
+        not isinstance(note, str) or not note.strip() or not valid_source
+        or checked is None or not close_dt <= checked <= cutoff
+    ):
+        errors.append(f"[Gate 5 VIX 日线证据错] {day} 须提供有效状态、来源链接、收盘后至截点间的北京时间和核验说明")
+        return status != "pending"
+    if cutoff.date() > day and status in ("provisional_close", "pending") and cutoff - checked > MAX_EDITION_LAG:
+        errors.append(f"[Gate 5 VIX 待复核需重查] {day} 次日班次须在本班窗口内重新核查官方 CSV")
+    return status != "pending"
+
+
 def _vix_completed_days(cutoff: datetime, first: date, exceptions: dict, checks: dict, errors: list[str]) -> list[str]:
     days = []
     day = cutoff.date()
     while day >= first and len(days) < 10:
         session = _vix_session(day, exceptions)
-        if session.close is not None and datetime.combine(day, session.close, NEW_YORK) <= cutoff:
-            days.append(day.isoformat())
+        if session.close is not None:
+            close_dt = datetime.combine(day, session.close, NEW_YORK)
+            if close_dt <= cutoff and _has_ordinary_daily_row(day, close_dt, cutoff, checks, errors):
+                days.append(day.isoformat())
         if session.daily_row_check_after is not None:
             eligible = datetime.combine(day, session.daily_row_check_after, NEW_YORK)
             if eligible <= cutoff and _has_holiday_daily_row(day, eligible, cutoff, checks, errors):

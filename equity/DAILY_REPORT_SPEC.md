@@ -86,7 +86,7 @@
 2. **同场次防覆写（`_r2`）与 `05:30 CST` 跨午夜切割线**：同日同场次若已存在文件需补发，严禁覆写，统一追加 `_r2`（递进 `_r3`）；北京时间 `05:30` 前的凌晨突发归前日 `1800_r2`，`05:30` 起归当日 `0730`。
 3. **开工前生成计划**：运行 `python3 equity/lint_equity.py --plan YYYY-MM-DD_HHMM[_rN]` 可直接从交易日历计算目标班次。保存前在 `state/market_state.json` 中更新 `edition_id` 和三市 `markets.<市场>.latest_daily`。新发市场写计划中的 `required_file` 与 `edition_type`，复用市场沿用其最近一份历史稿，禁止在该班次生成替代稿。跨月时 `period_slug`、三份旗舰元数据与带月份的旗舰源稿同步进入新月，休市同样执行。编译前后执行严格门禁；默认日刊编译按计划跳过复用市场。旧稿保留原始刊型和格式。
 4. **例外必须有当班记录**：常规班次省略 `publication_exceptions`。需要例外时记录 `publication_exceptions.edition_id`，并在 `publication_exceptions.markets.<市场>` 填 `kind` 和具体 `reason`。本应出版但关键来源故障时用 `source_outage`，附官方 HTTPS `evidence_url` 和未来 `next_review_session`，同时挂入同市场、同核验班次的 `pending_backfills`。原应复用但出现经官方证实的 P0/P1 突发时用 `breaking_event`，附 `severity` 和 `evidence_url`，只为受影响市场新发守望刊。修订版若保留某市场同班上一版，使用 `revision_reuse` 说明原因。下个班次清除旧例外。
-5. **日历与跨轨空值**：`calendar_overrides` 每条有 `date_cst`、`type`、`mode` 和不重复的 `markets_affected`。连续休市补 `end_date_cst`，特殊窗口补 `affected_sessions`，不同市场的实际交易日不同则分行记录。美国债市提早收盘仅作备注，股市刊型按股市交易时段决定。有黄金日历同一事件时可填 `gold_event_id` 进行交叉核对。现货 VIX 无本班有效盘中观测时，黄金 `vix_live`、`vix_live_as_of` 与权益 `vix_live`、`vix_intraday_high` 都留空或省略。两轨仍须按 Cboe 最近已发布日线对齐 `vix_close`。
+5. **日历与跨轨空值**：`calendar_overrides` 每条有 `date_cst`、`type`、`mode` 和不重复的 `markets_affected`。连续休市补 `end_date_cst`，特殊窗口补 `affected_sessions`，不同市场的实际交易日不同则分行记录。美国债市提早收盘仅作备注，股市刊型按股市交易时段决定。有黄金日历同一事件时可填 `gold_event_id` 进行交叉核对。现货 VIX 无本班有效盘中观测时，黄金 `vix_live`、`vix_live_as_of` 与权益 `vix_live`、`vix_intraday_high` 都留空或省略。两轨仍须对齐黄金快照的 `vix_close`（遇 Cboe 官方历史 CSV 尚未更新当日行时，按黄金快照的暂定收盘读数或最近已发布 CSV 日收对齐并挂账，下一班次复核封账，不阻塞发布）。
 
 ---
 

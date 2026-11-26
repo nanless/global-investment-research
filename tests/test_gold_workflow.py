@@ -193,6 +193,62 @@ class GoldWorkflowTests(unittest.TestCase):
         snap["vix_10d_window_end"] = "2026-11-26"
         self.assertEqual(self._validate(snap), [])
 
+    def test_ordinary_day_csv_lag_allows_provisional_or_pending_without_blocking(self):
+        # 2026-11-26 07:30 BJT == 2026-11-25 18:30 EST (same ET day after 16:15 EST close, before Cboe CSV batch)
+        snap = _fixture()
+        snap.update(
+            edition_id="2026-11-26_0730",
+            as_of_short="2026-11-26 08:50",
+            as_of_bjt="2026年11月26日（周四）08:50",
+            vix_close=28.29,
+        )
+        snap["vix_10d_session_closes"][-1]["close"] = 28.29
+        # 1. Provisional close from Cboe product page during morning CSV lag passes cleanly (even >1h after check)
+        snap["vix_daily_row_checks"] = {
+            "2026-11-25": {
+                "status": "provisional_close",
+                "checked_at": "2026-11-26 07:35",
+                "source": "https://www.cboe.com/tradable_products/vix/",
+                "note": "07:30 早报时 Cboe CSV 尚未更新 11/25 行，暂采 Cboe 官网 16:15 EST 收盘读数，18:00 晚报复核。",
+            }
+        }
+        self.assertEqual(self._validate(snap), [])
+
+        # 2. Pending fallback when even closing quote is unavailable shifts 10d window back to published CSV ending 11/24
+        pending_snap = deepcopy(snap)
+        pending_snap["vix_daily_row_checks"] = {"2026-11-25": _daily_check("pending", "2026-11-26 07:35")}
+        pending_snap["vix_10d_session_closes"] = [
+            {"date": "2026-11-11", "close": 17.49}, *pending_snap["vix_10d_session_closes"][:-1],
+        ]
+        pending_snap["vix_10d_window_end"] = "2026-11-24"
+        pending_snap["vix_close"] = 26.36
+        self.assertEqual(self._validate(pending_snap), [])
+
+        # 3. Ordinary day cannot be marked no_row_confirmed or use a non-HTTPS provisional URL
+        bad_status = deepcopy(snap)
+        bad_status["vix_daily_row_checks"]["2026-11-25"]["status"] = "no_row_confirmed"
+        self.assertTrue(any("VIX 日线证据错" in e for e in self._validate(bad_status)))
+        bad_source = deepcopy(snap)
+        bad_source["vix_daily_row_checks"]["2026-11-25"]["source"] = "http://www.cboe.com/tradable_products/vix/"
+        self.assertTrue(any("VIX 日线证据错" in e for e in self._validate(bad_source)))
+
+        # 4. Next ET day (18:00 evening): stale morning provisional/pending must be rechecked, fresh recheck still passes
+        evening_snap = deepcopy(snap)
+        evening_snap.update(
+            edition_id="2026-11-26_1800",
+            as_of_short="2026-11-26 18:10",
+            as_of_bjt="2026年11月26日（周四）18:10",
+        )
+        self.assertTrue(any("待复核需重查" in e for e in self._validate(evening_snap)))
+        evening_snap["vix_daily_row_checks"]["2026-11-25"]["checked_at"] = "2026-11-26 18:05"
+        self.assertEqual(self._validate(evening_snap), [])
+
+        # 5. Once reconciled in CSV at 18:00, removing the check or marking published passes
+        evening_snap["vix_daily_row_checks"] = {"2026-11-25": _daily_check("published", "2026-11-26 18:05")}
+        self.assertEqual(self._validate(evening_snap), [])
+        evening_snap.pop("vix_daily_row_checks")
+        self.assertEqual(self._validate(evening_snap), [])
+
     def test_cboe_holiday_can_use_official_close_without_live(self):
         snap = _fixture()
         self.assertEqual(self._validate(snap), [])
