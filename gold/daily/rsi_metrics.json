@@ -482,6 +482,85 @@
         "【黑五半日市前瞻、欧央行纪要与 07:30 东京 CPI】封账今晚 20:30 欧洲央行 10 月纪要与明晨 03:30–07:00 CME 停盘复市行情；跟踪 07:30 东京核心 CPI；明示黑五半日市周六 02:00 美股 / 03:00 美债 / 03:45 COMEX 提前收、第 4 关门槛滚降至 $3,589.85、第 1 关差 1bp 与工行 0 费率已于 11/25 官宣延至 2027-03-31（定投至 2027-12-31）",
         "【图 1 零碰撞 + 收敛主刊零视觉返工冲刺】发前逐项核对图 1 参考线胶囊与数据点相对高度、PERSONA 标题计数一致及克价单位显式标注，冲刺 lint_retries=0 且 visual_retries=0"
       ]
+    },
+    {
+      "run_id": "2026-11-26_1800_r2",
+      "edition_type": "weekday_evening_revision",
+      "report_file": "daily/2026-11-26_1800_晚报_黄金深度研报_r2.md",
+      "timestamp_bjt": "2026-11-26 23:55",
+      "first_pass_strict": true,
+      "lint_retries": 0,
+      "visual_retries": 1,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "首轮 --strict 0 错 0 警一次通过（lint_retries=0），仅 _ledger_patch.json 初写 forecast_review.status='tracked' 改为合法枚举 'none_due' 后无损头插通过；独立盲审（26/30）揪出 L39 引言“2 条假象”与后文 3 条假象计数矛盾（H5）及图 1 06:00 $3,589 标签避让下移，已全量修正并通过纯网页 6 门禁 --strict（0 errors, 0 warnings）"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 26,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/26 18:00 追踪：【晚间挂账 6 项核销与老铺除净校验】清零 LBMA/SGE加权/SHFE席位/国内ETF流/老铺官收与 Cboe VIX_History.csv 11/25 原行",
+          "outcome": "hit",
+          "evidence": "23:55 修订版一次性核销 6/6 核心交易所原表：Cboe VIX_History.csv 11/25 官方 OHLC 行（28.16/34.95/28.29，status=published）、11/26 LBMA 金 $3,572.65/$3,578.90 & 银 $41.54、SGE Au99.99 加权 767.39、SHFE au2702 官结 756.32 与 pm20261126.dat 席位 +2,549 手、三大黄金 ETF 净赎回 -3.42 亿及 HKEX 老铺 06181 官收 266.80 港元；仅 11/25 FRED OAS 与山东黄金说明会纪要仍待次晨核销"
+        },
+        {
+          "claim": "11/26 18:00 追踪：【黑五半日市前瞻与欧央行纪要】封账 20:30 欧央行 10 月纪要并严守 <=23:55 CST 截点红线",
+          "outcome": "hit",
+          "evidence": "精准封账 20:30 欧央行 10 月纪要鹰派措辞与 22:25 后布油冲 96 美元，严守 <=23:55 截点实现零跨日泄露（剔除 00:30 欧股/LSE、03:30 布油官结与 07:30 东京 CPI）"
+        },
+        {
+          "claim": "11/26 18:00 追踪：【图 1 零碰撞 + 网页可读性零返工冲刺】lint_retries=0 且 visual_retries=0",
+          "outcome": "partial",
+          "evidence": "达成首次 lint_retries=0 且 3 张 640px SVG 几何 0 碰撞，但独立盲审抓出 L39 “2 条假象”计数口误与图 1 $3,589 坐标偏低触发 1 次发前精修（visual_retries=1）"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "gold/daily/2026-11-26_1800_晚报_黄金深度研报_r2.md L39 引言写“下方先过滤 2 条刚出现的晚间假象”，与 L41/L44 及 DAILY_SIGNAL_NOISE 实际 3 条假象计数矛盾（H5）",
+            "status": "resolved",
+            "evidence": "已将 L39 修正为“下方先抓 2 件真信号、过滤 3 条刚出现的晚间假象”，并同步调整图 1 06:00 $3,589（dx=-18, dy=-4）与今亚高 $3,607（dx=14, dy=-3）防避让下移，重跑 gold/lint_readability.py --strict 与 scripts/build_site.py + lint_site.py --strict 全绿（0 errors, 0 warnings）"
+          },
+          {
+            "description": "2026-11-26 美国感恩节休市及 23:55 截点后发布数据（00:30 欧股/LSE UCITS、03:30 布油官结、03:00 在岸夜盘终盘、07:30 东京 CPI）严禁跨截点采录",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.cmegroup.com/tools-information/holiday-calendar.html",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "四关沿用 11/25 官方基线，23:55 仅采截点前薄量切片（$3,569.84 / 沪金 767.02），已全量以纯读者中文写入 gold/data_snapshot.json data_caveats 与正文第三部分"
+            }
+          },
+          {
+            "description": "11/25 FRED 高收益/CCC 信用利差与山东黄金 11/26 16:00 业绩说明会官方纪要截至 23:55 尚未发布归档",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://fred.stlouisfed.org/series/BAMLH0A0HYM2",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "沿用已核 11/24 官方读数（372/1,405bp）并标原交易日，挂账至 2026-11-27_0730 早报核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化发前 3 秒双核清单：核对正文引言信号/假象条数 == DAILY_SIGNAL_NOISE 实际数组长度，并在写 _ledger_patch.json 前强制核对 forecast_review.status 仅取 'settled' 或 'none_due'",
+        "固化图 1 相邻高点（如 $3,589 与 $3,607）横向错位（负 dx + 正 dx），防止防撞引擎将次高点标签压低至低于邻点"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【黑五早报复市行情与 07:30 东京 CPI 核销】封账 11/27 00:30 欧股与伦交所 UCITS 官收、03:30 布油官结、03:30–07:00 CME 感恩节停盘复市行情、07:30 东京核心 CPI、11/25 FRED OAS 与山东黄金说明会纪要",
+        "【黑五半日市风控与四关追踪】明示黑五半日市周六 02:00 美股 / 03:00 美债 / 03:45 COMEX 提前收，核验第 4 关门槛滚降至 $3,589.85、第 1 关差 1bp 与老铺 06181 除净首日表现",
+        "【纯网页零返工冲刺】核对引言计数 == 组件长度、图 1 相邻高点横向分流、零未注缩写（含 PMI），冲刺 lint_retries=0 且 visual_retries=0"
+      ]
     }
   ]
 }

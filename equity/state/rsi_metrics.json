@@ -487,6 +487,115 @@
         "【美股黑五半日市前瞻与挂账核销】按 --plan 2026-11-27_0730 校验美股半日市刊型，清零 11/25 Cboe CSV 原始行、11/25 FRED OAS/SOFR/EFFR、11/24–25 TGA 及欧洲央行 10 月纪要 + 07:30 东京核心 CPI 外溢，预警明晨 11/28 02:00 美股 / 03:00 美债早收薄量及下周一 11/30 2,180 亿美债交割与明晟剔除微策略",
         "【零重试 + 零孤行冲刺（first_pass_clean=true）】发前执行五秒快检：表内左/右列代码 1:1 释义、美股代码全配中文简称、清零裸 2Y/3Y/5Y/10Y、禁用 ** 开头 >180 字长段、一句话结论 <=48 字、红筹股息声明统一用“并非一律单一税率”、粗体 <=12%，冲刺 lint_retries=0 与 visual_retries=0"
       ]
+    },
+    {
+      "run_id": "2026-11-26_1800_r2",
+      "edition_type": "weekday_evening_revision",
+      "reports": [
+        "daily/2026-11-26_1800_a_share_r2.md",
+        "daily/2026-11-26_1800_hk_stock_r2.md",
+        "daily/2026-11-26_1800_us_stock_r2.md"
+      ],
+      "timestamp_cst": "2026-11-26T23:55:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "visual_retries": 1,
+      "lint_errors_fixed": [
+        "首轮 patch_state_dbs.py 拦下 1 处受限码 968118 警示词未命中正则（改为“避开暂停申购的968118”后 1 秒内原子合盘 3 大扩展库），首轮 lint_equity.py 0 错 4 警告（长段落/列表拆短后 0 错 0 警，lint_retries=1）",
+        "独立盲审（21/30）揪出 5 项高价值硬伤（CHART_A2 负号致年化贴水误渲染“升水”、511180 费率误标 0.20% 实为 0.30%、SCORECARD L30 残留 Blue Owl 旧表述、multi_asset_channels/etf_universe 兄弟字段残留 6 只/+37.69%/+15.6%、600547 PE 27.1→27.8 与 00300.HK 孪生档未同步），全部发前热修重编并通过全部三道严格门禁（0 errors, 0 warnings，visual_retries=1）"
+      ],
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 3,
+        "prior_forecast_calibration": 4,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 2,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 21,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/26 18:00 追踪：清零 11/26 中金所官结贴水、000922/123080/HSAHP/HSHDYI 与老铺 06181 官收，核实停牌美股基名单",
+          "outcome": "hit",
+          "evidence": "23:55 修订版核销中证红利 5,480.15 (+1.04%)、海波 123080 末日 119.90、中金所四期指基差与贴水 (-17.8% 至 -21.4%)、港股 HSAHP 138.40 / 高股息 1,213.68 / 老铺 266.80（沽空 27.48%）与沪深 12 只停牌跨境基全名单，三大扩展库全量同步至 2026-11-26_1800_r2"
+        },
+        {
+          "claim": "11/26 18:00 追踪：清零 Cboe 11/25 CSV、11/24 TGA、11/30 美债交割细项与欧央行 10 月纪要，严守 <=23:55 CST 截点",
+          "outcome": "hit",
+          "evidence": "全量核销 Cboe 11/25 原表（28.29 / 高 34.95）、11/24 TGA 9,583.9 亿、11/30 2,180 亿逐券净抽水 580 亿+、欧央行 10 月鹰派纪要与 BRK.B 579.32 校准，伦交所爱尔兰 UCITS 严守 <=23:55 盘中切片零跨日泄露"
+        },
+        {
+          "claim": "11/26 18:00 追踪：零重试与零返工冲刺（first_pass_clean=true）",
+          "outcome": "miss",
+          "evidence": "虽严守黄金红灯互斥锁与 38/38 跨轨零漂移，但盲审揪出 CHART_A2 贴水符号反转与局部补丁遗漏兄弟字段（H1/H2/H4），需发前热修且触发 Phase D 门禁加固"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "H1 [CRITICAL]: equity/daily/2026-11-26_1800_a_share_r2.md L141–144 CHART_A2 futures 传入负值 -21.4/-20.3/-19.5/-17.8，致 build_a_share_pdf.py 反向渲染为“升水约 21.4%/年”等（与基差 -37.71/-50.75/-73.34/-62.84 矛盾）",
+            "status": "resolved",
+            "evidence": "已改为正值 21.4/20.3/19.5/17.8，重建 _site 后核验 a-share-latest.html 准确输出“折价约 21.4%/年”至“折价约 17.8%/年”且零“升水”，通过 lint_equity.py --strict 与 lint_site.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "H2 [HIGH]: equity/state/multi_asset_channels.json convertible_bonds 将 511180 费率误标为 0.20%/年，与实际费率及 etf_universe.json（0.30%/年）冲突",
+            "status": "resolved",
+            "evidence": "经 _edition_patch.json + patch_state_dbs.py --apply 全量更正 summary、beginner_picks[0] 与 products[0].fee 为 0.30%/年（同步补明于 a_share_r2.md L55），全站跨库一致"
+          },
+          {
+            "description": "H3 [HIGH]: equity/daily/SCORECARD.md L30 残留 r1 旧句“Blue Owl（OCIC）11/25 新增 5% 赎回要约”，与 us_stock_r2.md L17 纠偏结论矛盾",
+            "status": "resolved",
+            "evidence": "已同步更正 SCORECARD.md L30 为“已区隔 Blue Owl（OCIC）11/25 仅第三方折价要约到期（常规截点 12/31），静待下周英伟达听证、季报与黑石（BCRED，5% 闸门）12/02 赎回”，同步校准 INDEX.md L12 MRF 纯债为 968082/968050 及夜盘时间戳"
+          },
+          {
+            "description": "H4 [HIGH]: 局部补丁更新 headline 字段后，multi_asset_channels.json（qdii_mrf/commodity_etfs）与 etf_universe.json（159509/513100/161226）兄弟字段仍残留 6 只/+37.69%/+19.18%/+15.6%/40–65.7 亿旧数",
+            "status": "resolved",
+            "evidence": "已通过 _edition_patch.json + patch_state_dbs.py --apply 全面同步全部兄弟字段至 11/26 23:55 仲裁口径（沪深 12 只、159509 +39.71%、513100 +19.11%、161226 实时 +16.82% / 对官净 +12.21%、159980 约 37–38 亿），通过 lint_equity.py --strict 与 lint_site.py --strict"
+          },
+          {
+            "description": "H6 [MEDIUM]: a_share_r2.md L72 山东黄金 PE 27.1 倍与 deep_dossiers 27.8x 漂移，且 hk-stock:00300.HK 美的 H 股孪生档停留在 101.70 / +8.4%",
+            "status": "resolved",
+            "evidence": "已将 a_share_r2.md L72 更正为 27.8 倍，并经 patch_state_dbs.py --apply 统一 a-share:000333 PE 为 15.2x、同步 hk-stock:00300.HK 至 11/26 官收 102.70 港元（+0.98%）与 AH 溢价 +7.5%（中间价 0.85582）"
+          },
+          {
+            "description": "2026-11-26 美国感恩节休市及 23:55 截点后的伦交所 UCITS 官收（00:30 CST）、布油官结（03:30 CST）与东京 CPI（07:30 CST）按截点纪律暂不采录",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.nyse.com/markets/hours-calendars",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "美股维持升级版休市守望刊，伦交所 UCITS 仅列 <=23:55 盘中区间，已全量透明写入 market_state.json data_caveats 与美股守望刊"
+            }
+          },
+          {
+            "description": "11/26 盘后 A 股两融终值（次晨公布）、中证 REITs 全收益 932047、山东黄金说明会纪要与 11/25 FRED OAS/SOFR/TGA 截至 23:55 尚未发布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.sse.com.cn/market/othersdata/margin/sum/",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "严守零编造保留带交易日时间戳的已核基线，写入 market_state.json data_caveats 排入 2026-11-27_0730 早报核销（11/26 两融若次晨后出则归 2026-11-27_1800）"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化 CHART_A2 符号铁律：a2.futures 传入正数表示年化贴水（渲染“折价约 X.X%/年”），严禁对贴水传负号致图表反印“升水”",
+        "固化大库增量补丁“兄弟字段全扫 + A/H 孪生股双更”规则：凡更新 159509/513100/161226 等动态指标，必须同步更新同记录内 badge/beginner_avoids/how_to_buy_steps/beginner_faq/yield_or_pe/risk_boundary/thesis_deep；凡更新 A 股两地龙头（如 000333），必须同步更新 H 股孪生档案（如 00300.HK）",
+        "固化勘误跨账本联动：凡在日报推翻上期新闻口径（如 Blue Owl OCIC），必同步巡检并更新 SCORECARD.md 追踪列与 INDEX.md"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【A/港/美周五主刊与剩余挂账清零】A/港 07:30 交付完整主刊，核销 11/26 932047 终盘、山东黄金说明会纪要、11/25 FRED OAS/SOFR/TGA 与 00:30 伦交所 UCITS 官收 + 07:30 东京核心 CPI；A 股紧盯 09:30 工企利润、10:30 沪深 12 只跨境基复牌与美的 000333 登记税坑；港股紧盯期指结算 + 美团 03690 盘后财报 + 老铺 06181 除净 245.75 首日表现",
+        "【美股黑五半日市前瞻】按 --plan 2026-11-27_0730 交付黑五半日市守望/主刊，预警周六 02:00 美股 / 03:00 美债早收薄量及下周一 11/30 2,180 亿美债净抽水 580 亿+ 与明晟剔除微策略",
+        "【零符号错 + 零兄弟字段漂移冲刺】发前逐项核对 CHART_A2 贴水正号、三库兄弟字段与 A/H 孪生档案联动一致、SCORECARD 同步及专业缩写首现括注，冲刺 first_pass_clean=true"
+      ]
     }
   ]
 }

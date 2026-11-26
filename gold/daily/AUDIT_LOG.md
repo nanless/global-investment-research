@@ -5,6 +5,52 @@
 ---
 
 <!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-26_1800_r2",
+  "as_of_short": "2026-11-26 23:55",
+  "note": "完成 2026-11-26 18:00 晚报修订封账版（23:55 BJT 截点，严格隔离次日凌晨 00:30 欧股/LSE、01:00 沪铜/TTF、03:00 CNY 延长夜盘与 03:30 布油官结）四重独立红队交叉核验：直连 Cboe VIX_History.csv 核销 2026-11-25 完整官方行（O 28.16 / H 34.95 / L 27.49 / C 28.29，正式由 provisional_close 升级为 published；23:55 BJT=10:55 EST < 11:30 EST 节日核查界线）；其余三关沿用 11/25 官数（DFII10 2.73%、2Y-FF +73bp、NY 收 $3,588.78），维持 Tier 0 红灯停（1/4 关、new_buy_allowed=false）与主报告 0/5 锁；集中核销 11/26 LBMA AM $3,562.40 / PM $3,578.90 / Ag $41.54、SGE Au99.99 均价 767.39 / Au(T+D) 均价 763.18 多付空 / Ag(T+D) 9,606、SHFE kx20261126.dat au2702 今结 756.32（纠偏昨结 768.96）与 pm20261126.dat 净多 +54,083 (+2,549)、SSE/SZSE 官方三大黄金 ETF 11/26 NAV 与合计净赎回 -3.42 亿元（518880 -1.86 亿连流 10 日、159937 -1.25 亿、518660 -0.31 亿）、HKEX 老铺 06181.HK 266.80（沽空暴增 112% 至 27.48%）与紫金 H 02899.HK 23.22，及 20:30 ECB 10 月鹰派纪要与 23:55 同刻沪金溢价 +2.43 元/克。",
+  "sources": {
+    "real_yield": [
+      "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"
+    ],
+    "rate_spread": [
+      "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+      "https://markets.newyorkfed.org/api/rates/all/latest.json"
+    ],
+    "vix": [
+      "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+      "https://www.cboe.com/tradable_products/vix/"
+    ],
+    "ny_close": [
+      "https://www.lbma.org.uk/prices-and-data/precious-metal-prices",
+      "https://www.sge.com.cn/sjzx/mrhqsj",
+      "https://www.shfe.com.cn/data/tradedata/future/dailydata/kx20261126.dat"
+    ]
+  },
+  "forecast_review": {
+    "status": "none_due",
+    "note": "原 18:00 晚报已结案 11/26 07:30 项为部分兑现（本修订版坚持历史不改判原则）；11/26 18:00 追踪项仍保留 11/27 07:30 验真节点，其中 11/26 LBMA/SGE/SHFE/三大金基/VIX 原表/老铺收盘等 6 大滞后表已于 23:55 提前清零。",
+    "sources": [
+      "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+      "https://www.sge.com.cn/sjzx/mrhqsj",
+      "https://www.shfe.com.cn/data/tradedata/future/dailydata/pm20261126.dat"
+    ]
+  }
+} -->
+
+## 2026-11-26 23:55 晚报修订封账增量红队法证档案（累计 87 项：37 拦谣 / 17 升级 / 33 校准，核心影响 0 / 33）
+
+- **新增拦谣 #36–#37（累计 37 项）**：
+  - **#36**：行情软件传播“518880 今日主力大举净流入 +3.54 亿元，机构已右侧抄底”——经上交所 11/26 官方 ETF 份额表实证为二级市场盘口大单误导，一级市场实际净赎回 `-2,560 万份`（`-1.86 亿元`，连流 10 日），连同 `159937`（`-1.25 亿`）与 `518660`（`-0.31 亿`）合计净赎回 `-3.42 亿元`。
+  - **#37**：晚间快讯渲染“沪银夜盘暴涨 +3.66%、沪金拉涨 +1.41% 假期逼空”——经上期所 `kx20261126.dat` 核实源于昨夜低位巨量拉低 11/26 官方结算价（`au2702 756.32`、`ag2702 9,332`），23:55 沪金 `767.02` 较 15:00 收盘实际微跌 `-0.08%`，同刻溢价仅 `+2.43 元/克`。
+- **新增细节校准 #31–#33（累计 33 项，对核心买金结论影响 0 / 33）**：
+  - **#31**：依 `kx20261126.dat` 与 SGE 日终表更正 `SHFE au2702` 今结为 `756.32`（原 1800 误留昨结 `768.96`）、`SGE Au99.99` 加权均价 `767.39`（替换旧值 `760.18`）与 `Ag(T+D)` 日收 `9,606`。
+  - **#32**：依港交所 `d261126e.htm` 终结老铺黄金 `06181.HK` 18:30 多源冲突（铁锁官收 `266.80 港元`，沽空暴增 112% 至 `27.48%`），并校准紫金 H `02899.HK` 官收 `23.22 港元 (+2.74%)`。
+  - **#33**：直连 Cboe `VIX_History.csv` 核销 `2026-11-25` 终值（`28.29` / 高 `34.95`）解除 `provisional_close`，补齐 11/26 `LBMA` AM `$3,562.40` / PM `$3,578.90` / Ag `$41.54`，并严格拦截次日凌晨 `00:30/01:00/03:00/03:30 CST` 欧股/LSE/沪铜/CNY/布油官收以保 23:55 截点纯度。
+- **一手链接与剩余次晨待补**：[Cboe VIX_History.csv](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv) · [SGE 每日行情](https://www.sge.com.cn/sjzx/mrhqsj) · [SHFE kx20261126](https://www.shfe.com.cn/data/tradedata/future/dailydata/kx20261126.dat) · [SHFE pm20261126](https://www.shfe.com.cn/data/tradedata/future/dailydata/pm20261126.dat) · [ECB 10 月纪要](https://www.ecb.europa.eu/press/accounts/2026/html/index.en.html) · [LME Copper](https://www.lme.com/Metals/Non-ferrous/LME-Copper)。仅余 11/25 FRED OAS（感恩节休市顺延）及山东黄金 11/26 业绩会文字纪要待次晨补核。
+
+---
+
+<!-- GOLD_EDITION_REVIEW {
   "edition_id": "2026-11-26_1800",
   "as_of_short": "2026-11-26 18:30",
   "note": "完成 2026-11-26 18:00 一体化晚报（美国感恩节 A 类局部休市 · 收敛主刊首刊）独立红队交叉核验：美国股市与债市全天休市，四步红绿灯严格沿用 11/25 官数——DFII10 2.73%（差 1bp 未过第 1 关）、US2Y 4.61% − EFFR 3.88% = +73bp（未过第 2 关）、Cboe 官网产品页与 FRED VIXCLS 双锁 11/25 VIX 官收 28.29（+7.32%，第三方日高 34.95，vix_live=null，checked_at 刷新至 18:25 延续 provisional_close 通过第 3 关）、11/25 NY 现货官收 $3,588.78 未过 $3,678.15（第 4 关未过，周五黑五下期门槛 $3,589.85，主报告 0/5 锁）；红队拦截 SGE Au99.99 盘中高点 770.00 并校准日盘官收为 765.82 元/克（+1.12%，与上海金午盘 765.96、Au(T+D) 765.78、SHFE au2702 767.62 闭合），核实四大行金条均价上调 +4.91 元至 783.07 元/克、周大福足金饰品 1,068 元/克（驳回 939 金条价混用）、在岸 CNY 16:30 官收 6.6600（CFETS 6.7096），补齐 11/25 LBMA AM/PM $3,533.20/$3,466.35、GLD 1,027.88t (+0.57t)、GDX NAV $73.70 与 11/24 FRED OAS 372/1,405bp，并拦截老铺黄金 06181.HK 多源冲突报价挂账 pending。",
