@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_left
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 import fcntl
@@ -129,13 +130,21 @@ def scheduled_edition(slot: str) -> str:
 def reap_stale_unpushed_run(
     runs: sqlite3.Connection, next_edition: str, max_idle_hours: float = 2.0,
 ) -> str | None:
-    """Reap an orphaned unpushed running lock from a different edition after prolonged inactivity."""
+    """Reap an orphaned unpushed running lock from an older edition after prolonged inactivity."""
     with _idle_publish_lock(), runs:
         runs.execute("BEGIN IMMEDIATE")
+        if runs.execute(
+            "SELECT 1 FROM runs WHERE edition = ? AND status = 'complete'", (next_edition,),
+        ).fetchone():
+            return None
         active = runs.execute(
             "SELECT token, edition, phase, updated FROM runs WHERE status = 'running'"
         ).fetchone()
         if active is None or active["edition"] == next_edition:
+            return None
+        active_key = _edition_key(active["edition"])
+        next_key = _edition_key(next_edition)
+        if active_key is None or next_key is None or active_key >= next_key:
             return None
         token = active["token"]
         push_started = (
@@ -364,6 +373,48 @@ def _preserves_order(prior: list[bytes], candidate_lines: list[bytes]) -> bool:
     return all(line in remaining for line in prior)
 
 
+def _preserves_partitioned_order(
+    prior: list[bytes], first: list[bytes], second: list[bytes],
+) -> bool:
+    """True iff prior can be cleanly partitioned in order across subsequences of first and second."""
+    first_pos: dict[bytes, list[int]] = {}
+    for idx, line in enumerate(first):
+        first_pos.setdefault(line, []).append(idx)
+    second_pos: dict[bytes, list[int]] = {}
+    for idx, line in enumerate(second):
+        second_pos.setdefault(line, []).append(idx)
+
+    # Pareto frontier of reachable (next_first_idx, next_second_idx) cursors,
+    # kept sorted by ascending first cursor and strictly descending second cursor.
+    frontier: list[tuple[int, int]] = [(0, 0)]
+    for line in prior:
+        pos1 = first_pos.get(line)
+        pos2 = second_pos.get(line)
+        if not pos1 and not pos2:
+            return False
+        candidates: list[tuple[int, int]] = []
+        for i1, i2 in frontier:
+            if pos1:
+                k1 = bisect_left(pos1, i1)
+                if k1 < len(pos1):
+                    candidates.append((pos1[k1] + 1, i2))
+            if pos2:
+                k2 = bisect_left(pos2, i2)
+                if k2 < len(pos2):
+                    candidates.append((i1, pos2[k2] + 1))
+        if not candidates:
+            return False
+        candidates.sort()
+        pruned: list[tuple[int, int]] = []
+        best_i2 = len(second) + 1
+        for i1, i2 in candidates:
+            if i2 < best_i2:
+                pruned.append((i1, i2))
+                best_i2 = i2
+        frontier = pruned
+    return True
+
+
 def _archived_ledger_paths(sha: str, path: str) -> list[str]:
     ledger = Path(path)
     archive_dir = f"{ledger.parent.as_posix()}/archive"
@@ -392,7 +443,12 @@ def _check_gold_ledger_history(base: str, candidate: str) -> None:
         if archived_paths:
             archived_chrono = [line for ap in archived_paths for line in _ledger_lines(candidate, ap)]
             archived_rev = [line for ap in reversed(archived_paths) for line in _ledger_lines(candidate, ap)]
-            if _preserves_order(prior, archived_chrono + active) or _preserves_order(prior, active + archived_rev):
+            if (
+                _preserves_order(prior, archived_chrono + active)
+                or _preserves_order(prior, active + archived_rev)
+                or _preserves_partitioned_order(prior, active, archived_chrono)
+                or _preserves_partitioned_order(prior, active, archived_rev)
+            ):
                 continue
         raise ValueError(f"{path} must preserve every prior nonblank line in its original order.")
 

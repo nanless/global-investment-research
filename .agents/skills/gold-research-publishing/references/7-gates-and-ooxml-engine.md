@@ -32,7 +32,9 @@
    - **ASCII/版本禁用表（`CONVERGED_BANNED_LAYER01_ASCII` + 版本正则）**：
      `Subagent`, `stop-through`, `IFRS 9`, `HQLA`, `FVOCI`, `ROTCE`, `Call Wall`, `Put Wall`, `Daniel Ghali`, `Michael Hsueh`, `V[267].\d+`
    - **中文/混合禁用表（`CONVERGED_BANNED_LAYER01_LITERAL`）**：
-     `子代理`, `63 路`, `63路`, `负 Gamma`, `负Gamma`, `R²=`, `R² =`, `梭哈`, `做T`, `做 T`, `短线波段`, `高弹性`, `收红`, `收绿`, `翻红`, `翻绿`, `蠢事`, `直接抄`, `小白词典`, `1 分钟定心丸`, `1分钟定心丸`, `保命铁律`, `六灯`
+     `子代理`, `63 路`, `63路`, `负 Gamma`, `负Gamma`, `R²=`, `R² =`, `梭哈`, `做T`, `做 T`, `短线波段`, `高弹性`, `收红`, `收绿`, `翻红`, `翻绿`, `六灯`
+   - **全篇说教口号硬拦（`CONVERGED_BANNED_SLOGANS`，`>= 2026-11-26_1800`，扫描 Layer 0–3 全部正文与全部组件 JSON，含 `DAILY_GLOSSARY`！）**：
+     `小白词典`, `直接抄`, `蠢事`, `1分钟定心丸`, `1 分钟定心丸`, `保命铁律`
    - *(历史旧刊 `< 2026-11-26_1800` 保持向后兼容，沿用旧版 68 词表。)*
 2. **全篇内部工程词、版本号与文件名硬拦（`INTERNAL_LEAK_CUTOVER = 2026-11-26_0730`，扫描 Layer 0–3 全部正文与全部组件 JSON！）**：
    - `_INTERNAL_FILENAME_LEAK_RE` 全篇阻断：`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`unified-edition.prompt.md`、`DAILY_FORMAT_SPEC.md`、`DAILY_REPORT_SPEC.md`、`AGENTS.md`、`GEMINI.md`、`SKILL.md`、任意 `*.py` 脚本名、`V[267].\d+`、`Subagent(s)`、`红队`、`法证`。
@@ -57,7 +59,7 @@
 - 校验现货涨跌幅（`≤0.05`）、婚庆 1g/50g/百分比（`≤0.15`）、`tier1_gates` 长度 4 与求和、`tier_code`/`new_buy_allowed` 一致性、`a_class_tranche_split`、5 项 `cross_ratios`（检出 `cross_ratios_\d{4}` 报 WARN）、`etf_cn` 为对象、`institutional_targets` 同期限样本数与中位数复算；
 - **抗阻塞市场校验（`edition_validation.py`）**：6 小时班次截点、4 小时节日 `pending` 复查、半日市 `provisional_close`、普通交易日 `provisional_close` **3 个自然日**核销、`no_row_confirmed` 支持 `*.cboe.com` 公告或 CSV `next_published_date > day`、30 分钟 VIX 盘中窗、四关固定 `id` 精确复算；
 - **部分过关开仓话术拦截（`PARTIAL_ENTRY_CLAIM_RE`）**：全篇（正文 + 组件，自动排除明确否定/反例语境）禁止宣称“通过 0–3 关即可转黄/开新仓”；
-- **当期正文与金店对齐放行（`_skip_domestic_brand_check`）**：核验正文含 `spot_gold_ny_close_rounded`；当处于中国内地 B 类休市或 `data_caveats` 含 `delayed_official`/`holiday_thin` 且明示金店/国内牌价/内盘/春节未开盘时，自动跳过 `brand_store_rmb` 与 `wedding_save_per_g_rmb` 对齐预警；
+- **当期正文与金店对齐放行（`_skip_domestic_brand_check`）**：核验正文含 `spot_gold_ny_close_rounded`；`data_caveats.category` 标准枚举为 `provisional_close`/`delayed_official`/`single_source`/`source_conflict`/`holiday_thin`/`publication_exception`，当处于中国内地 B 类休市或 `data_caveats` 含 `delayed_official`/`holiday_thin` 且明示金店/国内牌价/内盘/春节未开盘时，自动跳过 `brand_store_rmb` 与 `wedding_save_per_g_rmb` 对齐预警；
 - **全局治理校验**：`market_calendar.json` 覆盖硬底线 **30 天**（`<60 天` 输出 `[INFO]` 提示）、核证有效期 **90 天**；`daily/SCORECARD.md` 零内部工程/RSI/脚本文件名词（`SCORECARD_BANNED_RE`）；`daily/RSI_PLAYBOOK.md` **软限 180 行（WARN）/ 硬上限 200 行（FAIL）** 及 Tier B/C 边界声明；`daily/rsi_metrics.json` 6 维求和自洽。
 
 ### Gate 6：PDF、手机端 HTML 与原生 OOXML DOCX 法证校验（含 `.artifacts.json` 凭据）

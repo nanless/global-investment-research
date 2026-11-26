@@ -638,7 +638,7 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
     """Chart H7: Representative HK Stocks 4-Quadrant Map (Okabe-Ito color+shape encoding)."""
     cl = load_meta(meta_override).get("chart_live", {})
     h7 = cl.get("h7") if isinstance(cl.get("h7"), dict) else {}
-    pool_cnt = int(cl.get("stock_pool_count", 45))
+    pool_cnt = int(cl.get("stock_pool_count", 75))
     pts = h7.get("points") or DEFAULT_H7_POINTS
 
     title = _norm_chart_title(

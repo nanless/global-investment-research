@@ -104,7 +104,7 @@
     "spx_200d": 7348,
     "spx_high": 7819,
     "us10y": 4.85,
-    "us10y_zone": "high",
+    "us10y_zone": "mid",
     "score": 1.0,
     "tier_short": "红灯防守期 (1.0 / 6 分)",
     "status_line1": "替换为最新大盘核心状态一句话",

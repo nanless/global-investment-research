@@ -38,7 +38,7 @@ from build_daily import (
     sanitize_css_string,
     svg_esc,
 )
-from docx_embed import build_native_docx, render_chart_to_png
+from docx_embed import build_native_docx, is_complete_pdf, render_chart_to_png, run_chrome_to_output
 
 OUT_DIR = Path(__file__).resolve().parent
 BASE_NAME = "黄金跨世纪周期与2026-2030终审研究报告"
@@ -997,8 +997,9 @@ def main():
             shutil.rmtree(attempt_profile, ignore_errors=True)
             attempt_profile.mkdir(parents=True, exist_ok=True)
             tmp_pdf_out.unlink(missing_ok=True)
+            stderr_log = attempt_profile / "chrome_stderr.log"
             try:
-                proc = subprocess.run(
+                rc, stderr_txt = run_chrome_to_output(
                     [
                         chrome_bin,
                         "--headless",
@@ -1012,14 +1013,21 @@ def main():
                         f"--print-to-pdf={tmp_pdf_out}",
                         tmp_pdf_html.as_uri(),
                     ],
-                    capture_output=True,
-                    text=True,
+                    tmp_pdf_out,
+                    lambda p: is_complete_pdf(p, 10_000),
                     timeout=120,
+                    stderr_log=stderr_log,
                 )
-                if proc.returncode != 0 or not tmp_pdf_out.exists() or tmp_pdf_out.stat().st_size < 10000:
+                if not is_complete_pdf(tmp_pdf_out, 10_000):
                     raise RuntimeError(
                         f"Chrome headless PDF print failed for {BASE_NAME} "
-                        f"(attempt {attempt}/2, rc={proc.returncode}): {proc.stderr.strip()[:400]}"
+                        f"(attempt {attempt}/2, rc={rc}): {stderr_txt[:400]}"
+                    )
+                if rc != 0:
+                    print(
+                        f"  [CHROME WARN] Chrome exited rc={rc} on teardown after writing "
+                        f"complete PDF ({tmp_pdf_out.stat().st_size:,}B); accepting.",
+                        file=sys.stderr,
                     )
                 last_err = None
                 break

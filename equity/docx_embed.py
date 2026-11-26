@@ -20,10 +20,12 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
@@ -251,6 +253,102 @@ def _trim_png_whitespace(png_path: Path, pad_px: int = 20) -> bool:
         return touched_bottom
 
 
+def _is_complete_png(png_path: Path) -> bool:
+    if not png_path.exists() or png_path.stat().st_size < 2048:
+        return False
+    try:
+        with png_path.open("rb") as fh:
+            if fh.read(8) != b"\x89PNG\r\n\x1a\n":
+                return False
+        with Image.open(png_path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+
+def _terminate_process_group(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=1.5)
+    except (ProcessLookupError, OSError):
+        pass
+    except subprocess.TimeoutExpired:
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.wait(timeout=2.0)
+        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+            pass
+
+
+def _run_chrome_to_output(
+    cmd: list[str],
+    out_path: Path,
+    validator,
+    *,
+    timeout: float = 60.0,
+    stderr_log: Path | None = None,
+    grace_seconds: float = 1.2,
+) -> tuple[int, str]:
+    err_fh = stderr_log.open("wb") if stderr_log is not None else None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=err_fh if err_fh is not None else subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        t0 = time.monotonic()
+        stable_since: float | None = None
+        last_size = -1
+        try:
+            while True:
+                rc = proc.poll()
+                if rc is not None:
+                    break
+                if time.monotonic() - t0 >= timeout:
+                    _terminate_process_group(proc)
+                    if validator(out_path):
+                        break
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+                if out_path.exists():
+                    try:
+                        sz = out_path.stat().st_size
+                    except OSError:
+                        sz = -1
+                    if sz > 0 and sz == last_size and validator(out_path):
+                        if stable_since is None:
+                            stable_since = time.monotonic()
+                        elif time.monotonic() - stable_since >= grace_seconds:
+                            _terminate_process_group(proc)
+                            break
+                    else:
+                        last_size = sz
+                        stable_since = None
+                time.sleep(0.15)
+        finally:
+            _terminate_process_group(proc)
+        rc = proc.returncode if proc.returncode is not None else 0
+    finally:
+        if err_fh is not None:
+            err_fh.close()
+    stderr_txt = ""
+    if stderr_log is not None and stderr_log.exists():
+        try:
+            stderr_txt = stderr_log.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            pass
+    return rc, stderr_txt
+
+
 def render_chart_to_png(chart_html: str, out_png: Path, tmp_dir: Path, idx: int) -> Path:
     chrome_bin = resolve_chrome_bin()
     win_w = 874
@@ -268,9 +366,10 @@ def render_chart_to_png(chart_html: str, out_png: Path, tmp_dir: Path, idx: int)
                 per_call_profile = Path(
                     tempfile.mkdtemp(prefix=f"_eq_prof_{idx}_{win_h}_{attempt}_", dir=tmp_dir)
                 )
+                stderr_log = per_call_profile / "chrome_stderr.log"
                 try:
                     out_png.unlink(missing_ok=True)
-                    proc = subprocess.run(
+                    rc, stderr_txt = _run_chrome_to_output(
                         [
                             chrome_bin,
                             "--headless",
@@ -286,11 +385,21 @@ def render_chart_to_png(chart_html: str, out_png: Path, tmp_dir: Path, idx: int)
                             f"--screenshot={out_png}",
                             str(tmp_html),
                         ],
-                        capture_output=True,
+                        out_png,
+                        _is_complete_png,
                         timeout=60,
+                        stderr_log=stderr_log,
                     )
-                    if proc.returncode != 0 or not out_png.exists() or out_png.stat().st_size < 2048:
-                        raise RuntimeError(f"Chrome chart PNG render failed (idx={idx}, rc={proc.returncode})")
+                    if not _is_complete_png(out_png):
+                        raise RuntimeError(
+                            f"Chrome chart PNG render failed (idx={idx}, rc={rc}): {stderr_txt[:300]}"
+                        )
+                    if rc != 0:
+                        print(
+                            f"  [CHROME WARN] Chart PNG (idx={idx}) Chrome exited rc={rc} on teardown "
+                            f"after writing valid PNG ({out_png.stat().st_size:,}B); accepting.",
+                            file=sys.stderr,
+                        )
                     last_err = None
                     break
                 except (subprocess.SubprocessError, RuntimeError) as exc:

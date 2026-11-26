@@ -17,7 +17,16 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function safeDecode(s) {
+    try {
+      return decodeURIComponent(s);
+    } catch (_) {
+      return s;
+    }
   }
 
   function isEditableElement(el) {
@@ -743,12 +752,23 @@
       const nextUrl = params.length > 0
         ? "#" + params.join("&")
         : window.location.pathname + window.location.search;
-      history.replaceState(null, "", nextUrl);
+      try {
+        history.replaceState(null, "", nextUrl);
+      } catch (_) {}
     }
 
-    function applyHashToState() {
+    function applyHashToState(resetOnEmpty) {
       const raw = (window.location.hash || "").replace(/^#/, "").trim();
-      if (!raw) return false;
+      if (!raw) {
+        if (!resetOnEmpty) return false;
+        state.q = "";
+        state.market = "all";
+        state.color = "all";
+        state.preset = "all";
+        state.sectors.clear();
+        if (qInput) qInput.value = "";
+        return true;
+      }
       state.q = "";
       state.market = "all";
       state.color = "all";
@@ -756,17 +776,18 @@
       state.sectors.clear();
 
       if (raw.indexOf("=") === -1) {
-        if (["a-share", "hk-stock", "us-stock"].indexOf(raw) !== -1) {
-          state.market = raw;
-        } else if (["base", "high-div", "near-anchor", "ah-inverted", "hide-red"].indexOf(raw) !== -1) {
-          state.preset = raw;
+        const token = safeDecode(raw);
+        if (["a-share", "hk-stock", "us-stock"].indexOf(token) !== -1) {
+          state.market = token;
+        } else if (["base", "high-div", "near-anchor", "ah-inverted", "hide-red"].indexOf(token) !== -1) {
+          state.preset = token;
         }
       } else {
         raw.split("&").forEach(function (pair) {
           const eq = pair.indexOf("=");
           if (eq <= 0) return;
-          const k = decodeURIComponent(pair.slice(0, eq));
-          const v = decodeURIComponent(pair.slice(eq + 1));
+          const k = safeDecode(pair.slice(0, eq));
+          const v = safeDecode(pair.slice(eq + 1));
           if (k === "market" && ["all", "a-share", "hk-stock", "us-stock"].indexOf(v) !== -1) {
             state.market = v;
           } else if (k === "color" && ["all", "g", "b", "y", "r"].indexOf(v) !== -1) {
@@ -1159,7 +1180,7 @@
     });
 
     window.addEventListener("hashchange", function () {
-      if (applyHashToState()) {
+      if (applyHashToState(true)) {
         renderSectorControls();
         renderScreener(false);
       }
@@ -1198,7 +1219,9 @@
         p.classList.toggle("active", p.id === targetId);
       });
       if (updateHash && history.replaceState) {
-        history.replaceState(null, "", "#" + targetId);
+        try {
+          history.replaceState(null, "", "#" + targetId);
+        } catch (_) {}
       }
       return valid;
     }

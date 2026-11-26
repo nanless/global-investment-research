@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import html as html_mod
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -700,7 +699,7 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
     """Chart U7: Representative US Stocks Quadrant Map — Full Nested u7 Override + Dynamic US10Y Parity Line"""
     cl = load_meta(meta_override).get("chart_live", {})
     u7_nest = cl.get("u7") if isinstance(cl.get("u7"), dict) else {}
-    pool_cnt = int(cl.get("stock_pool_count", 46))
+    pool_cnt = int(cl.get("stock_pool_count", 80))
     us10y = float(cl.get("us10y", 4.901))
     parity_pe = float(u7_nest.get("parity_pe") or round(100.0 / max(1.0, us10y), 1))
     # Map PE linearly on visual axis (10x -> x=112, 25x -> x=450, 48x -> x=786)

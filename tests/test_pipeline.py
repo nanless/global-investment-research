@@ -275,6 +275,34 @@ class EditionRunTest(unittest.TestCase):
         self.assertIsNone(edition_run.reap_stale_unpushed_run(self.runs, "2026-11-27_0730"))
         self.assertEqual(edition_run.status(self.runs)[0]["status"], "running")
 
+    def test_reap_preserves_newer_revision_and_completed_next_edition(self):
+        stale_ts = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(timespec="seconds")
+
+        # 1. Newer revision (0730_r2) must NOT be reaped by base slot (0730)
+        rev_token = edition_run.begin(self.runs, "2026-11-26_0730_r2")
+        with self.runs:
+            self.runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (stale_ts, rev_token))
+        self.assertIsNone(edition_run.reap_stale_unpushed_run(self.runs, "2026-11-26_0730"))
+        self.assertEqual(edition_run.status(self.runs)[0]["status"], "running")
+
+        # Release revision lock cleanly so we can test next_edition already complete
+        with self.runs:
+            edition_run.fail(self.runs, rev_token, "Test cleanup")
+
+        # 2. If next_edition is already complete, an older stale lock must NOT be reaped
+        with self.runs:
+            self.runs.execute(
+                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("f" * 32, self.edition, "publish", "complete", stale_ts, stale_ts, "done"),
+            )
+        older_token = edition_run.begin(self.runs, "2026-11-26_0730")
+        with self.runs:
+            self.runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (stale_ts, older_token))
+        self.assertIsNone(edition_run.reap_stale_unpushed_run(self.runs, self.edition))
+        running_rows = [r for r in edition_run.status(self.runs) if r["status"] == "running"]
+        self.assertEqual(len(running_rows), 1)
+        self.assertEqual(running_rows[0]["edition"], "2026-11-26_0730")
+
     def test_disclosed_caveat_and_gold_ledger_monthly_rollover(self):
         token = self.reach_equity()
         gold_metrics = "gold/daily/rsi_metrics.json"
@@ -329,6 +357,53 @@ class EditionRunTest(unittest.TestCase):
         dropped = self.git("rev-parse", "HEAD")
         with self.assertRaisesRegex(ValueError, "AUDIT_LOG.*preserve"):
             edition_run._check_gold_ledger_history(base, dropped)
+
+    def test_gold_ledger_rollover_with_standing_bottom_summary_table(self):
+        audit = self.root / "gold/daily/AUDIT_LOG.md"
+        header = "# 黄金研报体系·审计账本\n\n> 档案定位说明\n"
+        nov_entries = (
+            "## 2026-11-26 08:30\n\n- Nov 26 audit note\n\n"
+            "## 2026-11-25 18:00\n\n- Nov 25 audit note\n"
+        )
+        standing_table = (
+            "## 一、三大信任资产全景汇总\n\n"
+            "| 编号 | 误区 | 真相 |\n"
+            "| :---: | :--- | :--- |\n"
+            "| 1 | 谣言甲 | 官源核查甲 |\n"
+            "| 2 | 谣言乙 | 官源核查乙 |\n"
+        )
+        audit.write_text(f"{header}\n{nov_entries}\n{standing_table}", encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "November audit with standing summary table")
+        base = self.git("rev-parse", "HEAD")
+
+        archive_file = self.root / "gold/daily/archive/AUDIT_LOG_2026_11.md"
+        archive_file.parent.mkdir(parents=True, exist_ok=True)
+        archive_file.write_text(nov_entries, encoding="utf-8")
+        dec_entry = "## 2026-12-01 07:30\n\n- Dec 1 audit note\n"
+        audit.write_text(f"{header}\n{dec_entry}\n{standing_table}", encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Archive Nov entries while keeping standing bottom summary")
+        rolled = self.git("rev-parse", "HEAD")
+        edition_run._check_gold_ledger_history(base, rolled)
+
+        # Dropping a standing summary row must still fail
+        bad_table = standing_table.replace("| 2 | 谣言乙 | 官源核查乙 |\n", "")
+        audit.write_text(f"{header}\n{dec_entry}\n{bad_table}", encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Drop row from standing summary table")
+        dropped_row = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(ValueError, "AUDIT_LOG.*preserve"):
+            edition_run._check_gold_ledger_history(base, dropped_row)
+
+        # Modifying an archived line must also fail
+        audit.write_text(f"{header}\n{dec_entry}\n{standing_table}", encoding="utf-8")
+        archive_file.write_text(nov_entries.replace("Nov 25 audit note", "Tampered note"), encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Modify archived audit entry")
+        tampered = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(ValueError, "AUDIT_LOG.*preserve"):
+            edition_run._check_gold_ledger_history(base, tampered)
 
     def test_verify_pages_tolerates_transient_api_error_and_checks_all_runs(self):
         sha = "b" * 40
@@ -649,29 +724,125 @@ class OperationalRegressionTest(unittest.TestCase):
         self.assertTrue(all(c["market"] in ("gold", "cross") for c in gold_only))
         self.assertTrue(any(c["market"] == "cross" for c in gold_only))
 
+    def test_collect_data_caveats_dict_exceptions_source_divergence_and_home_sanitization(self):
+        gold_snap = {
+            "data_caveats": [
+                {
+                    "id": "src_div_item",
+                    "market": "gold",
+                    "category": "source_divergence",
+                    "severity": "warn",
+                    "item": "伦敦与纽约收盘口径分歧",
+                    "detail": (
+                        "路径 /home/runner/work/data.csv 与 DAILY_FORMAT_SPEC.md / DAILY_REPORT_SPEC.md / "
+                        "unified-edition.prompt.md / gold-research-publishing / market_calendar.json，"
+                        "11/25 隔夜 4-5p 主刊与 11/26 切模式 2 美股休市守望简报"
+                    ),
+                    "impact": "已透明披露",
+                }
+            ]
+        }
+        eq_state = {
+            "edition_id": "2026-11-26_1800",
+            "as_of_cst": "2027-02-08T18:00:00+08:00",
+            "publication_exceptions": {
+                "edition_id": "2026-11-26_1800",
+                "markets": {
+                    "a_share": {
+                        "kind": "source_outage",
+                        "reason": "交易所接口临时维护（参考 /home/ci/log.txt）",
+                        "evidence_url": "https://www.sse.com.cn/notice",
+                        "next_review_session": "2026-11-27_0730",
+                    },
+                },
+            },
+            "calendar_overrides": [
+                {
+                    "date_cst": "2027-02-05",
+                    "end_date_cst": "2027-02-14",
+                    "type": "long_holiday_start",
+                    "markets_affected": ["a_share"],
+                    "note": "春节休市，切模式 2 守望刊（4-5p 主刊节后恢复）",
+                },
+                {
+                    "date_cst": "2027-02-10",
+                    "type": "monthly_rollover",
+                    "markets_affected": ["a_share", "hk_stock", "us_stock"],
+                    "note": "内部滚存不应展示",
+                },
+            ],
+        }
+        caveats = build_site.collect_data_caveats(gold_snap, eq_state)
+        by_id = {c["id"]: c for c in caveats}
+        self.assertEqual(by_id["src_div_item"]["category"], "source_conflict")
+        self.assertEqual(by_id["src_div_item"]["category_label"], "多源口径差异")
+        self.assertIn("pub_exc_a-share_source_outage", by_id)
+        exc_item = by_id["pub_exc_a-share_source_outage"]
+        self.assertEqual(exc_item["market"], "a-share")
+        self.assertEqual(exc_item["severity"], "high")
+        self.assertEqual(exc_item["due_label"], "预计 11/27 07:30 早报核销")
+
+        joined = " ".join(f"{c['title']} {c['detail']} {c['impact']}" for c in caveats)
+        for leak in (
+            "/home/",
+            "DAILY_FORMAT_SPEC.md",
+            "DAILY_REPORT_SPEC.md",
+            "unified-edition.prompt.md",
+            "gold-research-publishing",
+            "market_calendar.json",
+            "4-5p 主刊",
+            "切模式 2",
+        ):
+            self.assertNotIn(leak, joined)
+
+        # Edition-id None dict exception is also surfaced; mismatched edition_id is skipped
+        eq_none = {**eq_state, "publication_exceptions": {**eq_state["publication_exceptions"], "edition_id": None}}
+        self.assertTrue(any(c["id"] == "pub_exc_a-share_source_outage" for c in build_site.collect_data_caveats({}, eq_none)))
+        eq_stale = {**eq_state, "publication_exceptions": {**eq_state["publication_exceptions"], "edition_id": "2026-11-25_1800"}}
+        self.assertFalse(any(c["id"] == "pub_exc_a-share_source_outage" for c in build_site.collect_data_caveats({}, eq_stale)))
+
+        # Local /home/ href & text stripping
+        self.assertEqual(build_site._rewrite_href("/home/runner/report.md", "", {}, "gold"), "archive.html")
+        self.assertNotIn("/home/", build_site._strip_local_paths_in_text("<p>见 /home/runner/work/a.md 档案</p>"))
+
+        # Holiday alerts: multi-day range overlap, monthly_rollover excluded, note sanitized
+        holidays = build_site.collect_holiday_alerts(eq_state, max_days=7)
+        self.assertEqual(len(holidays), 1)
+        self.assertEqual(holidays[0]["date"], "02/05–02/14")
+        self.assertNotIn("切模式 2", holidays[0]["note"])
+        self.assertNotIn("4-5p 主刊", holidays[0]["note"])
+
     def test_extract_all_stocks_parses_numeric_fields_cleanly(self):
         a_md = (
             "### 5.2\n"
             "| 标的 | 现价 | 估值 | 锚 | 结论 |\n"
             "| --- | --- | --- | --- | --- |\n"
             "| 招商银行 `600036` | 43.32 | 7.3x | 安全锚：40.00–42.00 元 | 🟢 当下底座 |\n"
+            "| 紫金矿业 `601899` | 24.50 | 8.6x | 安全锚：20.5–22.0 元 | 🔵 🔒未来主攻 |\n"
             "### 5.3\n"
             "## 附表二\n"
             "| 赛道 | 标的 | 价格 | 估值 | 诊断 |\n"
             "| --- | --- | --- | --- | --- |\n"
             "| 银行 | 招商银行 `600036` | 43.32（11/25 收） | 7.3x / 0.92x / 4.7% / -5.0% | 🟢 当下底座；派息率 35% |\n"
+            "| 有色 | 紫金矿业 `601899` | 24.50 | 8.6x / 2.96x / 3.4% / +16% | 🔵 🔒未来主攻；警期铜入熊 |\n"
         )
         hk_md = (
             "## 附表二\n"
             "| 赛道 | 标的 | 价格 | 估值 | 诊断 |\n"
             "| --- | --- | --- | --- | --- |\n"
             "| 能源 | 中国海油 `00883` | 18.50（1,000 股） | TTM PE 6.8x / 6.2% / 无 A 股 | 🟢 当下底座；锚 17.0 下 |\n"
+            "| 保险 | 中国平安 `02318` | 50.20 | 8.0x(营运6.5x) / 5.5% / AH +27.7% | 🟢 当下底座；前三季营运利润 +8.3% 高息 |\n"
+            "| 有色 | 紫金矿业 `02899` | 22.10 | 7.5–8.0x / 3.6%–4.0% / AH +16% | 🟡 分歧观察；受铜熊金红灯压制 |\n"
+            "| 测试 | 示例公司 `09999` | 10.00 | 12.0x / — / 无 A 股 | 🟡 分歧观察；前三季营运利润 +8.3% 高息 |\n"
         )
         us_md = (
             "## 附表二\n"
             "| 赛道 | 标的 | 价格 | 估值 | 诊断 |\n"
             "| --- | --- | --- | --- | --- |\n"
             "| 矿业 | **纽蒙特** `NEM` | $99.95 (-0.77%) | FWD PE 10.7x · 🟡 观察（禁新买） | 股息 2.5%，存量稳拿；锚 $85–$90 |\n"
+            "| AI | **安思罗匹克** `ANT` | $78.00 | 约 13.5x 年化收入 · 🟡 分歧观察 | 首周破发；锚 $65–$72 |\n"
+            "| 地产 | **易昆尼克斯** `EQIX` | $910.00 | ~24x 经调营运资金 · 🟡 分歧观察 | 息 2.10%；锚 $880–$920 |\n"
+            "| 地产 | **普洛斯** `PLD` | $115.00 | ~18.7x 营运资金 · 🟡 分歧观察 | 息 3.35%；锚 $112–$118 |\n"
         )
         stocks = build_site.extract_all_stocks(
             a_md,
@@ -688,11 +859,19 @@ class OperationalRegressionTest(unittest.TestCase):
         self.assertEqual(by_code["600036"]["anchor_high"], 42.0)
         self.assertEqual(by_code["600036"]["anchor_gap_pct"], 5.7)
         self.assertFalse(by_code["600036"]["is_gold_locked"])
+        self.assertFalse(by_code["600036"]["summary"].startswith(("🟢", "当下底座")))
+        self.assertTrue(by_code["601899"]["is_gold_locked"])
+        self.assertFalse(by_code["601899"]["summary"].startswith(("🔵", "🔒", "未来主攻")))
 
         self.assertEqual(by_code["00883.HK"]["pe_num"], 6.8)
         self.assertEqual(by_code["00883.HK"]["div_pct"], 6.2)
         self.assertEqual(by_code["00883.HK"]["ah_pct"], 69.2)
         self.assertEqual(by_code["00883.HK"]["anchor_gap_pct"], 8.8)
+
+        self.assertEqual(by_code["02318.HK"]["pe_num"], 8.0)
+        self.assertEqual(by_code["02318.HK"]["div_pct"], 5.5)
+        self.assertIsNone(by_code["09999.HK"]["div_pct"])
+        self.assertTrue(by_code["02899.HK"]["is_gold_locked"])
 
         self.assertEqual(by_code["NEM"]["price_num"], 99.95)
         self.assertEqual(by_code["NEM"]["pe_num"], 10.7)
@@ -700,12 +879,31 @@ class OperationalRegressionTest(unittest.TestCase):
         self.assertEqual(by_code["NEM"]["anchor_low"], 85.0)
         self.assertEqual(by_code["NEM"]["anchor_high"], 90.0)
         self.assertTrue(by_code["NEM"]["is_gold_locked"])
+        self.assertIsNone(by_code["ANT"]["pe_num"])
+        self.assertIsNone(by_code["EQIX"]["pe_num"])
+        self.assertEqual(by_code["EQIX"]["div_pct"], 2.1)
+        self.assertIsNone(by_code["PLD"]["pe_num"])
+        self.assertEqual(by_code["PLD"]["div_pct"], 3.35)
 
         for st in stocks:
             for k in ("market", "market_label", "sector", "name", "code", "price", "valuation", "color", "action_label", "summary"):
                 self.assertIsInstance(st[k], str)
                 self.assertNotIn("**", st[k])
                 self.assertNotIn("`", st[k])
+
+    def test_load_gold_ledger_with_archives_appends_newest_first(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            gold_dir = Path(temporary) / "gold"
+            daily_dir = gold_dir / "daily"
+            arch_dir = daily_dir / "archive"
+            arch_dir.mkdir(parents=True)
+            (daily_dir / "CHANGELOG.md").write_text("## 2026-12-01\n\n- Dec entry\n", encoding="utf-8")
+            (arch_dir / "CHANGELOG_2026_10.md").write_text("## 2026-10-31\n\n- Oct entry\n", encoding="utf-8")
+            (arch_dir / "CHANGELOG_2026_11.md").write_text("## 2026-11-30\n\n- Nov entry\n", encoding="utf-8")
+            with patch.object(build_site, "GOLD_DIR", gold_dir):
+                combined = build_site._load_gold_ledger_with_archives("CHANGELOG", is_audit_log=False)
+            self.assertLess(combined.index("Dec entry"), combined.index("Nov entry"))
+            self.assertLess(combined.index("Nov entry"), combined.index("Oct entry"))
 
 
 if __name__ == "__main__":

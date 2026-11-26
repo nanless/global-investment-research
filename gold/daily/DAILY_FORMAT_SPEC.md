@@ -17,6 +17,7 @@
    - **Layer 1（核心行动区）**：`.sn-grid` 信号/噪音双栏 + 买金四步红绿灯（满足 X/4 项）+ 历史水位尺 + **10 万元人民币钱包账（6 周内锚定现行汇率，跨年显式标注汇率联动区间 `6.20–6.45`）+ A（空仓，统一 `30% + 45% + 25%` 配比，明示 `008142` 0.20%/年运营费 vs `008143` 0.55%/年含销售服务费及满 30 天免赎回）/ B（B1 轻仓套牢 · B2 重仓焦虑 · B3 早年浮盈）/ D（宏观原理）与 C（婚庆/实体省钱实算）紧凑操作卡**。
    - **Layer 2（精炼深度专题）**：**必须以 `# 第二部分` / `## 专题一` / `## 周末专题` 或 `DAILY_LAYER_BADGE`（`tone: "deep"`）起头以触发门禁分层与自动分页**；自 `2026-11-26_1800` 起，每日 07:30 早报与 18:00 晚报均发布**精炼收敛主刊（目标 5–6 页，重大议息/危机日可扩至 7–8 页）**，保留 3 张 640px 矢量图，聚焦核心驱动、关键情景与 7 日排雷；全景主报告保持百科深度（目标 **21–24 页** · 7 张 640px 矢量图）；**严格分工不互抄**；`DAILY_GLOSSARY` 改为可选（0–1 次，不再强行硬塞）。
    - **Layer 3（可选进阶复核区）**：顶部标明轻量眉批 `DAILY_LAYER_BADGE`（`tone: "pro"`），保留精确口径、Tier 0–3 阈值、高门槛工具（明标 50 万门槛）与官方数据自查路径；`DAILY_TRUST_BAR` 改为可选（0–1 次）；版本演进 Diff、子代理核验与人名勘误**物理分离**至 `daily/AUDIT_LOG.md` 与 `daily/CHANGELOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）。
+   - **统一 5 模块收敛主刊映射**：**Layer 0 → ① 核心裁决与 4 卡摘要**；**Layer 1 信号/噪音与水位 → ② 隔夜/日内主线与跨市传导**；**Layer 2 专题与 3 图 → ③ 深度专题与矢量图**；**Layer 1 钱包账与 A/B/D/C 行动卡 → ④ 实操配置与风控边界**；**Layer 2 排雷日历 + Layer 3 → ⑤ 关键日历与官方数据溯源**。
 3. **单一真相刻度（废除正文平行打分与部分过关误导）**：
    - 正文 Layer 0–1 彻底废除 `六灯 X.X/6`（含整数 `X/6` 及全角 `／6`）平行分制；全篇严禁出现「通过 0–3 关即可转黄/开新仓」等与四关全过原则冲突的错误表述（Gate 5 强制拦截），统一只用 **【历史水位尺】+【买金四步红绿灯（红灯停 Tier 0 / 黄灯试买 Tier 1 [30%] / 绿灯主买 Tier 2 [+45%→75%] / 满格配齐 Tier 3 [+25%→100%]，显示满足 X/4 项，四关全过方开新仓）】**。
 4. **理性知情语调与三档词汇标准（`>= 2026-11-26_1800`）**：
@@ -24,8 +25,8 @@
    - **第一档 · 自由使用（主流投资者通用词）**：`VIX`、`DXY`、`GLD`、`GDX`、`ETF`、`CFTC`、`COT`、`CDS`、`鹰派`、`鸽派`、`提保`、`轧空`、`逼空`、`上影线`；
    - **第二档 · 首次出现用 6–12 字中文括号轻注**：`DFII10`（10 年美债实际利率）、`2Y−FF`（2 年美债减政策利率利差）、`ON RRP`（联储隔夜逆回购余额）、`HY/CCC OAS`（高收益信用利差）、`IOPV`（盘中参考净值）、`bp`（基点）；
    - **第三档 · 门禁硬拦（违者 FAIL）**：
-     - **全篇（含 Layer 2/3 与全部组件，自 `2026-11-26_0730` 起生效）严禁内部工程词、版本号与文件名**：`V2.x/V6.x/V7.x`、`Subagent`、`红队`、`法证`、`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`DAILY_FORMAT_SPEC.md`、`AGENTS.md`、`SKILL.md` 及任意 `*.py` 脚本名；
-     - **Layer 0–1 严禁**：生僻卖方量化词（`stop-through`、`IFRS 9`、`HQLA`、`FVOCI`、`ROTCE`、`Call Wall`/`Put Wall`、`负 Gamma`、`R²=`）、未消歧人名（`Daniel Ghali`/`Michael Hsueh`）、工程路数（`子代理`/`63 路`）、赌徒口语（`梭哈`、`做T`、`短线波段`、`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）、居高临下口号（`蠢事`、`直接抄`、`小白词典`、`1 分钟定心丸`、`保命铁律`）及平行打分（`六灯`、`X/6`）；
+     - **全篇（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）严禁**：① 自 `2026-11-26_0730` 起拦截内部工程词、版本号与文件名（`V2.x/V6.x/V7.x`、`Subagent`、`红队`、`法证`、`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`DAILY_FORMAT_SPEC.md`、`AGENTS.md`、`SKILL.md` 及任意 `*.py` 脚本名）；② 自 `2026-11-26_1800` 起**全篇与全部组件（含 `DAILY_GLOSSARY`）统一拦截 6 个居高临下口号**（`小白词典`、`直接抄`、`蠢事`、`1分钟定心丸`、`1 分钟定心丸`、`保命铁律`）；
+     - **Layer 0–1 严禁**：生僻卖方量化词（`stop-through`、`IFRS 9`、`HQLA`、`FVOCI`、`ROTCE`、`Call Wall`/`Put Wall`、`负 Gamma`、`R²=`）、未消歧人名（`Daniel Ghali`/`Michael Hsueh`）、工程路数（`子代理`/`63 路`）、赌徒口语（`梭哈`、`做T`、`短线波段`、`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）及平行打分（`六灯`、`X/6`）；
    - **感叹号、煽动词与排版密度红线**：Layer 0–1 感叹号严格 **0** 个（FAIL），收敛新刊全篇 **≤5** 个（旧刊 ≤2）；全篇禁用 **13 个夸张煽动词**（`神准`/`分毫不差`/`100%胜率`/`100% 胜率`/`无情推翻`/`核雷`/`拉爆`/`血洗`/`焊死`/`史诗级`/`史诗轧空`/`彻底打脸`/`惊天验证`）；Layer 0–1 自然段 ≤240 字；全篇**加粗密度 ≤14%**；**裸数字/金额/百分比不套反引号**（仅代码可用）。
 5. **少即是多 + 透明缺口 + 跨时区诚实标注**：
    - 关键数字配齐 **`[当前读数 + 历史水位 + 决策含义]`**；未披露或暂定数据统一记入快照 `data_caveats`（纯读者中文、零内部文件名）并在正文中如实标注；**严禁把不同时点的国内外报价差混作“国内供需溢价”，亦严禁把 05:00 盘后讲话因果倒置归因到 02:30 已收盘的国内价**。
@@ -79,7 +80,7 @@
 
 快照核心新增与对称字段（详见[黄金快照契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)）：
 - **`etf_cn`**：国内黄金 ETF 标准无日期键（含 `as_of_date` 及 `518880`/`159937`/`518660` 的 `close`/`chg_pct`/`nav`/`flow_100m`）；
-- **`data_caveats`**：面向读者的结构化缺口数组（纯读者中文、零内部文件名；每项含 `id`/`market`/`category`/`severity`/`item`/`detail`/`impact`/`next_review`）；国内节假日或 `data_caveats` 明示金店未开盘时 Gate 5 自动放行金店价对齐预警；
+- **`data_caveats`**：面向读者的结构化缺口数组（纯读者中文、零内部文件名；每项含 `id`/`market`/`category` [`provisional_close`/`delayed_official`/`single_source`/`source_conflict`/`holiday_thin`/`publication_exception`]/`severity`/`item`/`detail`/`impact`/`next_review`）；国内节假日或 `data_caveats` 明示金店未开盘时 Gate 5 自动放行金店价对齐预警；
 - **`usd_cny_1630`、`cfets_fixing_date`、`bank_2027_yearend_sample_count`、`bank_2027_avg_sample_count`** 与 `master_snapshot.json` 对称字段（`edition_id`/`new_buy_allowed`/`cfets_fixing_date`/`tier1_gates[].id`）。
 
 图表数字字段与显示字段分开，由共享模块 `chart_input.py` 统一规范化：数字允许普通小数、合法千位格式（`"3,555"`）及百分值（`"+1.25%"`）；货币符号和完整文字放进 `val_label` 或对应标签。

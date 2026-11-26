@@ -18,8 +18,11 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import struct
 import subprocess
+import sys
+import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
@@ -111,6 +114,118 @@ def _trim_png_whitespace(png_path: Path, pad_px: int = 20) -> bool:
         return touched_bottom
 
 
+def is_complete_pdf(pdf_path: Path, min_bytes: int = 10_000) -> bool:
+    if not pdf_path.exists() or pdf_path.stat().st_size < min_bytes:
+        return False
+    try:
+        size = pdf_path.stat().st_size
+        with pdf_path.open("rb") as fh:
+            head = fh.read(5)
+            fh.seek(max(0, size - 1024))
+            tail = fh.read(1024)
+        return head == b"%PDF-" and b"%%EOF" in tail
+    except OSError:
+        return False
+
+
+def _is_complete_png(png_path: Path) -> bool:
+    if not png_path.exists() or png_path.stat().st_size < 2048:
+        return False
+    try:
+        with png_path.open("rb") as fh:
+            if fh.read(8) != b"\x89PNG\r\n\x1a\n":
+                return False
+        with Image.open(png_path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+
+def _terminate_process_group(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=1.5)
+    except (ProcessLookupError, OSError):
+        pass
+    except subprocess.TimeoutExpired:
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.wait(timeout=2.0)
+        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+            pass
+
+
+def run_chrome_to_output(
+    cmd: list[str],
+    out_path: Path,
+    validator,
+    *,
+    timeout: float = 60.0,
+    stderr_log: Path | None = None,
+    grace_seconds: float = 1.2,
+) -> tuple[int, str]:
+    """Run headless Chrome and avoid macOS display-sleep teardown hangs once out_path is verified complete."""
+    err_fh = stderr_log.open("wb") if stderr_log is not None else None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=err_fh if err_fh is not None else subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        t0 = time.monotonic()
+        stable_since: float | None = None
+        last_size = -1
+        try:
+            while True:
+                rc = proc.poll()
+                if rc is not None:
+                    break
+                elapsed = time.monotonic() - t0
+                if elapsed >= timeout:
+                    _terminate_process_group(proc)
+                    if validator(out_path):
+                        break
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+                if out_path.exists():
+                    try:
+                        sz = out_path.stat().st_size
+                    except OSError:
+                        sz = -1
+                    if sz > 0 and sz == last_size and validator(out_path):
+                        if stable_since is None:
+                            stable_since = time.monotonic()
+                        elif time.monotonic() - stable_since >= grace_seconds:
+                            _terminate_process_group(proc)
+                            break
+                    else:
+                        last_size = sz
+                        stable_since = None
+                time.sleep(0.15)
+        finally:
+            _terminate_process_group(proc)
+        rc = proc.returncode if proc.returncode is not None else 0
+    finally:
+        if err_fh is not None:
+            err_fh.close()
+    stderr_txt = ""
+    if stderr_log is not None and stderr_log.exists():
+        try:
+            stderr_txt = stderr_log.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            pass
+    return rc, stderr_txt
+
+
 def render_chart_to_png(
     chart_html: str,
     out_png: Path,
@@ -135,8 +250,9 @@ def render_chart_to_png(
                 shutil.rmtree(attempt_profile, ignore_errors=True)
                 attempt_profile.mkdir(parents=True, exist_ok=True)
                 out_png.unlink(missing_ok=True)
+                stderr_log = attempt_profile / "chrome_stderr.log"
                 try:
-                    proc = subprocess.run(
+                    rc, stderr_txt = run_chrome_to_output(
                         [
                             chrome_bin,
                             "--headless",
@@ -152,14 +268,21 @@ def render_chart_to_png(
                             f"--screenshot={out_png}",
                             tmp_html.resolve().as_uri(),
                         ],
-                        capture_output=True,
-                        text=True,
+                        out_png,
+                        _is_complete_png,
                         timeout=60,
+                        stderr_log=stderr_log,
                     )
-                    if proc.returncode != 0 or not out_png.exists() or out_png.stat().st_size < 2048:
+                    if not _is_complete_png(out_png):
                         raise RuntimeError(
-                            f"Chrome chart PNG screenshot failed (idx={idx}, attempt={attempt}/2, rc={proc.returncode}): "
-                            f"{proc.stderr.strip()[:400]}"
+                            f"Chrome chart PNG screenshot failed (idx={idx}, attempt={attempt}/2, rc={rc}): "
+                            f"{stderr_txt[:400]}"
+                        )
+                    if rc != 0:
+                        print(
+                            f"  [CHROME WARN] Chart PNG (idx={idx}) Chrome exited rc={rc} on teardown "
+                            f"after writing valid PNG ({out_png.stat().st_size:,}B); accepting.",
+                            file=sys.stderr,
                         )
                     break
                 except (subprocess.TimeoutExpired, RuntimeError) as exc:

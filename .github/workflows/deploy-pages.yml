@@ -30,6 +30,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Python test dependencies
+        run: python3 -m pip install --no-cache-dir beautifulsoup4 Pillow
+
       - name: Test release recovery and source receipts
         run: python3 -m unittest discover -s tests
 

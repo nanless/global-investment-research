@@ -54,7 +54,7 @@
 
 所有组件必须以独立 HTML 注释块形式写在 Markdown 中：`<!-- DIRECTIVE_NAME { ...合法 JSON... } -->`。
 
-> **强约束**：JSON 语法错误会导致 `build_daily.py` 直接抛出 `ValueError` 中止编译，且 Gate 0 校验全部顶层与嵌套必填键；Layer 0–1 区域内（及 `DAILY_META`/`DAILY_VERDICT`/`DAILY_SIGNAL_NOISE` 无论位于何处）的 JSON 字符串均接受收敛版 Gate 1 三档词表、Gate 2 零感叹号与 13 煽动词、Gate 3 禁 `X/6` 扫描；**全部组件（含 Layer 2/3）均接受全篇内部工程词/版本号/文件名泄露拦截**。
+> **强约束**：JSON 语法错误会导致 `build_daily.py` 直接抛出 `ValueError` 中止编译，且 Gate 0 校验全部顶层与嵌套必填键；Layer 0–1 区域内（及 `DAILY_META`/`DAILY_VERDICT`/`DAILY_SIGNAL_NOISE` 无论位于何处）的 JSON 字符串均接受收敛版 Gate 1 三档词表、Gate 2 零感叹号与 13 煽动词、Gate 3 禁 `X/6` 扫描；**全部层级与全部组件（含 Layer 2/3 及 `DAILY_GLOSSARY`）均接受全篇内部工程词/版本号/文件名泄露拦截，收敛新刊（`>= 2026-11-26_1800`）并全篇统一拦截 6 个居高临下说教口号（`小白词典`/`直接抄`/`蠢事`/`1分钟定心丸`/`1 分钟定心丸`/`保命铁律`）**。
 
 ### 1.1 `DAILY_META`（封面横幅 + 4–6 张核心 KPI 卡）
 - **必填键（Gate 0）**：`tag`, `kpis`；新刊（及同场修订）同时必填 **`edition_id`**, **`as_of_short`**（并与文件名、快照及 `timestamp` 展示时间严格一致）
@@ -105,7 +105,7 @@
 - **配色映射**：`"A"` `#0284c7`、`"B"` `#b45309`、`"C"` `#059669`、`"D"` `#4f46e5`。标题与首卡通过 `.persona-lead` 物理绑定防悬孤。
 
 ### 1.5 `DAILY_GLOSSARY`（术语轻注框 · 收敛新刊改为可选 0–1 次）
-- **必填键（Gate 0）**：`terms`（非空数组，每项含 `term`/`plain`）。收敛新刊（`>= 2026-11-26_1800`）**不再强制要求出现**（允许 `0` 或 `1` 次，`>1` 次报 FAIL）；严禁标题使用 `小白词典` 等居高临下词。
+- **必填键（Gate 0）**：`terms`（非空数组，每项含 `term`/`plain`）。收敛新刊（`>= 2026-11-26_1800`）**不再强制要求出现**（允许 `0` 或 `1` 次，`>1` 次报 FAIL）；全篇及全部组件（含 `DAILY_GLOSSARY`）硬拦截 `小白词典`/`直接抄`/`蠢事`/`1分钟定心丸`/`1 分钟定心丸`/`保命铁律`。
 
 ### 1.6 `DAILY_LAYER_BADGE`（层级眉批）
 - **必填键（Gate 0）**：`label`（可选 `tone`: `"deep"` 或 `"pro"`）。当 `tone == "deep"` 时作为 `lint_readability.py` 切分 Layer 0–1 与 Layer 2 的官方边界标记之一（另三个为 `^#\s*第二部分`、`^##\s*专题一`、`^##\s*周末专题`）。
@@ -177,7 +177,7 @@
      }
    ]
    ```
-   *(常见 `category`：`provisional_close`、`delayed_official`、`holiday_thin`；`severity`：`warn` / `info`。当处于中国内地 B 类休市或 `data_caveats` 含 `delayed_official`/`holiday_thin` 且说明金店/国内牌价/内盘/春节未开盘时，Gate 5 自动放行金店价对齐预警。)*
+   *(标准 `category` 枚举：`provisional_close`、`delayed_official`、`single_source`、`source_conflict`、`holiday_thin`、`publication_exception`；`severity`：`warn` / `info`。当处于中国内地 B 类休市或 `data_caveats` 含 `delayed_official`/`holiday_thin` 且说明金店/国内牌价/内盘/春节未开盘时，Gate 5 自动放行金店价对齐预警。)*
 9. **四大央行与 12 大行样本汇总**：`fed_dec_hike_prob`/`ecb_`/`boe_`/`boj_`, `bank_2027_yearend_median_usd`, **`bank_2027_yearend_sample_count`**, `bank_2027_avg_median_usd`, **`bank_2027_avg_sample_count`**, `bank_2027_fx_median`；`institutional_targets` 每项含 `name`, `lo <= base <= hi`, `kind ∈ ("pt", "avg", "horizon", "stale")` 及可选 `annual_average_usd`，由 Gate 5 按同期限复算样本数与精确中位数。
 10. **中国零售渠道成本 (`rmb_channels`) 与无日期跨资产比值 (`cross_ratios`)**：`rmb_channels` 含 `etf_base_rmb`、`bank_accum_rmb`、`bank_bar_rmb`、`bank_bar_plus_craft_rmb`、`shuibei_nonmember_bar_rmb`、`shuibei_taxed_jewelry_rmb`、`brand_store_rmb`、`wedding_save_per_g_rmb`、`wedding_save_50g_rmb`、`wedding_save_pct`、`note`；跨资产比值唯一标准无日期键 `cross_ratios`（禁写遗留日期键 `cross_ratios_XXXX`）。
 11. **结构化图表数组与三大信任资产**：`monthly_candles`、`mechanical_calendar`、`trust_assets`。

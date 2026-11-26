@@ -666,23 +666,28 @@ def _rewrite_href(raw_href: str, base_prefix: str, slug_map: dict[str, str], ctx
     if stem in slug_map:
         return f"{base_prefix}daily/{slug_map[stem]}.html"
 
-    # Fallback: NEVER allow file:// or /Users/ or broken local .md/.pdf paths
-    if lower.startswith("file://") or "/users/" in lower or lower.endswith((".md", ".pdf", ".docx")):
+    # Fallback: NEVER allow file://, /Users/, /home/, or broken local .md/.pdf paths
+    if (
+        lower.startswith("file://")
+        or "/users/" in lower
+        or re.search(r"(?<![a-z0-9._-])/home/", lower)
+        or lower.endswith((".md", ".pdf", ".docx"))
+    ):
         return f"{base_prefix}archive.html"
 
     return raw_href
 
 
 def _strip_local_paths_in_text(fragment: str) -> str:
-    """Remove any stray file:// or /Users/... paths and internal snapshot filenames in plain text."""
+    """Remove any stray file://, /Users/..., or /home/... paths and internal snapshot filenames in plain text."""
     parts = _TAG_SPLIT_RE.split(fragment)
     for i in range(0, len(parts), 2):
         txt = parts[i]
         if not txt:
             continue
-        if "file://" in txt or "/Users/" in txt:
-            txt = re.sub(r"file:///[^\s<\"'）)》」]+", "（已归档）", txt)
-            txt = re.sub(r"/Users/[^\s<\"'）)》」`]+", "（站内文档）", txt)
+        if "file://" in txt.lower() or "/Users/" in txt or "/home/" in txt:
+            txt = re.sub(r"file://[^\s<\"'）)》」]+", "（已归档）", txt, flags=re.IGNORECASE)
+            txt = re.sub(r"(?:/Users/|(?<![A-Za-z0-9._-])/home/)[^\s<\"'）)》」`]+", "（站内文档）", txt)
         if "master_snapshot.json" in txt.lower():
             txt = re.sub(r"master_snapshot\.json", "主报告基线快照", txt, flags=re.IGNORECASE)
         parts[i] = txt
@@ -959,7 +964,31 @@ def _parse_price_num(price_str: str) -> float | None:
     return None
 
 
-def _parse_pe_num(valuation: str, market: str) -> float | None:
+_NON_PE_MULTIPLE_CN = (
+    "亏损",
+    "负值",
+    "—",
+    "核心溢利",
+    "年化收入",
+    "收入",
+    "营收",
+    "销售",
+    "营运资金",
+    "市销",
+)
+_NON_PE_MULTIPLE_EN_RE = re.compile(
+    r"(?<![A-Za-z])(?:A?FFO|ARR|P/S|EV/Sales)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_GOLD_LOCKED_CODES: frozenset[str] = frozenset(
+    {"601899", "600547", "02899.HK", "06181.HK", "01929.HK", "NEM", "FCX"}
+)
+_LEADING_RATING_PREFIX_RE = re.compile(
+    r"^[🟢🔵🟡🔴]\s*(?:🔒\s*)?(?:当下底座|未来主攻|分歧观察|高危回避)[；;：:\s]*"
+)
+
+
+def _parse_pe_num(valuation: str, market: str = "") -> float | None:
     txt = str(valuation or "").strip()
     if not txt:
         return None
@@ -972,7 +1001,7 @@ def _parse_pe_num(valuation: str, market: str) -> float | None:
         v = _to_pos_float(m_lbl.group(1))
         return round(v, 1) if (v is not None and v < 5000) else None
     target = txt.split("/", 1)[0].strip() if market in ("a-share", "hk-stock") else txt
-    if any(tok in target for tok in ("亏损", "负值", "—", "核心溢利")):
+    if any(tok in target for tok in _NON_PE_MULTIPLE_CN) or _NON_PE_MULTIPLE_EN_RE.search(target):
         return None
     m_x = re.search(
         r"[~≈<>≤≥]?\s*([0-9]+(?:\.[0-9]+)?)(?:\s*[–—\-~]\s*[0-9]+(?:\.[0-9]+)?)?\s*x\+?",
@@ -985,8 +1014,21 @@ def _parse_pe_num(valuation: str, market: str) -> float | None:
     return None
 
 
-def _parse_div_pct(valuation: str, summary: str, market: str) -> float | None:
-    for src in (str(valuation or ""), str(summary or "")):
+def _parse_div_pct(valuation: str, summary: str, market: str = "") -> float | None:
+    val_str = str(valuation or "")
+    # 1. Structured slash-separated dividend field in valuation takes precedence
+    parts = [p.strip() for p in val_str.split("/")]
+    idx = 2 if (market == "a-share" and len(parts) >= 3) else (1 if (market == "hk-stock" and len(parts) >= 2) else -1)
+    if idx != -1:
+        seg = parts[idx]
+        if "AH" not in seg.upper() and not seg.startswith(("+", "-", "−")):
+            m_seg = re.search(r"(?<![+\-−0-9.])([0-9]+(?:\.[0-9]+)?)(?:\s*[–—\-~]\s*[0-9.]+)?%", seg)
+            if m_seg:
+                v = _to_pos_float(m_seg.group(1))
+                if v is not None and v <= 25.0:
+                    return round(v, 2)
+    # 2. Explicit dividend-yield label scan (valuation first, then summary)
+    for src in (val_str, str(summary or "")):
         # Ignore 派息率 / 分红率 payout ratios; match explicit dividend yield labels
         cleaned = re.sub(r"(?:派息率|分红率)\s*[~≈约]?\s*[0-9.]+%", "", src)
         m = re.search(
@@ -997,21 +1039,11 @@ def _parse_div_pct(valuation: str, summary: str, market: str) -> float | None:
             v = _to_pos_float(m.group(1))
             if v is not None and v <= 25.0:
                 return round(v, 2)
-        m_rev = re.search(r"([0-9]+(?:\.[0-9]+)?)%\s*(?:高?息|股息)", cleaned)
+        m_rev = re.search(r"(?<![+\-−0-9.])([0-9]+(?:\.[0-9]+)?)%\s*(?:高?息|股息)", cleaned)
         if m_rev:
             v = _to_pos_float(m_rev.group(1))
             if v is not None and v <= 25.0:
                 return round(v, 2)
-    parts = [p.strip() for p in str(valuation or "").split("/")]
-    idx = 2 if (market == "a-share" and len(parts) >= 3) else (1 if (market == "hk-stock" and len(parts) >= 2) else -1)
-    if idx != -1:
-        seg = parts[idx]
-        if "AH" not in seg.upper() and not seg.startswith(("+", "-", "−")):
-            m_seg = re.search(r"([0-9]+(?:\.[0-9]+)?)(?:\s*[–—\-~]\s*[0-9.]+)?%", seg)
-            if m_seg:
-                v = _to_pos_float(m_seg.group(1))
-                if v is not None and v <= 25.0:
-                    return round(v, 2)
     return None
 
 
@@ -1091,7 +1123,13 @@ def _enrich_stock_metrics(entry: dict[str, Any], ah_lookup: dict[str, float]) ->
     ah_pct = _parse_ah_pct(entry["valuation"], entry["summary"], entry["market"], entry["code"], ah_lookup)
     anchor_low, anchor_high, anchor_gap_pct = _parse_anchor(entry["summary"], price_num)
     comb_txt = f"{entry['valuation']} {entry['summary']}"
-    is_gold_locked = ("禁新买" in comb_txt) or ("黄金红灯" in comb_txt)
+    code_key = str(entry.get("code") or "").strip().upper()
+    is_gold_locked = (
+        ("禁新买" in comb_txt)
+        or ("黄金红灯" in comb_txt)
+        or ("金红灯" in comb_txt)
+        or (code_key in _GOLD_LOCKED_CODES)
+    )
     entry.update(
         {
             "price_num": price_num,
@@ -1160,7 +1198,8 @@ def extract_all_stocks(
         name = clean_md_inline_plain(re.sub(r"`[^`]+`", "", cells[1]))
         price = clean_md_inline_plain(cells[2])
         valuation = clean_md_inline_plain(cells[3])
-        summary = clean_md_inline_plain(cells[4])
+        summary_raw = clean_md_inline_plain(cells[4])
+        summary = _LEADING_RATING_PREFIX_RE.sub("", summary_raw).strip()
         col, anchor_txt = a_color_map.get(code, ("y", ""))
         if anchor_txt and anchor_txt not in summary:
             summary = f"{summary}｜{anchor_txt}"
@@ -1196,11 +1235,7 @@ def extract_all_stocks(
         valuation = clean_md_inline_plain(cells[3])
         col = _detect_color(cells[4])
         summary_raw = clean_md_inline_plain(cells[4])
-        summary = re.sub(
-            r"^[🟢🔵🟡🔴]\s*(?:🔒)?(?:当下底座|未来主攻|分歧观察|高危回避)[；;：:\s]*",
-            "",
-            summary_raw,
-        ).strip()
+        summary = _LEADING_RATING_PREFIX_RE.sub("", summary_raw).strip()
         stocks.append(
             _enrich_stock_metrics(
                 {
@@ -1290,6 +1325,16 @@ _CAVEAT_CATEGORY_LABEL: dict[str, str] = {
     "publication_exception": "编排说明",
 }
 
+_CAVEAT_CATEGORY_ALIASES: dict[str, str] = {
+    "source_divergence": "source_conflict",
+}
+
+_PUB_EXCEPTION_KIND_META: dict[str, tuple[str, str]] = {
+    "source_outage": ("官方数据源临时中断 · 沿用已核实基准", "high"),
+    "breaking_event": ("重大突发事件加发守望刊", "warn"),
+    "revision_reuse": ("本班修订沿用既有已核刊次", "info"),
+}
+
 _CAVEAT_SEV_RANK: dict[str, int] = {"high": 0, "warn": 1, "info": 2}
 _CAVEAT_MKT_RANK: dict[str, int] = {"gold": 0, "a-share": 1, "hk-stock": 2, "us-stock": 3, "cross": 4}
 
@@ -1307,18 +1352,26 @@ _HOLIDAY_TYPE_LABEL: dict[str, str] = {
 }
 
 _CAVEAT_SANITIZE_REPS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"file:///[^\s<>\"'）)》」]+", re.IGNORECASE), "官方数据源"),
+    (re.compile(r"file://[^\s<>\"'）)》」]+", re.IGNORECASE), "官方数据源"),
     (re.compile(r"(?:/Users/|(?<![A-Za-z0-9._-])/home/)[^\s<>\"'）)》」`]+", re.IGNORECASE), "站内数据"),
     (re.compile(r"[（(]?\s*`?VIX_History\.csv`?\s*[）)]?", re.IGNORECASE), "官方历史日线表"),
     (re.compile(r"`?data_snapshot\.json`?", re.IGNORECASE), "实时数据快照"),
     (re.compile(r"`?market_state\.json`?", re.IGNORECASE), "三市状态快照"),
     (re.compile(r"`?master_snapshot\.json`?", re.IGNORECASE), "主报告基线快照"),
+    (re.compile(r"`?market_calendar\.json`?", re.IGNORECASE), "全球交易日历"),
     (re.compile(r"`?audit_ledger\.md`?", re.IGNORECASE), "核查台账"),
     (re.compile(r"`?RSI_PLAYBOOK(?:\.md)?`?", re.IGNORECASE), "复盘手册"),
     (re.compile(r"`?rsi_metrics\.json`?", re.IGNORECASE), "复盘指标"),
+    (re.compile(r"`?DAILY_FORMAT_SPEC\.md`?", re.IGNORECASE), "日报排版规范"),
+    (re.compile(r"`?DAILY_REPORT_SPEC\.md`?", re.IGNORECASE), "日报撰写规范"),
+    (re.compile(r"`?unified-edition\.prompt\.md`?", re.IGNORECASE), "统一编排规范"),
+    (re.compile(r"`?gold-research-publishing`?", re.IGNORECASE), "黄金研究体系"),
     (re.compile(r"`?(?:AGENTS|SKILL|GEMINI)\.md`?", re.IGNORECASE), "研究规范"),
     (re.compile(r"`?(?:sidecar|permissions)\.json`?", re.IGNORECASE), "运行配置"),
-    (re.compile(r"\b[A-Za-z0-9_/-]+\.py\b", re.IGNORECASE), "核验流程"),
+    (re.compile(r"(?<![A-Za-z0-9_/-])[A-Za-z0-9_/-]+\.py(?![A-Za-z0-9_])", re.IGNORECASE), "核验流程"),
+    (re.compile(r"(?<![A-Za-z0-9])\d+\s*[-–—]\s*\d+\s*p\s*主刊", re.IGNORECASE), "完整主刊"),
+    (re.compile(r"切\s*模式\s*2(?=\s*(?:美股|港股|A\s*股|休市|守望))"), "切换为"),
+    (re.compile(r"切\s*模式\s*2"), "切换为休市守望刊"),
 )
 
 
@@ -1376,6 +1429,7 @@ def collect_data_caveats(
         if sev not in _CAVEAT_SEV_RANK:
             sev = "info"
         cat = str(entry.get("category") or "delayed_official").strip().lower()
+        cat = _CAVEAT_CATEGORY_ALIASES.get(cat, cat)
         if cat not in _CAVEAT_CATEGORY_LABEL:
             cat = "delayed_official"
         title = _sanitize_caveat_text(entry.get("item") or entry.get("title") or "")
@@ -1463,7 +1517,49 @@ def collect_data_caveats(
 
     # Fallback 3: publication_exceptions (always surface transparently if present)
     pub_exc = es.get("publication_exceptions")
-    if isinstance(pub_exc, list):
+    if isinstance(pub_exc, dict):
+        exc_ed_raw = pub_exc.get("edition_id")
+        exc_ed = str(exc_ed_raw).strip() if exc_ed_raw is not None else ""
+        state_ed = str(es.get("edition_id") or "").strip()
+        if not exc_ed or exc_ed == state_ed:
+            markets_map = pub_exc.get("markets")
+            if isinstance(markets_map, dict):
+                for mkt_k, row in markets_map.items():
+                    if not isinstance(row, dict):
+                        continue
+                    kind = str(row.get("kind") or "").strip().lower()
+                    default_title, default_sev = _PUB_EXCEPTION_KIND_META.get(
+                        kind, ("本期出版编排说明", "warn")
+                    )
+                    raw_sev = str(row.get("severity") or "").strip().lower()
+                    if raw_sev in _CAVEAT_SEV_RANK:
+                        sev = raw_sev
+                    elif raw_sev == "p0":
+                        sev = "high"
+                    elif raw_sev == "p1":
+                        sev = "warn"
+                    else:
+                        sev = default_sev
+                    _add_raw(
+                        {
+                            "id": f"pub_exc_{_norm_caveat_market(mkt_k, 'cross')}_{kind or 'note'}",
+                            "market": mkt_k,
+                            "category": "publication_exception",
+                            "severity": sev,
+                            "item": row.get("title") or row.get("item") or default_title,
+                            "detail": row.get("detail") or row.get("note") or row.get("reason") or "",
+                            "impact": row.get("impact") or "",
+                            "next_review": (
+                                row.get("next_review_session")
+                                or row.get("next_review")
+                                or row.get("due_session")
+                                or ""
+                            ),
+                        },
+                        "cross",
+                        is_explicit=False,
+                    )
+    elif isinstance(pub_exc, list):
         for exc in pub_exc:
             if isinstance(exc, dict):
                 _add_raw(
@@ -1474,7 +1570,7 @@ def collect_data_caveats(
                         "item": exc.get("title") or exc.get("item") or exc.get("reason") or "本期出版编排说明",
                         "detail": exc.get("detail") or exc.get("note") or exc.get("reason") or "",
                         "impact": exc.get("impact") or "",
-                        "next_review": exc.get("next_review") or "",
+                        "next_review": exc.get("next_review") or exc.get("next_review_session") or "",
                     },
                     "cross",
                     is_explicit=False,
@@ -1518,7 +1614,7 @@ def collect_data_caveats(
 
 
 def collect_holiday_alerts(eq_state: dict | None, max_days: int = 7) -> list[dict[str, str]]:
-    """Extract upcoming calendar_overrides within [as_of_date, as_of_date + max_days]."""
+    """Extract upcoming or active calendar_overrides overlapping [as_of_date, as_of_date + max_days]."""
     es = eq_state if isinstance(eq_state, dict) else {}
     as_of_raw = str(es.get("as_of_cst") or "").strip()[:10]
     try:
@@ -1531,14 +1627,23 @@ def collect_holiday_alerts(eq_state: dict | None, max_days: int = 7) -> list[dic
     for ov in es.get("calendar_overrides") or []:
         if not isinstance(ov, dict):
             continue
+        ov_type = str(ov.get("type") or "").strip().lower()
+        if ov_type == "monthly_rollover":
+            continue
         d_raw = str(ov.get("date_cst") or "").strip()[:10]
         try:
             ev_d = date.fromisoformat(d_raw)
         except ValueError:
             continue
-        if not (base_d <= ev_d <= end_d):
+        end_raw = str(ov.get("end_date_cst") or "").strip()[:10]
+        try:
+            ev_end = date.fromisoformat(end_raw) if end_raw else ev_d
+        except ValueError:
+            ev_end = ev_d
+        if ev_end < ev_d:
+            ev_end = ev_d
+        if not (ev_end >= base_d and ev_d <= end_d):
             continue
-        ov_type = str(ov.get("type") or "").strip().lower()
         type_lbl = _HOLIDAY_TYPE_LABEL.get(ov_type, "交易日历提示")
         mk_list = [
             _CAVEAT_MARKET_LABEL.get(_norm_caveat_market(m, "cross"), str(m))
@@ -1546,11 +1651,16 @@ def collect_holiday_alerts(eq_state: dict | None, max_days: int = 7) -> list[dic
         ]
         markets_lbl = " / ".join(dict.fromkeys(mk_list)) or "跨市场"
         note = _sanitize_caveat_text(ov.get("note") or "")
+        date_lbl = (
+            f"{ev_d.month:02d}/{ev_d.day:02d}–{ev_end.month:02d}/{ev_end.day:02d}"
+            if ev_end > ev_d
+            else f"{ev_d.month:02d}/{ev_d.day:02d}"
+        )
         alerts.append(
             (
                 ev_d,
                 {
-                    "date": f"{ev_d.month:02d}/{ev_d.day:02d}",
+                    "date": date_lbl,
                     "type_label": type_lbl,
                     "markets_label": markets_lbl,
                     "note": note,
@@ -2472,7 +2582,7 @@ def build_cockpit_page(
     us_tech_cap_val = _fmt_num(us_m.get("tech_new_cap_pct"), ".0f", suffix="%")
     if us_high is not None and us_sp is not None and us_sp > 0:
         us_dd = ((us_sp / us_high) - 1.0) * 100.0
-        us_pool_sub = f"距前高 {us_high:,.0f} 回撤 {us_dd:+.1f}% · 7 大赛道"
+        us_pool_sub = f"距前高 {us_high:,.0f} 回撤 {us_dd:+.1f}% · 11 大板块"
     else:
         us_pool_sub = f"科技新增严控 {us_tech_cap_val} · 全板块覆盖"
     us_200d_val = _fmt_num(us_m.get("sp500_200d"), ",.0f")
@@ -3525,9 +3635,30 @@ def _render_ring_svg(pct: float, accent_cls: str, label: str) -> str:
         '<circle class="ring-track" cx="32" cy="32" r="25" fill="none" stroke-width="6"/>'
         f'<circle class="ring-fill" cx="32" cy="32" r="25" fill="none" stroke-width="6" '
         f'stroke-dasharray="{circ:.1f}" stroke-dashoffset="{offset:.1f}" transform="rotate(-90 32 32)"/>'
-        f'<text class="ring-val" x="32" y="36" text-anchor="middle">{esc(label)}</text>'
+        f'<text class="ring-val" x="32" y="32" text-anchor="middle">{esc(label)}</text>'
         "</svg>"
     )
+
+
+def _load_gold_ledger_with_archives(stem: str, *, is_audit_log: bool) -> str:
+    """Load active gold ledger plus any monthly archived files (newest month first), sanitized."""
+    active_path = GOLD_DIR / "daily" / f"{stem}.md"
+    parts = [
+        sanitize_public_ledger_md(
+            active_path.read_text(encoding="utf-8"),
+            is_audit_log=is_audit_log,
+        ).strip()
+    ]
+    archive_dir = GOLD_DIR / "daily" / "archive"
+    if archive_dir.is_dir():
+        for arch_path in sorted(archive_dir.glob(f"{stem}_*.md"), key=lambda p: p.name, reverse=True):
+            sanitized = sanitize_public_ledger_md(
+                arch_path.read_text(encoding="utf-8"),
+                is_audit_log=is_audit_log,
+            ).strip()
+            if sanitized:
+                parts.append(sanitized)
+    return "\n\n---\n\n".join(p for p in parts if p)
 
 
 def build_scorecard_page(
@@ -3557,18 +3688,12 @@ def build_scorecard_page(
     )
     gd_cl_md = normalize_relative_md_links(
         protect_backticked_comments(
-            sanitize_public_ledger_md(
-                (GOLD_DIR / "daily" / "CHANGELOG.md").read_text(encoding="utf-8"),
-                is_audit_log=False,
-            )
+            _load_gold_ledger_with_archives("CHANGELOG", is_audit_log=False)
         )
     )
     gd_al_md = normalize_relative_md_links(
         protect_backticked_comments(
-            sanitize_public_ledger_md(
-                (GOLD_DIR / "daily" / "AUDIT_LOG.md").read_text(encoding="utf-8"),
-                is_audit_log=True,
-            )
+            _load_gold_ledger_with_archives("AUDIT_LOG", is_audit_log=True)
         )
     )
 
@@ -4081,7 +4206,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 raise ValueError(f"{item.source_path.name}: missing or mismatched edition metadata")
             charts = get_equity_charts(R, eq_key, meta_override=meta) if meta else {}
             mm = MARKET_META[item.market]
-            fallback_t = f"{mm['name']}每日大白话投研简报"
+            fallback_t = f"{mm['name']}每日投研简报"
             title, body_raw = R.eq_pdf_common.render_md_body(
                 normalize_relative_md_links(md_body),
                 charts,

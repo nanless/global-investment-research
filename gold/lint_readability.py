@@ -126,8 +126,12 @@ CONVERGED_BANNED_LAYER01_LITERAL = [
     "负 Gamma", "负Gamma", "R²=", "R² =",
     "梭哈", "做T", "做 T", "短线波段", "高弹性",
     "收红", "收绿", "翻红", "翻绿",
-    "蠢事", "直接抄", "小白词典", "1 分钟定心丸", "1分钟定心丸", "保命铁律",
     "六灯",
+]
+# Condescending slogans banned across ALL layers and ALL widgets (incl. DAILY_GLOSSARY)
+# in converged editions (>= CONVERGED_CUTOVER).
+CONVERGED_BANNED_SLOGANS = [
+    "小白词典", "直接抄", "蠢事", "1分钟定心丸", "1 分钟定心丸", "保命铁律",
 ]
 # Bare-number/amount/percentage backticks banned as soft warning in converged editions
 # (excludes pure ticker codes like `518660`/`008142`/`GCZ26`/`au2702` and dates/times).
@@ -1103,6 +1107,14 @@ def check_file(
         bad = _find_banned_layer01_tokens(txt, is_converged=is_converged)
         if bad:
             errors.append(f"[Gate 1 组件术语逃逸] Layer 0–1 {kind} 出现禁止词条: {', '.join(bad)}")
+
+    # Full-document condescending slogan ban (ALL layers + ALL widgets incl. DAILY_GLOSSARY for >= CONVERGED_CUTOVER)
+    if is_converged:
+        slogan_hits = [tok for tok in CONVERGED_BANNED_SLOGANS if tok in full_combined]
+        if slogan_hits:
+            errors.append(
+                f"[Gate 1 术语/自嗨逃逸 · 说教口号] 全文及组件严禁出现居高临下口号: {', '.join(slogan_hits)}"
+            )
 
     # Full-document internal filename, version & engineering term leak check (ALL layers for >= 2026-11-26_0730)
     if not is_master and filename_key is not None and filename_key >= INTERNAL_LEAK_CUTOVER:

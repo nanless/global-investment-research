@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import html as html_mod
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -707,7 +706,7 @@ def svg_chart_a7_stock_quadrant(meta_override: dict | None = None) -> str:
     """Chart A7: 19 Representative A-Share Stocks 4-Quadrant Map (Full Nested a7 Override + 11/24 Multiples)"""
     cl = load_meta(meta_override).get("chart_live", {})
     a7_nest = cl.get("a7") if isinstance(cl.get("a7"), dict) else {}
-    pool_cnt = int(cl.get("stock_pool_count", 44))
+    pool_cnt = int(cl.get("stock_pool_count", 76))
     pts = a7_nest.get("points") or DEFAULT_A7_POINTS
 
     title_a7 = _norm_chart_title(

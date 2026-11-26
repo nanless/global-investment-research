@@ -10,9 +10,11 @@ import html as html_mod
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -1089,8 +1091,13 @@ _FLAGSHIP_REL_DATE_RE = re.compile(
     r"(?:昨天|昨日|今天|今日|明天|明日|昨晚|今早|今晚|同晚|本周|上周|下周|去年底|今年以来|今年底|明年一季度)"
 )
 _RARE_JARGON_RE = re.compile(
-    r"(?:\bstop-through\b|\bFVOCI\b|\bON\s+RRP\b|熊平|\bIOPV\b|\bROTCE\b|\bGAAP\b|\d+\s*bp\b|¢)",
+    r"(?:\bstop-through\b|\bFVOCI\b|\bHQLA\b|熊平|\bROTCE\b|\bGAAP\b|¢)",
     flags=re.IGNORECASE,
+)
+_TIER2_GLOSS_PATTERNS: tuple[tuple[str, re.Pattern[str], re.Pattern[str], int], ...] = (
+    ("ON RRP", re.compile(r"\bON\s+RRP\b", re.IGNORECASE), re.compile(r"(?:隔夜逆回购|逆回购)"), 20),
+    ("IOPV", re.compile(r"\bIOPV\b", re.IGNORECASE), re.compile(r"(?:参考净值|盘中净值)"), 20),
+    ("bp", re.compile(r"\d+\s*bp\b", re.IGNORECASE), re.compile(r"基点"), 16),
 )
 _US_0730_AFTERHOURS_RE = re.compile(
     r"(?:09:00.{0,8}盘后终盘|盘后终盘.{0,12}09:00|20:00\s*EST.{0,8}盘后终盘|"
@@ -1185,6 +1192,11 @@ def lint_markdown_report(
         warnings.append(f"裸数字/金额反引号 ({len(bare_bt)} 处): {bare_bt[:5]}")
 
     jargon_hits = _RARE_JARGON_RE.findall(body_no_meta)
+    for _label, term_re, gloss_re, win in _TIER2_GLOSS_PATTERNS:
+        for m in term_re.finditer(body_no_meta):
+            ctx = body_no_meta[max(0, m.start() - win) : min(len(body_no_meta), m.end() + win)]
+            if not gloss_re.search(ctx):
+                jargon_hits.append(m.group(0))
     if jargon_hits:
         warnings.append(f"未转译生僻行话 ({len(jargon_hits)} 处): {sorted(set(jargon_hits))}")
 
@@ -1255,6 +1267,109 @@ def atomic_copy(src: Path, dst: Path) -> None:
     os.replace(tmp, dst)
 
 
+def _is_complete_pdf(pdf_path: Path, min_bytes: int) -> bool:
+    if not pdf_path.exists() or pdf_path.stat().st_size < min_bytes:
+        return False
+    try:
+        with pdf_path.open("rb") as fh:
+            head = fh.read(5)
+            fh.seek(max(0, pdf_path.stat().st_size - 1024))
+            tail = fh.read(1024)
+        if head != b"%PDF-" or b"%%EOF" not in tail:
+            return False
+    except OSError:
+        return False
+    try:
+        from pypdf import PdfReader  # type: ignore
+        return len(PdfReader(str(pdf_path)).pages) >= 1
+    except ImportError:
+        return True
+    except Exception:
+        return False
+
+
+def _terminate_process_group(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=1.5)
+    except (ProcessLookupError, OSError):
+        pass
+    except subprocess.TimeoutExpired:
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.wait(timeout=2.0)
+        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+            pass
+
+
+def _run_chrome_to_output(
+    cmd: list[str],
+    out_path: Path,
+    validator,
+    *,
+    timeout: float = 120.0,
+    stderr_log: Path | None = None,
+    grace_seconds: float = 1.2,
+) -> tuple[int, str]:
+    err_fh = stderr_log.open("wb") if stderr_log is not None else None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=err_fh if err_fh is not None else subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        t0 = time.monotonic()
+        stable_since: float | None = None
+        last_size = -1
+        try:
+            while True:
+                rc = proc.poll()
+                if rc is not None:
+                    break
+                if time.monotonic() - t0 >= timeout:
+                    _terminate_process_group(proc)
+                    if validator(out_path):
+                        break
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+                if out_path.exists():
+                    try:
+                        sz = out_path.stat().st_size
+                    except OSError:
+                        sz = -1
+                    if sz > 0 and sz == last_size and validator(out_path):
+                        if stable_since is None:
+                            stable_since = time.monotonic()
+                        elif time.monotonic() - stable_since >= grace_seconds:
+                            _terminate_process_group(proc)
+                            break
+                    else:
+                        last_size = sz
+                        stable_since = None
+                time.sleep(0.15)
+        finally:
+            _terminate_process_group(proc)
+        rc = proc.returncode if proc.returncode is not None else 0
+    finally:
+        if err_fh is not None:
+            err_fh.close()
+    stderr_txt = ""
+    if stderr_log is not None and stderr_log.exists():
+        try:
+            stderr_txt = stderr_log.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            pass
+    return rc, stderr_txt
+
+
 def render_pdf_atomic(
     full_html: str,
     pdf_path: Path,
@@ -1263,6 +1378,7 @@ def render_pdf_atomic(
     *,
     mobile_html_path: Path | None = None,
     mobile_market: str = "a_share",
+    min_pdf_bytes: int = 50_000,
 ) -> None:
     chrome_bin = resolve_chrome_bin()
     tmp_html.write_text(full_html, encoding="utf-8")
@@ -1270,9 +1386,10 @@ def render_pdf_atomic(
     try:
         for attempt in range(2):
             chrome_profile = Path(tempfile.mkdtemp(prefix=f"eq_chrome_pdf_{attempt}_"))
+            stderr_log = chrome_profile / "chrome_stderr.log"
             try:
                 tmp_pdf.unlink(missing_ok=True)
-                subprocess.run(
+                rc, stderr_txt = _run_chrome_to_output(
                     [
                         chrome_bin,
                         "--headless",
@@ -1287,11 +1404,21 @@ def render_pdf_atomic(
                         f"--print-to-pdf={tmp_pdf}",
                         str(tmp_html),
                     ],
-                    check=True,
+                    tmp_pdf,
+                    lambda p: _is_complete_pdf(p, min_pdf_bytes),
                     timeout=120,
+                    stderr_log=stderr_log,
                 )
-                if not tmp_pdf.exists() or tmp_pdf.stat().st_size < 50_000:
-                    raise RuntimeError(f"PDF generation failed or file too small: {tmp_pdf}")
+                if not _is_complete_pdf(tmp_pdf, min_pdf_bytes):
+                    raise RuntimeError(
+                        f"PDF generation failed or incomplete (rc={rc}): {stderr_txt[:300]}"
+                    )
+                if rc != 0:
+                    print(
+                        f"  [CHROME WARN] Chrome exited rc={rc} on teardown after writing "
+                        f"complete verified PDF ({tmp_pdf.stat().st_size:,}B); accepting.",
+                        file=sys.stderr,
+                    )
                 last_err = None
                 break
             except (subprocess.SubprocessError, RuntimeError) as exc:

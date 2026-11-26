@@ -123,9 +123,9 @@ def build_one(
     run_lint_gate(raw_text, str(md_path), is_flagship=False, meta=meta, no_lint=no_lint)
 
     defaults = {
-        "a_share": ("A股每日大白话投研简报", "A 股每日大白话投研简报", "A 股每日大白话投研简报（07:30 早刊 & 18:00 晚刊）"),
-        "hk_stock": ("港股每日大白话投研简报", "港股每日大白话投研简报", "港股每日大白话投研简报（07:30 早刊 & 18:00 晚刊）"),
-        "us_stock": ("美股每日大白话投研简报", "美股每日大白话投研简报", "美股每日大白话投研简报（07:30 早刊 & 18:00 晚刊）"),
+        "a_share": ("A股每日投研简报", "A 股每日投研简报", "A 股每日投研简报（07:30 早刊 & 18:00 晚刊）"),
+        "hk_stock": ("港股每日投研简报", "港股每日投研简报", "港股每日投研简报（07:30 早刊 & 18:00 晚刊）"),
+        "us_stock": ("美股每日投研简报", "美股每日投研简报", "美股每日投研简报（07:30 早刊 & 18:00 晚刊）"),
     }
     default_title, default_tag, default_footer = defaults[market]
 
@@ -149,6 +149,7 @@ def build_one(
         f"<body>{cover_html}{body}{footer_div}</body></html>"
     )
     mobile_path = (DAILY_DIR / f"latest_{market}.html") if write_mobile_latest else None
+    edition_type = str((meta or {}).get("edition_type", "")).strip()
     render_pdf_atomic(
         full_html,
         pdf_path,
@@ -156,6 +157,7 @@ def build_one(
         tmp_pdf,
         mobile_html_path=mobile_path,
         mobile_market=market,
+        min_pdf_bytes=25_000 if edition_type in ("light", "holiday_watch") else 50_000,
     )
     print(f"Built daily PDF ({pdf_path.stat().st_size:,} bytes): {pdf_path}")
     if mobile_path is not None:
