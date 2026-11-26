@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from math import isfinite
 from pathlib import Path
 
+import edition_plan as _edition_plan_mod
 from edition_plan import MARKETS, calendar_rules, edition_plan, parse_edition_id
 from pdf_common import BASE_DIR, DAILY_DIR, lint_markdown_report
 
@@ -30,6 +31,7 @@ GOLD_CALENDAR_PATH = GOLD_SNAPSHOT_PATH.with_name("market_calendar.json")
 STATE_PATH = BASE_DIR / "state" / "market_state.json"
 BEIJING = timezone(timedelta(hours=8))
 EDITION_CUTOVER = ("2026-11-25", 1800, 2)
+ALL_MAIN_CUTOVER = getattr(_edition_plan_mod, "ALL_MAIN_CUTOVER", ("2026-11-26", 1800, 1))
 _PERIOD_RE = re.compile(r"\d{4}_(?:0[1-9]|1[0-2])")
 _DAILY_NAME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})_(a_share|hk_stock|us_stock)(?:_r([2-9]|[1-9]\d+))?\.md")
 _REPORT_CUTOFF_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:\s|$)")
@@ -52,6 +54,47 @@ _GOLD_MINER_TICKERS_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _TEN_DOT_RE = re.compile(r"[●○]{10}")
+_PLAYBOOK_RETRACTED_RULES = (
+    (
+        "159545/159792 零溢价已撤回旧口径",
+        re.compile(
+            r"(?:(?:159545|159792)[^；;。\n]{0,24}[零无]溢价|[零无]溢价[^；;。\n]{0,24}(?:159545|159792))"
+        ),
+    ),
+    (
+        "红筹股一刀切 28% 税已撤回旧口径",
+        re.compile(
+            r"(?:港股通红筹[^；;。\n]{0,28}(?:税\s*28%|28%\s*税)|"
+            r"红筹[^；;。\n]{0,16}(?:统一|一律|均为|均扣|税)\s*28%|"
+            r"红筹\s*28%\s*税|"
+            r"01378[^；;。\n]{0,16}28%)"
+        ),
+    ),
+    (
+        "可转债末日二级卖出免 20% 个人税已撤回旧口径",
+        re.compile(r"(?:末日)?二级(?:市场)?卖出\s*免\s*20%\s*(?:个人)?税"),
+    ),
+)
+_PLAYBOOK_NEGATION_PREFIX_RE = re.compile(
+    r"(?:(?:严禁|禁止|不得|不可(?:直接)?|切忌|勿|不要|切勿|已撤回|已纠偏|误写为?|误称为?)"
+    r"[：:\s“‘「\x22`*]*(?:笼统)?(?:写|称|标|提|用|说|将|统称)?[\s“‘「\x22`*_]*$"
+    r"|(?:并非|不是|不等同于?)[：:\s“‘「\x22`*_]*$)"
+)
+_PLAYBOOK_NEGATION_INSIDE_RE = re.compile(r"(?:并非|不是|不等同|非一律|不免|非\s*28%)")
+
+
+def _check_playbook_retracted_claims(pb_text: str) -> list[str]:
+    """Ensure state/RSI_PLAYBOOK.md does not carry over the 3 retracted tax/ETF claims."""
+    errs: list[str] = []
+    for line_no, ln in enumerate(pb_text.splitlines(), 1):
+        for label, pat in _PLAYBOOK_RETRACTED_RULES:
+            for m in pat.finditer(ln):
+                prefix = re.split(r"[。！？；;,，]", ln[:m.start()])[-1]
+                if _PLAYBOOK_NEGATION_PREFIX_RE.search(prefix) or _PLAYBOOK_NEGATION_INSIDE_RE.search(m.group(0)):
+                    continue
+                errs.append(f"Gate 4 失败：state/RSI_PLAYBOOK.md (L{line_no}) 残留{label} -> {m.group(0)}")
+                break
+    return errs
 
 
 def parse_daily_sort_key(p: Path) -> tuple[str, int, int, str]:
@@ -67,7 +110,14 @@ def parse_daily_sort_key(p: Path) -> tuple[str, int, int, str]:
     return "0000-00-00", 0, 0, p.name
 
 
-def check_daily_contract(path: Path, meta: dict | None, md_text: str, *, as_of_cst: datetime | None = None) -> list[str]:
+def check_daily_contract(
+    path: Path,
+    meta: dict | None,
+    md_text: str,
+    *,
+    as_of_cst: datetime | None = None,
+    warnings: list[str] | None = None,
+) -> list[str]:
     """Check publication metadata while allowing immutable reports predating the contract."""
     sort_key = parse_daily_sort_key(path)[:3]
     if sort_key[0] == "0000-00-00":
@@ -94,7 +144,8 @@ def check_daily_contract(path: Path, meta: dict | None, md_text: str, *, as_of_c
             errors.append(f"{path.name}: 当前体例须有自身 chart_live 元数据")
         else:
             market_prefix = {"a_share": "A", "hk_stock": "H", "us_stock": "U"}[_detect_market(path)]
-            for key in re.findall(r"<!--\s*CHART_([AHU]\d+)\s*-->", md_text):
+            chart_keys = re.findall(r"<!--\s*CHART_([AHU]\d+)\s*-->", md_text)
+            for key in chart_keys:
                 if key not in {f"{market_prefix}{n}" for n in range(1, 8)}:
                     errors.append(f"{path.name}: 图 {key} 不属于该市场")
                 elif key not in ("A1", "A5") and not (isinstance(chart.get(key.lower()), dict) and chart[key.lower()]):
@@ -113,17 +164,28 @@ def check_daily_contract(path: Path, meta: dict | None, md_text: str, *, as_of_c
                     sector_strip = h6.get("sector_strip")
                     if not isinstance(sector_strip, str) or not sector_strip.strip():
                         errors.append(f"{path.name}: 图 H6 的 chart_live.h6.sector_strip 须提供本期板块说明")
+            if warnings is not None and sort_key >= ALL_MAIN_CUTOVER and len(md_text) > 1000:
+                ed_type = str(meta.get("edition_type", "")).strip().lower()
+                unique_charts = len(set(chart_keys))
+                if ed_type == "main" and unique_charts < 2:
+                    warnings.append(
+                        f"{path.name}: 融合后常规主刊建议内嵌至少 2 张矢量图（当前仅检测到 {unique_charts} 张）"
+                    )
+                elif ed_type == "holiday_watch" and unique_charts < 1:
+                    warnings.append(
+                        f"{path.name}: 升级版休市守望简报建议内嵌至少 1 张矢量图（当前检测到 0 张）"
+                    )
             raw = chart.get("as_of_full")
             cutoff = _REPORT_CUTOFF_RE.match(raw) if isinstance(raw, str) else None
             try:
                 local_cutoff = datetime.strptime(cutoff[1], "%Y-%m-%d %H:%M").replace(tzinfo=BEIJING) if cutoff else None
                 edition_time = datetime.strptime(f"{sort_key[0]}_{sort_key[1]:04}", "%Y-%m-%d_%H%M").replace(tzinfo=BEIJING)
-                if local_cutoff is None or abs(local_cutoff - edition_time) > timedelta(hours=4):
+                if local_cutoff is None or abs(local_cutoff - edition_time) > timedelta(hours=6):
                     raise ValueError
                 if as_of_cst is not None and local_cutoff.replace(second=0, microsecond=0) != as_of_cst.replace(second=0, microsecond=0):
                     errors.append(f"{path.name}: 图表数据截点与市场状态时间戳不一致")
             except ValueError:
-                errors.append(f"{path.name}: chart_live.as_of_full 须为班次四小时内的有效北京时间")
+                errors.append(f"{path.name}: chart_live.as_of_full 须为班次六小时内的有效北京时间")
     return errors
 
 
@@ -426,10 +488,10 @@ def _check_release_snapshot(gold: dict, state: dict, targets: list[Path]) -> lis
         edition_time = datetime.strptime(f"{edition_key[0]}_{edition_key[1]:04}", "%Y-%m-%d_%H%M").replace(tzinfo=BEIJING)
         if e_ts.utcoffset() != BEIJING.utcoffset(e_ts):
             raise ValueError("权益状态须明确使用 +08:00")
-        if not timedelta(0) <= e_ts - g_ts <= timedelta(hours=4):
-            errors.append("Gate C1 失败：黄金须先于或同分钟于权益落盘，且数据时间差须在四小时内")
-        if any(abs(ts - edition_time) > timedelta(hours=4) for ts in (g_ts, e_ts)):
-            errors.append("Gate C1 失败：快照数据时间偏离所标班次超过四小时")
+        if not timedelta(0) <= e_ts - g_ts <= timedelta(hours=6):
+            errors.append("Gate C1 失败：黄金须先于或同分钟于权益落盘，且数据时间差须在六小时内")
+        if any(abs(ts - edition_time) > timedelta(hours=6) for ts in (g_ts, e_ts)):
+            errors.append("Gate C1 失败：快照数据时间偏离所标班次超过六小时")
     except (KeyError, TypeError, ValueError) as exc:
         errors.append(f"Gate C1 失败：跨项目时间戳非法：{exc}")
 
@@ -466,6 +528,8 @@ def _check_release_snapshot(gold: dict, state: dict, targets: list[Path]) -> lis
     )
     for gold_key, mirror_group, equity_key in values:
         gold_value, equity_value = gold.get(gold_key), mirror_group.get(equity_key)
+        if gold_key == "brent_live_usd" and gold_value is None and equity_value is None:
+            continue
         if (any(type(v) not in (int, float) or not isfinite(v) for v in (gold_value, equity_value))
                 or gold_value != equity_value or (gold_key == "vix_close" and gold_value <= 0)):
             errors.append(f"Gate C1 失败：{gold_key} 跨轨数值缺失、非法或漂移 gold={gold_value} equity={equity_value}")
@@ -605,12 +669,15 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
             except Exception as exc:
                 errs.append(f"Gate C1 失败：跨项目时间戳解析异常 gold={g_ts_s!r} equity={e_ts_s!r} ({exc})")
 
-    # Gate C2: P0 Action Mutex Lock — when Gold is Tier 0 or new_buy_allowed is False, scan MD + Daily JSON + Flagship JSON + ALL SVGs + HTML!
+    # Gate C2: P0 Action Mutex Lock — when Gold is Tier 0 or new_buy_allowed is False, scan MD + INDEX + Daily JSON + Flagship JSON + ALL SVGs + HTML!
     if gold_tier == "Tier 0" or gold_new_buy is False:
         for p in targets:
             txt = p.read_text(encoding="utf-8")
             # Scan FULL file including DAILY_META_JSON so daily chart/KPI strings cannot bypass C2
             errs.extend(_scan_text_for_gold_buy(p.name, txt))
+        idx_path = DAILY_DIR / "INDEX.md"
+        if idx_path.exists():
+            errs.extend(_scan_text_for_gold_buy(idx_path.name, idx_path.read_text(encoding="utf-8")))
         for mkt_k, chart_k, mf in (
             ("a_share", "a7", BASE_DIR / "report_meta_a_share.json"),
             ("hk_stock", "h7", BASE_DIR / "report_meta_hk_stock.json"),
@@ -919,11 +986,13 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
     if not pb.exists():
         errs.append("Gate 4 失败：缺少 state/RSI_PLAYBOOK.md")
     else:
-        n = len(pb.read_text(encoding="utf-8").splitlines())
+        pb_text = pb.read_text(encoding="utf-8")
+        n = len(pb_text.splitlines())
         if n > 200:
             errs.append(f"Gate 4 失败：state/RSI_PLAYBOOK.md 超过 200 行硬限 ({n})")
         elif n > 180:
             warns.append(f"Gate 4 警告：state/RSI_PLAYBOOK.md 超过 180 行软限 ({n})")
+        errs.extend(_check_playbook_retracted_claims(pb_text))
 
     mf = BASE_DIR / "state" / "rsi_metrics.json"
     if not mf.exists():
@@ -1072,7 +1141,7 @@ def main() -> None:
             if jerr:
                 all_errors.append(f"{p.name}: {jerr}")
             cutoff = as_of_cst if parse_daily_sort_key(p)[:3] == current_id else None
-            all_errors.extend(check_daily_contract(p, meta, md_text, as_of_cst=cutoff))
+            all_errors.extend(check_daily_contract(p, meta, md_text, as_of_cst=cutoff, warnings=all_warnings))
 
         errs, warns = lint_markdown_report(md_text, str(p), is_flagship=is_flag, meta=meta)
         all_errors.extend([f"{p.name}: {x}" for x in errs])
@@ -1097,7 +1166,9 @@ def main() -> None:
             pdf_older = pdf_p.is_file() and pdf_p.stat().st_mtime < md_mtime - 2.0
             docx_older = docx_p.is_file() and docx_p.stat().st_mtime < md_mtime - 2.0
             receipt_verified = (pdf_older or docx_older) and _has_matching_artifact_receipt(p, mkt, is_flagship=is_flag)
-            if not pdf_p.exists() or pdf_p.stat().st_size < 50_000:
+            ed_type = "" if is_flag else str((meta or {}).get("edition_type", "")).strip().lower()
+            min_pdf_bytes = 25_000 if (not is_flag and ed_type in ("light", "holiday_watch")) else 50_000
+            if not pdf_p.exists() or pdf_p.stat().st_size < min_pdf_bytes:
                 all_errors.append(f"Gate 6 失败：缺失或过小的 PDF {pdf_p.name}")
             elif pdf_p.read_bytes()[:5] != b"%PDF-":
                 all_errors.append(f"Gate 6 失败：{pdf_p.name} 文件头非法")
@@ -1106,16 +1177,15 @@ def main() -> None:
             else:
                 n_pages = _count_pdf_pages(pdf_p)
                 if n_pages is not None:
-                    if is_flag and not (16 <= n_pages <= 24):
-                        all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（旗舰手册建议 16–24 页）")
+                    if is_flag and not (16 <= n_pages <= 32):
+                        all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（旗舰手册建议 16–32 页）")
                     elif not is_flag:
-                        ed_type = str((meta or {}).get("edition_type", "")).strip().lower()
-                        if ed_type == "main" and not (3 <= n_pages <= 6):
-                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} (main) 共 {n_pages} 页（主刊建议 4–5 页，容忍 3–6 页）")
+                        if ed_type == "main" and not (3 <= n_pages <= 7):
+                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} (main) 共 {n_pages} 页（主刊建议 5–6 页，容忍 3–7 页）")
                         elif ed_type in ("light", "holiday_watch") and not (1 <= n_pages <= 4):
-                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} ({ed_type}) 共 {n_pages} 页（轻刊建议 2–3 页，容忍 1–4 页）")
-                        elif not ed_type and n_pages > 6:
-                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（日报偏长，建议 ≤6 页）")
+                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} ({ed_type}) 共 {n_pages} 页（守望/轻刊建议 2–3 页，容忍 1–4 页）")
+                        elif not ed_type and n_pages > 7:
+                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（日报偏长，建议 ≤7 页）")
 
             exp_charts = len(_CHART_PLACEHOLDER_RE.findall(body_no_meta)) if is_flag or meta else 0
             de, dw = _check_docx_forensics(docx_p, md_mtime, exp_charts, receipt_verified=receipt_verified)

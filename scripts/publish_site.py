@@ -19,7 +19,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, TypeVar
 from uuid import uuid4
 
 if __package__:
@@ -47,6 +47,11 @@ GOLD_DAILY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_.*黄金深度研报(?
 SHA256_RE = re.compile(r"sha256:([0-9a-f]{64})")
 REMOTE_LOCK = "gir-publication-lock.json"
 REMOTE_JOURNAL = "gir-publication-journal.json"
+_T = TypeVar("_T")
+_TRANSIENT_NET_RE = re.compile(
+    r"HTTP 50[0234]|timeout|timed out|connection reset|TLS|EOF|Could not resolve",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -119,6 +124,28 @@ def _checked(result: subprocess.CompletedProcess[str], operation: str) -> str:
         detail = (result.stderr or result.stdout).strip()
         raise RuntimeError(f"{operation} failed ({result.returncode}): {detail}")
     return result.stdout
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    return isinstance(exc, subprocess.TimeoutExpired) or (
+        isinstance(exc, RuntimeError) and bool(_TRANSIENT_NET_RE.search(str(exc)))
+    )
+
+
+def _retry_transient(fn: Callable[[], _T], *, label: str, attempts: int = 3) -> _T:
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            if attempt >= attempts or not _is_transient_error(exc):
+                raise
+            delay = 2 ** attempt  # 2s, 4s backoff
+            print(
+                f"[retry] {label} failed transiently ({attempt}/{attempts}): {exc}; retrying in {delay}s",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+    raise RuntimeError(f"{label} failed after {attempts} attempts")
 
 
 def _git(env: dict[str, str], *args: str) -> str:
@@ -366,9 +393,12 @@ def _validate_revision(
 
 
 def _remote_main(env: dict[str, str]) -> str | None:
-    result = _run(["git", "ls-remote", "--heads", "origin", "refs/heads/main"], env, timeout=30)
-    head = _checked(result, "git ls-remote").strip()
-    return head.split()[0] if head else None
+    def _fetch() -> str | None:
+        result = _run(["git", "ls-remote", "--heads", "origin", "refs/heads/main"], env, timeout=30)
+        head = _checked(result, "git ls-remote").strip()
+        return head.split()[0] if head else None
+
+    return _retry_transient(_fetch, label="git ls-remote origin/main")
 
 
 def _require_remote_main(env: dict[str, str], sha: str) -> None:
@@ -380,13 +410,18 @@ def _push_verified_commit(env: dict[str, str], commit: str, *, already_pushed: b
     if already_pushed or _remote_main(env) == commit:
         _require_remote_main(env, commit)
         return
-    try:
-        result = _run(["git", "push", "origin", f"{commit}:refs/heads/main"], env, timeout=120)
-        _checked(result, "git push")
-    except (RuntimeError, subprocess.TimeoutExpired):
-        if _remote_main(env) == commit:
-            return  # A transport error can occur after origin accepts the ref update.
-        raise
+    for attempt in (1, 2):
+        try:
+            result = _run(["git", "push", "origin", f"{commit}:refs/heads/main"], env, timeout=120)
+            _checked(result, "git push")
+            break
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            if _remote_main(env) == commit:
+                return  # A transport error can occur after origin accepts the ref update.
+            if attempt == 2 or not _is_transient_error(exc):
+                raise
+            print(f"[git] Retry push of {commit[:12]} after transient error: {exc}", file=sys.stderr)
+            time.sleep(3)
     _require_remote_main(env, commit)
 
 
@@ -460,19 +495,22 @@ class GitHubRelease:
                  f"gh release {args[0]}")
 
     def assets(self) -> dict[str, RemoteAsset]:
-        result = self._api(f"releases/{self.id}/assets?per_page=100", "--paginate", "--slurp")
-        pages = json.loads(_checked(result, "list GitHub Release assets"))
-        assets = {}
-        for page in pages:
-            for item in page:
-                digest = SHA256_RE.fullmatch(str(item.get("digest") or ""))
-                name = str(item["name"])
-                if name in assets:
-                    raise RuntimeError(f"Duplicate Release asset name: {name}")
-                assets[name] = RemoteAsset(
-                    int(item["id"]), name, digest[1] if digest and item.get("state") == "uploaded" else None,
-                )
-        return assets
+        def _fetch() -> dict[str, RemoteAsset]:
+            result = self._api(f"releases/{self.id}/assets?per_page=100", "--paginate", "--slurp")
+            pages = json.loads(_checked(result, "list GitHub Release assets"))
+            assets = {}
+            for page in pages:
+                for item in page:
+                    digest = SHA256_RE.fullmatch(str(item.get("digest") or ""))
+                    name = str(item["name"])
+                    if name in assets:
+                        raise RuntimeError(f"Duplicate Release asset name: {name}")
+                    assets[name] = RemoteAsset(
+                        int(item["id"]), name, digest[1] if digest and item.get("state") == "uploaded" else None,
+                    )
+            return assets
+
+        return _retry_transient(_fetch, label="list GitHub Release assets")
 
     def rename(self, asset: RemoteAsset, name: str) -> RemoteAsset:
         result = self._api(f"releases/assets/{asset.id}", "--method", "PATCH", "-f", f"name={name}")
@@ -492,12 +530,15 @@ class GitHubRelease:
         self._release("upload", RELEASE_TAG, f"{asset.path}#{asset.label}")
 
     def json_asset(self, asset: RemoteAsset) -> dict:
-        result = self._api(f"releases/assets/{asset.id}", "-H", "Accept: application/octet-stream")
-        content = _checked(result, f"read Release asset {asset.name}")
-        value = json.loads(content)
-        if not isinstance(value, dict):
-            raise ValueError(f"Invalid Release recovery object {asset.name}")
-        return value
+        def _fetch() -> dict:
+            result = self._api(f"releases/assets/{asset.id}", "-H", "Accept: application/octet-stream")
+            content = _checked(result, f"read Release asset {asset.name}")
+            value = json.loads(content)
+            if not isinstance(value, dict):
+                raise ValueError(f"Invalid Release recovery object {asset.name}")
+            return value
+
+        return _retry_transient(_fetch, label=f"read Release asset {asset.name}")
 
 
 def _save_json(path: Path, value: dict) -> None:
@@ -571,12 +612,22 @@ def _remote_release_lock(
         if current is None or current.id != asset.id or current.digest != asset.digest:
             raise RuntimeError("The Release lock changed while publication was running.")
 
+    primary_exc: BaseException | None = None
     try:
         yield confirm_owner
+    except BaseException as exc:
+        primary_exc = exc
+        raise
     finally:
-        confirm_owner()
-        release.delete(asset)
-        claim.unlink(missing_ok=True)
+        try:
+            confirm_owner()
+            release.delete(asset)
+            claim.unlink(missing_ok=True)
+        except Exception as cleanup_exc:
+            if primary_exc is not None:
+                print(f"[warn] Release lock cleanup failed after error: {cleanup_exc}", file=sys.stderr)
+            else:
+                raise
 
 
 def _recover_remote_release(

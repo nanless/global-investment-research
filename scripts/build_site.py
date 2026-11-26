@@ -218,6 +218,8 @@ def load_renderers() -> Renderers:
         stub_docx = types.ModuleType("docx_embed")
         stub_docx.build_native_docx = lambda *a, **kw: None  # type: ignore[attr-defined]
         stub_docx.render_chart_to_png = lambda *a, **kw: None  # type: ignore[attr-defined]
+        stub_docx.resolve_chrome_bin = lambda *a, **kw: ""  # type: ignore[attr-defined]
+        stub_docx.__getattr__ = lambda name: (lambda *a, **kw: None)  # type: ignore[attr-defined]
         sys.modules["docx_embed"] = stub_docx
         _load_module_from_path("chart_input", GOLD_DIR / "chart_input.py")
 
@@ -425,10 +427,13 @@ _REL_MD_LINK_RE = re.compile(
 # Internal engineering files/tooling that must never leak onto public scorecard/changelog pages
 _HARD_INFRA_RE = re.compile(
     r"(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
+    r"master_snapshot\.json|permissions\.json|unified-edition\.prompt\.md|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
+    r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
+    r"chart_input\.py|install_sidecars\.py|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing|"
     r"5-plus-1-research-playbook(?:\.md)?|directives-and-snapshot-schema(?:\.md)?|"
     r"\btextutil\b)",
@@ -666,14 +671,18 @@ def _rewrite_href(raw_href: str, base_prefix: str, slug_map: dict[str, str], ctx
 
 
 def _strip_local_paths_in_text(fragment: str) -> str:
-    """Remove any stray file:// or /Users/... paths inside plain text outside HTML tags."""
+    """Remove any stray file:// or /Users/... paths and internal snapshot filenames in plain text."""
     parts = _TAG_SPLIT_RE.split(fragment)
     for i in range(0, len(parts), 2):
-        if parts[i] and ("file://" in parts[i] or "/Users/" in parts[i]):
-            txt = parts[i]
+        txt = parts[i]
+        if not txt:
+            continue
+        if "file://" in txt or "/Users/" in txt:
             txt = re.sub(r"file:///[^\s<\"'）)》」]+", "（已归档）", txt)
             txt = re.sub(r"/Users/[^\s<\"'）)》」`]+", "（站内文档）", txt)
-            parts[i] = txt
+        if "master_snapshot.json" in txt.lower():
+            txt = re.sub(r"master_snapshot\.json", "主报告基线快照", txt, flags=re.IGNORECASE)
+        parts[i] = txt
     return "".join(parts)
 
 
@@ -824,7 +833,7 @@ def sanitize_and_extract_toc(
 
 
 # ==============================================================================
-# 4. 135-COMPANY GLOBAL STOCK SCREENER EXTRACTOR
+# 4. GLOBAL STOCK SCREENER EXTRACTOR
 # ==============================================================================
 
 COLOR_LABELS = {
@@ -888,10 +897,10 @@ def _parse_app2_rows(md_text: str) -> list[list[str]]:
 
 
 def extract_all_stocks(a_md: str, hk_md: str, us_md: str) -> list[dict[str, str]]:
-    """Extract all 135 stocks (A-Share 44 + HK 45 + US 46) with exact 4-color ratings."""
+    """Extract all flagship pool stocks across A-Share, HK-Stock, and US-Stock with exact 4-color ratings."""
     stocks: list[dict[str, str]] = []
 
-    # --- 1. A-Share (44 stocks): map colors from ### 5.2, then merge with ## 附表二 ---
+    # --- 1. A-Share: map colors from ### 5.2, then merge with ## 附表二 ---
     a_color_map: dict[str, tuple[str, str]] = {}
     s52_start = a_md.find("### 5.2")
     s52_end = a_md.find("### 5.3", s52_start if s52_start != -1 else 0)
@@ -942,7 +951,7 @@ def extract_all_stocks(a_md: str, hk_md: str, us_md: str) -> list[dict[str, str]
             }
         )
 
-    # --- 2. HK-Stock (45 stocks): colors directly in ## 附表二 col 4 ---
+    # --- 2. HK-Stock: colors directly in ## 附表二 col 4 ---
     for cells in _parse_app2_rows(hk_md):
         if len(cells) < 5:
             continue
@@ -976,7 +985,7 @@ def extract_all_stocks(a_md: str, hk_md: str, us_md: str) -> list[dict[str, str]
             }
         )
 
-    # --- 3. US-Stock (46 stocks): colors directly in ## 附表二 col 3 ---
+    # --- 3. US-Stock: colors directly in ## 附表二 col 3 ---
     for cells in _parse_app2_rows(us_md):
         if len(cells) < 5:
             continue
@@ -1042,18 +1051,19 @@ def render_page_shell(
     content_html: str,
     market_attr: str = "overview",
     edition_attr: str = "",
-    total_pool: int = 135,
+    total_pool: int = 0,
     toc_items: list[tuple[int, str, str]] | None = None,
     show_chart_modal: bool = False,
     footer_ts: str = "",
 ) -> str:
+    pool_label = f"{total_pool}股池" if total_pool > 0 else "龙头股池"
     nav_items = [
         ("overview", f"{base_prefix}index.html", "总览"),
         ("gold", f"{base_prefix}daily/gold-latest.html", "黄金"),
         ("a-share", f"{base_prefix}daily/a-share-latest.html", "A股"),
         ("hk-stock", f"{base_prefix}daily/hk-stock-latest.html", "港股"),
         ("us-stock", f"{base_prefix}daily/us-stock-latest.html", "美股"),
-        ("screener", f"{base_prefix}screener.html", f"{total_pool}股池"),
+        ("screener", f"{base_prefix}screener.html", pool_label),
         ("scorecard", f"{base_prefix}scorecard.html", "记分卡"),
         ("archive", f"{base_prefix}archive.html", "档案"),
     ]
@@ -1144,7 +1154,7 @@ def render_page_shell(
       <div>全球投研 · 黄金 × A股 × 港股 × 美股 ｜ 多源官方库交叉核验 · 严守仓位与风控纪律{(" · 更新：" + esc(footer_ts)) if footer_ts else ""}</div>
       <div class="footer-links">
         <a href="{base_prefix}index.html">总览</a>
-        <a href="{base_prefix}screener.html">{total_pool}股池</a>
+        <a href="{base_prefix}screener.html">{pool_label}</a>
         <a href="{base_prefix}scorecard.html">记分卡</a>
         <a href="{base_prefix}archive.html">历史档案</a>
         <a href="{RELEASES_TAG_URL}" target="_blank" rel="noopener">PDF/Word 下载 ↗</a>
@@ -1208,19 +1218,77 @@ def _lamp_css_class(lamp_str: str) -> str:
     return "lamp-red"
 
 
-def _fmt_chg_span(val: float) -> str:
-    cls = "chg-up" if val >= 0 else "chg-dn"
-    return f'<span class="{cls}">{val:+.2f}%</span>'
+def _safe_float(val: Any) -> float | None:
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        num = float(val)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return num if isfinite(num) else None
+
+
+def _fmt_num(
+    val: Any,
+    fmt: str,
+    fallback: str = "待核",
+    *,
+    prefix: str = "",
+    suffix: str = "",
+) -> str:
+    num = _safe_float(val)
+    if num is None:
+        return fallback
+    return f"{prefix}{format(num, fmt)}{suffix}"
+
+
+def _fmt_chg_span(val: Any, fallback: str = "待核") -> str:
+    num = _safe_float(val)
+    if num is None:
+        return fallback
+    cls = "chg-up" if num >= 0 else "chg-dn"
+    return f'<span class="{cls}">{num:+.2f}%</span>'
 
 
 def _positive_quote(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        quote = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    return quote if isfinite(quote) and quote > 0 else None
+    quote = _safe_float(value)
+    return quote if quote is not None and quote > 0 else None
+
+
+def _resolve_dated_metric(
+    mapping: dict[str, Any], canonical_key: str, dated_pattern: str,
+) -> float | None:
+    direct = _safe_float(mapping.get(canonical_key))
+    if direct is not None:
+        return direct
+    dated: list[tuple[tuple[int, str], float]] = []
+    for k, v in mapping.items():
+        m = re.fullmatch(dated_pattern, str(k))
+        if m:
+            num = _safe_float(v)
+            if num is not None:
+                stamp = m.group(1)
+                dated.append(((len(stamp), stamp), num))
+    if dated:
+        dated.sort(key=lambda item: item[0], reverse=True)
+        return dated[0][1]
+    return None
+
+
+def _resolve_etf_cn(gold_snap: dict[str, Any]) -> dict[str, Any]:
+    direct = gold_snap.get("etf_cn")
+    if isinstance(direct, dict) and direct:
+        return direct
+    dated: list[tuple[tuple[int, str], dict[str, Any]]] = []
+    for k, v in gold_snap.items():
+        m = re.fullmatch(r"etf_cn_(\d+)", str(k))
+        if m and isinstance(v, dict) and v:
+            stamp = m.group(1)
+            dated.append(((len(stamp), stamp), v))
+    if dated:
+        dated.sort(key=lambda item: item[0], reverse=True)
+        return dated[0][1]
+    return {}
 
 
 def _render_release_downloads_grid(
@@ -1270,69 +1338,83 @@ def build_cockpit_page(
     latest_by_market: dict[str, DailyItem],
     stock_counts: dict[str, int],
 ) -> str:
-    markets = eq_state.get("markets", {})
-    a_m = markets.get("a_share", {})
-    hk_m = markets.get("hk_stock", {})
-    us_m = markets.get("us_stock", {})
-    linkages = eq_state.get("cross_market_linkages", {})
-    rates = linkages.get("rates_fx_chain", {})
-    comm = linkages.get("commodity_mirror", {})
-    erp = linkages.get("erp_ruler", {})
-    hcw = linkages.get("household_composite_weights", {})
-    brake = linkages.get("crisis_correlation_brake", {})
+    markets = eq_state.get("markets") or {}
+    a_m = markets.get("a_share") or {}
+    hk_m = markets.get("hk_stock") or {}
+    us_m = markets.get("us_stock") or {}
+    linkages = eq_state.get("cross_market_linkages") or {}
+    rates = linkages.get("rates_fx_chain") or {}
+    comm = linkages.get("commodity_mirror") or {}
+    erp = linkages.get("erp_ruler") or {}
+    hcw = linkages.get("household_composite_weights") or {}
+    brake = linkages.get("crisis_correlation_brake") or {}
 
-    gold_as_of = str(gold_snap.get("as_of_bjt", gold_snap.get("as_of_short", "")))
-    eq_as_of = fmt_cst_iso(str(eq_state.get("as_of_cst", "")))
+    gold_as_of = str(gold_snap.get("as_of_bjt") or gold_snap.get("as_of_short") or "")
+    eq_as_of = fmt_cst_iso(str(eq_state.get("as_of_cst") or ""))
     alert_label = str(eq_state.get("alert_label") or gold_snap.get("daily_alert_label") or "常规追踪日")
 
     # Gold SSOT display (100% dynamic from gold/data_snapshot.json)
     gold_new_buy = bool(gold_snap.get("new_buy_allowed", False))
-    gold_tier_code = str(gold_snap.get("tier_code", "Tier 0")).strip()
-    gold_tier_label = str(gold_snap.get("tier_label", "红灯停（暂不新买 · 新仓 0%）"))
+    gold_tier_code = str(gold_snap.get("tier_code") or "Tier 0").strip()
+    gold_tier_label = str(gold_snap.get("tier_label") or "红灯停（暂不新买 · 新仓 0%）")
     gold_tier_short = gold_tier_label.split("（")[0].strip()
     gold_lamp_cls = _lamp_css_class(gold_tier_label)
-    gold_pass = f'{gold_snap.get("tier1_passed") or 0}/{gold_snap.get("tier1_total") or 4} 关'
-    gold_spot = float(gold_snap.get("spot_gold_ny_close_usd") or 0)
-    gold_chg = float(gold_snap.get("spot_gold_ny_change_pct") or 0)
-    gold_asia_open = int(gold_snap.get("spot_gold_asia_open_usd") or 0)
-    gold_spot_val = f"${gold_spot:,.2f} {_fmt_chg_span(gold_chg)}" if gold_spot > 0 else "待刷新"
-    gold_asia_sub = f"亚盘约 ${gold_asia_open:,}" if gold_asia_open > 0 else "纽约官收基准"
-    gold_autd_night = float(gold_snap.get("sge_autd_night_rmb") or 0)
-    gold_autd_day = float(gold_snap.get("sge_autd_day_rmb") or 0)
-    gold_dfii_raw = gold_snap.get("dfii10_live_pct")
-    gold_dfii_val = f"{float(gold_dfii_raw):.2f}%" if gold_dfii_raw is not None else "待刷新"
+    t1_passed = _safe_float(gold_snap.get("tier1_passed"))
+    t1_total = _safe_float(gold_snap.get("tier1_total"))
+    gold_pass = f"{int(t1_passed) if t1_passed is not None else 0}/{int(t1_total) if t1_total is not None else 4} 关"
+    gold_spot = _positive_quote(gold_snap.get("spot_gold_ny_close_usd"))
+    gold_chg = _safe_float(gold_snap.get("spot_gold_ny_change_pct"))
+    gold_asia_open = _positive_quote(gold_snap.get("spot_gold_asia_open_usd"))
+    if gold_spot is not None:
+        gold_spot_val = (
+            f"${gold_spot:,.2f} {_fmt_chg_span(gold_chg)}" if gold_chg is not None else f"${gold_spot:,.2f}"
+        )
+    else:
+        gold_spot_val = "待核"
+    gold_asia_sub = f"亚盘约 ${gold_asia_open:,.0f}" if gold_asia_open is not None else "纽约官收基准"
+    gold_autd_night = _positive_quote(gold_snap.get("sge_autd_night_rmb"))
+    gold_autd_day = _positive_quote(gold_snap.get("sge_autd_day_rmb"))
+    gold_dfii_val = _fmt_num(gold_snap.get("dfii10_live_pct"), ".2f", suffix="%")
     gold_verdict = str(gold_snap.get("tier_cover_sub") or gold_snap.get("tier_status_sub") or "")
     rmb_ch = gold_snap.get("rmb_channels") or {}
-    bank_bar = rmb_ch.get("bank_bar_rmb") or 0
+    bank_bar = _positive_quote(rmb_ch.get("bank_bar_rmb"))
+    etf_cn = _resolve_etf_cn(gold_snap)
 
     # SGE Au(T+D) session-aware display: >= 15:00 headlines day session; < 15:00 headlines night session
-    gold_as_of_short = str(gold_snap.get("as_of_short", ""))
+    gold_as_of_short = str(gold_snap.get("as_of_short") or "")
     m_hr = re.search(r"\b(\d{2}):\d{2}\b", gold_as_of_short)
     gold_hour = int(m_hr.group(1)) if m_hr else 7
-    bank_bar_txt = f"银行条 {bank_bar} 元" if float(bank_bar) > 0 else ""
-    if gold_hour >= 15 and gold_autd_day > 0:
+    if bank_bar is not None:
+        bar_disp = f"{int(bank_bar)}" if bank_bar.is_integer() else f"{bank_bar:g}"
+        bank_bar_txt = f"银行条 {bar_disp} 元"
+    elif isinstance(etf_cn.get("518880"), dict) and _positive_quote(etf_cn["518880"].get("close")) is not None:
+        etf_close = _positive_quote(etf_cn["518880"].get("close"))
+        bank_bar_txt = f"黄金ETF {etf_close:.3f} 元"
+    else:
+        bank_bar_txt = ""
+    if gold_hour >= 15 and gold_autd_day is not None:
         sge_main_lbl = "上金所 Au(T+D) 日盘"
         sge_main_val = f"{gold_autd_day:.2f} 元/克"
-        sub_parts = [f"夜盘 {gold_autd_night:.2f}" if gold_autd_night > 0 else "", bank_bar_txt]
+        sub_parts = [f"夜盘 {gold_autd_night:.2f}" if gold_autd_night is not None else "", bank_bar_txt]
         sge_sub_txt = " · ".join(p for p in sub_parts if p) or "以上金所官方收盘为准"
-    elif gold_autd_night > 0:
+    elif gold_autd_night is not None:
         sge_main_lbl = "上金所 Au(T+D) 夜盘"
         sge_main_val = f"{gold_autd_night:.2f} 元/克"
-        sub_parts = [f"日盘 {gold_autd_day:.2f}" if gold_autd_day > 0 else "", bank_bar_txt]
+        sub_parts = [f"日盘 {gold_autd_day:.2f}" if gold_autd_day is not None else "", bank_bar_txt]
         sge_sub_txt = " · ".join(p for p in sub_parts if p) or "以上金所官方夜盘为准"
-    elif gold_autd_day > 0:
+    elif gold_autd_day is not None:
         sge_main_lbl = "上金所 Au(T+D) 日盘"
         sge_main_val = f"{gold_autd_day:.2f} 元/克"
         sge_sub_txt = bank_bar_txt or "以上金所官方收盘为准"
     else:
         sge_main_lbl = "上金所 Au(T+D)"
-        sge_main_val = "待刷新"
+        sge_main_val = "待核"
         sge_sub_txt = bank_bar_txt or "以上金所官方披露为准"
 
     # Dynamic DFII10 gate threshold + percentile level
     t1_gates = gold_snap.get("tier1_gates") or []
     g1_thr = str(t1_gates[0].get("threshold", "")).strip() if (t1_gates and isinstance(t1_gates[0], dict)) else ""
-    dfii_lvl = str(gold_snap.get("dfii10_level_short", "")).strip()
+    dfii_lvl = str(gold_snap.get("dfii10_level_short") or "").strip()
     dfii_sub_parts = [p for p in (g1_thr, dfii_lvl) if p]
     dfii_sub = " · ".join(dfii_sub_parts) if dfii_sub_parts else "跟踪实际利率门槛"
 
@@ -1343,7 +1425,7 @@ def build_cockpit_page(
         gold_alloc_suffix = "（新仓0%）"
         gold_mirror_badge = f"{gold_tier_short} · 暂不新买"
     else:
-        tranche = str(gold_snap.get("a_class_tranche_split", "")).strip()
+        tranche = str(gold_snap.get("a_class_tranche_split") or "").strip()
         gold_new_buy_val = f"可分批建仓（{gold_tier_short}）"
         gold_new_buy_sub = (
             f"分批节奏 {tranche} · 家庭上限 10%–15%" if tranche else "严守家庭资产上限 10%–15%"
@@ -1352,88 +1434,129 @@ def build_cockpit_page(
         gold_mirror_badge = f"{gold_tier_short} · 按档分批"
 
     # A-Share
-    a_lamp_lbl = str(a_m.get("lamp_label", "红灯防守期")).replace("🛡️", "").strip()
+    a_lamp_lbl = str(a_m.get("lamp_label") or "红灯防守期").replace("🛡️", "").strip()
     a_lamp_cls = _lamp_css_class(a_m.get("lamp", "red"))
-    a_pool = int(a_m.get("stock_pool_count", stock_counts.get("a-share", 0)))
+    a_pool_num = _safe_float(a_m.get("stock_pool_count"))
+    a_pool = int(a_pool_num) if a_pool_num is not None else stock_counts.get("a-share", 0)
+    a_score = str(a_m.get("score") or "待核")
+    a_csi300_val = _fmt_num(a_m.get("benchmark_csi300"), ",.2f")
+    a_sse_val = _fmt_num(a_m.get("benchmark_sse"), ",.2f")
+    a_200w_val = _fmt_num(a_m.get("csi300_200w"), ",.0f")
+    a_eq_cap_val = _fmt_num(a_m.get("equity_cap_pct"), ".0f", prefix="≤ ", suffix="%")
+    a_erp_fwd_val = _fmt_num(a_m.get("erp_fwd_pct"), "+.2f", suffix="%")
+    a_erp_ttm_val = _fmt_num(a_m.get("erp_ttm_pct"), "+.2f", suffix="%")
+    a_cgb10y_val = _fmt_num(a_m.get("cgb10y_pct"), ".3f", suffix="%")
 
-    # Dynamic PBOC net injection scan (never frozen at a dated key)
-    pboc_net: float | None = None
-    if isinstance(a_m.get("pboc_total_net_100m"), (int, float)):
-        pboc_net = float(a_m["pboc_total_net_100m"])
-    else:
-        pboc_dated: list[tuple[str, float]] = []
-        for k, v in a_m.items():
-            m_p = re.match(r"^pboc_(\d{4})_total_net_100m$", str(k))
-            if m_p and isinstance(v, (int, float)):
-                pboc_dated.append((m_p.group(1), float(v)))
-        if pboc_dated:
-            pboc_dated.sort(key=lambda x: x[0], reverse=True)
-            pboc_net = pboc_dated[0][1]
-
+    # Dynamic PBOC / margin scan (normalized canonical keys with dated fallback)
+    pboc_net = _resolve_dated_metric(a_m, "pboc_total_net_100m", r"pboc_(\d+)_total_net_100m")
     if pboc_net is not None:
         a_pool_sub = f"央行总净投放 {pboc_net:+,.0f} 亿"
     else:
-        margin_val: float | None = None
-        if isinstance(a_m.get("margin_balance_100m"), (int, float)):
-            margin_val = float(a_m["margin_balance_100m"])
-        else:
-            m_dated: list[tuple[str, float]] = []
-            for k, v in a_m.items():
-                m_mb = re.match(r"^margin_balance_(\d{4})_100m$", str(k))
-                if m_mb and isinstance(v, (int, float)):
-                    m_dated.append((m_mb.group(1), float(v)))
-            if m_dated:
-                m_dated.sort(key=lambda x: x[0], reverse=True)
-                margin_val = m_dated[0][1]
+        margin_val = _resolve_dated_metric(a_m, "margin_balance_100m", r"margin_balance_(\d+)_100m")
         if margin_val is not None:
             a_pool_sub = f"两融余额 {margin_val:,.0f} 亿"
         else:
-            a_pool_sub = f'沪深300 PE(TTM) {float(a_m.get("pe_ttm", 0)):.1f}x'
+            a_pool_sub = f'沪深300 PE(TTM) {_fmt_num(a_m.get("pe_ttm"), ".1f", suffix="x")}'
 
     # HK-Stock
-    hk_lamp_lbl = str(hk_m.get("lamp_label", "红灯防守期")).replace("🛡️", "").strip()
+    hk_lamp_lbl = str(hk_m.get("lamp_label") or "红灯防守期").replace("🛡️", "").strip()
     hk_lamp_cls = _lamp_css_class(hk_m.get("lamp", "red"))
-    hk_pool = int(hk_m.get("stock_pool_count", stock_counts.get("hk-stock", 0)))
+    hk_pool_num = _safe_float(hk_m.get("stock_pool_count"))
+    hk_pool = int(hk_pool_num) if hk_pool_num is not None else stock_counts.get("hk-stock", 0)
+    hk_score = str(hk_m.get("score") or "待核")
+    hk_hsi_val = _fmt_num(hk_m.get("benchmark_hsi"), ",.2f")
+    hk_hstech_val = _fmt_num(hk_m.get("benchmark_hstech"), ",.2f")
+    hk_200d_val = _fmt_num(hk_m.get("hsi_200d"), ",.0f")
+    hk_off_cap_val = _fmt_num(hk_m.get("offshore_equity_cap_pct"), ".0f", prefix="≤ ", suffix="%")
+    hk_on_cap_val = _fmt_num(hk_m.get("onshore_connect_cap_pct"), ".0f", prefix="≤ ", suffix="%")
+    hk_hsahp_val = _fmt_num(hk_m.get("hsahp_index"), ".2f")
+    hk_erp_usd_val = _fmt_num(hk_m.get("erp_usd_anchor_fwd_pct"), "+.2f", suffix="%")
+    hk_erp_cny_val = _fmt_num(hk_m.get("erp_cny_anchor_fwd_pct"), "+.2f", suffix="%")
+    hk_sb_ytd_val = _fmt_num(hk_m.get("southbound_ytd_hkd_b"), "+.0f", suffix="B")
 
     # US-Stock
-    us_lamp_lbl = str(us_m.get("lamp_label", "红灯防守期")).replace("🛡️", "").strip()
+    us_lamp_lbl = str(us_m.get("lamp_label") or "红灯防守期").replace("🛡️", "").strip()
     us_lamp_cls = _lamp_css_class(us_m.get("lamp", "red"))
-    us_pool = int(us_m.get("stock_pool_count", stock_counts.get("us-stock", 0)))
+    us_pool_num = _safe_float(us_m.get("stock_pool_count"))
+    us_pool = int(us_pool_num) if us_pool_num is not None else stock_counts.get("us-stock", 0)
+    us_score = str(us_m.get("score") or "待核")
     us_alloc_str = (
-        f'{us_m.get("equity_cap_pct", 28)}% 防弹衣 + '
-        f'{us_m.get("cash_tbill_pct", 62)}% 短债 + '
-        f'{us_m.get("gold_hold_pct", 10)}% 存量金'
+        f'{_fmt_num(us_m.get("equity_cap_pct"), ".0f", suffix="%")} 防弹衣 + '
+        f'{_fmt_num(us_m.get("cash_tbill_pct"), ".0f", suffix="%")} 短债 + '
+        f'{_fmt_num(us_m.get("gold_hold_pct"), ".0f", suffix="%")} 存量金'
     )
-    us_sp = float(us_m.get("benchmark_sp500", 0))
-    us_high = float(us_m.get("sp500_high", 0))
-    if us_high > 0 and us_sp > 0:
+    us_sp = _safe_float(us_m.get("benchmark_sp500"))
+    us_sp_val = _fmt_num(us_sp, ",.2f")
+    us_high = _positive_quote(us_m.get("sp500_high"))
+    us_tech_cap_val = _fmt_num(us_m.get("tech_new_cap_pct"), ".0f", suffix="%")
+    if us_high is not None and us_sp is not None and us_sp > 0:
         us_dd = ((us_sp / us_high) - 1.0) * 100.0
         us_pool_sub = f"距前高 {us_high:,.0f} 回撤 {us_dd:+.1f}% · 7 大赛道"
     else:
-        us_pool_sub = f'科技新增严控 {int(us_m.get("tech_new_cap_pct", 0))}% · 全板块覆盖'
+        us_pool_sub = f"科技新增严控 {us_tech_cap_val} · 全板块覆盖"
+    us_200d_val = _fmt_num(us_m.get("sp500_200d"), ",.0f")
+    us_erp_fwd_val = _fmt_num(us_m.get("erp_fwd_pct"), "+.2f", suffix="%")
+    us_erp_ttm_val = _fmt_num(us_m.get("erp_ttm_pct"), "+.2f", suffix="%")
+    us_pe_fwd_val = _fmt_num(us_m.get("pe_fwd"), ".1f", suffix="x")
+    us_pe_ttm_val = _fmt_num(us_m.get("pe_ttm"), ".1f", suffix="x")
 
-    # 3+1 Global Crisis Circuit Breakers
-    vix_close = float(brake.get("vix_close", gold_snap.get("vix_close", 0)))
-    raw_vix_high = brake.get("vix_intraday_high")
-    vix_high = float(raw_vix_high) if raw_vix_high is not None else None
+    # 3+1 Global Crisis Circuit Breakers (100% null-safe)
+    vix_close = _safe_float(brake.get("vix_close"))
+    if vix_close is None:
+        vix_close = _safe_float(gold_snap.get("vix_close"))
+    vix_high = _safe_float(brake.get("vix_intraday_high"))
     vix_high_label = f"盘中峰 {vix_high:.2f}" if vix_high is not None else "盘中峰待核"
-    vix_thr = float(brake.get("vix_brake_threshold", 30.0))
-    vix_caution = (vix_high is not None and vix_high >= vix_thr) or vix_close >= 24
-    vix_chip = ("chip-danger", "已触红线") if vix_close >= vix_thr else (
-        ("chip-warn", "逼近警戒") if vix_caution else ("chip-ok", "安全区间")
-    )
+    vix_thr = _safe_float(brake.get("vix_brake_threshold"))
+    if vix_thr is None:
+        vix_thr = 30.0
+    if vix_close is None:
+        vix_chip = ("chip-warn", "待核")
+    else:
+        vix_caution = (vix_high is not None and vix_high >= vix_thr) or vix_close >= 24
+        vix_chip = ("chip-danger", "已触红线") if vix_close >= vix_thr else (
+            ("chip-warn", "逼近警戒") if vix_caution else ("chip-ok", "安全区间")
+        )
+    vix_close_val = _fmt_num(vix_close, ".2f")
 
-    usdjpy = float(brake.get("usdjpy_level", rates.get("usd_jpy", 0)))
-    jpy_drop_thr = abs(float(brake.get("usdjpy_3d_drop_brake_pct", -3.0)))
-    jpy_chip = ("chip-danger", "干预高危") if usdjpy >= 160 else (("chip-warn", "紧盯干预") if usdjpy >= 155 else ("chip-ok", "平稳"))
+    usdjpy = _safe_float(brake.get("usdjpy_level"))
+    if usdjpy is None:
+        usdjpy = _safe_float(rates.get("usd_jpy"))
+    jpy_drop_thr_raw = _safe_float(brake.get("usdjpy_3d_drop_brake_pct"))
+    jpy_drop_thr = abs(jpy_drop_thr_raw) if jpy_drop_thr_raw is not None else 3.0
+    if usdjpy is None:
+        jpy_chip = ("chip-warn", "待核")
+    else:
+        jpy_chip = ("chip-danger", "干预高危") if usdjpy >= 160 else (
+            ("chip-warn", "紧盯干预") if usdjpy >= 155 else ("chip-ok", "平稳")
+        )
+    usdjpy_val = _fmt_num(usdjpy, ".2f")
 
-    us10y = float(rates.get("us10y_pct", us_m.get("us10y_pct", 0)))
-    us10y_thr = float(brake.get("us10y_brake_pct", 5.25))
-    us10y_chip = ("chip-danger", "触及熔断") if us10y >= us10y_thr else (("chip-warn", "高息承压") if us10y >= 4.7 else ("chip-ok", "温和"))
+    us10y = _safe_float(rates.get("us10y_pct"))
+    if us10y is None:
+        us10y = _safe_float(us_m.get("us10y_pct"))
+    us10y_thr = _safe_float(brake.get("us10y_brake_pct"))
+    if us10y_thr is None:
+        us10y_thr = 5.25
+    if us10y is None:
+        us10y_chip = ("chip-warn", "待核")
+    else:
+        us10y_chip = ("chip-danger", "触及熔断") if us10y >= us10y_thr else (
+            ("chip-warn", "高息承压") if us10y >= 4.7 else ("chip-ok", "温和")
+        )
+    us10y_val = _fmt_num(us10y, ".3f", suffix="%")
 
-    hkma_bal = float(rates.get("hkma_agg_bal_hkd_100m", 540.78))
-    hkma_thr = float(brake.get("hkma_agg_bal_brake_100m", 400.0))
-    hkma_chip = ("chip-danger", "触及底线") if hkma_bal <= hkma_thr else (("chip-warn", "薄缓冲警戒") if hkma_bal < 650 else ("chip-ok", "缓冲充裕"))
+    hkma_bal = _safe_float(rates.get("hkma_agg_bal_hkd_100m"))
+    hkma_thr = _safe_float(brake.get("hkma_agg_bal_brake_100m"))
+    if hkma_thr is None:
+        hkma_thr = 400.0
+    if hkma_bal is None:
+        hkma_chip = ("chip-warn", "待核")
+    else:
+        hkma_chip = ("chip-danger", "触及底线") if hkma_bal <= hkma_thr else (
+            ("chip-warn", "薄缓冲警戒") if hkma_bal < 650 else ("chip-ok", "缓冲充裕")
+        )
+    hkma_short_val = _fmt_num(hkma_bal, ".1f", suffix="亿")
+    hkma_full_val = _fmt_num(hkma_bal, ".2f", suffix=" 亿")
 
     all_chips = [vix_chip, jpy_chip, us10y_chip, hkma_chip]
     n_danger = sum(1 for cls_c, _ in all_chips if cls_c == "chip-danger")
@@ -1452,38 +1575,64 @@ def build_cockpit_page(
 
     # Three-Market ERP Horizontal Visual Bar (0% to 10% scale, WCAG AA semantic classes)
     erp_rows_data = [
-        ("🇭🇰 港股恒指（人民币锚前瞻 ERP）", float(erp.get("hsi_erp_cny_fwd_pct", 8.73)), f'静态 {float(erp.get("hsi_erp_cny_ttm_pct", 8.13)):+.2f}%', "erp-hk", "erp-fill-hk"),
-        ("🇨🇳 A 股沪深300（前瞻 ERP）", float(erp.get("csi300_erp_fwd_pct", 6.42)), f'静态 {float(erp.get("csi300_erp_ttm_pct", 5.85)):+.2f}%', "erp-a", "erp-fill-a"),
-        ("🇭🇰 港股恒指（美元锚前瞻 ERP）", float(erp.get("hsi_erp_usd_fwd_pct", 5.41)), f'静态 {float(erp.get("hsi_erp_usd_ttm_pct", 4.81)):+.2f}%', "erp-hk", "erp-fill-hk-usd"),
-        ("🇺🇸 美股标普500（前瞻 ERP）", float(erp.get("sp500_erp_fwd_pct", 0.88)), f'静态 {float(erp.get("sp500_erp_ttm_pct", -0.79)):+.2f}%', "erp-us", "erp-fill-us"),
+        ("🇭🇰 港股恒指（人民币锚前瞻 ERP）", _safe_float(erp.get("hsi_erp_cny_fwd_pct")), _safe_float(erp.get("hsi_erp_cny_ttm_pct")), "erp-hk", "erp-fill-hk"),
+        ("🇨🇳 A 股沪深300（前瞻 ERP）", _safe_float(erp.get("csi300_erp_fwd_pct")), _safe_float(erp.get("csi300_erp_ttm_pct")), "erp-a", "erp-fill-a"),
+        ("🇭🇰 港股恒指（美元锚前瞻 ERP）", _safe_float(erp.get("hsi_erp_usd_fwd_pct")), _safe_float(erp.get("hsi_erp_usd_ttm_pct")), "erp-hk", "erp-fill-hk-usd"),
+        ("🇺🇸 美股标普500（前瞻 ERP）", _safe_float(erp.get("sp500_erp_fwd_pct")), _safe_float(erp.get("sp500_erp_ttm_pct")), "erp-us", "erp-fill-us"),
     ]
     erp_bars_html = ""
-    for lbl, val, sub_lbl, txt_cls, fill_cls in erp_rows_data:
-        width_pct = max(4.0, min(100.0, (val / 10.0) * 100.0))
+    for lbl, val, ttm_val, txt_cls, fill_cls in erp_rows_data:
+        sub_lbl = f"静态 {ttm_val:+.2f}%" if ttm_val is not None else "静态 待核"
+        if val is not None:
+            width_pct = max(4.0, min(100.0, (val / 10.0) * 100.0))
+            val_disp = f"{val:+.2f}%"
+        else:
+            width_pct = 0.0
+            val_disp = "待核"
         erp_bars_html += (
             f'<div class="erp-row">'
             f'<div class="erp-head"><span class="erp-name">{lbl}</span>'
-            f'<span class="erp-num {txt_cls}">{val:+.2f}% <span class="erp-sub">({sub_lbl})</span></span></div>'
+            f'<span class="erp-num {txt_cls}">{val_disp} <span class="erp-sub">({sub_lbl})</span></span></div>'
             f'<div class="erp-track"><div class="erp-fill {fill_cls}" style="width:{width_pct:.1f}%;"></div></div>'
             f"</div>"
         )
 
-    # Household Composite Allocation
-    eq_pct = int(hcw.get("equity_total_pct", 32))
-    cb_pct = int(hcw.get("convertible_bond_pct", 4))
-    bc_pct = int(hcw.get("bonds_and_cash_pct", 55))
-    gd_pct = int(hcw.get("gold_existing_hold_pct", 9))
-    hcw_note = str(hcw.get("formula_note", ""))
+    # Household Composite Allocation (100% null-safe)
+    eq_pct_f = _safe_float(hcw.get("equity_total_pct"))
+    cb_pct_f = _safe_float(hcw.get("convertible_bond_pct"))
+    bc_pct_f = _safe_float(hcw.get("bonds_and_cash_pct"))
+    gd_pct_f = _safe_float(hcw.get("gold_existing_hold_pct"))
+    hcw_complete = all(x is not None for x in (eq_pct_f, cb_pct_f, bc_pct_f, gd_pct_f))
+    eq_pct = int(round(eq_pct_f)) if eq_pct_f is not None else 0
+    cb_pct = int(round(cb_pct_f)) if cb_pct_f is not None else 0
+    bc_pct = int(round(bc_pct_f)) if bc_pct_f is not None else 0
+    gd_pct = int(round(gd_pct_f)) if gd_pct_f is not None else 0
+    hcw_sum_disp = f"合计 {eq_pct + cb_pct + bc_pct + gd_pct}%" if hcw_complete else "待核"
+    hcw_note = str(hcw.get("formula_note") or "")
 
     # Commodity & FX Mirror Chips (100% dynamic contract / regime / timestamp-matched BTC)
-    brent_usd = float(comm.get("brent_usd", gold_snap.get("brent_settle_usd", 0)))
-    brent_chg = float(comm.get("brent_chg_pct", gold_snap.get("brent_change_pct", 0)))
-    brent_contract = str(comm.get("brent_contract", "")).strip()
+    brent_usd = _safe_float(comm.get("brent_usd"))
+    if brent_usd is None:
+        brent_usd = _safe_float(gold_snap.get("brent_settle_usd"))
+    brent_chg = _safe_float(comm.get("brent_chg_pct"))
+    if brent_chg is None:
+        brent_chg = _safe_float(gold_snap.get("brent_change_pct"))
+    wti_usd = _safe_float(comm.get("wti_usd"))
+    if wti_usd is None:
+        wti_usd = _safe_float(gold_snap.get("wti_settle_usd"))
+    brent_contract = str(comm.get("brent_contract") or "").strip()
     brent_lbl = f"布伦特原油 {brent_contract}" if brent_contract else "布伦特原油"
+    brent_val = _fmt_num(brent_usd, ".2f", prefix="$")
+    wti_val = _fmt_num(wti_usd, ".2f", prefix="$")
 
-    copper_usd = float(comm.get("comex_copper_usd_lb", gold_snap.get("comex_copper_usd_lb", 0)))
-    copper_chg = float(comm.get("comex_copper_chg_pct", gold_snap.get("comex_copper_change_pct", 0)))
-    copper_regime_raw = str(comm.get("copper_regime", "")).lower()
+    copper_usd = _safe_float(comm.get("comex_copper_usd_lb"))
+    if copper_usd is None:
+        copper_usd = _safe_float(gold_snap.get("comex_copper_usd_lb"))
+    copper_chg = _safe_float(comm.get("comex_copper_chg_pct"))
+    if copper_chg is None:
+        copper_chg = _safe_float(gold_snap.get("comex_copper_change_pct"))
+    copper_val = _fmt_num(copper_usd, ".4f", prefix="$", suffix="/磅")
+    copper_regime_raw = str(comm.get("copper_regime") or "").lower()
     if "bear" in copper_regime_raw:
         copper_regime_cn = "步入技术熊市"
     elif "bull" in copper_regime_raw:
@@ -1495,19 +1644,20 @@ def build_cockpit_page(
     else:
         copper_regime_cn = "工业景气风向标"
 
-    if comm.get("btc_usd") is not None and comm.get("btc_chg_pct") is not None:
-        btc_usd = float(comm["btc_usd"])
-        btc_sub_html = f'{_fmt_chg_span(float(comm["btc_chg_pct"]))} · 流动敏感风向标'
-    elif comm.get("btc_usd") is not None and (
-        gold_snap.get("btc_usd") is None
-        or abs(float(comm["btc_usd"]) - float(gold_snap["btc_usd"])) > 1.0
-    ):
-        btc_usd = float(comm["btc_usd"])
+    comm_btc = _positive_quote(comm.get("btc_usd"))
+    comm_btc_chg = _safe_float(comm.get("btc_chg_pct"))
+    gold_btc = _positive_quote(gold_snap.get("btc_usd"))
+    gold_btc_chg = _safe_float(gold_snap.get("btc_change_pct"))
+    if comm_btc is not None and comm_btc_chg is not None:
+        btc_usd = comm_btc
+        btc_sub_html = f"{_fmt_chg_span(comm_btc_chg)} · 流动敏感风向标"
+    elif comm_btc is not None and (gold_btc is None or abs(comm_btc - gold_btc) > 1.0):
+        btc_usd = comm_btc
         btc_sub_html = "股市快照锚 · 流动敏感风向标"
     else:
-        btc_usd = float(gold_snap.get("btc_usd") or comm.get("btc_usd") or 0)
-        btc_chg = float(gold_snap.get("btc_change_pct") or 0)
-        btc_sub_html = f'{_fmt_chg_span(btc_chg)} · 流动敏感风向标'
+        btc_usd = gold_btc if gold_btc is not None else comm_btc
+        btc_sub_html = f"{_fmt_chg_span(gold_btc_chg)} · 流动敏感风向标"
+    btc_val = _fmt_num(btc_usd, ",.0f", prefix="$")
 
     usd_cnh = _positive_quote(rates.get("usd_cnh"))
     usd_cny = _positive_quote(rates.get("usd_cny_1630"))
@@ -1531,8 +1681,7 @@ def build_cockpit_page(
     usd_hkd_value = f"{usd_hkd:.3f}" if usd_hkd is not None else "待核"
     cfets = _positive_quote(rates.get("cfets_cny_fixing"))
     cfets_value = f"{cfets:.4f}" if cfets is not None else "待核"
-    hibor = rates.get("hibor_1m_pct")
-    hibor_value = f"{float(hibor):.3f}%" if hibor is not None else "待核"
+    hibor_value = _fmt_num(rates.get("hibor_1m_pct"), ".3f", suffix="%")
 
     # Latest Daily Feed Grid (4 markets)
     feed_cards_html = ""
@@ -1622,23 +1771,23 @@ def build_cockpit_page(
             <div class="m-card-name">🇨🇳 中国 A 股</div>
             <div class="m-card-sub">七维大盘体检 · {a_pool} 只核心龙头池</div>
           </div>
-          <span class="lamp-pill {a_lamp_cls}"><span class="lamp-dot"></span>{esc(a_lamp_lbl)} · {esc(a_m.get("score", "2.5/6"))}</span>
+          <span class="lamp-pill {a_lamp_cls}"><span class="lamp-dot"></span>{esc(a_lamp_lbl)} · {esc(a_score)}</span>
         </div>
         <div class="m-metrics">
           <div class="m-metric">
             <div class="m-metric-lbl">沪深 300 / 上证指数</div>
-            <div class="m-metric-val">{float(a_m.get("benchmark_csi300", 0)):,.2f}</div>
-            <div class="m-metric-sub">上证 {float(a_m.get("benchmark_sse", 0)):,.2f} · 4年成本线 {int(a_m.get("csi300_200w", 4025)):,}</div>
+            <div class="m-metric-val">{a_csi300_val}</div>
+            <div class="m-metric-sub">上证 {a_sse_val} · 4年成本线 {a_200w_val}</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">股票仓位上限</div>
-            <div class="m-metric-val">≤ {int(a_m.get("equity_cap_pct", 40))}%</div>
+            <div class="m-metric-val">{a_eq_cap_val}</div>
             <div class="m-metric-sub">余下稳守国债 / 转债 / 现金</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">前瞻 / 静态 ERP</div>
-            <div class="m-metric-val">{float(a_m.get("erp_fwd_pct", 6.42)):+.2f}% / {float(a_m.get("erp_ttm_pct", 5.85)):+.2f}%</div>
-            <div class="m-metric-sub">10 年国债 {float(a_m.get("cgb10y_pct", 1.581)):.3f}%</div>
+            <div class="m-metric-val">{a_erp_fwd_val} / {a_erp_ttm_val}</div>
+            <div class="m-metric-sub">10 年国债 {a_cgb10y_val}</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">核心龙头诊断池</div>
@@ -1659,28 +1808,28 @@ def build_cockpit_page(
             <div class="m-card-name">🇭🇰 中国香港股市</div>
             <div class="m-card-sub">联汇双通道体检 · {hk_pool} 只核心龙头池</div>
           </div>
-          <span class="lamp-pill {hk_lamp_cls}"><span class="lamp-dot"></span>{esc(hk_lamp_lbl)} · {esc(hk_m.get("score", "2.0/6"))}</span>
+          <span class="lamp-pill {hk_lamp_cls}"><span class="lamp-dot"></span>{esc(hk_lamp_lbl)} · {esc(hk_score)}</span>
         </div>
         <div class="m-metrics">
           <div class="m-metric">
             <div class="m-metric-lbl">恒生指数 / 恒生科技</div>
-            <div class="m-metric-val">{float(hk_m.get("benchmark_hsi", 0)):,.2f}</div>
-            <div class="m-metric-sub">恒科 {float(hk_m.get("benchmark_hstech", 0)):,.2f} · 200日线 {int(hk_m.get("hsi_200d", 23515)):,}</div>
+            <div class="m-metric-val">{hk_hsi_val}</div>
+            <div class="m-metric-sub">恒科 {hk_hstech_val} · 200日线 {hk_200d_val}</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">离岸 / 港股通上限</div>
-            <div class="m-metric-val">≤ {int(hk_m.get("offshore_equity_cap_pct", 35))}% / ≤ {int(hk_m.get("onshore_connect_cap_pct", 25))}%</div>
-            <div class="m-metric-sub">AH 溢价指数 {float(hk_m.get("hsahp_index", 137.62)):.2f}</div>
+            <div class="m-metric-val">{hk_off_cap_val} / {hk_on_cap_val}</div>
+            <div class="m-metric-sub">AH 溢价指数 {hk_hsahp_val}</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">HIBOR 1M / 总结余</div>
-            <div class="m-metric-val">{hibor_value} / {hkma_bal:.1f}亿</div>
+            <div class="m-metric-val">{hibor_value} / {hkma_short_val}</div>
             <div class="m-metric-sub">美元/港元 {usd_hkd_value}（紧盯 7.85）</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">美元 / 人民币锚前瞻 ERP</div>
-            <div class="m-metric-val">{float(hk_m.get("erp_usd_anchor_fwd_pct", 5.41)):+.2f}% / {float(hk_m.get("erp_cny_anchor_fwd_pct", 8.73)):+.2f}%</div>
-            <div class="m-metric-sub">{hk_pool} 只核心龙头 · 南向年内 {float(hk_m.get("southbound_ytd_hkd_b", 430)):+.0f}B</div>
+            <div class="m-metric-val">{hk_erp_usd_val} / {hk_erp_cny_val}</div>
+            <div class="m-metric-sub">{hk_pool} 只核心龙头 · 南向年内 {hk_sb_ytd_val}</div>
           </div>
         </div>
         <div class="m-verdict"><strong>防踏空升级线：</strong>{esc(hk_m.get("fomo_threshold", ""))}</div>
@@ -1696,23 +1845,23 @@ def build_cockpit_page(
             <div class="m-card-name">🇺🇸 美国股市</div>
             <div class="m-card-sub">政策市五维雷达 · {us_pool} 只全板块龙头</div>
           </div>
-          <span class="lamp-pill {us_lamp_cls}"><span class="lamp-dot"></span>{esc(us_lamp_lbl)} · {esc(us_m.get("score", "1.0/6"))}</span>
+          <span class="lamp-pill {us_lamp_cls}"><span class="lamp-dot"></span>{esc(us_lamp_lbl)} · {esc(us_score)}</span>
         </div>
         <div class="m-metrics">
           <div class="m-metric">
             <div class="m-metric-lbl">标普 500 / 10 年美债</div>
-            <div class="m-metric-val">{us_sp:,.2f}</div>
-            <div class="m-metric-sub">10Y 美债 {us10y:.3f}% · 200日线 {int(us_m.get("sp500_200d", 7348)):,}</div>
+            <div class="m-metric-val">{us_sp_val}</div>
+            <div class="m-metric-sub">10Y 美债 {us10y_val} · 200日线 {us_200d_val}</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">100% 闭环资产配置</div>
             <div class="m-metric-val" style="font-size:13.5px;">{esc(us_alloc_str)}</div>
-            <div class="m-metric-sub">科技新增严控 {int(us_m.get("tech_new_cap_pct", 0))}%</div>
+            <div class="m-metric-sub">科技新增严控 {us_tech_cap_val}</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">前瞻 / 静态 ERP</div>
-            <div class="m-metric-val">{float(us_m.get("erp_fwd_pct", 0.88)):+.2f}% / {float(us_m.get("erp_ttm_pct", -0.79)):+.2f}%</div>
-            <div class="m-metric-sub">前瞻 PE {float(us_m.get("pe_fwd", 17.3)):.1f}x（静态 {float(us_m.get("pe_ttm", 24.3)):.1f}x）</div>
+            <div class="m-metric-val">{us_erp_fwd_val} / {us_erp_ttm_val}</div>
+            <div class="m-metric-sub">前瞻 PE {us_pe_fwd_val}（静态 {us_pe_ttm_val}）</div>
           </div>
           <div class="m-metric">
             <div class="m-metric-lbl">核心龙头诊断池</div>
@@ -1745,7 +1894,7 @@ def build_cockpit_page(
               <span class="breaker-name">VIX 恐慌指数</span>
               <span class="status-chip {vix_chip[0]}">{vix_chip[1]}</span>
             </div>
-            <div class="breaker-val">{vix_close:.2f}</div>
+            <div class="breaker-val">{vix_close_val}</div>
             <div class="breaker-thr">{vix_high_label} ｜ 熔断线：连2日 &gt; {vix_thr:.0f}</div>
           </div>
           <div class="breaker-item">
@@ -1753,7 +1902,7 @@ def build_cockpit_page(
               <span class="breaker-name">美元 / 日元 USD/JPY</span>
               <span class="status-chip {jpy_chip[0]}">{jpy_chip[1]}</span>
             </div>
-            <div class="breaker-val">{usdjpy:.2f}</div>
+            <div class="breaker-val">{usdjpy_val}</div>
             <div class="breaker-thr">熔断线：3 日急跌 &gt; {jpy_drop_thr:g}%（日元急升防平仓）</div>
           </div>
           <div class="breaker-item">
@@ -1761,7 +1910,7 @@ def build_cockpit_page(
               <span class="breaker-name">10 年期美债 US10Y</span>
               <span class="status-chip {us10y_chip[0]}">{us10y_chip[1]}</span>
             </div>
-            <div class="breaker-val">{us10y:.3f}%</div>
+            <div class="breaker-val">{us10y_val}</div>
             <div class="breaker-thr">熔断线：突破 {us10y_thr:.2f}%</div>
           </div>
           <div class="breaker-item">
@@ -1769,7 +1918,7 @@ def build_cockpit_page(
               <span class="breaker-name">香港金管局总结余</span>
               <span class="status-chip {hkma_chip[0]}">{hkma_chip[1]}</span>
             </div>
-            <div class="breaker-val">{hkma_bal:.2f} 亿</div>
+            <div class="breaker-val">{hkma_full_val}</div>
             <div class="breaker-thr">熔断线：跌破 {hkma_thr:.0f} 亿港元</div>
           </div>
         </div>
@@ -1788,7 +1937,7 @@ def build_cockpit_page(
       <div class="panel-card">
         <div class="panel-title">
           <span>🏠 家庭跨市场综合资产配置闭环</span>
-          <span class="sec-sub">合计 {eq_pct + cb_pct + bc_pct + gd_pct}%</span>
+          <span class="sec-sub">{hcw_sum_disp}</span>
         </div>
         <div class="alloc-bar" role="img" aria-label="家庭综合配置比例条">
           <div class="alloc-seg" style="width:{eq_pct}%;background:#1d4ed8;" title="股票底座 {eq_pct}%">{eq_pct}% 股</div>
@@ -1813,22 +1962,22 @@ def build_cockpit_page(
         <div class="chip-grid">
           <div class="mirror-chip">
             <div class="mirror-lbl">纽约现货金</div>
-            <div class="mirror-val">{f"${gold_spot:,.2f}" if gold_spot > 0 else "待刷新"}</div>
+            <div class="mirror-val">{_fmt_num(gold_spot, ",.2f", prefix="$")}</div>
             <div class="mirror-sub">{_fmt_chg_span(gold_chg)} · {esc(gold_mirror_badge)}</div>
           </div>
           <div class="mirror-chip">
             <div class="mirror-lbl">{esc(brent_lbl)}</div>
-            <div class="mirror-val">${brent_usd:.2f}</div>
-            <div class="mirror-sub">{_fmt_chg_span(brent_chg)} · WTI ${float(comm.get("wti_usd", 82.05)):.2f}</div>
+            <div class="mirror-val">{brent_val}</div>
+            <div class="mirror-sub">{_fmt_chg_span(brent_chg)} · WTI {wti_val}</div>
           </div>
           <div class="mirror-chip">
             <div class="mirror-lbl">纽约期铜 COMEX</div>
-            <div class="mirror-val">${copper_usd:.4f}/磅</div>
+            <div class="mirror-val">{copper_val}</div>
             <div class="mirror-sub">{_fmt_chg_span(copper_chg)} · {esc(copper_regime_cn)}</div>
           </div>
           <div class="mirror-chip">
             <div class="mirror-lbl">比特币 BTC</div>
-            <div class="mirror-val">${btc_usd:,.0f}</div>
+            <div class="mirror-val">{btc_val}</div>
             <div class="mirror-sub">{btc_sub_html}</div>
           </div>
           <div class="mirror-chip">

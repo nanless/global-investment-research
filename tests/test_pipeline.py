@@ -1,3 +1,6 @@
+from contextlib import redirect_stderr
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 import json
 from pathlib import Path
 import subprocess
@@ -233,6 +236,119 @@ class EditionRunTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Public downloads differ"):
                 edition_run.verify_downloads("example/project", assets)
 
+    def test_stale_unpushed_lock_auto_reaped_but_pushed_preserved(self):
+        old_edition = "2026-11-26_0730"
+        token = edition_run.begin(self.runs, old_edition)
+        # 1. Active (<2h) lock is NOT reaped
+        self.assertIsNone(edition_run.reap_stale_unpushed_run(self.runs, self.edition))
+        self.assertEqual(edition_run.status(self.runs)[0]["status"], "running")
+
+        # Backdate updated timestamp > 2h
+        stale_ts = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(timespec="seconds")
+        with self.runs:
+            self.runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (stale_ts, token))
+
+        # 2. Same-edition lock is NOT reaped
+        self.assertIsNone(edition_run.reap_stale_unpushed_run(self.runs, old_edition))
+        self.assertEqual(edition_run.status(self.runs)[0]["status"], "running")
+
+        # 3. Lock with a push-intent file is NEVER reaped
+        intent = edition_run.push_intent_path(edition_run.git_directory(), token)
+        intent.write_text(json.dumps({"edition": old_edition, "sha": "a" * 40, "repository": "example/project"}))
+        self.assertIsNone(edition_run.reap_stale_unpushed_run(self.runs, self.edition))
+        self.assertEqual(edition_run.status(self.runs)[0]["status"], "running")
+        intent.unlink()
+
+        # 4. Inactive (>2h) unpushed older-edition lock IS auto-reaped
+        with redirect_stderr(StringIO()) as notice:
+            reaped = edition_run.reap_stale_unpushed_run(self.runs, self.edition)
+        self.assertEqual(reaped, old_edition)
+        self.assertIn("Auto-reaped stale unpushed run", notice.getvalue())
+        self.assertEqual(edition_run.status(self.runs)[0]["status"], "failed")
+
+        # 5. Lock with a publications row is NEVER reaped even when >2h stale
+        pub_token = self.reach_publish()
+        sha = self.committed_edition()
+        edition_run.record_push(pub_token, sha=sha, repository="example/project")
+        with self.runs:
+            self.runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (stale_ts, pub_token))
+        self.assertIsNone(edition_run.reap_stale_unpushed_run(self.runs, "2026-11-27_0730"))
+        self.assertEqual(edition_run.status(self.runs)[0]["status"], "running")
+
+    def test_disclosed_caveat_and_gold_ledger_monthly_rollover(self):
+        token = self.reach_equity()
+        gold_metrics = "gold/daily/rsi_metrics.json"
+        equity_metrics = "equity/state/rsi_metrics.json"
+        self.write_review(gold_metrics, {
+            "run_id": self.edition,
+            "review_closure": {"reviewer_completed": True, "findings": []},
+        })
+        empty_caveat = {
+            "description": "Holiday thin liquidity",
+            "status": "disclosed_caveat",
+            "evidence": {"disposition": "   "},
+        }
+        self.write_review(equity_metrics, {
+            "run_id": self.edition,
+            "review_closure": {"reviewer_completed": True, "findings": [empty_caveat]},
+        })
+        with self.assertRaisesRegex(ValueError, "disclosed_caveat"), self.runs:
+            edition_run.advance(self.runs, token, "publish")
+
+        valid_caveat = {
+            "description": "Holiday thin liquidity",
+            "status": "disclosed_caveat",
+            "evidence": {"disposition": "Explicitly disclosed in report cover and risk banner"},
+        }
+        self.write_review(equity_metrics, {
+            "run_id": self.edition,
+            "review_closure": {"reviewer_completed": True, "findings": [valid_caveat]},
+        })
+        with self.runs:
+            self.assertEqual(edition_run.advance(self.runs, token, "publish"), "publish")
+
+        audit = self.root / "gold/daily/AUDIT_LOG.md"
+        prior_text = "## 2026-11-25 18:00\n\n- Entry 2\n\n## 2026-11-24 18:00\n\n- Entry 1\n"
+        audit.write_text(prior_text, encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "November audit entries")
+        base = self.git("rev-parse", "HEAD")
+
+        archive_file = self.root / "gold/daily/archive/AUDIT_LOG_2026_11.md"
+        archive_file.parent.mkdir(parents=True, exist_ok=True)
+        archive_file.write_text(prior_text, encoding="utf-8")
+        audit.write_text("## 2026-12-01 07:30\n\n- December opening entry\n", encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Monthly rollover into archive")
+        rolled = self.git("rev-parse", "HEAD")
+        edition_run._check_gold_ledger_history(base, rolled)
+
+        archive_file.write_text("## 2026-11-25 18:00\n\n- Entry 2\n", encoding="utf-8")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Drop prior archived line")
+        dropped = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(ValueError, "AUDIT_LOG.*preserve"):
+            edition_run._check_gold_ledger_history(base, dropped)
+
+    def test_verify_pages_tolerates_transient_api_error_and_checks_all_runs(self):
+        sha = "b" * 40
+        failed_run = {
+            "databaseId": 10, "headSha": sha, "headBranch": "main",
+            "status": "completed", "url": "https://example.invalid/runs/10",
+        }
+        ok_run = {
+            "databaseId": 11, "headSha": sha, "headBranch": "main",
+            "status": "completed", "url": "https://example.invalid/runs/11",
+        }
+        failed_detail = {**failed_run, "jobs": [{"name": edition_run.DEPLOY_JOB, "conclusion": "failure"}]}
+        ok_detail = {**ok_run, "jobs": [{"name": edition_run.DEPLOY_JOB, "conclusion": "success"}]}
+        with patch.object(
+            edition_run, "_gh_json",
+            side_effect=[subprocess.CalledProcessError(1, "gh"), [failed_run, ok_run], failed_detail, ok_detail],
+        ), patch.object(edition_run.time, "sleep"):
+            url = edition_run.verify_pages(sha, "example/project", wait=10)
+        self.assertEqual(url, ok_run["url"])
+
 
 class OperationalRegressionTest(unittest.TestCase):
     def test_cockpit_labels_verified_fx_and_preserves_missing_quotes(self):
@@ -289,6 +405,142 @@ class OperationalRegressionTest(unittest.TestCase):
                 errors = []
                 lint_site._check_gold_tier0_mutex(doc, errors)
                 self.assertEqual(bool(errors), expected, errors)
+
+    def test_cockpit_handles_all_none_metrics_without_type_error(self):
+        gold = {
+            "as_of_short": "2026-11-26 18:00",
+            "as_of_bjt": "2026年11月26日 18:00",
+            "tier_code": "Tier 0",
+            "new_buy_allowed": False,
+            "tier1_passed": None,
+            "tier1_total": None,
+            "spot_gold_ny_close_usd": None,
+            "spot_gold_ny_change_pct": None,
+            "spot_gold_asia_open_usd": None,
+            "sge_autd_night_rmb": None,
+            "sge_autd_day_rmb": None,
+            "dfii10_live_pct": None,
+            "rmb_channels": {"bank_bar_rmb": None},
+            "etf_cn": {"518880": {"close": None}},
+            "vix_close": None,
+            "brent_settle_usd": None,
+            "brent_change_pct": None,
+            "wti_settle_usd": None,
+            "comex_copper_usd_lb": None,
+            "comex_copper_change_pct": None,
+            "btc_usd": None,
+            "btc_change_pct": None,
+            "usd_cny_1630": None,
+        }
+        equity = {
+            "as_of_cst": "2026-11-26T18:00:00+08:00",
+            "markets": {
+                "a_share": {
+                    "stock_pool_count": None,
+                    "benchmark_csi300": None,
+                    "benchmark_sse": None,
+                    "csi300_200w": None,
+                    "equity_cap_pct": None,
+                    "erp_fwd_pct": None,
+                    "erp_ttm_pct": None,
+                    "cgb10y_pct": None,
+                    "pe_ttm": None,
+                    "pboc_total_net_100m": None,
+                    "margin_balance_100m": None,
+                },
+                "hk_stock": {
+                    "stock_pool_count": None,
+                    "benchmark_hsi": None,
+                    "benchmark_hstech": None,
+                    "hsi_200d": None,
+                    "offshore_equity_cap_pct": None,
+                    "onshore_connect_cap_pct": None,
+                    "hsahp_index": None,
+                    "erp_usd_anchor_fwd_pct": None,
+                    "erp_cny_anchor_fwd_pct": None,
+                    "southbound_ytd_hkd_b": None,
+                },
+                "us_stock": {
+                    "stock_pool_count": None,
+                    "equity_cap_pct": None,
+                    "cash_tbill_pct": None,
+                    "gold_hold_pct": None,
+                    "benchmark_sp500": None,
+                    "sp500_high": None,
+                    "tech_new_cap_pct": None,
+                    "sp500_200d": None,
+                    "erp_fwd_pct": None,
+                    "erp_ttm_pct": None,
+                    "pe_fwd": None,
+                    "pe_ttm": None,
+                    "us10y_pct": None,
+                },
+            },
+            "cross_market_linkages": {
+                "rates_fx_chain": {
+                    "us10y_pct": None,
+                    "hkma_agg_bal_hkd_100m": None,
+                    "usd_jpy": None,
+                    "usd_cnh": None,
+                    "usd_cny_1630": None,
+                    "usd_hkd": None,
+                    "cfets_cny_fixing": None,
+                    "hibor_1m_pct": None,
+                },
+                "commodity_mirror": {
+                    "brent_usd": None,
+                    "brent_chg_pct": None,
+                    "wti_usd": None,
+                    "comex_copper_usd_lb": None,
+                    "comex_copper_chg_pct": None,
+                    "btc_usd": None,
+                    "btc_chg_pct": None,
+                },
+                "erp_ruler": {
+                    "hsi_erp_cny_fwd_pct": None,
+                    "hsi_erp_cny_ttm_pct": None,
+                    "csi300_erp_fwd_pct": None,
+                    "csi300_erp_ttm_pct": None,
+                    "hsi_erp_usd_fwd_pct": None,
+                    "hsi_erp_usd_ttm_pct": None,
+                    "sp500_erp_fwd_pct": None,
+                    "sp500_erp_ttm_pct": None,
+                },
+                "household_composite_weights": {
+                    "equity_total_pct": None,
+                    "convertible_bond_pct": None,
+                    "bonds_and_cash_pct": None,
+                    "gold_existing_hold_pct": None,
+                },
+                "crisis_correlation_brake": {
+                    "vix_close": None,
+                    "vix_intraday_high": None,
+                    "vix_brake_threshold": None,
+                    "usdjpy_level": None,
+                    "usdjpy_3d_drop_brake_pct": None,
+                    "us10y_brake_pct": None,
+                    "hkma_agg_bal_brake_100m": None,
+                },
+            },
+        }
+        page = build_site.build_cockpit_page(gold, equity, {}, {})
+        self.assertIn("待核", page)
+        for stale in ("4,025", "23,515", "7,348", "540.78"):
+            self.assertNotIn(stale, page)
+
+    def test_gold_tier0_mutex_reports_multiple_violations_on_same_page(self):
+        text = "第一条违规建议：立即买入黄金。\n第二条违规建议：趁急跌补齐黄金。"
+        doc = lint_site.ParsedHtml(
+            rel_path="daily/a-share-latest.html",
+            abs_path=Path("daily/a-share-latest.html"),
+            raw_text=text,
+            visible_text=text,
+        )
+        errors = []
+        lint_site._check_gold_tier0_mutex(doc, errors)
+        self.assertEqual(len(errors), 2, errors)
+        self.assertTrue(any("立即买入黄金" in err for err in errors), errors)
+        self.assertTrue(any("趁急跌补齐黄金" in err for err in errors), errors)
 
     def test_shared_prompt_and_missing_project(self):
         root = Path(install_sidecars.__file__).resolve().parent.parent

@@ -33,11 +33,11 @@ from math import fsum
 from pathlib import Path
 
 from chart_input import normalize_chart
-from docx_embed import build_native_docx, render_chart_to_png
+from docx_embed import build_native_docx, render_chart_to_png, resolve_chrome_bin
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
-CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME_BIN = resolve_chrome_bin()
 
 # Strip bitmap emojis, variation selectors, ZWJ, keycap combiner & XML 1.0 control chars while keeping vector ✓/✕
 EMOJI_STRIP_RE = re.compile(
@@ -125,7 +125,11 @@ def md_inline(text: str) -> str:
         link_tokens.append(f'<a href="{url}">{label}</a>')
         return f"___LINK_{len(link_tokens)-1}___"
 
-    s = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+|file://[^)\s]+)\)", save_link, s)
+    s = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)\s]+|(?!file:|javascript:|data:)(?:\.\.?/|/)?[^)\s:]+\.(?:md|html|pdf|docx)(?:#[^)\s]+)?|#[A-Za-z0-9_-]+)\)",
+        save_link,
+        s,
+    )
     s = _format_inline_styles(s)
 
     for idx, inner in enumerate(paired_strong):
@@ -145,9 +149,14 @@ def md_inline(text: str) -> str:
 
 _NW_UNITS = r"(?:元/克|元/千克|美元/盎司|美元|港元|欧元|基点|吨|盎司|万元|亿元|元(?![/旦]))"
 _ATOMIC_NW_RE = re.compile(
-    rf"(?:(?<![\d.,+-])[+-]?\d{{1,3}}(?:,\d{{3}})*(?:\.\d+)?%?[–~]\d{{1,3}}(?:,\d{{3}})*(?:\.\d+)?%?(?![\d.,])(?:\s*{_NW_UNITS})?"
+    rf"(?:(?<![\d.,+-])[+-]?\d{{1,3}}(?:,\d{{3}})*(?:\.\d+)?%?\s*[–~]\s*\d{{1,3}}(?:,\d{{3}})*(?:\.\d+)?%?(?![\d.,])(?:\s*{_NW_UNITS})?"
     rf"|(?<![\d.,+-])[+-]?\d{{1,3}}(?:,\d{{3}})*(?:\.\d+)?\s*{_NW_UNITS}"
     r"|元/克|元/千克|美元/盎司|美元|港元|基点|全年|前三季)"
+)
+_PROTECT_SKIP_RE = re.compile(
+    r"(<a\b[^>]*>.*?</a>|<code\b[^>]*>.*?</code>|<pre\b[^>]*>.*?</pre>|<svg\b[^>]*>.*?</svg>"
+    r'|<span\b[^>]*\bclass="nw"[^>]*>.*?</span>|<[^>]+>)',
+    flags=re.DOTALL | re.IGNORECASE,
 )
 
 _STATUS_PILLS = [
@@ -183,8 +192,8 @@ def _vis_len(md_cell: str) -> float:
 
 
 def _protect_atomic_units(cell_html: str) -> str:
-    """Wrap atomic currency/range strings in <span class="nw"> outside of HTML tags."""
-    parts = re.split(r"(<[^>]+>)", cell_html)
+    """Wrap atomic currency/range strings in <span class="nw"> outside HTML tags, <a>, <code>, <pre>, <svg>."""
+    parts = _PROTECT_SKIP_RE.split(cell_html)
     for i in range(0, len(parts), 2):
         if parts[i]:
             parts[i] = _ATOMIC_NW_RE.sub(r'<span class="nw">\g<0></span>', parts[i])
@@ -259,7 +268,7 @@ def render_md_table(table_lines: list[str], pdf_mode: bool = True) -> str:
             nowrap_cols.add(c)
             used_w += cost
 
-    protect_col0 = (ncols <= 4 and 0 not in nowrap_cols and any(b_maxs[c] >= 24.0 for c in range(1, ncols)))
+    protect_col0 = (ncols <= 5 and 0 not in nowrap_cols and any(b_maxs[c] >= 24.0 for c in range(1, ncols)))
 
     col_classes: list[str] = []
     for c in range(ncols):
@@ -306,12 +315,12 @@ def render_verdict_card(cfg: dict) -> str:
     }
     brd, bg, txt, default_badge = palette.get(level, palette["L0"])
     badge = replace_dot_emojis(esc(cfg.get("badge", default_badge)), is_alert_badge=(level == "L1"))
-    headline = md_inline(cfg.get("headline", ""))
+    headline = _protect_atomic_units(md_inline(cfg.get("headline", "")))
     traffic = replace_dot_emojis(md_inline(cfg.get("traffic_light", "")), is_alert_badge=False)
     bullets = cfg.get("bullets", [])
-    risk_line = md_inline(cfg.get("risk_line", ""))
+    risk_line = _protect_atomic_units(md_inline(cfg.get("risk_line", "")))
 
-    bul_html = "".join(f"<li>{md_inline(b)}</li>" for b in bullets)
+    bul_html = "".join(f"<li>{_protect_atomic_units(md_inline(b))}</li>" for b in bullets)
     risk_html = f'<div class="verdict-risk"><strong>底线风险提示：</strong>{risk_line}</div>' if risk_line else ""
     return f'''
     <div class="verdict-card" style="border-left:5px solid {brd};background:{bg};">
@@ -341,20 +350,16 @@ def render_signal_noise(cfg: dict) -> str:
     return f'''
     <div class="sn-box">
       <div class="sn-title">{title}</div>
-      <table class="sn-table">
-        <thead>
-          <tr>
-            <th style="width:46%;background:#0f3d2e;color:#ffffff;">✓ 今天真正影响决策的信号（{len(signals)} 件）</th>
-            <th style="width:54%;background:#475569;color:#ffffff;">✕ 今天刷屏、但普通人不用管的噪音（{len(noises)} 件）</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style="background:#f0fdf4;"><ul class="sn-ul">{sig_items}</ul></td>
-            <td style="background:#f8fafc;"><ul class="sn-ul">{noi_items}</ul></td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="sn-grid">
+        <div class="sn-col sn-col-sig">
+          <div class="sn-col-head">✓ 今天真正影响决策的信号（{len(signals)} 件）</div>
+          <div class="sn-col-body"><ul class="sn-ul">{sig_items}</ul></div>
+        </div>
+        <div class="sn-col sn-col-noi">
+          <div class="sn-col-head">✕ 今天刷屏、但普通人不用管的噪音（{len(noises)} 件）</div>
+          <div class="sn-col-body"><ul class="sn-ul">{noi_items}</ul></div>
+        </div>
+      </div>
     </div>
     '''
 
@@ -374,8 +379,8 @@ def render_persona_cards(cfg: dict) -> str:
         brd, bg = accent_map.get(grp, ("#475569", "#f8fafc"))
         heading = md_inline(c.get("heading", ""))
         sub = md_inline(c.get("subtitle", ""))
-        actions = "".join(f"<li>{md_inline(a)}</li>" for a in c.get("actions", []))
-        avoid = md_inline(c.get("avoid", ""))
+        actions = "".join(f"<li>{_protect_atomic_units(md_inline(a))}</li>" for a in c.get("actions", []))
+        avoid = _protect_atomic_units(md_inline(c.get("avoid", "")))
         avoid_html = f'<div class="persona-avoid"><strong>切忌踩坑：</strong>{avoid}</div>' if avoid else ""
         badge_html = f'<span class="grp-badge" style="background:{brd};">{grp}</span>'
         sub_html = f'<div class="persona-sub">{sub}</div>' if sub else ""
@@ -454,6 +459,37 @@ def _fmt_axis_val(val: float, span: float, prefix: str = "", suffix: str = "") -
     return f"{prefix}{num_s}{suffix}"
 
 
+def _svg_label_pill(
+    tx: float, ty: float, txt: str, font_size: float, anchor: str = "middle",
+) -> tuple[str, tuple[float, float, float, float]]:
+    """Build a crisp semi-opaque white rounded pill rect behind an SVG label (no stroke-halo OCR doubling)."""
+    plain = EMOJI_STRIP_RE.sub("", str(txt)).strip()
+    text_w = round(max(_vis_len(plain) * font_size * 1.08, font_size * 1.6), 1)
+    pad_x = 4.0
+    w = round(text_w + 2.0 * pad_x, 1)
+    h = round(font_size + 4.0, 1)
+    if anchor == "start":
+        rx = round(tx - pad_x, 1)
+    elif anchor == "end":
+        rx = round(tx - text_w - pad_x, 1)
+    else:
+        rx = round(tx - w / 2.0, 1)
+    ry = round(ty - font_size * 0.88 - 1.5, 1)
+    rect = f'<rect x="{rx}" y="{ry}" width="{w}" height="{h}" fill="#ffffff" fill-opacity="0.88" rx="3"/>'
+    return rect, (rx, ry, round(rx + w, 1), round(ry + h, 1))
+
+
+def _boxes_overlap_area(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+    pad_x: float = 2.0,
+    pad_y: float = 1.5,
+) -> float:
+    ox = min(a[2] + pad_x, b[2]) - max(a[0] - pad_x, b[0])
+    oy = min(a[3] + pad_y, b[3]) - max(a[1] - pad_y, b[1])
+    return ox * oy if (ox > 0.0 and oy > 0.0) else 0.0
+
+
 def render_chart_timeline(cfg: dict) -> str:
     cfg = normalize_chart("DAILY_CHART_TIMELINE", cfg)
     title = esc(cfg.get("title", "金价走势核心结论"))
@@ -477,10 +513,10 @@ def render_chart_timeline(cfg: dict) -> str:
     unit_prefix = str(cfg.get("unit_prefix", "$"))
     unit_suffix = str(cfg.get("unit_suffix", ""))
 
-    vb_w, vb_h = 640, 266
+    vb_w, vb_h = 640, 284
 
     def y_w(val: float) -> float:
-        return round(198.0 - ((val - y_min) / span) * 152.0, 1)
+        return round(210.0 - ((val - y_min) / span) * 162.0, 1)
 
     n = len(pts)
     if n == 1:
@@ -498,7 +534,7 @@ def render_chart_timeline(cfg: dict) -> str:
         x1 = min(626.0, xs[i1] + 22.0)
         cx = round((x0 + x1) / 2.0, 1)
         zone_svg += (
-            f'<rect x="{x0}" y="24" width="{round(max(x1-x0, 4.0),1)}" height="178" '
+            f'<rect x="{x0}" y="24" width="{round(max(x1-x0, 4.0),1)}" height="190" '
             f'fill="{esc(z.get("fill", "#f1f5f9"))}" opacity="0.72" rx="4"/>'
             f'<text x="{cx}" y="38" text-anchor="middle" font-size="10.6" '
             f'fill="{esc(z.get("text_color", "#334155"))}" font-weight="700">{svg_esc(z.get("label", ""))}</text>'
@@ -511,38 +547,97 @@ def render_chart_timeline(cfg: dict) -> str:
         tick_str = _fmt_axis_val(tv, span, unit_prefix, unit_suffix)
         grid_svg += f'<text x="50" y="{y+4}" text-anchor="end" font-size="10.6" fill="#64748b">{svg_esc(tick_str)}</text>'
 
-    ref_svg = ""
+    placed_boxes: list[tuple[float, float, float, float]] = []
+    ref_lines_svg = ""
+    ref_labels_svg = ""
     for rl in ref_lines:
         ry = y_w(rl["val"])
         col = esc(rl.get("color", "#b45309"))
         anchor = esc(rl.get("align", "end"))
-        rx = rl.get("x", 622 if anchor == "end" else 62)
-        dy = rl.get("dy", -6)
-        ref_svg += f'<line x1="56" y1="{ry}" x2="626" y2="{ry}" stroke="{col}" stroke-width="1.5" stroke-dasharray="6,4"/>'
-        ref_svg += (
-            f'<text x="{rx}" y="{round(max(32.0, min(204.0, ry+dy)),1)}" text-anchor="{anchor}" '
-            f'font-size="10.6" fill="{col}" font-weight="700" {HALO}>{svg_esc(rl.get("label", ""))}</text>'
-        )
+        rx = float(rl.get("x", 622 if anchor == "end" else 62))
+        dy = float(rl.get("dy", -6))
+        ref_lines_svg += f'<line x1="56" y1="{ry}" x2="626" y2="{ry}" stroke="{col}" stroke-width="1.5" stroke-dasharray="6,4"/>'
+        raw_ref_lbl = str(rl.get("label", ""))
+        if raw_ref_lbl.strip():
+            base_ry = round(max(34.0, min(212.0, ry + dy)), 1)
+            ref_cands = [
+                base_ry,
+                round(max(34.0, min(212.0, ry - dy + (12.0 if dy < 0 else -12.0))), 1),
+                round(max(34.0, min(212.0, base_ry - 16.0)), 1),
+                round(max(34.0, min(212.0, base_ry + 16.0)), 1),
+            ]
+            best_ry = base_ry
+            best_pill = ""
+            best_bbox = (0.0, 0.0, 0.0, 0.0)
+            best_pen = float("inf")
+            for cand_y in dict.fromkeys(ref_cands):
+                pill, bbox = _svg_label_pill(rx, cand_y, raw_ref_lbl, 10.6, anchor)
+                pen = sum(_boxes_overlap_area(bbox, ob) for ob in placed_boxes)
+                if pen < best_pen:
+                    best_pen = pen
+                    best_ry = cand_y
+                    best_pill = pill
+                    best_bbox = bbox
+                if pen == 0.0:
+                    break
+            placed_boxes.append(best_bbox)
+            ref_labels_svg += best_pill
+            ref_labels_svg += (
+                f'<text x="{rx}" y="{best_ry}" text-anchor="{anchor}" '
+                f'font-size="10.6" fill="{col}" font-weight="700">{svg_esc(raw_ref_lbl)}</text>'
+            )
 
     poly = " ".join(f"{xs[i]},{y_w(val)}" for i, val in enumerate(vals))
-    nodes_svg = ""
+    dots_svg = ""
+    point_labels_svg = ""
+    axis_labels_svg = ""
     for i, p in enumerate(pts):
         x = xs[i]
         y = y_w(vals[i])
         col = esc(p.get("color", "#b45309" if p.get("highlight") else "#1e3a5f"))
-        pos = p.get("label_pos") or ("above" if (y > 70 and i % 2 == 0) else "below")
-        dx = p.get("dx", 0.0)
-        dy_extra = p.get("dy", 0.0)
+        pos = p.get("label_pos") or ("above" if (y > 72 and i % 2 == 0) else "below")
+        dx = float(p.get("dx", 0.0))
+        dy_extra = float(p.get("dy", 0.0))
         anc = esc(p.get("anchor", "middle"))
-        y_lbl = round(max(34.0, min(205.0, (y - 10.5 if pos == "above" else y + 17.0) + dy_extra)), 1)
+        y_default = round(max(34.0, min(212.0, (y - 11.0 if pos == "above" else y + 17.5) + dy_extra)), 1)
+        y_alt = round(max(34.0, min(212.0, (y + 17.5 if pos == "above" else y - 11.0) + dy_extra)), 1)
         x_lbl = round(max(66.0, min(614.0, x + dx)), 1)
         val_txt = p.get("val_label") or _fmt_axis_val(vals[i], span, unit_prefix, unit_suffix)
         r = "5.0" if p.get("highlight") else "4.2"
-        nodes_svg += f'<circle cx="{x}" cy="{y}" r="{r}" fill="{col}" stroke="#ffffff" stroke-width="1.5"/>'
-        nodes_svg += f'<text x="{x_lbl}" y="{y_lbl}" text-anchor="{anc}" font-size="11" fill="{col}" font-weight="800" {HALO}>{svg_esc(val_txt)}</text>'
-        nodes_svg += f'<text x="{x}" y="220" text-anchor="middle" font-size="10.5" fill="#0f172a" font-weight="700">{svg_esc(p.get("time", ""))}</text>'
+        dots_svg += f'<circle cx="{x}" cy="{y}" r="{r}" fill="{col}" stroke="#ffffff" stroke-width="1.5"/>'
+
+        dot_box = (x - 5.5, y - 5.5, x + 5.5, y + 5.5)
+        cands_y = [
+            y_default,
+            y_alt,
+            round(max(34.0, min(212.0, y_default - 15.0)), 1),
+            round(max(34.0, min(212.0, y_default + 15.0)), 1),
+            round(max(34.0, min(212.0, y_alt - 15.0)), 1),
+            round(max(34.0, min(212.0, y_alt + 15.0)), 1),
+            round(max(34.0, min(212.0, y_default - 28.0)), 1),
+            round(max(34.0, min(212.0, y_default + 28.0)), 1),
+        ]
+        best_y = y_default
+        best_pill = ""
+        best_bbox = (0.0, 0.0, 0.0, 0.0)
+        best_pen = float("inf")
+        for cand_y in dict.fromkeys(cands_y):
+            pill, bbox = _svg_label_pill(x_lbl, cand_y, val_txt, 11.0, anc)
+            pen = sum(_boxes_overlap_area(bbox, ob) for ob in placed_boxes)
+            pen += 2.0 * _boxes_overlap_area(bbox, dot_box, pad_x=0.5, pad_y=0.5)
+            if pen < best_pen:
+                best_pen = pen
+                best_y = cand_y
+                best_pill = pill
+                best_bbox = bbox
+            if pen == 0.0:
+                break
+        placed_boxes.append(best_bbox)
+        point_labels_svg += best_pill
+        point_labels_svg += f'<text x="{x_lbl}" y="{best_y}" text-anchor="{anc}" font-size="11" fill="{col}" font-weight="800">{svg_esc(val_txt)}</text>'
+        axis_labels_svg += f'<text x="{x}" y="234" text-anchor="middle" font-size="10.5" fill="#0f172a" font-weight="700">{svg_esc(p.get("time", ""))}</text>'
         for li, dl in enumerate(str(p.get("desc", "")).split("\n")[:2]):
-            nodes_svg += f'<text x="{x}" y="{235 + li*14}" text-anchor="middle" font-size="10.4" fill="#475569">{svg_esc(dl)}</text>'
+            axis_labels_svg += f'<text x="{x}" y="{250 + li*14}" text-anchor="middle" font-size="10.4" fill="#475569">{svg_esc(dl)}</text>'
 
     sub_html = f'<div class="chart-sub">{sub}</div>' if sub else ""
     return f'''
@@ -553,9 +648,12 @@ def render_chart_timeline(cfg: dict) -> str:
         <rect x="0" y="0" width="{vb_w}" height="{vb_h}" fill="#ffffff" rx="6"/>
         {zone_svg}
         {grid_svg}
-        {ref_svg}
+        {ref_lines_svg}
         <polyline fill="none" stroke="#1e3a5f" stroke-width="2.6" points="{poly}"/>
-        {nodes_svg}
+        {dots_svg}
+        {ref_labels_svg}
+        {point_labels_svg}
+        {axis_labels_svg}
       </svg>
       <div class="chart-note">{note}</div>
     </div>
@@ -707,14 +805,26 @@ def render_chart_cross(cfg: dict) -> str:
     x_zero = round(max(198.0, min_x_zero), 1)
     any_capped = any(abs(p) > cap_abs for p in parsed_pcts)
 
-    # Subtle vertical reference ticks (-10%, -5%, +5%, +10%) strictly left of top-right legend (x < 425)
+    # Dynamic vertical reference ticks bounded strictly by actual negative/positive bar extent and cap_abs
+    actual_neg = min(cap_abs, max((abs(p) for p in parsed_pcts if p < 0), default=0.0))
+    actual_pos = min(cap_abs, max((p for p in parsed_pcts if p > 0), default=0.0))
+    span_peak = max(actual_neg, actual_pos)
+    if cap_abs <= 6.0 or span_peak <= 4.5:
+        tick_step = 2
+    elif cap_abs <= 15.0:
+        tick_step = 5
+    else:
+        tick_step = 10
+    neg_ticks = [-v for v in range(tick_step, int(actual_neg) + 1, tick_step)]
+    pos_ticks = [v for v in range(tick_step, int(actual_pos) + 1, tick_step)]
     ticks_svg = ""
-    for tv in (-10, -5, 5, 10):
+    for tv in sorted(neg_ticks + pos_ticks):
         tx = round(x_zero + tv * px_per_pct, 1)
-        if x_label + 14 < tx < 425:
+        if x_label + 14 < tx < 425 and abs(tx - x_zero) >= 22.0:
             ticks_svg += f'<line x1="{tx}" y1="{top_pad-3}" x2="{tx}" y2="{main_h}" stroke="#e2e8f0" stroke-width="0.8" stroke-dasharray="2,3"/>'
             ticks_svg += f'<text x="{tx}" y="18" text-anchor="middle" font-size="9.8" fill="#94a3b8">{tv:+d}%</text>'
 
+    stripes_svg = ""
     rows_svg = ""
     for i, it in enumerate(items):
         y = round(top_pad + i * row_h, 1)
@@ -743,9 +853,9 @@ def render_chart_cross(cfg: dict) -> str:
             tx = round(x_zero + 7.0, 1)
         bg = "#fffbeb" if is_gold else ("#f8fafc" if i % 2 == 0 else "#ffffff")
         op = "0.96" if is_gold else "0.78"
-        rows_svg += f'<rect x="10" y="{round(y-2.5,1)}" width="620" height="{row_h}" fill="{bg}"/>'
+        stripes_svg += f'<rect x="10" y="{round(y-2.5,1)}" width="620" height="{row_h}" fill="{bg}"/>'
         if is_gold:
-            rows_svg += f'<rect x="10" y="{round(y-2.5,1)}" width="3.5" height="{row_h}" fill="#d97706"/>'
+            stripes_svg += f'<rect x="10" y="{round(y-2.5,1)}" width="3.5" height="{row_h}" fill="#d97706"/>'
         rows_svg += f'<text x="{x_label}" y="{round(y+13.2,1)}" text-anchor="end" font-size="10.8" fill="{"#92400e" if is_gold else "#1e293b"}" font-weight="{"800" if is_gold else "700"}">{lbl}</text>'
         rows_svg += f'<rect x="{bx}" y="{round(y+2.5,1)}" width="{w}" height="14" fill="{col}" opacity="{op}" rx="2.5"/>'
         if capped:
@@ -789,8 +899,9 @@ def render_chart_cross(cfg: dict) -> str:
         <text x="{x_label}" y="18" text-anchor="end" font-size="10.6" fill="#64748b" font-weight="700">核心资产</text>
         <text x="{x_zero}" y="18" text-anchor="middle" font-size="10.6" fill="#334155" font-weight="700">0%</text>
         <text x="626" y="18" text-anchor="end" font-size="10.2" fill="#64748b">{legend_txt}</text>
-        {rows_svg}
+        {stripes_svg}
         {ticks_svg}
+        {rows_svg}
         <line x1="{x_zero}" y1="{top_pad-4}" x2="{x_zero}" y2="{main_h}" stroke="#475569" stroke-width="1.4"/>
         {rev_svg}
       </svg>
@@ -908,7 +1019,10 @@ def parse_markdown_to_html(
     def flush_quote():
         nonlocal quote_buf
         if quote_buf:
-            joined = "<br/>".join(md_inline(q) if q else "&nbsp;" for q in quote_buf)
+            joined = "<br/>".join(
+                (_protect_atomic_units(md_inline(q)) if not docx_mode else md_inline(q)) if q else "&nbsp;"
+                for q in quote_buf
+            )
             html_out.append(f'<div class="callout">{joined}</div>')
             quote_buf = []
 
@@ -1082,7 +1196,10 @@ def parse_markdown_to_html(
             continue
 
         close_lists()
-        html_out.append(f"<p>{md_inline(line)}</p>")
+        p_html = md_inline(line)
+        if not docx_mode:
+            p_html = _protect_atomic_units(p_html)
+        html_out.append(f"<p>{p_html}</p>")
 
     if in_code and code_buf:
         escaped = "\n".join(code_buf).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -1203,6 +1320,7 @@ body {
 .cover-meta { font-size: 8.2pt; color: #cbd5e1; line-height: 1.48; margin-bottom: 9px; }
 .cover-banner strong { color: #f8fafc; }
 .kpi-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6.5px; margin-top: 5px; }
+.kpi-strip.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .kpi-card { background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.16); border-radius: 6px; padding: 7px 8.5px; overflow: hidden; }
 .kpi-label { font-size: 7.5pt; color: #cbd5e1; }
 .kpi-val { font-size: 10.3pt; font-weight: 700; color: #fbbf24; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1218,12 +1336,20 @@ body {
 
 .sn-box { margin: 9px 0 12px 0; }
 .sn-title { font-size: 9.9pt; font-weight: 800; color: #0f172a; margin-bottom: 4.5px; break-after: avoid; page-break-after: avoid; }
+.sn-grid { display: grid; grid-template-columns: minmax(0, 46fr) minmax(0, 54fr); gap: 10px; align-items: stretch; font-size: 8.75pt; line-height: 1.50; }
+.sn-col { border-radius: 6px; overflow: hidden; border: 1px solid #cbd5e1; }
+.sn-col-sig { background: #f0fdf4; border-color: #bbf7d0; }
+.sn-col-noi { background: #f8fafc; border-color: #cbd5e1; }
+.sn-col-head { padding: 6px 8.5px; font-weight: 700; color: #ffffff; break-after: avoid; page-break-after: avoid; }
+.sn-col-sig .sn-col-head { background: #0f3d2e; }
+.sn-col-noi .sn-col-head { background: #475569; }
+.sn-col-body { padding: 6.5px 8.5px; }
 .sn-table { width: 100%; border-collapse: collapse; font-size: 8.75pt; line-height: 1.50; }
 .sn-table thead { display: table-header-group; }
 .sn-table th { padding: 6px 8.5px; text-align: left; font-weight: 700; border: none; }
 .sn-table td { padding: 6.5px 8.5px; vertical-align: top; border-bottom: 1.5px solid #cbd5e1; }
 .sn-ul { margin: 0; padding-left: 15px; }
-.sn-ul li { margin-bottom: 3.5px; }
+.sn-ul li { margin-bottom: 3.5px; break-inside: avoid; page-break-inside: avoid; }
 
 .persona-wrap { margin: 8px 0 10px 0; }
 .persona-lead { break-inside: avoid; page-break-inside: avoid; }
@@ -1330,12 +1456,14 @@ table.data-table th {
   padding: 5.5px 6.5px;
   border: none;
   border-top: 2.5px solid __ACCENT__;
+  text-wrap: balance;
 }
 table.data-table td {
   padding: 4.8px 6.5px;
   border: none;
   border-bottom: 0.75px solid #e2e8f0;
   vertical-align: top;
+  text-wrap: pretty;
 }
 table.data-table tbody tr:nth-child(even) { background: #f8fafc; }
 table.data-table th.col-nowrap, table.data-table td.col-nowrap { white-space: nowrap; width: 1%; }
@@ -1397,7 +1525,7 @@ def count_pdf_pages(pdf_path: Path) -> int:
 def build_cover_html(title: str, meta: dict, accent: str = "#b45309") -> str:
     tag = esc(meta.get("tag", "每日黄金深度研报 · 北京时间 07:30 & 18:00 双刊"))
     ts = esc(meta.get("timestamp", ""))
-    summary = esc(meta.get("summary", ""))
+    summary = _protect_atomic_units(esc(meta.get("summary", "")))
     kpis = meta.get("kpis", [])
 
     meta_html = ""
@@ -1409,15 +1537,17 @@ def build_cover_html(title: str, meta: dict, accent: str = "#b45309") -> str:
 
     kpi_html = ""
     if kpis:
+        shown = kpis[:6]
         cards = [
             f'<div class="kpi-card">'
             f'<div class="kpi-label">{esc(k.get("label", ""))}</div>'
             f'<div class="kpi-val">{replace_dot_emojis(esc(k.get("val", "")))}</div>'
             f'<div class="kpi-sub">{esc(k.get("sub", ""))}</div>'
             f'</div>'
-            for k in kpis[:6]
+            for k in shown
         ]
-        kpi_html = f'<div class="kpi-strip">{"".join(cards)}</div>'
+        strip_cls = "kpi-strip cols-4" if len(shown) == 4 else "kpi-strip"
+        kpi_html = f'<div class="{strip_cls}">{"".join(cards)}</div>'
 
     return f'''
     <div class="cover-banner" style="border-bottom:4px solid {accent};">
@@ -1490,7 +1620,7 @@ html { scroll-behavior: smooth; }
   .verdict-list { font-size: 14.5px; }
   .verdict-risk { font-size: 13.5px; }
   .sn-title, .persona-title { font-size: 16px; }
-  .sn-table { font-size: 14px; }
+  .sn-grid, .sn-table { font-size: 14px; }
   .persona-head { font-size: 15.5px; }
   .persona-sub, .persona-avoid { font-size: 13.5px; }
   .persona-ul { font-size: 14.5px; line-height: 1.62; }
@@ -1529,9 +1659,10 @@ html { scroll-behavior: smooth; }
   }
   .cover-banner { padding: 14px 14px 13px 14px; }
   .cover-title { font-size: 19px; }
-  .kpi-strip { grid-template-columns: repeat(2, 1fr); gap: 7px; }
+  .kpi-strip, .kpi-strip.cols-4 { grid-template-columns: repeat(2, 1fr); gap: 7px; }
   .kpi-val { font-size: 14.5px; white-space: normal; overflow: visible; text-overflow: clip; }
   .verdict-top { flex-direction: column; align-items: flex-start; gap: 5px; }
+  .sn-grid { grid-template-columns: 1fr; gap: 8px; }
   .svg-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
   .svg-scroll svg { min-width: 640px; width: 640px; max-width: none; height: auto; }
   .svg-hint {
@@ -1558,6 +1689,8 @@ html { scroll-behavior: smooth; }
   .verdict-headline { color: #fcd34d !important; }
   .verdict-risk { color: #fecaca; background: rgba(153, 27, 27, 0.38); }
   .sn-title, .persona-title, .trust-title { color: #f8fafc; }
+  .sn-col-sig { background: #102a22; border-color: #166534; color: #e2e8f0; }
+  .sn-col-noi { background: #172033; border-color: #334155; color: #e2e8f0; }
   .sn-table td { background: #172033 !important; color: #e2e8f0; border-bottom-color: #334155; }
   .persona-card { background: #1e293b !important; color: #e2e8f0; }
   .persona-head { color: #f8fafc; }
@@ -1783,31 +1916,51 @@ def build_one(md_path: Path):
     tmp_pdf_html.write_text(pdf_html, encoding="utf-8")
     tmp_pdf_out = md_path.with_suffix(".pdf.tmp")
 
+    chrome_bin = os.environ.get("CHROME_BIN", "").strip() or CHROME_BIN
     try:
-        # 1. Render PDF (atomic temp write + timeout + non-empty assertion)
-        tmp_pdf_out.unlink(missing_ok=True)
-        proc = subprocess.run(
-            [
-                CHROME_BIN,
-                "--headless",
-                "--disable-gpu",
-                "--disable-extensions",
-                "--disable-background-networking",
-                "--no-first-run",
-                "--no-default-browser-check",
-                f"--user-data-dir={chrome_profile}",
-                "--no-pdf-header-footer",
-                f"--print-to-pdf={tmp_pdf_out}",
-                tmp_pdf_html.as_uri(),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=90,
-        )
-        if proc.returncode != 0 or not tmp_pdf_out.exists() or tmp_pdf_out.stat().st_size < 10000:
-            raise RuntimeError(
-                f"Chrome headless PDF print failed for {md_path.name} (rc={proc.returncode}): {proc.stderr.strip()[:400]}"
-            )
+        # 1. Render PDF (2-attempt retry with fresh profile dir, timeout=120, atomic temp write & non-empty assertion)
+        last_err: Exception | None = None
+        for attempt in range(1, 3):
+            attempt_profile = work_tmp / f"chrome_pdf_profile_{attempt}"
+            shutil.rmtree(attempt_profile, ignore_errors=True)
+            attempt_profile.mkdir(parents=True, exist_ok=True)
+            tmp_pdf_out.unlink(missing_ok=True)
+            try:
+                proc = subprocess.run(
+                    [
+                        chrome_bin,
+                        "--headless",
+                        "--disable-gpu",
+                        "--disable-extensions",
+                        "--disable-background-networking",
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        f"--user-data-dir={attempt_profile}",
+                        "--no-pdf-header-footer",
+                        f"--print-to-pdf={tmp_pdf_out}",
+                        tmp_pdf_html.as_uri(),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if proc.returncode != 0 or not tmp_pdf_out.exists() or tmp_pdf_out.stat().st_size < 10000:
+                    raise RuntimeError(
+                        f"Chrome headless PDF print failed for {md_path.name} "
+                        f"(attempt {attempt}/2, rc={proc.returncode}): {proc.stderr.strip()[:400]}"
+                    )
+                last_err = None
+                break
+            except (subprocess.TimeoutExpired, RuntimeError) as exc:
+                last_err = exc
+                if attempt == 2:
+                    if isinstance(exc, subprocess.TimeoutExpired):
+                        raise RuntimeError(
+                            f"Chrome headless PDF print timed out after 120s for {md_path.name} (attempt 2/2)"
+                        ) from exc
+                    raise
+        if last_err is not None:
+            raise last_err
         tmp_pdf_out.replace(pdf_path)
 
         # 2. Rasterize every SVG chart to PIL-cropped 2x Retina PNG
@@ -1841,8 +1994,9 @@ def main():
     args = parser.parse_args()
 
     if args.check:
-        if not Path(CHROME_BIN).exists():
-            raise SystemExit(f"ERROR: Chrome binary missing at {CHROME_BIN}")
+        chrome_bin = os.environ.get("CHROME_BIN", "").strip() or resolve_chrome_bin()
+        if not (Path(chrome_bin).exists() or shutil.which(chrome_bin)):
+            raise SystemExit(f"ERROR: Chrome binary missing at {chrome_bin}")
         import bs4  # noqa: F401
         from PIL import Image  # noqa: F401
         DAILY_DIR.mkdir(parents=True, exist_ok=True)

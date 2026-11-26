@@ -29,7 +29,24 @@ from xml.sax.saxutils import escape as xml_escape
 from bs4 import BeautifulSoup, NavigableString, Tag
 from PIL import Image, ImageChops
 
-CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+_DEFAULT_MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def resolve_chrome_bin() -> str:
+    """Resolve Chrome/Chromium binary via CHROME_BIN env var, macOS bundle, or PATH."""
+    env_bin = os.environ.get("CHROME_BIN", "").strip()
+    if env_bin:
+        return env_bin
+    if Path(_DEFAULT_MAC_CHROME).exists():
+        return _DEFAULT_MAC_CHROME
+    for name in ("google-chrome", "chromium", "chromium-browser"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return _DEFAULT_MAC_CHROME
+
+
+CHROME_BIN = resolve_chrome_bin()
 
 CHART_WRAPPER_CSS = """
 * { box-sizing: border-box; }
@@ -101,10 +118,10 @@ def render_chart_to_png(
     chrome_profile: Path,
     idx: int,
 ) -> Path:
-    """Render an HTML/SVG chart box to 2x Retina PNG with timeout, per-call profile & auto-retry."""
+    """Render an HTML/SVG chart box to 2x Retina PNG with 60s timeout, fresh profile & 1 retry."""
     win_w = 664
     tmp_html = tmp_dir / f"_chart_render_{idx}.html"
-    per_call_profile = tmp_dir / f"_chrome_prof_{idx}"
+    chrome_bin = os.environ.get("CHROME_BIN", "").strip() or CHROME_BIN
     doc = (
         f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
         f"<style>{CHART_WRAPPER_CSS}</style></head>"
@@ -113,43 +130,53 @@ def render_chart_to_png(
     tmp_html.write_text(doc, encoding="utf-8")
     try:
         for win_h in (2400, 4800):
-            shutil.rmtree(per_call_profile, ignore_errors=True)
-            per_call_profile.mkdir(parents=True, exist_ok=True)
-            out_png.unlink(missing_ok=True)
-            try:
-                proc = subprocess.run(
-                    [
-                        CHROME_BIN,
-                        "--headless",
-                        "--disable-gpu",
-                        "--disable-extensions",
-                        "--disable-background-networking",
-                        "--hide-scrollbars",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                        "--force-device-scale-factor=2",
-                        f"--user-data-dir={per_call_profile}",
-                        f"--window-size={win_w},{win_h}",
-                        f"--screenshot={out_png}",
-                        tmp_html.resolve().as_uri(),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=45,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise RuntimeError(f"Chrome chart PNG screenshot timed out after 45s (idx={idx})") from exc
-            if proc.returncode != 0 or not out_png.exists() or out_png.stat().st_size < 2048:
-                raise RuntimeError(
-                    f"Chrome chart PNG screenshot failed (idx={idx}, rc={proc.returncode}): {proc.stderr.strip()[:400]}"
-                )
+            for attempt in range(1, 3):
+                attempt_profile = tmp_dir / f"_chrome_prof_{idx}_{win_h}_{attempt}"
+                shutil.rmtree(attempt_profile, ignore_errors=True)
+                attempt_profile.mkdir(parents=True, exist_ok=True)
+                out_png.unlink(missing_ok=True)
+                try:
+                    proc = subprocess.run(
+                        [
+                            chrome_bin,
+                            "--headless",
+                            "--disable-gpu",
+                            "--disable-extensions",
+                            "--disable-background-networking",
+                            "--hide-scrollbars",
+                            "--no-first-run",
+                            "--no-default-browser-check",
+                            "--force-device-scale-factor=2",
+                            f"--user-data-dir={attempt_profile}",
+                            f"--window-size={win_w},{win_h}",
+                            f"--screenshot={out_png}",
+                            tmp_html.resolve().as_uri(),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if proc.returncode != 0 or not out_png.exists() or out_png.stat().st_size < 2048:
+                        raise RuntimeError(
+                            f"Chrome chart PNG screenshot failed (idx={idx}, attempt={attempt}/2, rc={proc.returncode}): "
+                            f"{proc.stderr.strip()[:400]}"
+                        )
+                    break
+                except (subprocess.TimeoutExpired, RuntimeError) as exc:
+                    if attempt == 2:
+                        if isinstance(exc, subprocess.TimeoutExpired):
+                            raise RuntimeError(
+                                f"Chrome chart PNG screenshot timed out after 60s (idx={idx}, attempt 2/2)"
+                            ) from exc
+                        raise
+                finally:
+                    shutil.rmtree(attempt_profile, ignore_errors=True)
             if not _trim_png_whitespace(out_png, pad_px=20):
                 break
             if win_h == 4800:
                 raise RuntimeError(f"Chart PNG exceeded 4800px height (idx={idx}): {out_png}")
     finally:
         tmp_html.unlink(missing_ok=True)
-        shutil.rmtree(per_call_profile, ignore_errors=True)
 
     pw, ph = png_dimensions(out_png)
     if out_png.stat().st_size < 2048 or ph < 100 or pw < 200:
@@ -900,17 +927,22 @@ class _NativeDocxWriter:
                 page_break_before=page_break_before,
             )
         )
-        # Render KPI cards directly as a native 2x3 OOXML table (preserves .dot-* / .dot-diamond runs & 3-tier sizing)
+        # Render KPI cards directly as a native OOXML table (supports 3-col 2x3 and 4-col .cols-4 strips)
+        kpi_strip = div.find(class_="kpi-strip")
+        strip_classes = set(kpi_strip.get("class") or []) if kpi_strip else set()
         cards = div.find_all(class_="kpi-card")
         if cards:
-            w_base = CONTENT_W_DXA // 3
-            col_ws = [w_base, w_base, CONTENT_W_DXA - 2 * w_base]
+            ncols = 4 if ("cols-4" in strip_classes or len(cards) == 4) else (2 if len(cards) == 2 else 3)
+            w_base = CONTENT_W_DXA // ncols
+            col_ws = [w_base] * (ncols - 1) + [CONTENT_W_DXA - w_base * (ncols - 1)]
+            val_sz = 19 if ncols == 4 else 21
+            pad_lr = 80 if ncols == 4 else 100
             grid_xml = "".join(f'<w:gridCol w:w="{cw}"/>' for cw in col_ws)
             rows_xml: list[str] = []
-            for i in range(0, len(cards), 3):
-                chunk = cards[i : i + 3]
+            for i in range(0, len(cards), ncols):
+                chunk = cards[i : i + ncols]
                 tcs: list[str] = []
-                for c_idx in range(3):
+                for c_idx in range(ncols):
                     cw = col_ws[c_idx]
                     if c_idx < len(chunk):
                         c = chunk[c_idx]
@@ -930,7 +962,7 @@ class _NativeDocxWriter:
                         if val:
                             cell_ps.append(
                                 self._make_p(
-                                    self._inline_to_runs(val, bold=True, color="B45309", sz=21),
+                                    self._inline_to_runs(val, bold=True, color="B45309", sz=val_sz),
                                     before=0,
                                     after=25,
                                     line=260,
@@ -971,8 +1003,8 @@ class _NativeDocxWriter:
                 '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/>'
                 '</w:tblBorders>'
                 '<w:tblLayout w:type="fixed"/>'
-                '<w:tblCellMar><w:top w:w="85" w:type="dxa"/><w:left w:w="100" w:type="dxa"/>'
-                '<w:bottom w:w="85" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar>'
+                f'<w:tblCellMar><w:top w:w="85" w:type="dxa"/><w:left w:w="{pad_lr}" w:type="dxa"/>'
+                f'<w:bottom w:w="85" w:type="dxa"/><w:right w:w="{pad_lr}" w:type="dxa"/></w:tblCellMar>'
                 '</w:tblPr>'
                 f'<w:tblGrid>{grid_xml}</w:tblGrid>'
                 f'{"".join(rows_xml)}'
@@ -981,6 +1013,116 @@ class _NativeDocxWriter:
             )
             blocks.append(kpi_tbl)
         return blocks
+
+    def _render_sn_grid(self, grid: Tag, page_break_before: bool = False) -> str:
+        """Render 2-column .sn-grid (.sn-col-sig / .sn-col-noi) as a native 2-column ECMA-376 <w:tbl>."""
+        sig_col = grid.find(class_="sn-col-sig")
+        noi_col = grid.find(class_="sn-col-noi")
+        if not sig_col or not noi_col:
+            direct_cols = [c for c in grid.find_all("div", recursive=False)]
+            if len(direct_cols) >= 2:
+                sig_col = sig_col or direct_cols[0]
+                noi_col = noi_col or direct_cols[1]
+        col_specs = [
+            (sig_col, "0F3D2E", "F0FDF4"),
+            (noi_col, "475569", "F8FAFC"),
+        ]
+        w_left = int(CONTENT_W_DXA * 0.46)
+        col_widths = [w_left, CONTENT_W_DXA - w_left]
+        grid_xml = "".join(f'<w:gridCol w:w="{cw}"/>' for cw in col_widths)
+
+        hdr_borders = (
+            '<w:top w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>'
+            '<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+            '<w:bottom w:val="single" w:sz="8" w:space="0" w:color="334155"/>'
+            '<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+        )
+        body_borders = (
+            '<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+            '<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+            '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/>'
+            '<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+        )
+
+        hdr_tcs: list[str] = []
+        body_tcs: list[str] = []
+        for idx, (col_el, hdr_bg, body_bg) in enumerate(col_specs):
+            cw = col_widths[idx]
+            head_el = col_el.find(class_="sn-col-head") if col_el else None
+            head_runs = self._inline_to_runs(head_el, bold=True, color="FFFFFF", sz=17) if head_el else ""
+            hdr_tcs.append(
+                f'<w:tc><w:tcPr><w:tcW w:w="{cw}" w:type="dxa"/>'
+                f'<w:tcBorders>{hdr_borders}</w:tcBorders>'
+                f'<w:shd w:val="clear" w:color="auto" w:fill="{hdr_bg}"/>'
+                '<w:vAlign w:val="top"/></w:tcPr>'
+                f'{self._make_p(head_runs, before=30, after=30, line=280)}</w:tc>'
+            )
+
+            body_el = (col_el.find(class_="sn-col-body") if col_el else None) or col_el
+            cell_ps: list[str] = []
+            if body_el:
+                lists = body_el.find_all(["ul", "ol"], recursive=False)
+                if lists:
+                    for lst in lists:
+                        cell_ps.extend(
+                            self._render_list(lst, ordered=(lst.name == "ol"), base_sz=18, text_color="1F2937")
+                        )
+                else:
+                    for sub_el in body_el.children:
+                        if isinstance(sub_el, NavigableString) and not str(sub_el).strip():
+                            continue
+                        if isinstance(sub_el, Tag) and "sn-col-head" in (sub_el.get("class") or []):
+                            continue
+                        if isinstance(sub_el, Tag) and sub_el.name in ("ul", "ol"):
+                            cell_ps.extend(
+                                self._render_list(sub_el, ordered=(sub_el.name == "ol"), base_sz=18, text_color="1F2937")
+                            )
+                        else:
+                            runs = self._inline_to_runs(sub_el, color="1F2937", sz=18)
+                            if runs:
+                                cell_ps.append(self._make_p(runs, before=20, after=35, line=280))
+            if not cell_ps:
+                cell_ps = [self._make_p("", before=20, after=20, line=260)]
+            body_tcs.append(
+                f'<w:tc><w:tcPr><w:tcW w:w="{cw}" w:type="dxa"/>'
+                f'<w:tcBorders>{body_borders}</w:tcBorders>'
+                f'<w:shd w:val="clear" w:color="auto" w:fill="{body_bg}"/>'
+                '<w:vAlign w:val="top"/></w:tcPr>'
+                f'{"".join(cell_ps)}</w:tc>'
+            )
+
+        tbl_borders = (
+            '<w:tblBorders>'
+            '<w:top w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>'
+            '<w:bottom w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>'
+            '<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+            '<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+            '<w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
+            '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/>'
+            '</w:tblBorders>'
+        )
+        pb_xml = (
+            '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="40" w:lineRule="auto"/></w:pPr>'
+            '<w:r><w:br w:type="page"/></w:r></w:p>'
+            if page_break_before
+            else ""
+        )
+        return (
+            f"{pb_xml}"
+            '<w:tbl>'
+            '<w:tblPr>'
+            f'<w:tblW w:w="{CONTENT_W_DXA}" w:type="dxa"/>'
+            f'{tbl_borders}'
+            '<w:tblLayout w:type="fixed"/>'
+            '<w:tblCellMar><w:top w:w="75" w:type="dxa"/><w:left w:w="100" w:type="dxa"/>'
+            '<w:bottom w:w="75" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar>'
+            '</w:tblPr>'
+            f'<w:tblGrid>{grid_xml}</w:tblGrid>'
+            f'<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>{"".join(hdr_tcs)}</w:tr>'
+            f'<w:tr>{"".join(body_tcs)}</w:tr>'
+            '</w:tbl>'
+            '<w:p><w:pPr><w:spacing w:before="0" w:after="90" w:line="120" w:lineRule="auto"/></w:pPr></w:p>'
+        )
 
     def _render_verdict_card(self, div: Tag, page_break_before: bool = False) -> str:
         style_str = div.get("style", "")
@@ -1102,6 +1244,15 @@ class _NativeDocxWriter:
                 tbl = child.find("table")
                 if tbl:
                     self.body_blocks.append(self._render_html_table(tbl, page_break_before=pb_tbl))
+                else:
+                    grid = child.find(class_="sn-grid")
+                    if grid:
+                        self.body_blocks.append(self._render_sn_grid(grid, page_break_before=pb_tbl))
+                pending_break = False
+                continue
+
+            if "sn-grid" in classes:
+                self.body_blocks.append(self._render_sn_grid(child, page_break_before=pending_break))
                 pending_break = False
                 continue
 
@@ -1118,15 +1269,32 @@ class _NativeDocxWriter:
                         self._make_p(
                             self._inline_to_runs(t_el, bold=True, color="92400E", sz=19),
                             before=90,
-                            after=50,
+                            after=30,
                             keep_next=True,
                             page_break_before=pending_break,
+                            bottom_border_color="FDE68A",
+                            shading_fill="FFFBEB",
                         )
                     )
                     pb_tbl = False
                 tbl = child.find("table")
                 if tbl:
                     self.body_blocks.append(self._render_html_table(tbl, page_break_before=pb_tbl))
+                pending_break = False
+                continue
+
+            if "glossary-title" in classes:
+                self.body_blocks.append(
+                    self._make_p(
+                        self._inline_to_runs(child, bold=True, color="92400E", sz=19),
+                        before=90,
+                        after=30,
+                        keep_next=True,
+                        page_break_before=pending_break,
+                        bottom_border_color="FDE68A",
+                        shading_fill="FFFBEB",
+                    )
+                )
                 pending_break = False
                 continue
 

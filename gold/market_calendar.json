@@ -4,7 +4,7 @@
   "timezone": "Asia/Shanghai",
   "coverage": {
     "start_date": "2026-11-01",
-    "end_date": "2027-03-31",
+    "end_date": "2027-06-30",
     "verified_on": "2026-11-26",
     "vix_schedule_source": "https://www.cboe.com/about/hours/us-options/"
   },
@@ -16,9 +16,11 @@
     "2027-01-01": {"windows_et": [], "official_close_et": null},
     "2027-01-18": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"},
     "2027-02-15": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"},
-    "2027-03-26": {"windows_et": [], "official_close_et": null}
+    "2027-03-26": {"windows_et": [], "official_close_et": null},
+    "2027-05-31": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"},
+    "2027-06-18": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"}
   },
-  "description": "Cross-market holidays, limited sessions, DST and research events, with independently recorded Cboe spot VIX sessions through 2027-03-31.",
+  "description": "Cross-market holidays, limited sessions, DST and research events, with independently recorded Cboe spot VIX sessions through 2027-06-30.",
   "dst_schedule": {
     "current_regime": "north_america_winter_standard",
     "winter_standard": {
@@ -112,7 +114,7 @@
       "date": "2026-12-09",
       "end_date": "2026-12-10",
       "markets": ["US_MACRO", "GLOBAL_GOLD"],
-      "event": "美联储（FOMC）12 月议息会议与利率决议 + 经济预测（SEP）",
+      "event": "美联储（FOMC）12 月议息会议与利率决议 + 经济预测（SEP · 美东 12/08–09 · 北京 12/10 03:00 决议）",
       "overlay_mode": "NONE",
       "affected_editions": ["2026-12-09_1800", "2026-12-10_0730"],
       "trading_hours_bjt": {
@@ -310,6 +312,76 @@
         "window": "2027 年第一季度官方落地公告与试运行窗口"
       },
       "gold_impact_note": "结构性中长期催化追踪：核验香港特区政府财库局/港交所/本地金库联盟关于中央黄金清算、实物交割扩容与离岸人民币计价黄金互联互通的落地进展，评估对亚洲定价权与国内溢价中枢的中期影响。"
+    },
+    {
+      "id": "us_good_friday_2027",
+      "date": "2027-03-26",
+      "end_date": "2027-03-26",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME", "UK_LSE_LBMA", "EU_EQUITY", "HK_EQUITY"],
+      "event": "耶稣受难日欧美港及国际贵金属休市（中国内地 A 股/SGE/SHFE 正常交易）",
+      "overlay_mode": "A",
+      "affected_editions": ["2027-03-26_1800", "2027-03-27_0730"],
+      "trading_hours_bjt": {
+        "us_uk_eu_hk_comex_lbma": "全天休市（无 COMEX 官结与 LBMA 伦敦定盘）",
+        "cn_a_share_sge_shfe": "正常开市（注意外盘休市下内盘夜盘流动性偏薄）"
+      },
+      "gold_impact_note": "切入 A 类外盘休市模式，美债与现货纽约终盘沿用 03/25 周四官收并明标时点，严防外盘缺席下国内孤立波动被误判为全球趋势。"
+    },
+    {
+      "id": "cn_hk_qingming_2027",
+      "date": "2027-04-05",
+      "end_date": "2027-04-05",
+      "markets": ["CN_A_SHARE", "CN_SHFE_SGE", "HK_EQUITY"],
+      "event": "中国内地与香港清明节法定休市（欧美贵金属及美股正常交易）",
+      "overlay_mode": "B",
+      "affected_editions": ["2027-04-05_0730", "2027-04-05_1800"],
+      "trading_hours_bjt": {
+        "cn_a_share_sge_shfe_hkex": "全天休市（沿用前一交易日官方收盘价）",
+        "us_comex": "正常交易（夏令时 COMEX 官结 01:30 BJT / 纽约现货 05:00 BJT）"
+      },
+      "gold_impact_note": "切入 B 类内地休市模式：国内 SGE/SHFE、A 股及港股明标休市、严禁编造内盘新价，全面聚焦 COMEX、现货金、离岸人民币与海外 ETF 实盘。"
+    },
+    {
+      "id": "cn_labor_day_2027",
+      "date": "2027-05-01",
+      "end_date": "2027-05-05",
+      "markets": ["CN_A_SHARE", "CN_SHFE_SGE"],
+      "event": "中国劳动节假期（A 股、上金所 SGE 与上期所 SHFE 休市，05/06 恢复交易）",
+      "overlay_mode": "B",
+      "affected_editions": ["2027-05-03_0730", "2027-05-05_1800"],
+      "trading_hours_bjt": {
+        "cn_a_share_sge_shfe": "2027-05-01 至 2027-05-05 全天休市（04/30 晚无夜盘，05/06 复市）",
+        "us_eu_uk": "正常交易（伦敦 05/03 银行假日另行标注）"
+      },
+      "gold_impact_note": "切入 B 类内地休市模式：内盘现货、沪金与国内黄金 ETF 净值沿用 04/30 收盘并明标休市，聚焦 COMEX 与国际现货金动向，并逐日测算 05/06 复市补涨/补跌敞口。"
+    },
+    {
+      "id": "us_memorial_day_2027",
+      "date": "2027-05-31",
+      "end_date": "2027-05-31",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+      "event": "美国阵亡将士纪念日全天休市（美股/美债休市，CME 金属提前停盘）",
+      "overlay_mode": "A",
+      "affected_editions": ["2027-05-31_1800", "2027-06-01_0730"],
+      "trading_hours_bjt": {
+        "us_equity_bond": "全天休市",
+        "cme_metals_electronic": "次日 02:30 BJT 提前停盘（夏令时 13:30 CDT），无常规美债官收与纽约 05:00 终盘"
+      },
+      "gold_impact_note": "切入 A 类美盘休市模式：美债与纽约现货终盘沿用 05/28 周五官收并明标时点，严防薄量插针，重点跟踪国内 SGE/SHFE 与伦敦盘实况。"
+    },
+    {
+      "id": "us_juneteenth_2027",
+      "date": "2027-06-18",
+      "end_date": "2027-06-18",
+      "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+      "event": "美国六月节补休全天休市（06/19 为周六提前至周五休市，CME 金属提前停盘）",
+      "overlay_mode": "A",
+      "affected_editions": ["2027-06-18_1800", "2027-06-19_0730"],
+      "trading_hours_bjt": {
+        "us_equity_bond": "全天休市",
+        "cme_metals_electronic": "次日 02:30 BJT 提前停盘（夏令时 13:30 CDT），无常规美债官收与纽约 05:00 终盘"
+      },
+      "gold_impact_note": "切入 A 类美盘休市模式：美债与纽约现货终盘沿用 06/17 周四官收并明标时点，警惕周五晚薄量跳点，聚焦伦敦定盘与国内金市实盘。"
     }
   ]
 }

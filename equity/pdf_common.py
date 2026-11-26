@@ -21,7 +21,34 @@ if TYPE_CHECKING:
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
-CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+_DEFAULT_MACOS_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def resolve_chrome_bin() -> str:
+    """Resolve Chrome/Chromium binary via CHROME_BIN, macOS app bundle, or PATH."""
+    env_bin = os.environ.get("CHROME_BIN", "").strip()
+    if env_bin:
+        if Path(env_bin).exists():
+            return env_bin
+        found_env = shutil.which(env_bin)
+        if found_env:
+            return found_env
+    if Path(_DEFAULT_MACOS_CHROME).exists():
+        return _DEFAULT_MACOS_CHROME
+    for candidate in ("google-chrome", "chromium", "chromium-browser"):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    raise FileNotFoundError(
+        "Chrome/Chromium binary not found (checked CHROME_BIN, macOS Google Chrome, "
+        "google-chrome, chromium, chromium-browser)"
+    )
+
+
+try:
+    CHROME_BIN = resolve_chrome_bin()
+except FileNotFoundError:
+    CHROME_BIN = _DEFAULT_MACOS_CHROME
 
 
 def freeze_equity_inputs(source: Path, *inputs: Path) -> FrozenInputs | None:
@@ -1030,7 +1057,9 @@ _BANNED_INTERNAL_RE = re.compile(
     r"(?:\bV\d+\.\d+\b|Subagent|红队|法证|\bTier\s*[0-3]\b|"
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
+    r"edition_(?:run|plan|validation)\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
+    r"master_snapshot\.json|data_snapshot\.json|unified-edition\.prompt\.md|permissions\.json|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|sidecar\.json|"
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|Meta-RSI|Recursive\s+Self-Improvement|"
     r"next_run_watch|rsi_self_review_protocol|"
@@ -1045,6 +1074,17 @@ _BARE_NUM_BACKTICK_RE = re.compile(r"`[\+\-]?\d+(?:[.,–\-]\d+)?(?:%|元|港元
 _HK_SAUDI_ETF_MISUSE_RE = re.compile(r"520830.{0,14}(?:港股|红利|高股息|央企)|(?:港股|红利|高股息|央企).{0,14}520830")
 _HK_SAUDI_ETF_WARN_ALLOW_RE = re.compile(r"(?:严禁|切忌|勿|不可|非|并非|不是|误作|误买|当成|沙特)")
 _HK_TAX_CUT_FALSE_RE = re.compile(r"港股通.{0,12}红利税.{0,8}(?:已正式落地|已经取消|已下调至\s*10%)")
+_HK_ETF_ZERO_PREM_RE = re.compile(r"(?:159545|159792).{0,18}(?:零溢价|无溢价)|(?:零溢价|无溢价).{0,18}(?:159545|159792)")
+_HK_ETF_ZERO_PREM_ALLOW_RE = re.compile(r"(?:并非|不是|不保证|仍须查|仍要查|严禁写|不等同于)")
+_HK_REDCHIP_28_RE = re.compile(
+    r"离岸.{0,6}10%\s*税.{0,8}28%|港股通.{0,12}(?:红筹|00883|00941|01378|00836).{0,10}28%|"
+    r"红筹.{0,6}28%\s*税|28%\s*红筹税"
+)
+_HK_REDCHIP_28_ALLOW_RE = re.compile(r"(?:严禁笼统|不能笼统|并非一律|不是一律|不再写|废止|纠偏|勿写|严禁写|并非固定|不能简单按)")
+_CB_TAX_FREE_RE = re.compile(r"末日.{0,10}二级卖出.{0,8}免\s*20%\s*个人税|二级市场卖出可免税")
+_CB_TAX_FREE_ALLOW_RE = re.compile(r"(?:并非|不是|严禁写|不能笼统|废止|勿写|纠偏)")
+_CONDESCENDING_SLOGAN_RE = re.compile(r"(?:蠢事|直接抄|小白词典|1\s*分钟定心丸|保命铁律)")
+_NEW_DAILY_NAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_(?:a_share|hk_stock|us_stock)(?:_r\d+)?\.md$")
 _FLAGSHIP_REL_DATE_RE = re.compile(
     r"(?:昨天|昨日|今天|今日|明天|明日|昨晚|今早|今晚|同晚|本周|上周|下周|去年底|今年以来|今年底|明年一季度)"
 )
@@ -1113,7 +1153,20 @@ def lint_markdown_report(
             errors.append("ETF 代码硬错误：520830 为沙特 ETF(QDII)，并非港股通红利 ETF（应改用 159545/513630/520810）")
             break
     if _HK_TAX_CUT_FALSE_RE.search(combined_scan):
-        errors.append("港股政策硬错误：港股通个人红利税减免截至 2026-11 尚未官方落地，严禁误写为已实施")
+        errors.append("港股政策硬错误：港股通个人红利税减免尚未官方落地，严禁误写为已实施")
+
+    for ln in combined_scan.splitlines():
+        if _HK_ETF_ZERO_PREM_RE.search(ln) and not _HK_ETF_ZERO_PREM_ALLOW_RE.search(ln):
+            errors.append('ETF 规则硬错误：159545/159792 为非 QDII 港股通 ETF，买入前仍须查二级市场折溢价，严禁写"零溢价/无溢价"')
+            break
+    for ln in combined_scan.splitlines():
+        if _HK_REDCHIP_28_RE.search(ln) and not _HK_REDCHIP_28_ALLOW_RE.search(ln):
+            errors.append('港股税务口径硬错误：红筹股息须按发行人派息公告、登记方式与持有渠道分别核验源头代扣与 20% 港股通个税，严禁笼统写"红筹28%税/离岸10%完胜28%"')
+            break
+    for ln in combined_scan.splitlines():
+        if _CB_TAX_FREE_RE.search(ln) and not _CB_TAX_FREE_ALLOW_RE.search(ln):
+            errors.append('可转债到期税费硬错误：须按发行人公告核对到期票息 20% 代扣后净兑付额并与二级净卖出额逐笔比较，严禁写"末日二级卖出免20%个人税"')
+            break
 
     if meta is not None:
         kpis = meta.get("kpis")
@@ -1162,12 +1215,18 @@ def lint_markdown_report(
         rel_hits = _FLAGSHIP_REL_DATE_RE.findall(body_no_meta)
         if rel_hits:
             warnings.append(f"常青旗舰手册残留相对时间词 ({len(rel_hits)} 处): {sorted(set(rel_hits))}")
-    elif Path(filename).name not in ("INDEX.md", "CHANGELOG.md", "SCORECARD.md"):
-        index_path = DAILY_DIR / "INDEX.md"
-        if index_path.exists():
-            idx_txt = index_path.read_text(encoding="utf-8")
-            if Path(filename).name not in idx_txt:
-                warnings.append(f"提醒：daily/INDEX.md 尚未收录 {Path(filename).name}")
+    else:
+        m_daily = _NEW_DAILY_NAME_RE.match(Path(filename).name)
+        if m_daily and (m_daily.group(1), int(m_daily.group(2))) >= ("2026-11-26", 1800):
+            slogan_hits = _CONDESCENDING_SLOGAN_RE.findall(combined_scan)
+            if slogan_hits:
+                warnings.append(f"口号化/说教用语提醒 ({len(slogan_hits)} 处): {sorted(set(slogan_hits))}")
+        if Path(filename).name not in ("INDEX.md", "CHANGELOG.md", "SCORECARD.md"):
+            index_path = DAILY_DIR / "INDEX.md"
+            if index_path.exists():
+                idx_txt = index_path.read_text(encoding="utf-8")
+                if Path(filename).name not in idx_txt:
+                    warnings.append(f"提醒：daily/INDEX.md 尚未收录 {Path(filename).name}")
 
     return errors, warnings
 
@@ -1205,31 +1264,47 @@ def render_pdf_atomic(
     mobile_html_path: Path | None = None,
     mobile_market: str = "a_share",
 ) -> None:
-    chrome_profile = Path(tempfile.mkdtemp(prefix="eq_chrome_pdf_"))
+    chrome_bin = resolve_chrome_bin()
+    tmp_html.write_text(full_html, encoding="utf-8")
+    last_err: Exception | None = None
     try:
-        tmp_html.write_text(full_html, encoding="utf-8")
-        if tmp_pdf.exists():
-            tmp_pdf.unlink()
-        subprocess.run(
-            [
-                CHROME_BIN,
-                "--headless",
-                "--disable-gpu",
-                "--disable-extensions",
-                "--disable-background-networking",
-                "--no-first-run",
-                "--no-default-browser-check",
-                f"--user-data-dir={chrome_profile}",
-                "--no-pdf-header-footer",
-                "--run-all-compositor-stages-before-draw",
-                f"--print-to-pdf={tmp_pdf}",
-                str(tmp_html),
-            ],
-            check=True,
-            timeout=120,
-        )
-        if not tmp_pdf.exists() or tmp_pdf.stat().st_size < 50_000:
-            raise RuntimeError(f"PDF generation failed or file too small: {tmp_pdf}")
+        for attempt in range(2):
+            chrome_profile = Path(tempfile.mkdtemp(prefix=f"eq_chrome_pdf_{attempt}_"))
+            try:
+                tmp_pdf.unlink(missing_ok=True)
+                subprocess.run(
+                    [
+                        chrome_bin,
+                        "--headless",
+                        "--disable-gpu",
+                        "--disable-extensions",
+                        "--disable-background-networking",
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        f"--user-data-dir={chrome_profile}",
+                        "--no-pdf-header-footer",
+                        "--run-all-compositor-stages-before-draw",
+                        f"--print-to-pdf={tmp_pdf}",
+                        str(tmp_html),
+                    ],
+                    check=True,
+                    timeout=120,
+                )
+                if not tmp_pdf.exists() or tmp_pdf.stat().st_size < 50_000:
+                    raise RuntimeError(f"PDF generation failed or file too small: {tmp_pdf}")
+                last_err = None
+                break
+            except (subprocess.SubprocessError, RuntimeError) as exc:
+                last_err = exc
+                if attempt == 0:
+                    print(
+                        f"  [CHROME RETRY] PDF render attempt 1 failed ({exc}); retrying with fresh profile...",
+                        file=sys.stderr,
+                    )
+            finally:
+                shutil.rmtree(chrome_profile, ignore_errors=True)
+        if last_err is not None:
+            raise last_err
         os.replace(tmp_pdf, pdf_path)
         if mobile_html_path is not None:
             mob_html = prepare_mobile_html(full_html, mobile_market)
@@ -1239,7 +1314,6 @@ def render_pdf_atomic(
     finally:
         tmp_html.unlink(missing_ok=True)
         tmp_pdf.unlink(missing_ok=True)
-        shutil.rmtree(chrome_profile, ignore_errors=True)
 
 
 def render_docx_atomic(

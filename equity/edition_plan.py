@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
 MARKETS = ("a_share", "hk_stock", "us_stock")
+ALL_MAIN_CUTOVER = ("2026-11-26", 1800, 1)
 _EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
 _WATCH_TYPES = {"partial_holiday", "half_day", "long_holiday_start", "full_holiday_and_rollover"}
 _MODE_WATCH = "mode_2_watch_brief"
@@ -108,6 +109,9 @@ def calendar_rules(state: dict, calendar: dict) -> tuple[list[dict], list[str]]:
             continue
         sessions = row.get("affected_sessions")
         if sessions is not None:
+            if "us_stock" in markets and set(markets) & {"a_share", "hk_stock"}:
+                errors.append(f"{label}.affected_sessions 不能在同一规则内混用美股与 A 股/港股")
+                continue
             if not _strings(sessions) or len(set(sessions)) != len(sessions) or any(
                 (key := parse_edition_id(value)) is None or key[2] != 1
                 or not first <= date.fromisoformat(key[0]) <= last + timedelta(days=1)
@@ -155,21 +159,23 @@ def calendar_rules(state: dict, calendar: dict) -> tuple[list[dict], list[str]]:
     return rules, errors
 
 
-def _scheduled_types(day: date, hhmm: int, rules: list[dict]) -> dict[str, str | None]:
+def _scheduled_types(day: date, hhmm: int, rules: list[dict], *, all_main: bool = False) -> dict[str, str | None]:
     weekday, morning = day.weekday(), hhmm == 730
     plan: dict[str, str | None] = dict.fromkeys(MARKETS)
     if weekday < 5:
-        plan.update(a_share="light" if morning else "main", hk_stock="light" if morning else "main",
-                    us_stock="main" if morning and weekday != 0 else "light")
+        if all_main:
+            plan.update(a_share="main", hk_stock="main", us_stock="main")
+        else:
+            plan.update(
+                a_share="light" if morning else "main",
+                hk_stock="light" if morning else "main",
+                us_stock="main" if morning and weekday != 0 else "light",
+            )
     elif weekday == 5 and morning:
         plan["us_stock"] = "main"
 
     session = f"{day}_{hhmm:04}"
     for rule in rules:
-        if rule["mode"] == _MODE_CLOSED and (
-            session in rule["sessions"] if rule["sessions"] else rule["first"] <= day <= rule["last"]
-        ):
-            return dict.fromkeys(MARKETS)
         for market in rule["markets"]:
             if plan[market] is None:
                 continue
@@ -177,7 +183,11 @@ def _scheduled_types(day: date, hhmm: int, rules: list[dict]) -> dict[str, str |
             affects = (
                 session in rule["sessions"] if rule["sessions"] else rule["first"] <= trading_day <= rule["last"]
             )
-            if affects:
+            if not affects:
+                continue
+            if rule["mode"] == _MODE_CLOSED:
+                plan[market] = None
+            else:
                 plan[market] = None if weekday == 5 and rule["kind"] != "half_day" else "holiday_watch"
     return plan
 
@@ -200,7 +210,7 @@ def edition_plan(edition_id: str, state: dict, calendar: dict) -> tuple[dict, li
     if errors:
         return {}, errors
     day, hhmm, revision = key
-    scheduled = _scheduled_types(date.fromisoformat(day), hhmm, rules)
+    scheduled = _scheduled_types(date.fromisoformat(day), hhmm, rules, all_main=key >= ALL_MAIN_CUTOVER)
     exceptions = state.get("publication_exceptions", {})
     if not isinstance(exceptions, dict):
         return {}, ["publication_exceptions 须为对象"]

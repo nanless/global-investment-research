@@ -249,6 +249,43 @@ class PublicationRecoveryTests(unittest.TestCase):
             self.assertFalse(publish.edition_run.push_intent_path(root, token).exists())
             record.assert_not_called()
 
+    def test_remote_release_lock_does_not_mask_primary_exception(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # Case 1: confirm_owner() fails during finally: -> primary exception propagates unmasked
+            case1 = root / "case1"
+            case1.mkdir()
+            release1 = FakeRelease()
+            with redirect_stderr(StringIO()) as err1:
+                with self.assertRaisesRegex(RuntimeError, "primary upload failure"):
+                    with publish._remote_release_lock(release1, case1, case1, "a" * 40, None):
+                        release1.remote.clear()  # causes confirm_owner() to raise in finally:
+                        raise RuntimeError("primary upload failure")
+            self.assertIn("Release lock cleanup failed after error", err1.getvalue())
+
+            # Case 2: release.delete() fails during finally: -> primary exception propagates unmasked
+            case2 = root / "case2"
+            case2.mkdir()
+            release2 = FakeRelease()
+
+            def fail_delete(_asset):
+                raise RuntimeError("delete API 503")
+
+            with patch.object(release2, "delete", fail_delete), redirect_stderr(StringIO()) as err2:
+                with self.assertRaisesRegex(ValueError, "primary switch error"):
+                    with publish._remote_release_lock(release2, case2, case2, "b" * 40, None):
+                        raise ValueError("primary switch error")
+            self.assertIn("delete API 503", err2.getvalue())
+
+            # Case 3: without a primary exception, cleanup failure still raises normally
+            case3 = root / "case3"
+            case3.mkdir()
+            release3 = FakeRelease()
+            with patch.object(release3, "delete", fail_delete):
+                with self.assertRaisesRegex(RuntimeError, "delete API 503"):
+                    with publish._remote_release_lock(release3, case3, case3, "c" * 40, None):
+                        pass
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,8 +14,13 @@ from scripts import artifact_receipt
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "equity"))
+import build_hk_stock_pdf
+import build_us_stock_pdf
+import pdf_common
 from build_daily import extract_daily_meta, load_optional_charts
-from lint_equity import MARKETS, _check_rsi_metrics, _scan_text_for_gold_buy
+from lint_equity import (
+    MARKETS, _check_playbook_retracted_claims, _check_rsi_metrics, _scan_text_for_gold_buy,
+)
 
 KPI_CARDS = [{"label": "数据", "val": "1", "sub": "测试"} for _ in range(4)]
 WATCH = "mode_2_watch_brief"
@@ -147,17 +153,19 @@ class EquityWorkflowTests(unittest.TestCase):
         for session, expected in (
             ("2026-11-26_0730", ("light", "light", "main")),
             ("2026-11-26_1800", ("main", "main", "holiday_watch")),
-            ("2026-11-27_0730", ("light", "light", "holiday_watch")),
+            ("2026-11-27_0730", ("main", "main", "holiday_watch")),
             ("2026-11-28_0730", (None, None, "holiday_watch")),
             ("2026-11-28_1800", (None, None, None)),
             ("2026-11-29_0730", (None, None, None)),
-            ("2026-11-30_0730", ("light", "light", "light")),
-            ("2026-12-24_0730", ("light", "holiday_watch", "main")),
+            ("2026-11-30_0730", ("main", "main", "main")),
+            ("2026-12-24_0730", ("main", "holiday_watch", "main")),
             ("2026-12-26_0730", (None, None, None)),
-            ("2026-12-31_1800", ("main", "holiday_watch", "light")),
-            ("2027-01-01_0730", (None, None, None)),
-            ("2027-02-08_1800", ("holiday_watch", "holiday_watch", "light")),
-            ("2027-02-10_1800", ("holiday_watch", "main", "light")),
+            ("2026-12-31_1800", ("main", "holiday_watch", "main")),
+            ("2027-01-01_0730", (None, None, "main")),
+            ("2027-01-01_1800", (None, None, None)),
+            ("2027-01-02_0730", (None, None, None)),
+            ("2027-02-08_1800", ("holiday_watch", "holiday_watch", "main")),
+            ("2027-02-10_1800", ("holiday_watch", "main", "main")),
         ):
             with self.subTest(session=session):
                 self.assertEqual(self._types(session), expected)
@@ -217,7 +225,7 @@ class EquityWorkflowTests(unittest.TestCase):
     def test_cross_month_does_not_accept_old_flagships(self):
         self.advance("2026-12-01_0730")
         self.state["period_slug"] = "2026_12"
-        for market, kind in (("a_share", "light"), ("hk_stock", "light"), ("us_stock", "main")):
+        for market, kind in (("a_share", "main"), ("hk_stock", "main"), ("us_stock", "main")):
             self.issue(market, kind)
         result = self.lint("--precheck", "--strict")
         self.assertEqual(result.returncode, 1, result.stdout)
@@ -417,6 +425,137 @@ class EquityWorkflowTests(unittest.TestCase):
             self.assertTrue(_scan_text_for_gold_buy("report", sentence), sentence)
         for sentence in ("存量底仓保持，不立即买入黄金", "严禁追高芯片与抢跑新买黄金", "等黄灯后再买入黄金"):
             self.assertFalse(_scan_text_for_gold_buy("report", sentence), sentence)
+
+    def test_brent_live_none_allowed_on_both_sides_only(self):
+        self.advance("2026-11-29_1800")
+        comm = self.state["cross_market_linkages"]["commodity_mirror"]
+        self.gold["brent_live_usd"] = None
+        comm["brent_live_usd"] = None
+        self.save()
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        comm["brent_live_usd"] = 90.2
+        self.save()
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("Gate C1 失败：brent_live_usd", result.stdout)
+
+        self.gold["brent_live_usd"] = 90.2
+        comm["brent_live_usd"] = None
+        self.save()
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("Gate C1 失败：brent_live_usd", result.stdout)
+
+    def test_retracted_tax_etf_bond_gates_block_reports_and_playbook(self):
+        report_cases = (
+            ("买 159545 可享零溢价优势。", "ETF 规则硬错误"),
+            ("港股通持有红筹 28% 税成本偏高。", "港股税务口径硬错误"),
+            ("可转债末日二级卖出免 20% 个人税。", "可转债到期税费硬错误"),
+        )
+        for prose, expected_err in report_cases:
+            with self.subTest(report_claim=prose):
+                errors, _ = pdf_common.lint_markdown_report(prose, "2026-11-26_1800_hk_stock.md")
+                self.assertTrue(any(expected_err in err for err in errors), errors)
+
+        allowed_prose = (
+            "159545 并非零溢价，买入前仍须查折溢价。\n"
+            "港股通红筹并非一律 28% 税，须按发行人公告核验。\n"
+            "严禁写末日二级卖出免 20% 个人税。\n"
+        )
+        errors, _ = pdf_common.lint_markdown_report(allowed_prose, "2026-11-26_1800_hk_stock.md")
+        self.assertEqual(errors, [])
+
+        playbook = self.root / "equity/state/RSI_PLAYBOOK.md"
+        playbook_cases = (
+            ("经验：159545 零溢价可直接买入。", "159545/159792 零溢价已撤回旧口径"),
+            ("经验：红筹 28% 税。", "红筹股一刀切 28% 税已撤回旧口径"),
+            ("经验：末日二级卖出免 20% 个人税。", "可转债末日二级卖出免 20% 个人税已撤回旧口径"),
+        )
+        self.advance("2026-11-29_1800")
+        for line, expected_err in playbook_cases:
+            with self.subTest(playbook_claim=line):
+                self.assertTrue(any(expected_err in err for err in _check_playbook_retracted_claims(line)))
+                playbook.write_text(f"# 复盘规则\n\n{line}\n", encoding="utf-8")
+                result = self.lint("--precheck", "--strict")
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(expected_err, result.stdout)
+
+        playbook.write_text(
+            "# 复盘规则\n\n"
+            "- 严禁写 159545 零溢价；严禁笼统称红筹 28% 税；严禁写末日二级卖出免 20% 个人税。\n",
+            encoding="utf-8",
+        )
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_svg_chart_regression_fixes(self):
+        # 1. Chart H6 with 13 items includes item #13 (no silent [:12] truncation)
+        items_13 = [(f"测试标的{idx:02d}", float(20 - idx), f"结论{idx:02d}") for idx in range(1, 14)]
+        h6_html = build_hk_stock_pdf.svg_chart_h6_ah_arbitrage_and_sectors({
+            "chart_live": {"h6": {"items": items_13, "sector_strip": "十三标的完整性校验"}},
+        })
+        self.assertIn("测试标的13", h6_html)
+        self.assertIn("结论13", h6_html)
+
+        # 2. Chart H1 with as_of_short="11/26早" preserves leading "1" (not "1/26早")
+        h1_html = build_hk_stock_pdf.svg_chart_h1_cycles({
+            "chart_live": {"as_of_short": "11/26早", "hsi": 22300},
+        })
+        self.assertIn("11/26早 22,300", h1_html)
+        self.assertNotIn(">1/26早 22,300<", h1_html)
+
+        # 3. Chart H3 with negative ERP renders "-0.72%" and never "+-0.72%"
+        h3_html = build_hk_stock_pdf.svg_chart_h3_peg_and_erp({
+            "chart_live": {
+                "h3": {
+                    "erps": [
+                        ("恒生指数 · 人民币锚", 8.10, "#009E73"),
+                        ("沪深 300 · A 股锚", 5.80, "#0D9488"),
+                        ("恒生指数 · 美元锚", 4.50, "#0072B2"),
+                        ("标普 500 · 美股锚", -0.72, "#D55E00"),
+                    ],
+                },
+            },
+        })
+        self.assertIn("-0.72%", h3_html)
+        self.assertNotIn("+-0.72%", h3_html)
+
+        # 4. Chart U6 uses unified 1:1 linear scale for positive +3.09% and negative -3.81%
+        u6_html = build_us_stock_pdf.svg_chart_u6_sector_heatmap({
+            "chart_live": {
+                "u6": {
+                    "date_short": "11/26",
+                    "sectors": [
+                        {"name": "能源 (XLE)", "pct": 3.09, "dd": -10.5},
+                        {"name": "科技 (XLK)", "pct": -3.81, "dd": -18.2},
+                    ],
+                },
+            },
+        })
+        pos_m = re.search(r'<rect[^>]*width="([0-9.]+)"[^>]*height="14"[^>]*/>\s*<text[^>]*>\+3\.09%</text>', u6_html)
+        neg_m = re.search(r'<rect[^>]*width="([0-9.]+)"[^>]*height="14"[^>]*/>\s*<text[^>]*>-3\.81%</text>', u6_html)
+        self.assertIsNotNone(pos_m, u6_html)
+        self.assertIsNotNone(neg_m, u6_html)
+        w_pos = float(pos_m.group(1))
+        w_neg = float(neg_m.group(1))
+        expected_ratio = 3.81 / 3.09
+        actual_ratio = w_neg / w_pos
+        self.assertLessEqual(abs(actual_ratio - expected_ratio) / expected_ratio, 0.05)
+
+        # 5. Chart U5 with 11 banks dynamically scales SVG height > 288 without clipping
+        banks_11 = [(f"华尔街大行{idx:02d}（2027年底）", 7800 + idx * 100, "#0072B2") for idx in range(1, 12)]
+        u5_html = build_us_stock_pdf.svg_chart_u5_wall_street_forensic({
+            "chart_live": {"spx": 7200, "u5": {"banks": banks_11}},
+        })
+        vb_m = re.search(r'viewBox="0 0 850 (\d+)"', u5_html)
+        self.assertIsNotNone(vb_m, u5_html)
+        svg_h = int(vb_m.group(1))
+        self.assertGreater(svg_h, 288)
+        last_y_m = re.search(r'<text[^>]*y="([0-9.]+)"[^>]*>华尔街大行11（2027年底）</text>', u5_html)
+        self.assertIsNotNone(last_y_m, u5_html)
+        self.assertLess(float(last_y_m.group(1)), svg_h)
 
 
 if __name__ == "__main__":

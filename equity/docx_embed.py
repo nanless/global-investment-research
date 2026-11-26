@@ -9,7 +9,7 @@ Replaces macOS `textutil` completely:
     keepNext -> keepLines -> pageBreakBefore -> pBdr -> shd -> spacing -> ind -> jc).
   - Real <w:tbl> with <w:tblHeader/> and positive two-pass <w:tblGrid> summing strictly <= 9638 dxa.
   - Themed 1x1 cards for cover banner, KPI strip, callouts (verdict/danger/guard), volume headers.
-  - Chrome Headless 2x Retina rasterization (874px wrap, 45s timeout, isolated temp profile,
+  - Chrome Headless 2x Retina rasterization (874px wrap, 60s timeout, isolated temp profile + 1 retry,
     PIL auto-crop with 20px uniform padding, auto-retry 4800px viewport for tall charts).
   - word/settings.xml (<w:updateFields w:val="true"/>) + w:dirty="true" PAGE/NUMPAGES footer.
   - Validates all 7 XML parts with xml.etree.ElementTree before atomic os.replace write.
@@ -22,6 +22,7 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -32,7 +33,34 @@ from xml.sax.saxutils import escape as xml_escape
 from bs4 import BeautifulSoup, NavigableString, Tag
 from PIL import Image, ImageChops
 
-CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+_DEFAULT_MACOS_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def resolve_chrome_bin() -> str:
+    """Resolve Chrome/Chromium binary via CHROME_BIN, macOS app bundle, or PATH."""
+    env_bin = os.environ.get("CHROME_BIN", "").strip()
+    if env_bin:
+        if Path(env_bin).exists():
+            return env_bin
+        found_env = shutil.which(env_bin)
+        if found_env:
+            return found_env
+    if Path(_DEFAULT_MACOS_CHROME).exists():
+        return _DEFAULT_MACOS_CHROME
+    for candidate in ("google-chrome", "chromium", "chromium-browser"):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    raise FileNotFoundError(
+        "Chrome/Chromium binary not found (checked CHROME_BIN, macOS Google Chrome, "
+        "google-chrome, chromium, chromium-browser)"
+    )
+
+
+try:
+    CHROME_BIN = resolve_chrome_bin()
+except FileNotFoundError:
+    CHROME_BIN = _DEFAULT_MACOS_CHROME
 
 # A4 portrait: 11906 x 16838 dxa; margins T/B=1000, L/R=1134 -> usable width = 9638 dxa (~6.69 in)
 PAGE_W_DXA = 11906
@@ -224,9 +252,9 @@ def _trim_png_whitespace(png_path: Path, pad_px: int = 20) -> bool:
 
 
 def render_chart_to_png(chart_html: str, out_png: Path, tmp_dir: Path, idx: int) -> Path:
+    chrome_bin = resolve_chrome_bin()
     win_w = 874
     tmp_html = tmp_dir / f"_eq_chart_{idx}.html"
-    per_call_profile = tmp_dir / f"_eq_prof_{idx}"
     doc = (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
         f"<style>{CHART_WRAPPER_CSS}</style></head>"
@@ -235,30 +263,48 @@ def render_chart_to_png(chart_html: str, out_png: Path, tmp_dir: Path, idx: int)
     tmp_html.write_text(doc, encoding="utf-8")
     try:
         for win_h in (2400, 4800):
-            shutil.rmtree(per_call_profile, ignore_errors=True)
-            per_call_profile.mkdir(parents=True, exist_ok=True)
-            out_png.unlink(missing_ok=True)
-            proc = subprocess.run(
-                [
-                    CHROME_BIN,
-                    "--headless",
-                    "--disable-gpu",
-                    "--disable-extensions",
-                    "--disable-background-networking",
-                    "--hide-scrollbars",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--force-device-scale-factor=2",
-                    f"--user-data-dir={per_call_profile}",
-                    f"--window-size={win_w},{win_h}",
-                    f"--screenshot={out_png}",
-                    str(tmp_html),
-                ],
-                capture_output=True,
-                timeout=45,
-            )
-            if proc.returncode != 0 or not out_png.exists() or out_png.stat().st_size < 2048:
-                raise RuntimeError(f"Chrome chart PNG render failed (idx={idx}, rc={proc.returncode})")
+            last_err: Exception | None = None
+            for attempt in range(2):
+                per_call_profile = Path(
+                    tempfile.mkdtemp(prefix=f"_eq_prof_{idx}_{win_h}_{attempt}_", dir=tmp_dir)
+                )
+                try:
+                    out_png.unlink(missing_ok=True)
+                    proc = subprocess.run(
+                        [
+                            chrome_bin,
+                            "--headless",
+                            "--disable-gpu",
+                            "--disable-extensions",
+                            "--disable-background-networking",
+                            "--hide-scrollbars",
+                            "--no-first-run",
+                            "--no-default-browser-check",
+                            "--force-device-scale-factor=2",
+                            f"--user-data-dir={per_call_profile}",
+                            f"--window-size={win_w},{win_h}",
+                            f"--screenshot={out_png}",
+                            str(tmp_html),
+                        ],
+                        capture_output=True,
+                        timeout=60,
+                    )
+                    if proc.returncode != 0 or not out_png.exists() or out_png.stat().st_size < 2048:
+                        raise RuntimeError(f"Chrome chart PNG render failed (idx={idx}, rc={proc.returncode})")
+                    last_err = None
+                    break
+                except (subprocess.SubprocessError, RuntimeError) as exc:
+                    last_err = exc
+                    if attempt == 0:
+                        print(
+                            f"  [CHROME RETRY] Chart PNG render (idx={idx}, h={win_h}) attempt 1 failed ({exc}); "
+                            "retrying with fresh profile...",
+                            file=sys.stderr,
+                        )
+                finally:
+                    shutil.rmtree(per_call_profile, ignore_errors=True)
+            if last_err is not None:
+                raise last_err
             touched_bottom = _trim_png_whitespace(out_png, pad_px=20)
             if not touched_bottom:
                 break
@@ -268,7 +314,6 @@ def render_chart_to_png(chart_html: str, out_png: Path, tmp_dir: Path, idx: int)
         return out_png
     finally:
         tmp_html.unlink(missing_ok=True)
-        shutil.rmtree(per_call_profile, ignore_errors=True)
 
 
 class _EquityDocxWriter:

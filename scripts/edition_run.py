@@ -115,10 +115,59 @@ def _publication(runs: sqlite3.Connection, token: str) -> sqlite3.Row | None:
 def scheduled_edition(slot: str) -> str:
     now = datetime.now(BEIJING)
     hhmm = now.strftime("%H%M")
-    end = {"0730": "1130", "1800": "2200"}[slot]
-    if not slot <= hhmm < end:
+    if slot == "0730":
+        in_window = "0725" <= hhmm < "1330"
+    elif slot == "1800":
+        in_window = "1755" <= hhmm <= "2359"
+    else:
+        raise ValueError(f"Unknown scheduled slot: {slot!r}")
+    if not in_window:
         raise ValueError(f"Outside the Beijing run window for {slot}. Use a manual edition for recovery.")
     return f"{now.date().isoformat()}_{slot}"
+
+
+def reap_stale_unpushed_run(
+    runs: sqlite3.Connection, next_edition: str, max_idle_hours: float = 2.0,
+) -> str | None:
+    """Reap an orphaned unpushed running lock from a different edition after prolonged inactivity."""
+    with _idle_publish_lock(), runs:
+        runs.execute("BEGIN IMMEDIATE")
+        active = runs.execute(
+            "SELECT token, edition, phase, updated FROM runs WHERE status = 'running'"
+        ).fetchone()
+        if active is None or active["edition"] == next_edition:
+            return None
+        token = active["token"]
+        push_started = (
+            _publication(runs, token) is not None
+            or push_intent_path(git_directory(), token).exists()
+        )
+        if push_started:
+            return None
+        try:
+            raw_updated = str(active["updated"]).replace("Z", "+00:00")
+            updated_dt = datetime.fromisoformat(raw_updated)
+            if updated_dt.tzinfo is None:
+                updated_dt = updated_dt.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return None
+        now_dt = datetime.fromisoformat(utc_now().replace("Z", "+00:00"))
+        if now_dt.tzinfo is None:
+            now_dt = now_dt.replace(tzinfo=timezone.utc)
+        if now_dt - updated_dt <= timedelta(hours=max_idle_hours):
+            return None
+        outcome = f"Auto-reaped stale unpushed lock (>{max_idle_hours:g}h inactive) before {next_edition}"
+        runs.execute(
+            "UPDATE runs SET status = 'failed', updated = ?, outcome = ? WHERE token = ? AND status = 'running'",
+            (utc_now(), outcome, token),
+        )
+        print(
+            f"[NOTICE] Auto-reaped stale unpushed run {active['edition']} "
+            f"({active['phase']}, attempt {token[:12]}, last update {active['updated']}) "
+            f"before {next_edition}.",
+            file=sys.stderr,
+        )
+        return active["edition"]
 
 
 def begin(runs: sqlite3.Connection, edition: str, source: str = "manual") -> str:
@@ -177,20 +226,36 @@ def _has_text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _is_http_url(value: object) -> bool:
+    if not isinstance(value, str) or re.search(r"\s", value):
+        return False
+    try:
+        url = urlsplit(value)
+        return url.scheme in {"http", "https"} and bool(url.hostname)
+    except ValueError:
+        return False
+
+
 def _has_deferred_data_evidence(evidence: object, current: tuple[str, int, int]) -> bool:
     if not isinstance(evidence, dict):
         return False
     due = _edition_key(evidence.get("due_edition"))
-    source = evidence.get("source")
     if due is None or due <= current or not _has_text(evidence.get("disposition")):
         return False
-    if not isinstance(source, str) or re.search(r"\s", source):
+    return _is_http_url(evidence.get("source"))
+
+
+def _has_disclosed_caveat_evidence(evidence: object, current: tuple[str, int, int]) -> bool:
+    if not isinstance(evidence, dict) or not _has_text(evidence.get("disposition")):
         return False
-    try:
-        url = urlsplit(source)
-        return url.scheme in {"http", "https"} and bool(url.hostname)
-    except ValueError:
-        return False
+    if "source" in evidence and evidence["source"] is not None:
+        if not _is_http_url(evidence["source"]):
+            return False
+    if "due_edition" in evidence and evidence["due_edition"] is not None:
+        due = _edition_key(evidence["due_edition"])
+        if due is None or due <= current:
+            return False
+    return True
 
 
 def _check_review_closure(review: dict, file: str, current: tuple[str, int, int]) -> None:
@@ -212,8 +277,16 @@ def _check_review_closure(review: dict, file: str, current: tuple[str, int, int]
         elif status == "deferred_data":
             if not _has_deferred_data_evidence(evidence, current):
                 raise ValueError(f"{label} requires a source URL, future due_edition and disposition for deferred data.")
+        elif status == "disclosed_caveat":
+            if not _has_disclosed_caveat_evidence(evidence, current):
+                raise ValueError(
+                    f"{label} requires a disposition (and valid HTTP(S) source URL / future due_edition if provided) "
+                    "for disclosed_caveat."
+                )
         else:
-            raise ValueError(f"{label} must be resolved or documented as deferred_data before publication.")
+            raise ValueError(
+                f"{label} must be resolved or documented as deferred_data/disclosed_caveat before publication."
+            )
 
 
 def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = None) -> None:
@@ -281,16 +354,47 @@ def _ledger_lines(sha: str, path: str) -> list[bytes]:
     )
     if result.returncode:
         raise ValueError(f"Cannot verify the Gold ledger {path} in commit {sha}.")
-    return [line for line in result.stdout.split(b"\n") if line.strip()]
+    normalized = result.stdout.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return [line for line in normalized.split(b"\n") if line.strip()]
+
+
+def _preserves_order(prior: list[bytes], candidate_lines: list[bytes]) -> bool:
+    # Searching the remaining iterator consumes each match and preserves the old order.
+    remaining = iter(candidate_lines)
+    return all(line in remaining for line in prior)
+
+
+def _archived_ledger_paths(sha: str, path: str) -> list[str]:
+    ledger = Path(path)
+    archive_dir = f"{ledger.parent.as_posix()}/archive"
+    prefix = f"{ledger.stem}_"
+    result = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", sha, "--", archive_dir],
+        cwd=ROOT, capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode:
+        return []
+    matches = [
+        entry.strip()
+        for entry in result.stdout.splitlines()
+        if entry.strip().endswith(".md") and Path(entry.strip()).name.startswith(prefix)
+    ]
+    return sorted(matches, key=lambda entry: (Path(entry).name, entry))
 
 
 def _check_gold_ledger_history(base: str, candidate: str) -> None:
     for path in GOLD_HISTORY_LEDGERS:
-        # Searching the remaining iterator consumes each match and preserves the old order.
-        remaining = iter(_ledger_lines(candidate, path))
-        for line in _ledger_lines(base, path):
-            if line not in remaining:
-                raise ValueError(f"{path} must preserve every prior nonblank line in its original order.")
+        prior = _ledger_lines(base, path)
+        active = _ledger_lines(candidate, path)
+        if _preserves_order(prior, active):
+            continue
+        archived_paths = _archived_ledger_paths(candidate, path)
+        if archived_paths:
+            archived_chrono = [line for ap in archived_paths for line in _ledger_lines(candidate, ap)]
+            archived_rev = [line for ap in reversed(archived_paths) for line in _ledger_lines(candidate, ap)]
+            if _preserves_order(prior, archived_chrono + active) or _preserves_order(prior, active + archived_rev):
+                continue
+        raise ValueError(f"{path} must preserve every prior nonblank line in its original order.")
 
 
 def _check_publication_candidate(runs: sqlite3.Connection, token: str, sha: str, repository: str) -> None:
@@ -352,21 +456,50 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
     """Require the actual main-branch deploy job for the recorded push."""
     deadline = time.monotonic() + wait
     while True:
-        candidates = _gh_json(
-            "run", "list", "--repo", repository, "--workflow", "deploy-pages.yml", "--branch", "main",
-            "--commit", sha, "--json", "databaseId,headSha,headBranch,status,conclusion,url", "--limit", "10",
-        )
+        try:
+            candidates = _gh_json(
+                "run", "list", "--repo", repository, "--workflow", "deploy-pages.yml", "--branch", "main",
+                "--commit", sha, "--json", "databaseId,headSha,headBranch,status,conclusion,url", "--limit", "10",
+            )
+        except (subprocess.SubprocessError, ValueError, OSError) as exc:
+            if time.monotonic() >= deadline:
+                raise DeploymentPending(
+                    f"Pages status check failed transiently for {sha}: {exc}; rerun complete for this attempt."
+                ) from exc
+            time.sleep(min(5, max(0, deadline - time.monotonic())))
+            continue
+
         runs = [run for run in candidates if run["headSha"] == sha and run["headBranch"] == "main"]
-        if runs and runs[0]["status"] == "completed":
-            run = runs[0]
-            details = _gh_json("run", "view", str(run["databaseId"]), "--repo", repository,
-                               "--json", "headSha,headBranch,jobs,url")
+        completed = [run for run in runs if run.get("status") == "completed"]
+        has_pending = any(run.get("status") != "completed" for run in runs)
+
+        failed_url: str | None = None
+        transient_err: Exception | None = None
+        for run in completed:
+            try:
+                details = _gh_json(
+                    "run", "view", str(run["databaseId"]), "--repo", repository,
+                    "--json", "headSha,headBranch,jobs,url",
+                )
+            except (subprocess.SubprocessError, ValueError, OSError) as exc:
+                transient_err = exc
+                continue
             if details["headSha"] == sha and details["headBranch"] == "main" and any(
                 job["name"] == DEPLOY_JOB and job["conclusion"] == "success" for job in details["jobs"]
             ):
                 return details["url"]
-            raise ValueError(f"Pages deploy job did not succeed for {sha}: {run['url']}. Rerun the workflow, then complete.")
+            if failed_url is None:
+                failed_url = run["url"]
+
+        if completed and not has_pending and transient_err is None and failed_url is not None:
+            raise ValueError(
+                f"Pages deploy job did not succeed for {sha}: {failed_url}. Rerun the workflow, then complete."
+            )
         if time.monotonic() >= deadline:
+            if transient_err is not None:
+                raise DeploymentPending(
+                    f"Pages status check failed transiently for {sha}: {transient_err}; rerun complete for this attempt."
+                ) from transient_err
             raise DeploymentPending(f"Pages is still pending for {sha}; rerun complete for this attempt.")
         time.sleep(min(5, max(0, deadline - time.monotonic())))
 
@@ -525,6 +658,8 @@ def main() -> int:
                 if args.scheduled:
                     edition = scheduled_edition(args.scheduled)
                     if reconcile_previous_deployment(runs):
+                        runs.commit()
+                    if reap_stale_unpushed_run(runs, edition):
                         runs.commit()
                     token = begin(runs, edition, f"antigravity-{args.scheduled}")
                     print(json.dumps({"edition_id": edition, "token": token}))

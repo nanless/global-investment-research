@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import html as html_mod
 import json
+import re
 import sys
 from pathlib import Path
 
 from pdf_common import (
     BASE_DIR,
-    CHROME_BIN,
     atomic_copy,
     build_theme_css,
     clean_svg_text,
@@ -26,6 +26,7 @@ from pdf_common import (
     render_docx_atomic,
     render_md_body,
     render_pdf_atomic,
+    resolve_chrome_bin,
     run_lint_gate,
     svg_shape,
     write_equity_receipt,
@@ -59,12 +60,9 @@ def resolve_flagship_paths(meta: dict) -> tuple[Path, Path, Path]:
 
 
 def _read_hkma_bal_100m(cl: dict) -> float:
-    """Read HKMA Aggregate Balance in 100M HKD (亿港元), supporting legacy key safely."""
+    """Read HKMA Aggregate Balance in 100M HKD (亿港元)."""
     if cl.get("hkma_agg_bal_hkd_100m") is not None:
         return float(cl["hkma_agg_bal_hkd_100m"])
-    if cl.get("hkma_agg_bal_hkd_b") is not None:
-        val = float(cl["hkma_agg_bal_hkd_b"])
-        return val * 10.0 if val < 200.0 else val
     return 540.78
 
 
@@ -101,7 +99,7 @@ def svg_chart_h1_cycles(meta_override: dict | None = None) -> str:
         (2022.82, 14597, "22/10极底 14,597", "below", "#D55E00"),
         (2024.06, 14794, "24/01双底 14,794", "below", "#009E73"),
         (2026.06, 28056, "26/01顶 28,056", "above", "#0072B2"),
-        (max(2026.88, cur_yr), hsi, f"{as_short[-5:]} {hsi:,.0f}", "above", "#0F766E"),
+        (max(2026.88, cur_yr), hsi, f"{re.sub(r'^\d{4}/', '', as_short)} {hsi:,.0f}", "above", "#0F766E"),
     ]
     min_yr = 2016.12
     max_yr = max(2026.90, cur_yr)
@@ -197,19 +195,19 @@ def svg_chart_h2_flow_and_rebalance(meta_override: dict | None = None) -> str:
         ["恒指夜期 (03:00)", 0.72, 0.0],
     ]
     max_abs = max([abs(float(r[1])) for r in indices[:5]] + [1.2])
-    px_per_pct = 76.0 / max_abs
+    px_per_pct = 74.0 / max_abs
     bars = ""
     y0 = 56
     for idx, row in enumerate(indices[:5]):
         nm, d_pct, ytd = str(row[0]), float(row[1]), row[2]
         yy = y0 + idx * 37
         zero_x = 248.0
-        w = max(4.0, min(82.0, abs(d_pct) * px_per_pct))
+        w = max(4.0, min(78.0, abs(d_pct) * px_per_pct))
         is_night = "夜期" in nm
         col = "#D97706" if is_night else ("#009E73" if d_pct >= 0 else "#D55E00")
         bx = zero_x if d_pct >= 0 else zero_x - w
-        tx = zero_x + w + 5 if d_pct >= 0 else zero_x - w - 5
-        anc = "start" if d_pct >= 0 else "end"
+        tx = zero_x + w + 5 if d_pct >= 0 else zero_x + 6
+        anc = "start"
         if len(row) > 3 and row[3]:
             session_label = str(row[3])
         elif is_night:
@@ -218,7 +216,7 @@ def svg_chart_h2_flow_and_rebalance(meta_override: dict | None = None) -> str:
             session_label = f"年内 {float(ytd):+.1f}%" if ytd is not None else ""
         bars += (
             f'<text x="16" y="{yy+14}" font-size="9.1" fill="#0f172a" font-weight="700">{_svg_esc(nm)}</text>'
-            f'<text x="16" y="{yy+27}" font-size="8.4" fill="{"#B45309" if is_night else "#64748b"}">{_svg_esc(session_label)}</text>'
+            f'<text x="16" y="{yy+27}" font-size="9.0" fill="{"#B45309" if is_night else "#64748b"}">{_svg_esc(session_label)}</text>'
             f'<rect x="{bx:.1f}" y="{yy+4}" width="{w:.1f}" height="15" fill="{col}" rx="2.5"/>'
             f'<text x="{tx:.1f}" y="{yy+15}" text-anchor="{anc}" font-size="9.0" fill="{col}" font-weight="700">{d_pct:+.2f}%</text>'
         )
@@ -248,7 +246,7 @@ def svg_chart_h2_flow_and_rebalance(meta_override: dict | None = None) -> str:
             f'<text x="416" y="{cy+17}" font-size="9.3" fill="{col}" font-weight="800">{_svg_esc(hdr)}</text>'
         )
         for li, ln in enumerate(lines[:3]):
-            right_xml += f'<text x="416" y="{cy+33+li*15}" font-size="8.8" fill="#1f2937">• {_svg_esc(ln)}</text>'
+            right_xml += f'<text x="416" y="{cy+33+li*15}" font-size="9.0" fill="#1f2937">• {_svg_esc(ln)}</text>'
         cy += 78
 
     return f'''
@@ -305,16 +303,36 @@ def svg_chart_h3_peg_and_erp(meta_override: dict | None = None) -> str:
         (f"恒生指数 · 外资美元锚（vs {us10y:.2f}% 美债）", 4.81, "#0072B2"),
         (f"标普 500 · 美股前瞻锚（vs {us10y:.2f}% 美债）", 0.88, "#D55E00"),
     ]
-    erp_bars = ""
+    erp_rows = erps[:4]
+    has_neg = any(float(v) < 0 for _, v, _ in erp_rows)
+    max_pos = max([float(v) for _, v, _ in erp_rows if float(v) > 0] + [10.0])
+    max_neg = max([abs(float(v)) for _, v, _ in erp_rows if float(v) < 0] + [0.0])
+    if has_neg:
+        erp_zero_x = 368.0
+        erp_px = min(395.0 / max_pos, 65.0 / max(max_neg, 1.0))
+    else:
+        erp_zero_x = 312.0
+        erp_px = 440.0 / max_pos
+    erp_bars = f'<line x1="{erp_zero_x:.1f}" y1="156" x2="{erp_zero_x:.1f}" y2="278" stroke="#64748b" stroke-width="1.1"/>'
     ey0 = 158
-    for idx, (lbl, val, col) in enumerate(erps[:4]):
+    for idx, (lbl, val, col) in enumerate(erp_rows):
         yy = ey0 + idx * 30
-        bw = max(6.0, (float(val) / 10.0) * 440.0)
-        erp_bars += (
-            f'<text x="34" y="{yy+14}" font-size="9.1" fill="#0f172a" font-weight="700">{_svg_esc(lbl)}</text>'
-            f'<rect x="312" y="{yy+3}" width="{bw:.1f}" height="15" fill="{col}" rx="3"/>'
-            f'<text x="{312+bw+7:.1f}" y="{yy+14}" font-size="9.2" fill="{col}" font-weight="800">+{float(val):.2f}%</text>'
-        )
+        val_f = float(val)
+        if val_f >= 0:
+            bw = max(6.0, val_f * erp_px)
+            erp_bars += (
+                f'<text x="34" y="{yy+14}" font-size="9.1" fill="#0f172a" font-weight="700">{_svg_esc(lbl)}</text>'
+                f'<rect x="{erp_zero_x:.1f}" y="{yy+3}" width="{bw:.1f}" height="15" fill="{col}" rx="3"/>'
+                f'<text x="{erp_zero_x+bw+7:.1f}" y="{yy+14}" font-size="9.2" fill="{col}" font-weight="800">{val_f:+.2f}%</text>'
+            )
+        else:
+            bw = max(6.0, abs(val_f) * erp_px)
+            neg_col = "#DC2626"
+            erp_bars += (
+                f'<text x="34" y="{yy+14}" font-size="9.1" fill="#0f172a" font-weight="700">{_svg_esc(lbl)}</text>'
+                f'<rect x="{erp_zero_x-bw:.1f}" y="{yy+3}" width="{bw:.1f}" height="15" fill="{neg_col}" rx="3"/>'
+                f'<text x="{erp_zero_x+7:.1f}" y="{yy+14}" font-size="9.2" fill="{neg_col}" font-weight="800">{val_f:+.2f}%</text>'
+            )
 
     return f'''
     <div class="chart-box">
@@ -323,23 +341,23 @@ def svg_chart_h3_peg_and_erp(meta_override: dict | None = None) -> str:
       <svg viewBox="0 0 850 296" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="296" fill="#ffffff" rx="6"/>
         <rect x="20" y="14" width="405" height="106" fill="#fef2f2" stroke="#fecaca" stroke-width="1" rx="6"/>
-        <text x="34" y="34" font-size="9.4" fill="#991b1b" font-weight="800">阀门 1：联系汇率 美元/港元 = {usdhkd:.3f}（紧贴 7.85 弱方线！）</text>
+        <text x="34" y="34" font-size="9.4" fill="#991b1b" font-weight="800">阀门 1：联系汇率 美元/港元 = {usdhkd:.3f}（紧贴 7.85 弱方线）</text>
         <rect x="40" y="50" width="370" height="14" fill="#e2e8f0" rx="7"/>
         <rect x="40" y="50" width="{peg_x-40:.1f}" height="14" fill="#dc2626" opacity="0.82" rx="7"/>
         <circle cx="{peg_x:.1f}" cy="57" r="7" fill="#991b1b" stroke="#ffffff" stroke-width="2"/>
-        <text x="40" y="81" font-size="8.8" fill="#166534" font-weight="700">7.75 强方流入</text>
-        <text x="225" y="81" text-anchor="middle" font-size="8.8" fill="#475569">7.80 中枢</text>
-        <text x="410" y="81" text-anchor="end" font-size="8.8" fill="#991b1b" font-weight="800">7.85 弱方抽水</text>
-        <text x="34" y="105" font-size="8.8" fill="#7f1d1d" font-weight="600">1个月港元拆息 {hibor1m:.2f}% vs 美元隔夜 {sofr:.2f}%（利差 {hibor1m-sofr:+.2f}%）</text>
+        <text x="40" y="81" font-size="9.0" fill="#166534" font-weight="700">7.75 强方流入</text>
+        <text x="225" y="81" text-anchor="middle" font-size="9.0" fill="#475569">7.80 中枢</text>
+        <text x="410" y="81" text-anchor="end" font-size="9.0" fill="#991b1b" font-weight="800">7.85 弱方抽水</text>
+        <text x="34" y="105" font-size="9.0" fill="#7f1d1d" font-weight="600">1个月港元拆息 {hibor1m:.2f}% vs 美元隔夜 {sofr:.2f}%（利差 {hibor1m-sofr:+.2f}%）</text>
 
         <rect x="435" y="14" width="395" height="106" fill="#fffbeb" stroke="#fde68a" stroke-width="1" rx="6"/>
         <text x="450" y="34" font-size="9.4" fill="#92400e" font-weight="800">阀门 2：金管局银行总结余 = {agg_bal:.1f} 亿港元（薄缓冲水位）</text>
         <rect x="450" y="50" width="370" height="14" fill="#e2e8f0" rx="7"/>
         <rect x="450" y="50" width="{bal_x-450:.1f}" height="14" fill="#d97706" rx="7"/>
         <line x1="{bal_warn_x:.1f}" y1="45" x2="{bal_warn_x:.1f}" y2="70" stroke="#dc2626" stroke-width="1.8"/>
-        <text x="{bal_warn_x:.1f}" y="82" text-anchor="middle" font-size="8.6" fill="#dc2626" font-weight="800">400亿警戒线</text>
-        <text x="820" y="82" text-anchor="end" font-size="8.6" fill="#475569">2,000亿宽裕</text>
-        <text x="450" y="105" font-size="8.8" fill="#78350f" font-weight="600">若 12/10 联储加息致总结余破 400 亿 → 拆息恐破 4.0%–4.5%</text>
+        <text x="{bal_warn_x:.1f}" y="82" text-anchor="middle" font-size="9.0" fill="#dc2626" font-weight="800">400亿警戒线</text>
+        <text x="820" y="82" text-anchor="end" font-size="9.0" fill="#475569">2,000亿宽裕</text>
+        <text x="450" y="105" font-size="9.0" fill="#78350f" font-weight="600">若 12/10 联储加息致总结余破 400 亿 → 拆息恐破 4.0%–4.5%</text>
 
         <text x="24" y="146" font-size="9.8" fill="#0f172a" font-weight="800">A / 港 / 美三市前瞻 / 滚动股权风险溢价（盈利收益率 − 10 年国债利率）跨市比价尺</text>
         <rect x="20" y="152" width="810" height="132" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.9" rx="6"/>
@@ -399,7 +417,7 @@ def svg_chart_h4_clock(meta_override: dict | None = None) -> str:
             f'<text x="{cx+99}" y="30" text-anchor="middle" font-size="9.0" fill="#ffffff" font-weight="800">{_svg_esc(c["header"])}</text>'
         )
         for j, it in enumerate(c.get("items", [])[:3]):
-            cards_xml += f'<text x="{cx+8}" y="{56+j*26}" font-size="8.6" fill="#1f2937">• {_svg_esc(it)}</text>'
+            cards_xml += f'<text x="{cx+8}" y="{56+j*26}" font-size="9.0" fill="#1f2937">• {_svg_esc(it)}</text>'
 
     return f'''
     <div class="chart-box">
@@ -410,7 +428,7 @@ def svg_chart_h4_clock(meta_override: dict | None = None) -> str:
         {cards_xml}
         <rect x="16" y="154" width="818" height="52" fill="{b_fill}" stroke="{b_brd}" stroke-width="1.3" rx="6"/>
         <text x="30" y="175" font-size="9.4" fill="{b_t1}" font-weight="800">{html_mod.escape(clean_svg_text(st1))}</text>
-        <text x="30" y="195" font-size="8.9" fill="{b_t2}" font-weight="600">{html_mod.escape(clean_svg_text(st2))}</text>
+        <text x="30" y="195" font-size="9.0" fill="{b_t2}" font-weight="600">{html_mod.escape(clean_svg_text(st2))}</text>
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway}</div>
       <div class="chart-note">{note}</div>
@@ -457,7 +475,7 @@ def svg_chart_h5_targets_and_scenarios(meta_override: dict | None = None) -> str
         bars += (
             f'<text x="136" y="{yy+14}" text-anchor="end" font-size="9.0" fill="#0f172a" font-weight="700">{_svg_esc(nm)}</text>'
             f'<rect x="{base_x:.1f}" y="{yy+3}" width="{bw:.1f}" height="14" fill="{col}" rx="2.5"/>'
-            f'<text x="{base_x+bw+5:.1f}" y="{yy+14}" font-size="8.8" fill="{col}" font-weight="700">{int(tgt):,} ({chg:+.0f}%)</text>'
+            f'<text x="{base_x+bw+5:.1f}" y="{yy+14}" font-size="9.0" fill="{col}" font-weight="700">{int(tgt):,} ({chg:+.0f}%)</text>'
         )
 
     scenarios = h5.get("scenarios") or [
@@ -477,7 +495,7 @@ def svg_chart_h5_targets_and_scenarios(meta_override: dict | None = None) -> str
             f'<text x="488" y="{sy+12}" font-size="9.0" fill="#0f172a" font-weight="800">{_svg_esc(nm)}（10次约{dots_n}次）</text>'
             f'<rect x="488" y="{sy+18}" width="320" height="12" fill="#e2e8f0" rx="4"/>'
             f'<rect x="488" y="{sy+18}" width="{pw:.1f}" height="12" fill="{col}" rx="4"/>'
-            f'<text x="488" y="{sy+43}" font-size="8.6" fill="{col}" font-weight="700">区间：{_svg_esc(rng)} ｜ 概率 {prob_f:g}%</text>'
+            f'<text x="488" y="{sy+43}" font-size="9.0" fill="{col}" font-weight="700">区间：{_svg_esc(rng)} ｜ 概率 {prob_f:g}%</text>'
         )
         sy += 54
 
@@ -508,13 +526,13 @@ def svg_chart_h6_ah_arbitrage_and_sectors(meta_override: dict | None = None) -> 
     hsahp = float(cl.get("hsahp", 137.62))
 
     title = _norm_chart_title(
-        h6.get("title") or f"双账户 AH 价差路由真相（溢价指数 {hsahp:.1f}）：中芯 A 股贵 2 倍，宁德/招行 H 股反倒挂！"
+        h6.get("title") or f"双账户 AH 价差路由真相（溢价指数 {hsahp:.1f}）：中芯 A 股贵 2 倍，宁德/招行 H 股反倒挂"
     )
     sub = html_mod.escape(clean_svg_text(str(
-        h6.get("sub") or "按最新 A/H 价差核算：(A 股 / H 股折人民币) − 1 ｜ 正值买 H 股省钱，负值（倒挂）坚决买 A 股！"
+        h6.get("sub") or "按最新 A/H 价差核算：(A 股 / H 股折人民币) − 1 ｜ 正值买 H 股省钱，负值（倒挂）优先比对 A 股"
     )))
     takeaway = html_mod.escape(clean_svg_text(str(
-        h6.get("takeaway") or "切忌盲信“港股一定比 A 股便宜”！中芯（+202%）、华虹（+224%）、中海油（+66%）、工行（+37.4%）买离岸 H 股大幅省钱；但宁德（-21.1%，11/25 午盘已跌超 6% 兑现警告）、药明康德（-10.3%）、中际（-8.1%）及招行（-5.0%）H 股反贵，有 A 股账户者优先买 A 股！"
+        h6.get("takeaway") or "切忌盲信“港股一定比 A 股便宜”。中芯（+202%）、华虹（+224%）、中海油（+66%）、工行（+37.4%）离岸 H 股折价显著；但宁德（-21.1%，11/25 午盘已跌超 6% 兑现提示）、药明康德（-10.3%）、中际（-8.1%）及招行（-5.0%）H 股反贵，有 A 股账户者优先比对 A 股。"
     )))
     note = html_mod.escape(clean_svg_text(str(
         h6.get("note") or "数据口径：A/H 最新官方收盘与 11/25 午盘实盘，超 +100% 柱条采用 // 断轴示意以免挤压常规标的。"
@@ -527,15 +545,15 @@ def svg_chart_h6_ah_arbitrage_and_sectors(meta_override: dict | None = None) -> 
         ("华虹半导体 (01347)", 223.8, "离岸 H 股折价 -69%"),
         ("中芯国际 (00981)", 201.6, "离岸 H 股折价 -67%"),
         ("中国电信 (00728)", 85.3, "H 股 20% 税具优势"),
-        ("中国海油 (00883)", 66.1, "离岸 10% 税完胜港股通 28%"),
-        ("中国移动 (00941)", 58.2, "离岸 10% 税完胜港股通 28%"),
+        ("中国海油 (00883)", 66.1, "核查发行人源头代扣与渠道规则"),
+        ("中国移动 (00941)", 58.2, "核查发行人源头代扣与渠道规则"),
         ("比亚迪 (01211)", 47.2, "离岸折价显著"),
         ("中国神华 (01088)", 44.7, "H 股高息优势显著"),
         ("工商银行 (01398)", 38.6, "H 股高息优势显著"),
         ("紫金矿业 (02899)", 16.0, "价差收窄两地中性"),
-        ("招商银行 (03968)", -4.5, "倒挂！买 A 股 600036 更省"),
-        ("中际旭创 (03308)", -8.1, "倒挂！买 A 股 300308 更省"),
-        ("宁德时代 (03750)", -21.1, "深倒挂！买 A 股 300750 省两成"),
+        ("招商银行 (03968)", -4.5, "倒挂：买 A 股 600036 更省"),
+        ("中际旭创 (03308)", -8.1, "倒挂：买 A 股 300308 更省"),
+        ("宁德时代 (03750)", -21.1, "深倒挂：买 A 股 300750 省两成"),
     ]
     zero_x = 296.0
     cap_pos = 100.0
@@ -543,7 +561,7 @@ def svg_chart_h6_ah_arbitrage_and_sectors(meta_override: dict | None = None) -> 
     neg_px_per_pct = 3.50
 
     rows_xml = ""
-    for idx, (nm, pct, tag) in enumerate(items[:12]):
+    for idx, (nm, pct, tag) in enumerate(items):
         yy = 42 + idx * 24
         pct_f = float(pct)
         if pct_f >= 0:
@@ -555,21 +573,21 @@ def svg_chart_h6_ah_arbitrage_and_sectors(meta_override: dict | None = None) -> 
                 bx = zero_x + bw - 22
                 rows_xml += f'<line x1="{bx:.1f}" y1="{yy+2}" x2="{bx+6:.1f}" y2="{yy+18}" stroke="#ffffff" stroke-width="2.4"/><line x1="{bx+6:.1f}" y1="{yy+2}" x2="{bx+12:.1f}" y2="{yy+18}" stroke="#ffffff" stroke-width="2.4"/>'
             rows_xml += (
-                f'<text x="{zero_x+bw+6:.1f}" y="{yy+14}" font-size="8.8" fill="{col}" font-weight="800">+{pct_f:.1f}%</text>'
-                f'<text x="628" y="{yy+14}" font-size="8.6" fill="#334155">{_svg_esc(tag)}</text>'
+                f'<text x="{zero_x+bw+6:.1f}" y="{yy+14}" font-size="9.0" fill="{col}" font-weight="800">+{pct_f:.1f}%</text>'
+                f'<text x="628" y="{yy+14}" font-size="9.0" fill="#334155">{_svg_esc(tag)}</text>'
             )
         else:
             bw = max(10.0, min(95.0, abs(pct_f) * neg_px_per_pct))
             col = "#D55E00"
             rows_xml += (
                 f'<rect x="{zero_x-bw:.1f}" y="{yy+3}" width="{bw:.1f}" height="14" fill="{col}" rx="2"/>'
-                f'<text x="{zero_x-bw-6:.1f}" y="{yy+14}" text-anchor="end" font-size="8.8" fill="{col}" font-weight="800">{pct_f:.1f}%</text>'
-                f'<text x="628" y="{yy+14}" font-size="8.6" fill="#991b1b" font-weight="700">{_svg_esc(tag)}</text>'
+                f'<text x="{zero_x-bw-6:.1f}" y="{yy+14}" text-anchor="end" font-size="9.0" fill="{col}" font-weight="800">{pct_f:.1f}%</text>'
+                f'<text x="628" y="{yy+14}" font-size="9.0" fill="#991b1b" font-weight="700">{_svg_esc(tag)}</text>'
             )
-        rows_xml += f'<text x="16" y="{yy+14}" font-size="8.9" fill="#0f172a" font-weight="700">{_svg_esc(nm)}</text>'
+        rows_xml += f'<text x="16" y="{yy+14}" font-size="9.0" fill="#0f172a" font-weight="700">{_svg_esc(nm)}</text>'
 
-    strip_y = 46 + len(items[:12]) * 24 + 4
-    svg_h = strip_y + 32
+    strip_y = 46 + len(items) * 24 + 4
+    svg_h = strip_y + 34
     return f'''
     <div class="chart-box">
       <div class="chart-title">{title}</div>
@@ -582,7 +600,7 @@ def svg_chart_h6_ah_arbitrage_and_sectors(meta_override: dict | None = None) -> 
         <line x1="{zero_x:.1f}" y1="34" x2="{zero_x:.1f}" y2="{strip_y-6}" stroke="#64748b" stroke-width="1.2"/>
         {rows_xml}
         <rect x="14" y="{strip_y}" width="822" height="24" fill="#f0fdfa" stroke="#99f6e4" stroke-width="0.9" rx="4"/>
-        <text x="425" y="{strip_y+15.5}" text-anchor="middle" font-size="8.8" fill="#115e59" font-weight="700">{sector_strip}</text>
+        <text x="425" y="{strip_y+15.5}" text-anchor="middle" font-size="9.0" fill="#115e59" font-weight="700">{sector_strip}</text>
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway}</div>
       <div class="chart-note">{note}</div>
@@ -605,7 +623,7 @@ DEFAULT_H7_POINTS = [
     ("港交所 23x(息4%)", 568, 118, "b", "#0072B2", 9, 4, "start"),
     ("药明/信达生物", 652, 140, "b", "#0072B2", 9, 4, "start"),
     ("百济神州 48x", 734, 96, "b", "#0072B2", -9, 4, "end"),
-    ("中国宏桥(28%税)", 128, 206, "y", "#D97706", 9, 4, "start"),
+    ("中国宏桥(核查代扣)", 128, 206, "y", "#D97706", 9, 4, "start"),
     ("小米(逼空/存储压)", 320, 198, "y", "#D97706", 9, 4, "start"),
     ("美团(待11/27报)", 468, 204, "y", "#D97706", 9, 4, "start"),
     ("中芯H 43x(较A折67%)", 642, 196, "y", "#D97706", 9, 4, "start"),
@@ -624,7 +642,7 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
     pts = h7.get("points") or DEFAULT_H7_POINTS
 
     title = _norm_chart_title(
-        h7.get("title") or f"港股精选代表龙头四象限地图（全量 {pool_cnt} 只见下表）：左边真便宜，底下避业绩与剔除雷！"
+        h7.get("title") or f"港股精选代表龙头四象限地图（全量 {pool_cnt} 只见下表）：左边真便宜，底下避业绩与剔除雷"
     )
     sub = html_mod.escape(clean_svg_text(str(
         h7.get("sub") or "横轴：估值从左到右由便宜到贵（严格对齐同股 A/H 物理市盈率） ｜ 纵轴：现金流与政策护城河越扎实"
@@ -639,7 +657,7 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
     dots = ""
     for nm, x, y, sh, col, dx, dy, anc in pts:
         dots += svg_shape(str(sh), float(x), float(y), str(col))
-        dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="8.8" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
+        dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="9.0" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
 
     return f'''
     <div class="chart-box">
@@ -657,14 +675,14 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
         <text x="44" y="49" font-size="9.0" fill="#166534" font-weight="800">● 便宜真现金流底座（当下低吸/收息首选）</text>
         <text x="824" y="49" text-anchor="end" font-size="9.0" fill="#1e40af" font-weight="800">◆ 优质成长/A+H倒挂区（等回调或改买A股）</text>
         <text x="44" y="268" font-size="9.0" fill="#92400e" font-weight="800">▲ 成本冲击/税务/周期观察（勿盲抄）</text>
-        <text x="824" y="268" text-anchor="end" font-size="9.0" fill="#991b1b" font-weight="800">× 业绩降速/失真/MSCI剔除雷区（回避！）</text>
+        <text x="824" y="268" text-anchor="end" font-size="9.0" fill="#991b1b" font-weight="800">× 业绩降速/失真/MSCI剔除雷区（回避）</text>
         <text x="34" y="24" font-size="9.0" fill="#475569" font-weight="700">↑ 纵轴越高 = 自由现金流、回购与政策护城河越扎实</text>
-        <text x="44" y="294" font-size="8.8" fill="#475569" font-weight="600">← 深度低估（6–15 倍）</text>
-        <text x="440" y="294" text-anchor="middle" font-size="8.8" fill="#475569" font-weight="600">估值分界（约 18–22 倍 / 倒挂线）</text>
-        <text x="824" y="294" text-anchor="end" font-size="8.8" fill="#b91c1c" font-weight="600">高估/亏损博弈 →</text>
+        <text x="44" y="294" font-size="9.0" fill="#475569" font-weight="600">← 深度低估（6–15 倍）</text>
+        <text x="440" y="294" text-anchor="middle" font-size="9.0" fill="#475569" font-weight="600">估值分界（约 18–22 倍 / 倒挂线）</text>
+        <text x="824" y="294" text-anchor="end" font-size="9.0" fill="#b91c1c" font-weight="600">高估/亏损博弈 →</text>
         {dots}
         <rect x="34" y="302" width="800" height="19" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.7" rx="3"/>
-        <text x="434" y="315" text-anchor="middle" font-size="8.8" fill="#334155" font-weight="600">图例：<tspan fill="#009E73" font-weight="800">●</tspan> 当下底座 ｜ <tspan fill="#0072B2" font-weight="800">◆</tspan> 未来主攻（已上锁） ｜ <tspan fill="#D97706" font-weight="800">▲</tspan> 分歧观察 ｜ <tspan fill="#D55E00" font-weight="800">×</tspan> 高危回避</text>
+        <text x="434" y="315" text-anchor="middle" font-size="9.0" fill="#334155" font-weight="600">图例：<tspan fill="#009E73" font-weight="800">●</tspan> 当下底座 ｜ <tspan fill="#0072B2" font-weight="800">◆</tspan> 未来主攻（已上锁） ｜ <tspan fill="#D97706" font-weight="800">▲</tspan> 分歧观察 ｜ <tspan fill="#D55E00" font-weight="800">×</tspan> 高危回避</text>
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway}</div>
       <div class="chart-note">{note}</div>
@@ -673,7 +691,8 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
 
 
 def run_check() -> None:
-    assert Path(CHROME_BIN).exists(), f"Chrome missing: {CHROME_BIN}"
+    chrome = resolve_chrome_bin()
+    assert Path(chrome).exists(), f"Chrome missing: {chrome}"
     import bs4  # noqa: F401
     from PIL import Image  # noqa: F401
     assert META_PATH.exists(), f"Missing {META_PATH}"
@@ -724,17 +743,24 @@ def main() -> None:
     render_pdf_atomic(full_pdf_html, pdf_path, HTML_PDF_PATH, TMP_PDF_PATH)
     print(f"Wrote PDF ({pdf_path.stat().st_size:,} bytes): {pdf_path}")
 
-    if not no_docx:
-        render_docx_atomic(full_pdf_html, docx_path, market="hk_stock", footer_title=page_footer)
-        write_equity_receipt(frozen, pdf_path, docx_path)
-        print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
+    if no_docx:
+        receipt_path = md_path.with_suffix(".artifacts.json")
+        if receipt_path.exists():
+            receipt_path.unlink()
+            print(f"Removed stale artifact receipt: {receipt_path.name}")
+        print("[WARN] --no-docx skips syncing *_latest.* to prevent PDF/DOCX divergence.")
+        return
+
+    render_docx_atomic(full_pdf_html, docx_path, market="hk_stock", footer_title=page_footer)
+    write_equity_receipt(frozen, pdf_path, docx_path)
+    print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
 
     latest_md = OUT_DIR / "hk_stock_market_report_latest.md"
     latest_pdf = OUT_DIR / "hk_stock_market_report_latest.pdf"
     latest_docx = OUT_DIR / "hk_stock_market_report_latest.docx"
     atomic_copy(md_path, latest_md)
     atomic_copy(pdf_path, latest_pdf)
-    if not no_docx and docx_path.exists():
+    if docx_path.exists():
         atomic_copy(docx_path, latest_docx)
         print(f"Synced: {latest_md}, {latest_pdf} & {latest_docx}")
     else:

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import statistics
@@ -33,6 +34,7 @@ from build_daily import (
     count_pdf_pages,
     esc,
     parse_markdown_to_html,
+    resolve_chrome_bin,
     sanitize_css_string,
     svg_esc,
 )
@@ -44,7 +46,7 @@ MD_PATH = OUT_DIR / f"{BASE_NAME}.md"
 DEFAULT_MASTER_SNAPSHOT = OUT_DIR / "master_snapshot.json"
 PDF_PATH = OUT_DIR / f"{BASE_NAME}.pdf"
 DOCX_PATH = OUT_DIR / f"{BASE_NAME}.docx"
-CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME_BIN = resolve_chrome_bin()
 
 MASTER_BASELINE_RE = re.compile(r"<!--\s*MASTER_BASELINE\s*(\{.*?\})\s*-->", re.DOTALL)
 
@@ -106,7 +108,7 @@ def _as_of_meta() -> tuple[str, int, int, int, str, str, bool, str]:
         is_am = hr < 12
     else:
         yr, mo, dy, mmdd, cn_date, is_am = 2026, 11, 24, "11/24", "2026 年 11 月 24 日", False
-    time_word = "今早" if is_am else "最新"
+    time_word = f"{mmdd}基线"
     return as_short, yr, mo, dy, mmdd, cn_date, is_am, time_word
 
 
@@ -283,9 +285,9 @@ def svg_chart_2026_bear_and_vacuum(fig_num: int = 2) -> str:
     y_base_bot = y_p(3121)
     y_etf_be = y_p(etf_cost)
     y_spot = y_p(spot)
-    last_l = months[-1][3]
+    last_l = int(round(months[-1][3]))
     last_col = "#c2410c" if months[-1][4] >= months[-1][1] else "#0f766e"
-    box_y = round(max(36.0, min(240.0, y_p(min(fri_low, int(last_l))) - 22.0)), 1)
+    box_y = round(max(36.0, min(240.0, y_p(last_l) - 22.0)), 1)
 
     candles = ""
     n_mo = len(months)
@@ -323,7 +325,7 @@ def svg_chart_2026_bear_and_vacuum(fig_num: int = 2) -> str:
         <circle cx="{start_x}" cy="{y_p(5596)}" r="2.8" fill="#c2410c"/>
         <text x="{start_x+7}" y="{round(y_p(5596)-4,1)}" font-size="10.6" fill="#c2410c" font-weight="800" {HALO}>1月顶 $5,596</text>
         <rect x="{last_x-200}" y="{box_y}" width="176" height="20" fill="#ffffff" stroke="{last_col}" stroke-width="1.1" rx="3"/>
-        <text x="{last_x-112}" y="{round(box_y+14,1)}" text-anchor="middle" font-size="10.4" fill="{last_col}" font-weight="800">{mmdd}收 ${spot:,}（低 ${fri_low:,}）</text>
+        <text x="{last_x-112}" y="{round(box_y+14,1)}" text-anchor="middle" font-size="10.4" fill="{last_col}" font-weight="800">{mmdd}收 ${spot:,}（低 ${last_l:,}）</text>
         <line x1="{last_x-24}" y1="{round(box_y+10,1)}" x2="{last_x-12}" y2="{y_spot}" stroke="{last_col}" stroke-width="1.3"/>
       </svg>
       <div class="chart-note">数据来源：国际现货金月度行情与世界黄金协会（WGC）基金流向数据。*{live_mo_lbl}为截至 {esc(as_short)} 实时月线；中文习惯以砖红柱代表当月收涨、青绿柱代表当月收跌。</div>
@@ -472,7 +474,8 @@ def _top_round_path(x: float, y: float, w: float, h: float, r: float = 6.0) -> s
 
 def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
     """Dynamic 2x2 Mechanical Calendar + Data-Driven 4-Step Traffic Light."""
-    dfii = float(SNAP["dfii10_live_pct"])
+    dfii_val = SNAP.get("dfii10_fred_official_pct")
+    dfii = float(dfii_val if dfii_val is not None else SNAP["dfii10_live_pct"])
     sp = int(SNAP["spread_2y_ff_bp"])
     vix = float(SNAP["vix_close"])
     spot = int(SNAP["spot_gold_ny_close_rounded"])
@@ -555,7 +558,7 @@ def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
 def svg_chart_institutional_targets(fig_num: int = 7) -> str:
     """Global Audited Institutions — data-driven rows, separated * vs † legend symbols, dynamic collision avoidance."""
     spot = int(SNAP["spot_gold_ny_close_rounded"])
-    _, _, _, _, _, _, _, time_word = _as_of_meta()
+    _, _, _, _, _, cn_date, _, time_word = _as_of_meta()
 
     COL_MAP = {"pt": "#0f766e", "avg": "#b45309", "horizon": "#475569", "stale": "#64748b"}
     default_banks = [
@@ -633,6 +636,16 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
             f'paint-order="stroke" stroke="#ffffff" stroke-width="4" stroke-linejoin="round">{lbl_str}</text>'
         )
 
+    extra_avgs = [
+        f"{str(b['name']).split('（')[0]}全年均价 ${int(b['annual_average_usd']):,}"
+        for b in banks
+        if "annual_average_usd" in b
+    ]
+    extra_avg_note = (
+        f"{'、'.join(extra_avgs)} 计入均价统计，主标记为年末点位。"
+        if extra_avgs
+        else ""
+    )
     leg_y = bot_y + 23
     return f'''
     <div class="chart-box">
@@ -651,7 +664,7 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
         <rect x="14" y="{leg_y}" width="612" height="20" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.9" rx="4"/>
         <text x="320" y="{leg_y+14}" text-anchor="middle" font-size="10.0" fill="#334155">● 年末目标：{len(pt_vals)} 条记录 ｜ ◆ 全年均价：{len(avg_vals)} 条记录 ｜ 灰色为其他期限或旧稿</text>
       </svg>
-      <div class="chart-note">取自 2026 年 11 月 24 日主报告冻结记录。法国兴业全年均价 $4,625 计入均价统计，主标记为年末点位。花旗期限为 6–12 个月，德银为旧稿，两条单列。均价统计仅覆盖仓库中可辨认的 {len(avg_vals)} 条记录。</div>
+      <div class="chart-note">取自 {esc(cn_date)} 主报告冻结记录。{esc(extra_avg_note)}花旗期限为 6–12 个月，德银为旧稿，两条单列。均价统计仅覆盖仓库中可辨认的 {len(avg_vals)} 条记录。</div>
     </div>
     '''
 
@@ -766,7 +779,7 @@ def svg_chart_fx_and_cross_ratios(fig_num: int = 6) -> str:
         <text x="14" y="20" font-size="11.2" fill="#1e3a8a" font-weight="800">一、汇率账本：如果国际金涨到 ${ye_med:,.0f}（美元涨 +{usd_up:.1f}%），你手里的人民币金能赚多少？</text>
         {top_bars}
         <line x1="{x_base_rmb}" y1="32" x2="{x_base_rmb}" y2="182" stroke="#1e3a8a" stroke-width="1.3" stroke-dasharray="4,3"/>
-        <text x="{x_base_rmb}" y="195" text-anchor="middle" font-size="10.2" fill="#1e3a8a" font-weight="700">{time_word}基准 {base_rmb:.0f} 元</text>
+        <text x="{x_base_rmb}" y="195" text-anchor="middle" font-size="10.2" fill="#1e3a8a" font-weight="700">{time_word} {base_rmb:.0f} 元</text>
 
         <line x1="14" y1="205" x2="626" y2="205" stroke="#cbd5e1" stroke-width="1"/>
         <text x="14" y="221" font-size="11.2" fill="#1e3a8a" font-weight="800">二、50 年跨资产比价尺：黄金目前仅相对高估美股便宜，相对油/铂/银仍明显偏贵</text>
@@ -820,7 +833,8 @@ def build_cover_html() -> str:
     peak = int(round(float(SNAP["spot_gold_intraday_high_usd"])))
     peak_26 = float(SNAP.get("spot_gold_2026_peak_usd", 5595.62))
     dd_pct = abs((spot - peak_26) / peak_26) * 100.0
-    dfii = float(SNAP["dfii10_live_pct"])
+    dfii_val = SNAP.get("dfii10_fred_official_pct")
+    dfii = float(dfii_val if dfii_val is not None else SNAP["dfii10_live_pct"])
     dfii_lvl = str(SNAP.get("dfii10_level_short", "20年高位"))
     passed = int(SNAP["tier1_passed"])
     total = int(SNAP["tier1_total"])
@@ -830,8 +844,7 @@ def build_cover_html() -> str:
     tier_lbl = str(SNAP.get("tier_label", "红灯停")).split("（")[0]
     tier_cover_sub = str(SNAP.get("tier_cover_sub") or SNAP.get("tier_status_sub") or "暂不新买 · 按四步红绿灯执行")
     _, dot_cls = _tier_dot_color(SNAP)
-    _, _, _, _, _, _, is_am, _ = _as_of_meta()
-    peak_prefix = "昨晚冲" if is_am else "近期冲"
+    peak_prefix = "近期冲"
 
     return f"""
 <div class="cover-banner" style="border-bottom:4px solid #b45309;">
@@ -889,8 +902,9 @@ def main():
         parser.error("--snapshot and --allow-drift are limited to --check")
 
     if args.check:
-        if not Path(CHROME_BIN).exists():
-            raise SystemExit(f"ERROR: Chrome binary missing at {CHROME_BIN}")
+        chrome_bin = os.environ.get("CHROME_BIN", "").strip() or resolve_chrome_bin()
+        if not (Path(chrome_bin).exists() or shutil.which(chrome_bin)):
+            raise SystemExit(f"ERROR: Chrome binary missing at {chrome_bin}")
         if not MD_PATH.exists():
             raise SystemExit(f"ERROR: Master MD missing: {MD_PATH}")
         import bs4  # noqa: F401
@@ -933,7 +947,7 @@ def main():
     )
     footer_note = (
         f'<div class="footer-note">'
-        f'本报告（{esc(REPORT_VERSION)} · 数据基线 {esc(REPORT_TIMESTAMP)}）数据均经多源官方数据库核验；投资有风险，请按家庭总资产 10%–15% 合理配置，严禁借钱或加杠杆炒金。'
+        f'本报告（黄金跨世纪周期全景指南 · 数据基线 {esc(REPORT_TIMESTAMP)}）数据均经多源官方数据库核验；投资有风险，请按家庭总资产 10%–15% 合理配置，严禁借钱或加杠杆炒金。'
         f'</div>'
     )
 
@@ -974,31 +988,51 @@ def main():
     tmp_pdf_html.write_text(full_pdf_html, encoding="utf-8")
     tmp_pdf_out = PDF_PATH.with_suffix(".pdf.tmp")
 
+    chrome_bin = os.environ.get("CHROME_BIN", "").strip() or CHROME_BIN
     try:
-        # 1. Build PDF (atomic write + timeout + size check)
-        tmp_pdf_out.unlink(missing_ok=True)
-        proc = subprocess.run(
-            [
-                CHROME_BIN,
-                "--headless",
-                "--disable-gpu",
-                "--disable-extensions",
-                "--disable-background-networking",
-                "--no-first-run",
-                "--no-default-browser-check",
-                f"--user-data-dir={chrome_profile}",
-                "--no-pdf-header-footer",
-                f"--print-to-pdf={tmp_pdf_out}",
-                tmp_pdf_html.as_uri(),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=90,
-        )
-        if proc.returncode != 0 or not tmp_pdf_out.exists() or tmp_pdf_out.stat().st_size < 10000:
-            raise RuntimeError(
-                f"Chrome headless PDF print failed for {BASE_NAME} (rc={proc.returncode}): {proc.stderr.strip()[:400]}"
-            )
+        # 1. Build PDF (2-attempt retry with fresh profile, timeout=120, atomic write & size check)
+        last_err: Exception | None = None
+        for attempt in range(1, 3):
+            attempt_profile = work_tmp / f"chrome_pdf_profile_{attempt}"
+            shutil.rmtree(attempt_profile, ignore_errors=True)
+            attempt_profile.mkdir(parents=True, exist_ok=True)
+            tmp_pdf_out.unlink(missing_ok=True)
+            try:
+                proc = subprocess.run(
+                    [
+                        chrome_bin,
+                        "--headless",
+                        "--disable-gpu",
+                        "--disable-extensions",
+                        "--disable-background-networking",
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                        f"--user-data-dir={attempt_profile}",
+                        "--no-pdf-header-footer",
+                        f"--print-to-pdf={tmp_pdf_out}",
+                        tmp_pdf_html.as_uri(),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if proc.returncode != 0 or not tmp_pdf_out.exists() or tmp_pdf_out.stat().st_size < 10000:
+                    raise RuntimeError(
+                        f"Chrome headless PDF print failed for {BASE_NAME} "
+                        f"(attempt {attempt}/2, rc={proc.returncode}): {proc.stderr.strip()[:400]}"
+                    )
+                last_err = None
+                break
+            except (subprocess.TimeoutExpired, RuntimeError) as exc:
+                last_err = exc
+                if attempt == 2:
+                    if isinstance(exc, subprocess.TimeoutExpired):
+                        raise RuntimeError(
+                            f"Chrome headless PDF print timed out after 120s for {BASE_NAME} (attempt 2/2)"
+                        ) from exc
+                    raise
+        if last_err is not None:
+            raise last_err
         tmp_pdf_out.replace(PDF_PATH)
         pages = count_pdf_pages(PDF_PATH)
         print(f"Wrote PDF:  {PDF_PATH} ({pages} pages)")

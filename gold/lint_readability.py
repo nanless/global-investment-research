@@ -32,6 +32,9 @@ from edition_validation import (
     evidence_url, recheck_entry_gates, vix_calendar,
 )
 
+CONVERGED_CUTOVER = ("2026-11-26", "1800", 1)
+INTERNAL_LEAK_CUTOVER = ("2026-11-26", "0730", 1)
+
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
 MASTER_FILENAME = "黄金跨世纪周期与2026-2030终审研究报告.md"
@@ -48,11 +51,25 @@ SCORECARD_BANNED_RE = re.compile(
     r"(?:Subagent|子代理|\bRSI\b|Meta-RSI|Recursive\s+Self-Improvement|"
     r"\bTier\s*[ABC](?:\b|/[ABC])|\bV[267]\.\d+\b|"
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
-    r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
+    r"master_snapshot\.json|data_snapshot\.json|market_state\.json|permissions\.json|"
+    r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|unified-edition\.prompt\.md|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|lint_(?:readability|equity|site)\.py|pdf_common\.py|docx_embed\.py|"
+    r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
+    r"chart_input\.py|install_sidecars\.py|"
     r"63\s*路|红队|法证|\bGate\s*[0-6]\b)",
+    flags=re.IGNORECASE,
+)
+_INTERNAL_FILENAME_LEAK_RE = re.compile(
+    r"(?:master_snapshot\.json|data_snapshot\.json|market_state\.json|"
+    r"audit_ledger\.md|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
+    r"permissions\.json|unified-edition\.prompt\.md|"
+    r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_-]*\.py(?![A-Za-z0-9_])|"
+    r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
+    r"AGENTS\.md|GEMINI\.md|SKILL\.md|"
+    r"(?<![A-Za-z0-9_])V[267]\.\d+(?![A-Za-z0-9_])|"
+    r"(?<![A-Za-z0-9_])Subagents?(?![A-Za-z0-9_])|红队|法证)",
     flags=re.IGNORECASE,
 )
 RSI_REQUIRED_SCORE_KEYS = (
@@ -83,12 +100,46 @@ _BANNED_ASCII_PATTERNS = [
     for tok in BANNED_LAYER01_ASCII
 ]
 
-# CJK / mixed-script jargon & meta-noise banned in Layer 0–1
+# CJK / mixed-script jargon & meta-noise banned in Layer 0–1 (legacy editions < CONVERGED_CUTOVER)
 BANNED_LAYER01_LITERAL = [
     "子代理", "63 路", "63路", "负 Gamma", "负Gamma", "R²=", "R² =",
     "梭哈", "短线波段", "放鹰", "鹰派", "鸽派", "提保", "上影线", "即征即退",
     "高弹性", "六灯", "逼空", "轧空", "做T", "做 T",
 ]
+
+# Converged Informed-Retail Layer 0–1 banned tokens (>= CONVERGED_CUTOVER):
+# Allows standard semi-pro terms (VIX, DXY, GLD, GDX, ETF, CFTC, COT, CDS, 鹰派, 鸽派, 提保, 轧空, 逼空, 上影线)
+# while hard-banning internal eng/RSI/version strings, obscure quant jargon, retail slang,
+# cross-market color confusion, condescending slogans, and parallel scores.
+CONVERGED_BANNED_LAYER01_ASCII = [
+    "Subagent", "stop-through", "IFRS 9", "HQLA", "FVOCI", "ROTCE",
+    "Call Wall", "Put Wall", "Daniel Ghali", "Michael Hsueh",
+]
+_CONVERGED_BANNED_ASCII_PATTERNS = [
+    (tok, re.compile(rf"(?<![A-Za-z0-9_]){re.escape(tok)}(?![A-Za-z0-9_])", re.IGNORECASE))
+    for tok in CONVERGED_BANNED_LAYER01_ASCII
+] + [
+    ("V2/V6/V7版本号", re.compile(r"(?<![A-Za-z0-9_])V[267]\.\d+(?![A-Za-z0-9_])", re.IGNORECASE)),
+]
+CONVERGED_BANNED_LAYER01_LITERAL = [
+    "子代理", "63 路", "63路",
+    "负 Gamma", "负Gamma", "R²=", "R² =",
+    "梭哈", "做T", "做 T", "短线波段", "高弹性",
+    "收红", "收绿", "翻红", "翻绿",
+    "蠢事", "直接抄", "小白词典", "1 分钟定心丸", "1分钟定心丸", "保命铁律",
+    "六灯",
+]
+# Bare-number/amount/percentage backticks banned as soft warning in converged editions
+# (excludes pure ticker codes like `518660`/`008142`/`GCZ26`/`au2702` and dates/times).
+_BARE_NUM_BACKTICK_RE = re.compile(
+    r"`(?:"
+    r"[+\-~≈<>≤≥]*[$¥€£₹]\s*\d[\d,.–\-]*(?:\s*(?:亿份?|万份?|美元|元|港元|欧元|吨|t))?"
+    r"|[+\-~≈<>≤≥]?\d+(?:[.,–\-]\d+)*\s*(?:%|bp|元(?:/克|/千克|/kg)?|港元|美元|欧元|亿份?|万份?|倍|点|手|吨|t)"
+    r"|[+\-]\d+(?:[.,]\d+)?"
+    r"|\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+    r"|\d+\.\d+"
+    r")`"
+)
 
 PERMANENT_FACT_GUARDS = [
     ("912 元/克", "表 6.1 汇率算错旧值（6.30×$4,500 实为 911 元/克）"),
@@ -401,6 +452,8 @@ def validate_snapshot_file(
     for key in snap:
         if re.fullmatch(r"cross_ratios_\d{4}", key):
             warnings.append(f"[Gate 5 遗留日期键] {label} 保留旧键 {key!r}，请使用 cross_ratios")
+    if "etf_cn" in snap and not isinstance(snap["etf_cn"], dict):
+        errors.append(f"[Gate 5 场内 ETF 字段错] {label}: etf_cn 须为对象")
 
     prices = ("spot_gold_ny_close_usd", "spot_gold_ny_close_rounded", "spot_gold_prev_close_usd")
     if _snapshot_numbers(snap, label, errors, prices, positive=True) and _snapshot_numbers(snap, label, errors, ("spot_gold_ny_change_pct",)):
@@ -440,6 +493,31 @@ def validate_snapshot_file(
     return snap
 
 
+def _has_matching_artifact_receipt(md_path: Path, *, is_master: bool) -> bool:
+    root = BASE_DIR.parent
+    assets = {ext: md_path.with_suffix(f".{ext}") for ext in ("pdf", "docx")}
+    if any(not asset.is_file() or asset.is_symlink() for asset in assets.values()):
+        return False
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    inputs = ["gold/build_daily.py", "gold/docx_embed.py"]
+    if (BASE_DIR / "chart_input.py").is_file():
+        inputs.append("gold/chart_input.py")
+    if is_master:
+        inputs.extend(("gold/build_report.py", "gold/master_snapshot.json"))
+    try:
+        from scripts import artifact_receipt
+
+        artifact_receipt.verify_receipt(
+            md_path, repository=root, tree=root,
+            inputs=inputs,
+            outputs={ext: artifact_receipt.sha256_file(asset) for ext, asset in assets.items()},
+        )
+    except (ImportError, OSError, ValueError):
+        return False
+    return True
+
+
 def check_pdf_and_docx_artifacts(
     md_path: Path,
     raw_md: str,
@@ -447,11 +525,19 @@ def check_pdf_and_docx_artifacts(
     warnings: list[str],
     *,
     is_current_daily: bool = False,
+    is_master: bool = False,
 ) -> None:
     """Gate 6: Verify both PDF & Native OOXML DOCX freshness, headers, ECMA-376 order, rels, and embedded PNGs."""
     pdf_path = md_path.with_suffix(".pdf")
     docx_path = md_path.with_suffix(".docx")
     md_mtime = md_path.stat().st_mtime
+    pdf_older = pdf_path.is_file() and pdf_path.stat().st_mtime < md_mtime - 2.0
+    docx_older = docx_path.is_file() and docx_path.stat().st_mtime < md_mtime - 2.0
+    mob_older = (
+        is_current_daily and LATEST_MOBILE_HTML_PATH.is_file()
+        and LATEST_MOBILE_HTML_PATH.stat().st_mtime < md_mtime - 2.0
+    )
+    receipt_verified = (pdf_older or docx_older or mob_older) and _has_matching_artifact_receipt(md_path, is_master=is_master)
 
     expected_charts = 0
     for m in re.finditer(r"<!--\s*(DAILY_CHART_(?:TIMELINE|SWITCH|CROSS)|CHART_1_AND_2|CHART_\d+)\b", raw_md):
@@ -470,7 +556,7 @@ def check_pdf_and_docx_artifacts(
             with open(pdf_path, "rb") as fp:
                 if fp.read(5) != b"%PDF-":
                     errors.append(f"[Gate 6 PDF 文件头损坏] {pdf_path.name} 非合法 PDF 文件")
-        if pdf_stat.st_mtime < md_mtime - 2.0:
+        if pdf_older and not receipt_verified:
             warnings.append(f"[Gate 6 PDF 陈旧] {pdf_path.name} 修改时间早于 {md_path.name}，请重新编译")
 
     # Mobile responsive HTML check for daily reports
@@ -502,7 +588,7 @@ def check_pdf_and_docx_artifacts(
                     if (
                         not title_md or not title_html
                         or title_md.group(1).strip() != html.unescape(title_html.group(1)).strip()
-                        or LATEST_MOBILE_HTML_PATH.stat().st_mtime < md_mtime - 2.0
+                        or (mob_older and not receipt_verified)
                     ):
                         errors.append("[Gate 6 手机端 HTML 错刊] 最新手机端页面标题或修改时间与当前日报不一致")
 
@@ -511,7 +597,7 @@ def check_pdf_and_docx_artifacts(
             warnings.append(f"[Gate 6 DOCX 未生成] 未检测到同名 {docx_path.name}，请先运行编译脚本")
         return
 
-    if docx_path.stat().st_mtime < md_mtime - 2.0:
+    if docx_older and not receipt_verified:
         warnings.append(f"[Gate 6 DOCX 陈旧] {docx_path.name} 修改时间早于 {md_path.name}，请重新编译")
 
     try:
@@ -654,18 +740,23 @@ def check_pdf_and_docx_artifacts(
         errors.append(f"[Gate 6 DOCX 校验异常] 无法解析 {docx_path.name}: {exc}")
 
 
-def _find_banned_layer01_tokens(text: str) -> list[str]:
+def _find_banned_layer01_tokens(text: str, *, is_converged: bool = False) -> list[str]:
+    ascii_pats = _CONVERGED_BANNED_ASCII_PATTERNS if is_converged else _BANNED_ASCII_PATTERNS
+    literals = CONVERGED_BANNED_LAYER01_LITERAL if is_converged else BANNED_LAYER01_LITERAL
     hits: list[str] = []
-    for tok, pat in _BANNED_ASCII_PATTERNS:
-        if pat.search(text):
-            hits.append(tok)
-    for tok in BANNED_LAYER01_LITERAL:
+    for tok, pat in ascii_pats:
+        m = pat.search(text)
+        if m:
+            hits.append(m.group(0) if tok == "V2/V6/V7版本号" else tok)
+    for tok in literals:
         if tok in text:
             hits.append(tok)
     return hits
 
 
-def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warnings: list[str]) -> None:
+def _validate_directive_schema(
+    kind: str, parsed: dict, errors: list[str], warnings: list[str], *, is_converged: bool = False,
+) -> None:
     if not isinstance(parsed, dict):
         errors.append(f"[Gate 0 Schema 非对象] <!-- {kind} --> 顶层必须为 JSON 对象")
         return
@@ -683,8 +774,12 @@ def _validate_directive_schema(kind: str, parsed: dict, errors: list[str], warni
         if not isinstance(kpis, list):
             errors.append("[Gate 0 KPI 结构错] DAILY_META.kpis 须为数组")
         else:
-            if len(kpis) != 6:
-                warnings.append(f"[Gate 0 KPI 数量] DAILY_META.kpis 建议为 6 张卡，实际 {len(kpis)} 张")
+            if is_converged:
+                if not (4 <= len(kpis) <= 6):
+                    warnings.append(f"[Gate 0 KPI 数量] DAILY_META.kpis 须为 4–6 张卡，实际 {len(kpis)} 张")
+            else:
+                if len(kpis) != 6:
+                    warnings.append(f"[Gate 0 KPI 数量] DAILY_META.kpis 建议为 6 张卡，实际 {len(kpis)} 张")
             for idx, k in enumerate(kpis, 1):
                 if not isinstance(k, dict) or any(not isinstance(k.get(f), str) for f in ("label", "val", "sub")):
                     errors.append(f"[Gate 0 KPI 结构错] DAILY_META.kpis[{idx}] 须含 label/val/sub 文本")
@@ -777,14 +872,18 @@ def _strip_code_and_neq(s: str) -> str:
     return t.replace("!=", "")
 
 
-def _check_report_structure(raw: str, directives: dict[str, list[dict]], *, is_master: bool, errors: list[str]) -> None:
+def _check_report_structure(
+    raw: str, directives: dict[str, list[dict]], *, is_master: bool, is_converged: bool = False, errors: list[str],
+) -> None:
     visible = _strip_comments_keep_lines(raw)
     for part in ("第一部分", "第三部分"):
         if not re.search(rf"^#\s*{part}", visible, re.MULTILINE):
             errors.append(f"[Gate 0 缺章节] 缺少 {part} 标题")
     if find_layer01_end(raw) == len(raw):
         errors.append("[Gate 0 缺章节] 缺少深读分层边界")
-    required_card_counts = {"DAILY_VERDICT": 1, "DAILY_PERSONA": 1, "DAILY_TRUST_BAR": 1}
+    required_card_counts = {"DAILY_VERDICT": 1, "DAILY_PERSONA": 1}
+    if not is_converged:
+        required_card_counts["DAILY_TRUST_BAR"] = 1
     if not is_master:
         required_card_counts.update({
             "DAILY_META": 1,
@@ -796,7 +895,11 @@ def _check_report_structure(raw: str, directives: dict[str, list[dict]], *, is_m
     for kind, count in required_card_counts.items():
         if len(directives.get(kind, [])) != count:
             errors.append(f"[Gate 0 组件数量错] {kind} 必须出现 {count} 次")
-    if not directives.get("DAILY_GLOSSARY"):
+    if is_converged:
+        for opt_kind in ("DAILY_TRUST_BAR", "DAILY_GLOSSARY"):
+            if len(directives.get(opt_kind, [])) > 1:
+                errors.append(f"[Gate 0 组件数量错] {opt_kind} 最多出现 1 次")
+    elif not directives.get("DAILY_GLOSSARY"):
         errors.append("[Gate 0 缺组件] 至少需要一处 DAILY_GLOSSARY")
     if is_master:
         tokens = re.findall(r"(?m)^\s*<!--\s*CHART_(\d+|1_AND_2)\s*-->\s*$", raw)
@@ -869,6 +972,35 @@ def _check_partial_entry_claims(visible: str, widgets: list[tuple[str, str]], er
                 errors.append(f"[Gate 5 四关开仓阈值冲突] {source} 须四关全部通过才可转黄或开新仓：{match[0]}")
 
 
+def _skip_domestic_brand_check(snap: dict, filename_key: tuple[str, str, int] | None, daily_meta: dict) -> bool:
+    caveats = snap.get("data_caveats")
+    if isinstance(caveats, list) and any(
+        isinstance(c, dict)
+        and c.get("category") in ("delayed_official", "holiday_thin")
+        and any(kw in (str(c.get("item", "")) + str(c.get("detail", ""))) for kw in ("金店", "国内牌价", "内盘", "春节"))
+        for c in caveats
+    ):
+        return True
+    if str(snap.get("overlay_mode", "")).upper() == "B" or str(daily_meta.get("overlay_mode", "")).upper() == "B":
+        return True
+    day_str = filename_key[0] if filename_key else str(snap.get("as_of_short", ""))[:10]
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day_str) and MARKET_CALENDAR_PATH.exists():
+        try:
+            cal = json.loads(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
+            for ev in cal.get("calendar_overrides", []):
+                if (
+                    isinstance(ev, dict)
+                    and ev.get("overlay_mode") == "B"
+                    and isinstance(ev.get("date"), str)
+                    and isinstance(ev.get("end_date"), str)
+                    and ev["date"] <= day_str <= ev["end_date"]
+                ):
+                    return True
+        except (OSError, ValueError):
+            pass
+    return False
+
+
 def check_file(
     md_path: Path,
     daily_snap: dict | None,
@@ -901,6 +1033,7 @@ def check_file(
     filename_key = _edition_key(filename_edition)
     snapshot_key = _edition_key(daily_snap.get("edition_id")) if daily_snap else None
     is_current_daily = filename_edition is not None and (filename_key is None or snapshot_key is None or filename_key >= snapshot_key)
+    is_converged = not is_master and filename_key is not None and filename_key >= CONVERGED_CUTOVER
 
     layer01_end = find_layer01_end(raw)
     if len(raw) > 3000 and layer01_end == len(raw):
@@ -928,7 +1061,7 @@ def check_file(
         except json.JSONDecodeError as exc:
             errors.append(f"[Gate 0 JSON 语法错] <!-- {kind} --> 解析失败: {exc}")
             continue
-        _validate_directive_schema(kind, parsed, errors, warnings)
+        _validate_directive_schema(kind, parsed, errors, warnings, is_converged=is_converged)
         if not isinstance(parsed, dict):
             continue
         directives.setdefault(kind, []).append(parsed)
@@ -940,7 +1073,7 @@ def check_file(
             l01_widget_texts.append((kind, flat))
 
     if is_master or filename_edition:
-        _check_report_structure(raw, directives, is_master=is_master, errors=errors)
+        _check_report_structure(raw, directives, is_master=is_master, is_converged=is_converged, errors=errors)
     if is_current_daily or daily_meta.get("edition_id") is not None:
         if filename_key is None or daily_meta.get("edition_id") != filename_edition:
             errors.append("[Gate 0 日报刊期不匹配] DAILY_META.edition_id 须与文件名含修订号一致")
@@ -960,14 +1093,24 @@ def check_file(
         else:
             _check_daily_verdict(directives, daily_snap, errors)
 
-    # Gate 1: Zero bare Wall Street codes / internal meta-noise / raw HTML leaks in Layer 0-1
-    found_tokens = _find_banned_layer01_tokens(layer01_vis)
+    full_combined = full_vis + "\n" + "\n".join(t for _, t in all_widget_texts)
+
+    # Gate 1: Zero banned jargon / internal meta-noise / internal filename leaks / raw HTML leaks
+    found_tokens = _find_banned_layer01_tokens(layer01_vis, is_converged=is_converged)
     if found_tokens:
         errors.append(f"[Gate 1 术语/自嗨逃逸] Layer 0–1 正文出现禁止词条: {', '.join(found_tokens)}")
     for kind, txt in l01_widget_texts:
-        bad = _find_banned_layer01_tokens(txt)
+        bad = _find_banned_layer01_tokens(txt, is_converged=is_converged)
         if bad:
             errors.append(f"[Gate 1 组件术语逃逸] Layer 0–1 {kind} 出现禁止词条: {', '.join(bad)}")
+
+    # Full-document internal filename, version & engineering term leak check (ALL layers for >= 2026-11-26_0730)
+    if not is_master and filename_key is not None and filename_key >= INTERNAL_LEAK_CUTOVER:
+        internal_leaks = _INTERNAL_FILENAME_LEAK_RE.findall(full_combined)
+        if internal_leaks:
+            errors.append(
+                f"[Gate 1 内部工程词/文件名泄露] 全文严禁出现内部文件名、版本号或工程术语: {', '.join(sorted(set(internal_leaks)))}"
+            )
 
     # Raw HTML leakage in visible Markdown AND widget JSON payloads
     no_code_vis = re.sub(r"```.*?```", "", full_vis, flags=re.DOTALL)
@@ -981,7 +1124,6 @@ def check_file(
             errors.append(f"[Gate 1 组件 HTML 泄露] {kind} 含有非法 HTML 标签: {', '.join(sorted(set(wleaks)))}")
 
     # Gate 2: Calm doctor tone (markdown-stripped hype scan) & zero exclamation marks in Layer 0-1
-    full_combined = full_vis + "\n" + "\n".join(t for _, t in all_widget_texts)
     full_stripped_md = re.sub(r"\*\*|\*", "", full_combined)
     found_hype = [w for w in BANNED_HYPE_WORDS if w in full_stripped_md]
     if found_hype:
@@ -996,8 +1138,9 @@ def check_file(
             errors.append(f"[Gate 2 组件感叹号] Layer 0–1 {kind} 含 {c} 个感叹号（规定为 0）")
 
     excl_all = len(EXCL_RE.findall(_strip_code_and_neq(full_combined)))
-    if excl_all > 2:
-        warnings.append(f"[Gate 2 感叹号偏多] 全文共 {excl_all} 个感叹号（建议 ≤2）")
+    excl_cap = 5 if is_converged else 2
+    if excl_all > excl_cap:
+        warnings.append(f"[Gate 2 感叹号偏多] 全文共 {excl_all} 个感叹号（建议 ≤{excl_cap}）")
 
     # Gate 3: Parallel score elimination in Layer 0-1 (catches decimal, integer & fullwidth)
     l01_combined = layer01_vis + "\n" + "\n".join(t for _, t in l01_widget_texts)
@@ -1020,10 +1163,22 @@ def check_file(
             "[Gate 4 段落偏长] Layer 0–1 有超过 240 字的自然段: "
             + ", ".join(f"L{ln}({ch}字)" for ln, ch in long_paras[:5])
         )
+    if is_converged:
+        no_fenced_vis = re.sub(r"```.*?```", "", full_vis, flags=re.DOTALL)
+        bold_chars = sum(len(x) for x in re.findall(r"\*\*([^*]+)\*\*", no_fenced_vis))
+        plain_chars = max(1, len(re.sub(r"\s+", "", no_fenced_vis)))
+        bold_pct = (bold_chars / plain_chars) * 100.0
+        if bold_pct > 14.0:
+            warnings.append(f"[Gate 4 加粗密度偏高] 全文加粗文字占比 {bold_pct:.1f}%（建议 ≤14%）")
+        bare_bt = _BARE_NUM_BACKTICK_RE.findall(no_fenced_vis)
+        if bare_bt:
+            warnings.append(
+                f"[Gate 4 裸数字反引号] 请勿用反引号包裹非代码数字/金额（{len(bare_bt)} 处）: {', '.join(bare_bt[:5])}"
+            )
 
     # Gate 5: Stale fact & snapshot consistency checks (edition-aware reconciliation!)
     active_guards = list(PERMANENT_FACT_GUARDS)
-    if not snap or str(snap.get("as_of_short", "")).startswith("2026-11-24"):
+    if snap and str(snap.get("as_of_short", "")).startswith("2026-11-24"):
         active_guards.extend(DATE_BOUND_STALE_GUARDS_20261124)
     for stale_tok, reason in active_guards:
         if stale_tok in full_combined:
@@ -1035,7 +1190,12 @@ def check_file(
             if f"{spot_r:,}" not in full_combined and str(spot_r) not in full_combined:
                 warnings.append(f"[Gate 5 基准价缺失] 正文未检测到最新现货基准价 {spot_r}")
             ch = snap.get("rmb_channels")
-            if isinstance(ch, dict) and _valid_number(ch.get("brand_store_rmb")) and _valid_number(ch.get("wedding_save_per_g_rmb")):
+            if (
+                isinstance(ch, dict)
+                and _valid_number(ch.get("brand_store_rmb"))
+                and _valid_number(ch.get("wedding_save_per_g_rmb"))
+                and not _skip_domestic_brand_check(snap, filename_key, daily_meta)
+            ):
                 brand_r = round(ch["brand_store_rmb"])
                 save_r = round(ch["wedding_save_per_g_rmb"])
                 if f"{brand_r:,}" not in full_combined and str(brand_r) not in full_combined:
@@ -1045,7 +1205,9 @@ def check_file(
 
     # Gate 6: PDF & Native OOXML DOCX forensic verification (skipped in --precheck mode)
     if not precheck:
-        check_pdf_and_docx_artifacts(md_path, raw, errors, warnings, is_current_daily=is_current_daily)
+        check_pdf_and_docx_artifacts(
+            md_path, raw, errors, warnings, is_current_daily=is_current_daily, is_master=is_master,
+        )
 
     return errors, warnings
 
@@ -1055,8 +1217,8 @@ def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
     if RSI_PLAYBOOK_PATH.exists():
         pb_text = RSI_PLAYBOOK_PATH.read_text(encoding="utf-8")
         line_cnt = len(pb_text.splitlines())
-        if line_cnt > 220:
-            errors.append(f"[RSI 防膨胀红线] daily/RSI_PLAYBOOK.md 共 {line_cnt} 行，超出硬上限 220 行（目标 ≤180 行），必须合并精炼旧条目")
+        if line_cnt > 200:
+            errors.append(f"[RSI 防膨胀红线] daily/RSI_PLAYBOOK.md 共 {line_cnt} 行，超出硬上限 200 行（目标 ≤180 行），必须合并精炼旧条目")
         elif line_cnt > 180:
             warnings.append(f"[RSI 防膨胀预警] daily/RSI_PLAYBOOK.md 共 {line_cnt} 行，超出 180 行上限，请合并淘汰旧条目")
         if "Tier C" not in pb_text or "Tier B" not in pb_text:

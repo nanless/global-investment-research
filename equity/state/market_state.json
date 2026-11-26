@@ -26,8 +26,10 @@
       "benchmark_csi_dividend": 5423.75,
       "csi300_200w": 4025,
       "sse_200w": 3427,
-      "margin_balance_1124_100m": 21717.77,
-      "pboc_1125_total_net_100m": 3210,
+      "margin_balance_100m": 21717.77,
+      "margin_balance_date": "2026-11-24",
+      "pboc_total_net_100m": 3210,
+      "pboc_op_date": "2026-11-25",
       "pe_ttm": 13.23,
       "pe_fwd": 12.29,
       "cgb10y_pct": 1.5914,
@@ -155,8 +157,8 @@
       "benchmarks": [
         {"name": "华虹半导体", "a": "688347", "h": "01347.HK", "ah_premium_pct": 237.3, "preferred_channel": "offshore_hk"},
         {"name": "中芯国际", "a": "688981", "h": "00981.HK", "ah_premium_pct": 214.9, "preferred_channel": "offshore_hk"},
-        {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.2, "preferred_channel": "offshore_hk_10pct_tax"},
-        {"name": "中国移动", "a": "600941", "h": "00941.HK", "ah_premium_pct": 60.2, "preferred_channel": "offshore_hk_10pct_tax"},
+        {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.2, "preferred_channel": "offshore_hk_check_withholding"},
+        {"name": "中国移动", "a": "600941", "h": "00941.HK", "ah_premium_pct": 60.2, "preferred_channel": "offshore_hk_check_withholding"},
         {"name": "中国石油", "a": "601857", "h": "00857.HK", "ah_premium_pct": 51.0, "preferred_channel": "offshore_hk"},
         {"name": "比亚迪", "a": "002594", "h": "01211.HK", "ah_premium_pct": 48.0, "preferred_channel": "offshore_hk"},
         {"name": "中国神华", "a": "601088", "h": "01088.HK", "ah_premium_pct": 45.0, "preferred_channel": "offshore_hk"},
@@ -284,15 +286,48 @@
     {"date_cst": "2026-12-04", "type": "hk_major_rebalance", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "恒生系列合并季检尾盘调仓（恒指权重 + 恒科 30→50 超 125 亿美元流，16:06 不可撤单）+ NVDA 10-Q 延期死线"},
     {"date_cst": "2026-12-07", "type": "policy_deadline", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "美国财政部 31 CFR Part 851 对外投资规则意见截止日 + 恒科 50 只正式生效"},
     {"date_cst": "2026-12-18", "type": "quad_witching_boj", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "日本央行议息 + 美股四巫日衍生品大交割（12/19 05:00 CST）"},
-    {"date_cst": "2026-12-24", "type": "half_day", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股半日市（12:00 结束持续交易，适用证券 12:08–12:10 随机收市；下午港股通休）；美股半日（12/25 02:00 收、债 03:00）；A 股正常"},
-    {"date_cst": "2026-12-25", "type": "partial_holiday", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_2_watch_brief", "note": "港/美圣诞全休，A 股正常（12/28 周一港股与港股通正常开市不顺延）"},
-    {"date_cst": "2026-12-31", "type": "half_day", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股半日（12:00 结束持续交易，适用证券 12:08–12:10 随机收市）；美股正常，美债建议 01/01 03:00 提前收；筹备跨年滚存"},
-    {"date_cst": "2027-01-01", "type": "full_holiday_and_rollover", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_3_index_changelog_only", "note": "中美港三地新年休市 + 2026_12 -> 2027_01 滚存"},
-    {"date_cst": "2027-01-18", "type": "partial_holiday", "markets_affected": ["us_stock"], "mode": "mode_2_watch_brief", "note": "美国马丁·路德·金纪念日全天休市（A/港正常）"},
-    {"date_cst": "2027-02-05", "end_date_cst": "2027-02-14", "type": "long_holiday_start", "markets_affected": ["a_share"], "mode": "mode_2_watch_brief", "source_url": "https://www.gov.cn/zhengce/content/202611/content_7085101.htm", "note": "国务院春节放假 02/05–02/13，02/14 调休上班但逢证券市场周日；A 股按常规周末及节假日休市编排，交易所通知发布后再核"},
+    {"date_cst": "2026-12-24", "type": "half_day", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "christmas_eve_2026", "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股半日市（12:00 结束持续交易，适用证券 12:08–12:10 随机收市；下午港股通休）；美股半日（12/25 02:00 收、债 03:00）；A 股正常"},
+    {"date_cst": "2026-12-25", "type": "partial_holiday", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "christmas_day_2026", "mode": "mode_2_watch_brief", "note": "港/美圣诞全休，A 股正常（12/28 周一港股与港股通正常开市不顺延）"},
+    {"date_cst": "2026-12-31", "type": "half_day", "markets_affected": ["hk_stock"], "gold_event_id": "new_years_eve_2026", "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股半日（12:00 结束持续交易，适用证券 12:08–12:10 随机收市）；美股正常，美债建议 01/01 03:00 提前收；筹备跨年滚存"},
+    {"date_cst": "2027-01-01", "type": "full_holiday_and_rollover", "markets_affected": ["a_share", "hk_stock", "us_stock"], "gold_event_id": "global_new_year_2027", "mode": "mode_3_index_changelog_only", "note": "中美港三地新年休市 + 2026_12 -> 2027_01 滚存"},
+    {"date_cst": "2027-01-18", "type": "partial_holiday", "markets_affected": ["us_stock"], "gold_event_id": "us_mlk_day_2027", "mode": "mode_2_watch_brief", "note": "美国马丁·路德·金纪念日全天休市（A/港正常）"},
+    {"date_cst": "2027-02-05", "end_date_cst": "2027-02-14", "type": "long_holiday_start", "markets_affected": ["a_share"], "gold_event_id": "china_spring_festival_2027", "mode": "mode_2_watch_brief", "source_url": "https://www.gov.cn/zhengce/content/202611/content_7085101.htm", "note": "国务院春节放假 02/05–02/13，02/14 调休上班但逢证券市场周日；A 股按常规周末及节假日休市编排，交易所通知发布后再核"},
     {"date_cst": "2027-02-05", "type": "half_day", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股除夕半日市（12:00 结束持续交易，适用证券 12:08–12:10 随机收市）"},
     {"date_cst": "2027-02-08", "end_date_cst": "2027-02-09", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2026/cc_SEHK_CT_077_2026.pdf", "note": "香港证券市场农历新年休市，02/10 复市"},
-    {"date_cst": "2027-02-15", "type": "partial_holiday", "markets_affected": ["us_stock"], "mode": "mode_2_watch_brief", "note": "美国总统日全天休市 + 同日 A 股春节后首个交易日复市"},
-    {"date_cst": "2027-03-14", "type": "dst_transition", "markets_affected": ["us_stock"], "mode": "timezone_shift_edt", "note": "美国进入夏令时（EDT = UTC-4，北京 +12h；03/15 起美股 21:30 开 / 04:00 收 / 08:00 盘后终盘）"}
+    {"date_cst": "2027-02-15", "type": "partial_holiday", "markets_affected": ["us_stock"], "gold_event_id": "us_presidents_day_cn_reopen_2027", "mode": "mode_2_watch_brief", "note": "美国总统日全天休市 + 同日 A 股春节后首个交易日复市"},
+    {"date_cst": "2027-03-14", "type": "dst_transition", "markets_affected": ["us_stock"], "mode": "timezone_shift_edt", "note": "美国进入夏令时（EDT = UTC-4，北京 +12h；03/15 起美股 21:30 开 / 04:00 收 / 08:00 盘后终盘）"},
+    {"date_cst": "2027-03-26", "type": "partial_holiday", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "us_good_friday_2027", "mode": "mode_2_watch_brief", "note": "耶稣受难日港/美全天休市，A 股正常"}
+  ],
+  "data_caveats": [
+    {
+      "id": "a_share_1126_morning_pending",
+      "market": "a_share",
+      "category": "delayed_official",
+      "severity": "info",
+      "item": "A 股两融终值、人民币中间价、央行对冲与海波转债末日待封账",
+      "detail": "11 月 25 日全市场两融余额终值、11 月 26 日 09:15 人民币中间价、09:20 央行 6,170 亿元到期对冲实况及海波转债 123080 最后交易日收盘尚未到官方披露时点。",
+      "impact": "早刊暂沿用 11 月 24 日两融终值与 11 月 25 日中间价及收盘基线，不影响红灯防守仓位边界。",
+      "next_review": "2026-11-26_1800"
+    },
+    {
+      "id": "hk_stock_1126_morning_pending",
+      "market": "hk_stock",
+      "category": "delayed_official",
+      "severity": "info",
+      "item": "港股当日拆息定盘、官方收盘与南向资金终值待封账",
+      "detail": "11 月 26 日 11:15 香港银行公会港元拆息（HIBOR）定盘、16:10 港股官方收盘、南向资金终值及 11 月期指转仓收官尚待盘中与收盘后落定。",
+      "impact": "早刊以 11 月 25 日官收及夜盘跨市场映射为基准，实盘变动于当日晚刊统一封账。",
+      "next_review": "2026-11-26_1800"
+    },
+    {
+      "id": "us_stock_1126_morning_provisional",
+      "market": "us_stock",
+      "category": "provisional_close",
+      "severity": "warn",
+      "item": "美股盘后终盘、加密基金官流、信用利差与恐慌指数日线文件待核销",
+      "detail": "11 月 25 日美股盘后终盘（北京时间 09:00 结束）、Farside 11 月 25 日加密基金官方资金流、11 月 24–25 日美联储经济数据库高收益信用利差及芝加哥期权交易所（Cboe）官网 11 月 25 日恐慌指数官方日线数据尚未归档，早刊恐慌指数暂采用官网美东 16:15 收盘值 28.29。",
+      "impact": "标普、纳指与 10 年期美债均已采正式收盘价，仅上述四项次级衍生与归档指标待晚刊复核核销。",
+      "next_review": "2026-11-26_1800"
+    }
   ]
 }

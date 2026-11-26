@@ -117,6 +117,17 @@ def _modify_directive(raw, name, update):
     return re.sub(pattern, rewrite, raw, count=1, flags=re.DOTALL)
 
 
+def _sanitize_for_converged(raw):
+    """Strip legacy internal-leak tokens, excess bold markers, and bare-number backticks outside comments."""
+    raw = raw.replace("V7.2", "新版").replace("红队", "独立核验")
+    parts = re.split(r"(<!--.*?-->)", raw, flags=re.DOTALL)
+    for idx in range(0, len(parts), 2):
+        seg = lint._BARE_NUM_BACKTICK_RE.sub(lambda m: m.group(0)[1:-1], parts[idx])
+        seg = re.sub(r"\*\*([^*]+)\*\*", r"\1", seg)
+        parts[idx] = seg
+    return "".join(parts)
+
+
 def _calendar_fixture():
     early_close = {"windows_et": [["03:15", "09:25"], ["09:31", "13:00"]], "official_close_et": None,
                    "daily_row_check_after_et": "13:15"}
@@ -185,13 +196,72 @@ class GoldWorkflowTests(unittest.TestCase):
         self.assertTrue(any("节日日线待核" in e for e in self._validate(snap)))
         snap["vix_daily_row_checks"] = {"2026-11-26": _daily_check("pending", "2026-11-27 07:25")}
         self.assertEqual(self._validate(snap), [])
-        snap["vix_daily_row_checks"]["2026-11-26"]["checked_at"] = "2026-11-27 06:29"
+        snap["vix_daily_row_checks"]["2026-11-26"]["checked_at"] = "2026-11-27 04:00"
+        self.assertEqual(self._validate(snap), [])
+        snap["vix_daily_row_checks"]["2026-11-26"]["checked_at"] = "2026-11-27 03:29"
         self.assertTrue(any("待披露需重查" in e for e in self._validate(snap)))
         snap["vix_daily_row_checks"]["2026-11-26"] = _daily_check("published", "2026-11-27 07:25")
         self.assertTrue(any("完整交易日不符" in e for e in self._validate(snap)))
         snap["vix_10d_session_closes"] = snap["vix_10d_session_closes"][1:] + [{"date": "2026-11-26", "close": 31.50}]
         snap["vix_10d_window_end"] = "2026-11-26"
         self.assertEqual(self._validate(snap), [])
+
+    def test_half_day_allows_provisional_close_and_self_proving_no_row_confirmed(self):
+        snap = _fixture()
+        snap.update(
+            edition_id="2026-11-28_0730",
+            as_of_short="2026-11-28 07:30",
+            as_of_bjt="2026年11月28日（周六）07:30",
+            cfets_fixing_date="2026-11-27",
+            vix_close=29.80,
+            vix_10d_window_end="2026-11-27",
+        )
+        snap["vix_10d_session_closes"] = snap["vix_10d_session_closes"][1:] + [
+            {"date": "2026-11-27", "close": 29.80},
+        ]
+        snap["vix_daily_row_checks"] = {
+            "2026-11-26": {
+                "status": "no_row_confirmed",
+                "checked_at": "2026-11-28 07:10",
+                "source": rules.VIX_DAILY_SOURCE,
+                "next_published_date": "2026-11-27",
+                "note": "官方 CSV 后续交易日已跳至 11/27，自证感恩节 11/26 无日线。",
+            },
+            "2026-11-27": {
+                "status": "provisional_close",
+                "checked_at": "2026-11-28 07:10",
+                "source": "https://www.cboe.com/tradable_products/vix/",
+                "note": "黑五半日市 CSV 尚未批量更新，暂采 Cboe 官网 13:00 EST 读数。",
+            },
+        }
+        self.assertEqual(self._validate(snap, validated_on=date(2026, 11, 28)), [])
+
+        bad_next = deepcopy(snap)
+        bad_next["vix_daily_row_checks"]["2026-11-26"]["next_published_date"] = "2026-11-26"
+        self.assertTrue(any("无日线证据缺失" in e for e in self._validate(bad_next, validated_on=date(2026, 11, 28))))
+
+    def test_stale_provisional_close_expires_after_three_days(self):
+        snap = _fixture()
+        snap["vix_daily_row_checks"] = {
+            "2026-11-23": {
+                "status": "provisional_close",
+                "checked_at": "2026-11-26 17:50",
+                "source": "https://www.cboe.com/tradable_products/vix/",
+                "note": "三天内暂定收盘复核仍处于窗口内。",
+            },
+        }
+        self.assertEqual(self._validate(snap), [])
+
+        stale = _fixture()
+        stale["vix_daily_row_checks"] = {
+            "2026-11-20": {
+                "status": "provisional_close",
+                "checked_at": "2026-11-26 17:50",
+                "source": "https://www.cboe.com/tradable_products/vix/",
+                "note": "超过三天的普通日暂定收盘未核销。",
+            },
+        }
+        self.assertTrue(any("暂定收盘超期" in e for e in self._validate(stale)))
 
     def test_ordinary_day_csv_lag_allows_provisional_or_pending_without_blocking(self):
         # 2026-11-26 07:30 BJT == 2026-11-25 18:30 EST (same ET day after 16:15 EST close, before Cboe CSV batch)
@@ -366,10 +436,10 @@ class GoldWorkflowTests(unittest.TestCase):
         legacy = _read_json(GOLD / "data_snapshot.json")
         self.assertEqual(lint.check_file(ARCHIVED_REPORT, legacy, master, precheck=True), ([], []))
 
-        raw = _modify_directive(
+        raw = _sanitize_for_converged(_modify_directive(
             ARCHIVED_REPORT.read_text(), "DAILY_META",
             lambda meta: meta.update(edition_id=EDITION, as_of_short=AS_OF, timestamp=AS_OF),
-        )
+        ))
 
         def chart_ids(chart):
             for check, gate_id in zip(chart["checks"], rules.ENTRY_GATE_IDS):
@@ -437,6 +507,54 @@ class GoldWorkflowTests(unittest.TestCase):
         self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(bad) + " -->")
         errors, _ = lint.check_file(report, snap, master, precheck=True)
         self.assertTrue(any("预判验真缺项" in e for e in errors))
+
+    def test_converged_edition_rules_and_part3_internal_leak_guard(self):
+        snap = _fixture()
+        master = _read_json(GOLD / "master_snapshot.json")
+        self.changes.write_text(f"<!-- GOLD_EDITION_CHANGELOG {EDITION} -->")
+        self.scorecard.write_text(f"<!-- GOLD_EDITION_SCORECARD {EDITION} -->")
+        review = {
+            "edition_id": EDITION,
+            "as_of_short": AS_OF,
+            "note": "四关已核验。",
+            "sources": {gate_id: ["https://example.com/fixture"] for gate_id in rules.ENTRY_GATE_IDS},
+            "forecast_review": {"status": "none_due", "note": "本期无到期预测。", "sources": []},
+        }
+        self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(review) + " -->")
+
+        raw = _sanitize_for_converged(_modify_directive(
+            ARCHIVED_REPORT.read_text(), "DAILY_META",
+            lambda meta: meta.update(
+                edition_id=EDITION, as_of_short=AS_OF, timestamp=AS_OF, kpis=meta["kpis"][:4],
+            ),
+        ))
+
+        def chart_ids(chart):
+            for check, gate_id in zip(chart["checks"], rules.ENTRY_GATE_IDS):
+                check["id"] = gate_id
+
+        raw = _modify_directive(raw, "DAILY_CHART_SWITCH", chart_ids)
+        raw = re.sub(r"<!--\s*DAILY_(?:TRUST_BAR|GLOSSARY)\s*\{.*?\}\s*-->", "", raw, flags=re.DOTALL)
+        # Insert semi-pro terms allowed in converged Layer 0-1
+        l01_heading = re.compile(r"^(#\s*第一部分[^\n]*)", re.MULTILINE)
+        raw = l01_heading.sub(r"\1\n\n今夜重点跟踪 VIX、DXY、GLD 与美联储鹰派信号。\n", raw, count=1)
+
+        report = self.path / f"{EDITION}_晚报_黄金深度研报.md"
+        report.write_text(raw)
+        self.assertEqual(lint.check_file(report, snap, master, precheck=True), ([], []))
+
+        for leak_token in ("master_snapshot.json", "V7.2"):
+            with self.subTest(part3_leak=leak_token):
+                report.write_text(f"{raw}\n\n附录核对说明：引用 {leak_token} 基线。\n")
+                errors, _ = lint.check_file(report, snap, master, precheck=True)
+                self.assertTrue(any("内部工程词/文件名泄露" in e for e in errors), errors)
+
+        for banned_l01 in ("stop-through", "小白词典", "蠢事"):
+            with self.subTest(l01_banned=banned_l01):
+                injected = l01_heading.sub(rf"\1\n\n本段含禁词 {banned_l01}。\n", raw, count=1)
+                report.write_text(injected)
+                errors, _ = lint.check_file(report, snap, master, precheck=True)
+                self.assertTrue(any("术语/自嗨逃逸" in e for e in errors), errors)
 
 
 if __name__ == "__main__":

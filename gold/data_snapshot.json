@@ -237,11 +237,54 @@
   "bank_2027_avg_median_usd": 4437.5,
   "bank_2027_avg_sample_count": 4,
   "bank_2027_fx_median": 6.44,
-  "etf_cn_1125": {
-    "518880": {"close": 7.169, "chg_pct": -3.00, "nav": 7.1947, "flow_1125_100m": -4.33},
-    "159937": {"close": 7.155, "chg_pct": -3.00, "nav": 7.1788, "flow_1125_100m": -1.04},
-    "518660": {"close": 7.200, "chg_pct": -3.02, "nav": 7.2247, "flow_1125_100m": -0.17}
+  "etf_cn": {
+    "as_of_date": "2026-11-25",
+    "518880": {"close": 7.169, "chg_pct": -3.00, "nav": 7.1947, "flow_100m": -4.33},
+    "159937": {"close": 7.155, "chg_pct": -3.00, "nav": 7.1788, "flow_100m": -1.04},
+    "518660": {"close": 7.200, "chg_pct": -3.02, "nav": 7.2247, "flow_100m": -0.17}
   },
+  "data_caveats": [
+    {
+      "id": "vix_1125_official_history_pending",
+      "market": "gold",
+      "category": "provisional_close",
+      "severity": "warn",
+      "item": "美股恐慌指数（VIX）11/25 官方历史日线表待同步",
+      "detail": "截至北京时间 11/26 08:30，芝加哥期权交易所（Cboe）官方历史日线表仍止于 11/24；本刊暂采用官网美东 16:15 收盘读数 28.29（+7.32%）。",
+      "impact": "该读数已满足低于 30 与较十日峰值回落超 10% 双条件，不改变红灯停（暂不新买）核心裁决。",
+      "next_review": "2026-11-26_1800"
+    },
+    {
+      "id": "gld_gdx_1125_official_filings_pending",
+      "market": "gold",
+      "category": "delayed_official",
+      "severity": "info",
+      "item": "海外黄金基金（GLD）11/25 实物持仓与金矿基金（GDX）官方净值待更新",
+      "detail": "11/25 二级市场官收价已锁定（GLD $327.45 / GDX $73.89）；受海外托管机构披露时差影响，实物持仓与官方净值暂沿用 11/24 已核实官报（1,027.31 吨 / $71.50）。",
+      "impact": "仅影响金矿基金折溢价与单日吨数增减复核，不影响核心配置与红灯观望结论。",
+      "next_review": "2026-11-26_1800"
+    },
+    {
+      "id": "lbma_fred_credit_1125_pending",
+      "market": "gold",
+      "category": "delayed_official",
+      "severity": "info",
+      "item": "伦敦金 11/25 官方定盘价及美联储 11/24–25 高收益/低评级信用利差待披露",
+      "detail": "伦敦金银市场协会（LBMA）11/25 官方定盘明细与美联储数据库最新信用利差（HY/CCC OAS）尚未刷新，相关背景监测暂沿用最近已核实官值（363 基点 / 1,387 基点）。",
+      "impact": "属跨市场信用背景观察项，不参与买金四步红绿灯直接打分，晚报补齐后复核。",
+      "next_review": "2026-11-26_1800"
+    },
+    {
+      "id": "cn_retail_quotes_1126_preopen",
+      "market": "gold",
+      "category": "delayed_official",
+      "severity": "warn",
+      "item": "国内 11/26 银行金条与品牌金店开盘牌价尚未挂出",
+      "detail": "截至 08:30 国内现货与四大行贵金属尚未开盘调价，钱包账与买金渠道对比暂沿用 11/25 已核实牌价（四大行金条均价 778.16 元/克、周大福 1,068 元/克）。",
+      "impact": "因隔夜纽约尾盘反抽至 $3,589（折原料约 769 元/克），今日开盘后银行金条存在小幅上调约 6–10 元/克可能，晚报将按当日新牌价封账。",
+      "next_review": "2026-11-26_1800"
+    }
+  ],
   "rmb_channels": {
     "etf_base_rmb": 757,
     "night_base_rmb": 758,

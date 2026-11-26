@@ -1,10 +1,12 @@
 {
+  "edition_id": "2026-11-24_1630",
   "as_of_bjt": "2026年11月24日（周二）16:30",
   "as_of_short": "2026-11-24 16:30",
   "master_version": "V7.2 零门槛·真深度普通人终审定版",
   "daily_alert_level": "L1",
   "daily_alert_label": "关键节点临近 · 提前看预案（仍不新买）",
   "tier_code": "Tier 0",
+  "new_buy_allowed": false,
   "tier_label": "红灯停（暂不新买 · 新仓 0%）",
   "tier_status_sub": "今日午盘仍仅过 1/4 关 · 红灯停，暂不新买",
   "tier_cover_sub": "暂不新买 · 等周三通胀与 12 月中旬加息",
@@ -13,6 +15,7 @@
   "a_class_tranche_split": "30% + 45% + 25%",
   "tier1_gates": [
     {
+      "id": "real_yield",
       "name": "第 1 关：真实利息降下来",
       "passed": false,
       "reading": "午盘约 2.79%（2.78%–2.80%）",
@@ -20,6 +23,7 @@
       "detail": "午盘约 2.79%（需降到 2.72% 以下）"
     },
     {
+      "id": "rate_spread",
       "name": "第 2 关：市场不再疯狂押加息",
       "passed": false,
       "reading": "高出 0.81%（+80~+81 基点）",
@@ -27,6 +31,7 @@
       "detail": "2年美债比基准高 0.81%（需降到 0.55% 以内）"
     },
     {
+      "id": "vix",
       "name": "第 3 关：全球股市停止踩踏",
       "passed": true,
       "reading": "恐慌指数 26.6（亚太股市普涨）",
@@ -34,6 +39,7 @@
       "detail": "恐慌指数 26.6（已跌破 30 警戒线）"
     },
     {
+      "id": "ny_close",
       "name": "第 4 关：金价收盘站上关键高点",
       "passed": false,
       "reading": "伦敦开盘 $3,625（昨收 $3,635）",
@@ -87,6 +93,7 @@
   "usd_cny": 6.6648,
   "usd_cny_short": 6.66,
   "cfets_cny_fixing": 6.7111,
+  "cfets_fixing_date": "2026-11-24",
   "dxy": 104.26,
   "dxy_change_pct": -0.06,
   "us2y_pct": 4.685,

@@ -9,7 +9,7 @@ Zero-dependency (Python 3 stdlib only) static site validator enforcing 6 forensi
   - Gate S3: Zero PII, Local Path, Secret & Unresolved Directive Leaks
   - Gate S4: Vector SVG Chart Integrity
   - Gate S5: Desktop + Mobile Responsive Hygiene
-  - Gate S6: Live SSOT & 135-Stock Screener Fidelity
+  - Gate S6: Live SSOT & Full-Market Stock Screener Fidelity (全市场龙头股筛选)
 
 Usage:
   python3 scripts/lint_site.py [site_dir] [--strict]
@@ -245,10 +245,13 @@ S3_STRAY_BACKTICK_RE = re.compile(r"`")
 # Internal engineering filenames/tooling that must never leak onto public web pages.
 S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"(?<![A-Za-z0-9_/-])(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
+    r"master_snapshot\.json|permissions\.json|unified-edition\.prompt\.md|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
+    r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
+    r"chart_input\.py|install_sidecars\.py|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing)(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
@@ -1250,7 +1253,8 @@ def _check_gold_tier0_mutex(doc: ParsedHtml, errors: list[str]) -> None:
                 f"CTA <{cta.tag}>: {cta.text!r}"
             )
 
-    # 3. Scan visible prose line-by-line for unguarded buy-gold directives.
+    # 3. Scan visible prose line-by-line for unguarded buy-gold directives (cap at 5 per page).
+    prose_hits = 0
     for raw_line in re.split(r"[\n。！？；，,]+", vis):
         line = " ".join(raw_line.split())
         if not line:
@@ -1262,7 +1266,9 @@ def _check_gold_tier0_mutex(doc: ParsedHtml, errors: list[str]) -> None:
                     f"[S6] {page}: Gold Tier 0 mutex violation — unguarded buy-gold directive "
                     f"in visible text: {win!r}"
                 )
-                return
+                prose_hits += 1
+                if prose_hits >= 5:
+                    return
 
 
 def _gold_action_is_guarded(text: str, action: re.Match) -> bool:
@@ -1297,6 +1303,10 @@ def _validate_screener_json(
         return
 
     expected_total = sum(expected_by_market.values())
+    if len(payload) < 100:
+        errors.append(
+            f"[S6] screener.html: #screener-data length ({len(payload)}) < 100 minimum stock pool floor"
+        )
     if len(payload) != expected_total:
         errors.append(
             f"[S6] screener.html: #screener-data length ({len(payload)}) != expected total ({expected_total})"
@@ -1581,6 +1591,10 @@ def run_gate_s6(
 
             if len(expected_by_market) == 3 and screener_doc is not None:
                 expected_total = sum(expected_by_market.values())
+                if expected_total < 100:
+                    errors.append(
+                        f"[S6] market_state.json: total stock_pool_count ({expected_total}) < 100 minimum floor"
+                    )
                 tot_pat = re.compile(rf"(?<![0-9]){expected_total}(?![0-9])")
                 if not tot_pat.search(screener_doc.visible_text):
                     errors.append(
@@ -1594,6 +1608,10 @@ def run_gate_s6(
                     )
                 _validate_screener_json(
                     screener_doc, expected_by_market, errors, gold_new_buy_blocked=gold_new_buy_blocked,
+                )
+            elif screener_doc is not None and screener_doc.stock_row_count < 100:
+                errors.append(
+                    f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) < 100 minimum floor"
                 )
 
     # A dated archive preserves its original decisions. Check live pages and this edition's dated copies.
@@ -1661,7 +1679,7 @@ def main(argv: list[str] | None = None) -> int:
         # Gate S5: Desktop + mobile responsive hygiene.
         run_gate_s5(site_dir, all_files, parsed_htmls, errors, warnings)
 
-        # Gate S6: Live SSOT & 135-stock screener fidelity + Gold Tier 0 mutex.
+        # Gate S6: Live SSOT & full-market stock screener fidelity (全市场龙头股筛选) + Gold Tier 0 mutex.
         run_gate_s6(parsed_htmls, gold_snap, market_state, errors, warnings)
 
     mode = "STRICT" if strict else "STANDARD"

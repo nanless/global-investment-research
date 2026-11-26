@@ -20,7 +20,6 @@ from pathlib import Path
 
 from pdf_common import (
     BASE_DIR,
-    CHROME_BIN,
     DAILY_DIR,
     atomic_copy,
     build_theme_css,
@@ -31,6 +30,7 @@ from pdf_common import (
     render_docx_atomic,
     render_md_body,
     render_pdf_atomic,
+    resolve_chrome_bin,
     run_lint_gate,
     svg_shape,
     write_equity_receipt,
@@ -63,7 +63,7 @@ DEFAULT_U3_CALM = [
 ]
 
 DEFAULT_U3_CRACKS = [
-    ("最弱企业借钱利息（CCC 级）", "冲向 18%！（爆表）", "较国债加价扩至 13.5%–14.0%，创 2020 年来最差"),
+    ("最弱企业借钱利息（CCC 级）", "冲向 18%（爆表）", "较国债加价扩至 13.5%–14.0%，创 2020 年来最差"),
     ("借钱买显卡的科尔韦夫", "违约险破 1,232 点", "背 470 亿美元债，债主已按高违约风险打 8 折甩卖"),
     ("甲骨文（ORCL）AI 基建债", "违约险逼近 328 点", "新墨西哥机房发不可抗力，长债破 8%、贷款打九折"),
     ("私募影子银行赎回挤兑", "Blue Owl 遭 39% 挤兑", "触发季度 5% 赎回上限，北京 12/02 12:59 黑石迎大考"),
@@ -85,7 +85,7 @@ DEFAULT_U4_CARDS = [
         ],
     },
     {
-        "header": "11/30–12/12（抽血 + 加息！）",
+        "header": "11/30–12/12（抽血 + 加息）",
         "color": "#dc2626",
         "bg": "#fef2f2",
         "border": "#f87171",
@@ -109,7 +109,7 @@ DEFAULT_U4_CARDS = [
         ],
     },
     {
-        "header": "12/21–01中（● 主力进场！）",
+        "header": "12/21–01中（● 主力进场）",
         "color": "#047857",
         "bg": "#dcfce7",
         "border": "#009E73",
@@ -152,10 +152,10 @@ DEFAULT_U7_POINTS = [
     ("礼来 LLY 28x(27E)",      512,  76, "b", "#0072B2",  8,   4, "start"),
     ("核电电力 VST/GEV",       556, 128, "b", "#0072B2",  8,   4, "start"),
     ("甲骨文/科尔韦夫(债75美分)", 502, 232, "r", "#D55E00",  8,   4, "start"),
-    ("苹果 AAPL 34x!",         592, 194, "r", "#D55E00",  0,  15, "middle"),
-    ("沃尔玛 WMT 42x!",        688, 212, "r", "#D55E00",  0, -10, "middle"),
+    ("苹果 AAPL 34x",          592, 194, "r", "#D55E00",  0,  15, "middle"),
+    ("沃尔玛 WMT 42x",         688, 212, "r", "#D55E00",  0, -10, "middle"),
     ("微策略/Coinbase",        702, 246, "r", "#D55E00", -8,   4, "end"),
-    ("好市多/CrowdStrike!",    796, 196, "r", "#D55E00", -8, -10, "end"),
+    ("好市多/CrowdStrike",     796, 196, "r", "#D55E00", -8, -10, "end"),
 ]
 
 
@@ -200,13 +200,13 @@ def svg_chart_u1_crises_and_mas(meta_override: dict | None = None) -> str:
         w_dd = round((abs(dd) / 65.0) * 102, 1)
         left += f'<text x="78" y="{y+12.5}" text-anchor="end" font-size="9.0" fill="#1e293b" font-weight="600">{nm}</text>'
         left += f'<rect x="{x0-w_dd}" y="{y+2}" width="{w_dd}" height="15" fill="#D55E00" opacity="0.86" rx="2.5"/>'
-        left += f'<text x="{x0-w_dd-4}" y="{y+12.5}" text-anchor="end" font-size="8.6" fill="#b91c1c" font-weight="700">{dd:.1f}%</text>'
+        left += f'<text x="{x0-w_dd-4}" y="{y+12.5}" text-anchor="end" font-size="9.0" fill="#b91c1c" font-weight="700">{dd:.1f}%</text>'
         if r12 > 0:
             w_r = round((r12 / 80.0) * 148, 1)
             left += f'<rect x="{x0}" y="{y+2}" width="{w_r}" height="15" fill="#009E73" opacity="0.86" rx="2.5"/>'
-            left += f'<text x="{x0+w_r+4}" y="{y+12.5}" font-size="8.6" fill="#047857" font-weight="700">+{r12:.1f}%</text>'
+            left += f'<text x="{x0+w_r+4}" y="{y+12.5}" font-size="9.0" fill="#047857" font-weight="700">+{r12:.1f}%</text>'
         else:
-            left += f'<text x="{x0+6}" y="{y+12.5}" font-size="8.4" fill="#b45309" font-weight="700">反弹后距高 {cur_dd:.1f}% · 科技仍打8折</text>'
+            left += f'<text x="{x0+6}" y="{y+12.5}" font-size="9.0" fill="#b45309" font-weight="700">反弹后距高 {cur_dd:.1f}% · 科技仍打8折</text>'
 
     ma_note = f"头顶强压力（仍低 {abs(diff_200d):.1f}%）" if diff_200d < 0 else f"已站上（高 {diff_200d:.1f}%）"
     cur_col = "#009E73" if diff_200d >= 0 else "#0072B2"
@@ -228,7 +228,7 @@ def svg_chart_u1_crises_and_mas(meta_override: dict | None = None) -> str:
         right += f'<rect x="448" y="{y}" width="388" height="29" fill="{bg}" stroke="{col}" stroke-width="{"1.3" if is_hi else "0.7"}" rx="4"/>'
         right += f'<text x="456" y="{y+18}" font-size="9.2" fill="#0f172a" font-weight="{"800" if is_hi else "600"}">{html_mod.escape(clean_svg_text(str(lbl)))}</text>'
         right += f'<text x="630" y="{y+18}" text-anchor="end" font-size="10.0" fill="{col}" font-weight="800">{pt:,}</text>'
-        right += f'<text x="640" y="{y+18}" font-size="8.6" fill="#475569">{html_mod.escape(clean_svg_text(str(note)))}</text>'
+        right += f'<text x="640" y="{y+18}" font-size="9.0" fill="#475569">{html_mod.escape(clean_svg_text(str(note)))}</text>'
 
     title_u1 = _norm_chart_title(
         u1_nest.get("title") or cl.get("u1_title")
@@ -318,7 +318,7 @@ def svg_chart_u2_storm_timeline(meta_override: dict | None = None) -> str:
             yl = y - 10
         nodes += f'<text x="{x}" y="{yl}" text-anchor="middle" font-size="9.4" fill="{col}" font-weight="700">{p:,}</text>'
         for li, dl in enumerate(desc.split("\n")):
-            nodes += f'<text x="{x}" y="{278 + li*12}" text-anchor="middle" font-size="8.4" fill="#475569">{html_mod.escape(clean_svg_text(dl))}</text>'
+            nodes += f'<text x="{x}" y="{278 + li*12}" text-anchor="middle" font-size="9.0" fill="#475569">{html_mod.escape(clean_svg_text(dl))}</text>'
 
     pos_lbl = f"现低 {abs(diff_200d):.1f}%" if diff_200d < 0 else f"现高 {diff_200d:.1f}%"
     title_u2 = _norm_chart_title(
@@ -350,9 +350,9 @@ def svg_chart_u2_storm_timeline(meta_override: dict | None = None) -> str:
         <text x="776" y="34" text-anchor="middle" font-size="9.2" fill="#1d4ed8" font-weight="700">{zone_lbl}</text>
         {grid}
         <line x1="56" y1="{y_200d}" x2="830" y2="{y_200d}" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5,3"/>
-        <text x="826" y="{y_200d-6}" text-anchor="end" font-size="9.0" fill="#b91c1c" font-weight="700">1年成本线 {spx_200d:,}（没站上去前按反弹对待！{pos_lbl}）</text>
+        <text x="826" y="{y_200d-6}" text-anchor="end" font-size="9.0" fill="#b91c1c" font-weight="700">1年成本线 {spx_200d:,}（没站上去前按反弹对待，{pos_lbl}）</text>
         <line x1="56" y1="{y_6845}" x2="830" y2="{y_6845}" stroke="#D55E00" stroke-width="1.2" stroke-dasharray="3,2"/>
-        <text x="278" y="{y_6845-5}" text-anchor="middle" font-size="8.8" fill="#D55E00" font-weight="700">华尔街救市痛点底线：6,845</text>
+        <text x="278" y="{y_6845-5}" text-anchor="middle" font-size="9.0" fill="#D55E00" font-weight="700">华尔街救市痛点底线：6,845</text>
         <polyline fill="none" stroke="#D55E00" stroke-width="2.5" points="{poly}"/>
         {nodes}
       </svg>
@@ -372,7 +372,7 @@ def svg_chart_u3_credit_split(meta_override: dict | None = None) -> str:
 
     title_u3 = _norm_chart_title(
         u3_nest.get("title") or cl.get("u3_title")
-        or "债市揭穿了股市反弹的底细——大银行没事，但借钱建 AI 机房的公司拉响警报！"
+        or "债市揭穿了股市反弹的底细——大银行没事，但借钱建 AI 机房的公司拉响警报"
     )
     sub_u3 = html_mod.escape(clean_svg_text(str(
         u3_nest.get("sub") or cl.get("u3_sub")
@@ -393,7 +393,7 @@ def svg_chart_u3_credit_split(meta_override: dict | None = None) -> str:
         y = 46 + i * 54
         lc += f'<rect x="14" y="{y}" width="398" height="46" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="0.9" rx="5"/>'
         lc += f'<text x="22" y="{y+18}" font-size="9.3" fill="#064e3b" font-weight="700">{html_mod.escape(clean_svg_text(str(k)))}</text>'
-        lc += f'<text x="22" y="{y+35}" font-size="8.4" fill="#047857">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
+        lc += f'<text x="22" y="{y+35}" font-size="9.0" fill="#047857">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
         lc += f'<text x="404" y="{y+18}" text-anchor="end" font-size="9.3" fill="#009E73" font-weight="800">{html_mod.escape(clean_svg_text(str(v)))}</text>'
 
     rc = ""
@@ -402,7 +402,7 @@ def svg_chart_u3_credit_split(meta_override: dict | None = None) -> str:
         y = 46 + i * 36.5
         rc += f'<rect x="432" y="{y}" width="404" height="31.5" fill="#fef2f2" stroke="#fecaca" stroke-width="0.9" rx="4"/>'
         rc += f'<text x="440" y="{y+13.5}" font-size="9.0" fill="#7f1d1d" font-weight="700">{html_mod.escape(clean_svg_text(str(k)))}</text>'
-        rc += f'<text x="440" y="{y+26.5}" font-size="8.2" fill="#991b1b">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
+        rc += f'<text x="440" y="{y+26.5}" font-size="9.0" fill="#991b1b">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
         rc += f'<text x="828" y="{y+13.5}" text-anchor="end" font-size="9.0" fill="#D55E00" font-weight="800">{html_mod.escape(clean_svg_text(str(v)))}</text>'
 
     return f'''
@@ -435,7 +435,7 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
     tier_s = html_mod.escape(clean_svg_text(str(cl.get("tier_short", "红灯防守期 (1 / 6 分)"))))
     zone = str(cl.get("us10y_zone", "high")).lower()
     line1 = html_mod.escape(clean_svg_text(str(cl.get("status_line1", "当前体检仅 1 / 6 分：美国 10 年国债利息高达 4.92%–4.94%（躺赚近 5%），标普反弹后仍压在年线（7,348）下方"))))
-    line2 = html_mod.escape(clean_svg_text(str(cl.get("status_line2", "行动铁律：严禁追高芯片！守约 3 成防守（精算 28%）+ 62% 超短美债 + 10% 存量黄金 = 100%（黄金红灯停新仓 0%，空仓预算暂泊短债）"))))
+    line2 = html_mod.escape(clean_svg_text(str(cl.get("status_line2", "行动铁律：严禁追高芯片，守约 3 成防守（精算 28%）+ 62% 超短美债 + 10% 存量黄金 = 100%（黄金红灯停新仓 0%，空仓预算暂泊短债）"))))
     cards = u4_nest.get("cards") or DEFAULT_U4_CARDS
 
     title_u4 = _norm_chart_title(
@@ -480,7 +480,7 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
             else:
                 txt, tc, bold = str(it), "#1e293b", False
             fw = "700" if bold else "500"
-            cards_svg += f'<text x="{cx+8}" y="{ys[j]}" font-size="8.6" fill="{tc}" font-weight="{fw}">{html_mod.escape(clean_svg_text(txt))}</text>'
+            cards_svg += f'<text x="{cx+8}" y="{ys[j]}" font-size="9.0" fill="{tc}" font-weight="{fw}">{html_mod.escape(clean_svg_text(txt))}</text>'
         if arrow_col:
             ax = cx + cw + 4
             cards_svg += f'<polygon points="{ax},81 {ax+10},85 {ax},89" fill="{arrow_col}"/>'
@@ -499,11 +499,11 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
         <rect x="286" y="173" width="206" height="26" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.2" rx="4"/>
         <text x="389" y="190" text-anchor="middle" font-size="9.3" fill="#854d0e" font-weight="700">▲ 震荡过渡区：4.5% – 4.85%</text>
         <rect x="498" y="173" width="338" height="26" fill="#fee2e2" stroke="#D55E00" stroke-width="1.4" rx="4"/>
-        <text x="667" y="190" text-anchor="middle" font-size="9.3" fill="#991b1b" font-weight="700">× 高息压制区（&gt;4.85%）：10 年美债近 5%，高价股承压!</text>
+        <text x="667" y="190" text-anchor="middle" font-size="9.3" fill="#991b1b" font-weight="700">× 高息压制区（&gt;4.85%）：10 年美债近 5%，高价股承压</text>
         <polygon points="{ptr_x},204 {ptr_x+8},215 {ptr_x-8},215" fill="{ptr_col}"/>
         <rect x="16" y="218" width="820" height="40" fill="{box_bg}" stroke="{box_bd}" stroke-width="0.9" rx="4"/>
         <text x="426" y="234" text-anchor="middle" font-size="9.0" fill="{txt_col}" font-weight="700">{line1}</text>
-        <text x="426" y="250" text-anchor="middle" font-size="8.8" fill="#475569">{line2}</text>
+        <text x="426" y="250" text-anchor="middle" font-size="9.0" fill="#475569">{line2}</text>
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway_u4}</div>
       <div class="chart-note">{note_u4}</div>
@@ -525,6 +525,10 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
     lo_up = ((int(banks[0][1]) - spx_now) / float(spx_now)) * 100.0
     hi_up = ((int(banks[-1][1]) - spx_now) / float(spx_now)) * 100.0
 
+    svg_h = max(288, 68 + len(banks) * 24)
+    grid_y2 = svg_h - 26
+    axis_y = svg_h - 10
+
     def x_p(val: float) -> float:
         clamped = max(6900, min(9150, val))
         return round(260 + ((clamped - 6900) / 2300.0) * 518, 1)
@@ -532,8 +536,8 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
     grid = ""
     for val in [7000, 7500, 8000, 8500, 9000]:
         x = x_p(val)
-        grid += f'<line x1="{x}" y1="36" x2="{x}" y2="262" stroke="#f1f5f9" stroke-width="1"/>'
-        grid += f'<text x="{x}" y="278" text-anchor="middle" font-size="9.4" fill="#64748b">{val:,}</text>'
+        grid += f'<line x1="{x}" y1="36" x2="{x}" y2="{grid_y2}" stroke="#f1f5f9" stroke-width="1"/>'
+        grid += f'<text x="{x}" y="{axis_y}" text-anchor="middle" font-size="9.4" fill="#64748b">{val:,}</text>'
 
     x_spx = x_p(spx_now)
     x_avg = x_p(mean_2027)
@@ -559,7 +563,7 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
     )))
     takeaway_u5 = html_mod.escape(clean_svg_text(str(
         u5_nest.get("takeaway") or cl.get("u5_takeaway")
-        or "哪怕全华尔街最谨慎的美国银行（7,800）也看 2027 年上涨近 8%，高盛/大摩/巴克莱更是看到 8,700（约 +20%）。这说明 2027 年长线并不悲观，我们现在防守只是为了躲过 12 月风浪、买在更舒服的位置！"
+        or "哪怕全华尔街最谨慎的美国银行（7,800）也看 2027 年上涨近 8%，高盛/大摩/巴克莱更是看到 8,700（约 +20%）。这说明 2027 年长线并不悲观，我们现在防守只是为了躲过 12 月风浪、买在更舒服的位置。"
     )))
     note_u5 = html_mod.escape(clean_svg_text(str(
         u5_nest.get("note") or cl.get("u5_note")
@@ -570,12 +574,12 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_u5}</div>
       <div class="chart-sub">{sub_u5}</div>
-      <svg viewBox="0 0 850 288" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
-        <rect x="0" y="0" width="850" height="288" fill="#ffffff" rx="6"/>
+      <svg viewBox="0 0 850 {svg_h}" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="850" height="{svg_h}" fill="#ffffff" rx="6"/>
         {grid}
-        <line x1="{x_spx}" y1="30" x2="{x_spx}" y2="262" stroke="#D55E00" stroke-width="1.6" stroke-dasharray="5,3"/>
+        <line x1="{x_spx}" y1="30" x2="{x_spx}" y2="{grid_y2}" stroke="#D55E00" stroke-width="1.6" stroke-dasharray="5,3"/>
         <text x="{x_spx+5}" y="23" text-anchor="start" font-size="9.0" fill="#D55E00" font-weight="700">{spx_lbl}</text>
-        <line x1="{x_avg}" y1="30" x2="{x_avg}" y2="262" stroke="#009E73" stroke-width="1.4" stroke-dasharray="4,3"/>
+        <line x1="{x_avg}" y1="30" x2="{x_avg}" y2="{grid_y2}" stroke="#009E73" stroke-width="1.4" stroke-dasharray="4,3"/>
         <text x="{x_avg}" y="23" text-anchor="middle" font-size="9.0" fill="#047857" font-weight="700">{len(b2027)} 家 2027年底均值 {mean_2027:,} ({up_2027:+.1f}%) · {len(banks)} 家总均值 {mean_all:,}</text>
         {rows}
       </svg>
@@ -586,7 +590,7 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
 
 
 def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
-    """Chart U6: Verified SSGA 11 GICS Sectors Daily Move vs 52W High Drawdown (Nested u6 + Proportional Scale)"""
+    """Chart U6: Verified SSGA 11 GICS Sectors Daily Move vs 52W High Drawdown (Nested u6 + Unified Linear Scale)"""
     cl = load_meta(meta_override).get("chart_live", {})
     u6_nest = cl.get("u6") if isinstance(cl.get("u6"), dict) else {}
     as_short = html_mod.escape(clean_svg_text(str(u6_nest.get("date_short") or cl.get("u6_date_short") or "11/24")))
@@ -599,12 +603,15 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
     up_cnt = sum(1 for s in sectors if float(s["pct"]) >= 0)
     dn_cnt = n - up_cnt
 
-    x_pct0 = 186
+    raw_pos = max([float(s["pct"]) for s in sectors if float(s["pct"]) > 0] + [0.0])
+    raw_neg = max([abs(float(s["pct"])) for s in sectors if float(s["pct"]) < 0] + [0.0])
+    span_pct = max(raw_pos + raw_neg, 1.0)
+    left_edge = 140.0
+    right_bar_limit = 388.0
+    px_per_pct = (right_bar_limit - left_edge) / span_pct
+    x_pct0 = round(left_edge + raw_neg * px_per_pct, 1)
     x_dd0 = 824
-    max_pos = max([float(s["pct"]) for s in sectors if float(s["pct"]) >= 0] + [1.0])
-    max_neg = max([abs(float(s["pct"])) for s in sectors if float(s["pct"]) < 0] + [0.5])
-    px_pos = 185.0 / max_pos
-    px_neg = min(38.0 / max_neg, px_pos * 1.4)
+    max_dd = max([abs(float(s["dd"])) for s in sectors] + [24.0])
 
     bg_rects = ""
     bars = ""
@@ -622,16 +629,16 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
 
         bars += f'<text x="128" y="{y+13.5}" text-anchor="end" font-size="9.4" fill="#1e293b" font-weight="{"800" if (is_xlk or is_xlp) else "600"}">{nm}</text>'
         if pct >= 0:
-            w = max(round(pct * px_pos, 1), 2.0)
+            w = max(round(pct * px_per_pct, 1), 2.0)
             col = "#0072B2" if pct >= 3.0 else "#0284c7"
             bars += f'<rect x="{x_pct0}" y="{y+2}" width="{w}" height="14" fill="{col}" opacity="0.86" rx="2"/>'
-            bars += f'<text x="{x_pct0+w+5}" y="{y+13.5}" font-size="9.1" fill="{col}" font-weight="700">+{pct:.2f}%</text>'
+            bars += f'<text x="{x_pct0+w+5:.1f}" y="{y+13.5}" font-size="9.1" fill="{col}" font-weight="700">+{pct:.2f}%</text>'
         else:
-            w = max(round(abs(pct) * px_neg, 1), 2.0)
-            bars += f'<rect x="{x_pct0-w}" y="{y+2}" width="{w}" height="14" fill="#64748b" opacity="0.85" rx="2"/>'
-            bars += f'<text x="{x_pct0+5}" y="{y+13.5}" font-size="9.1" fill="#475569" font-weight="700">{pct:.2f}%</text>'
+            w = max(round(abs(pct) * px_per_pct, 1), 2.0)
+            bars += f'<rect x="{x_pct0-w:.1f}" y="{y+2}" width="{w}" height="14" fill="#64748b" opacity="0.85" rx="2"/>'
+            bars += f'<text x="{x_pct0+5:.1f}" y="{y+13.5}" font-size="9.1" fill="#475569" font-weight="700">{pct:.2f}%</text>'
 
-        wd = max(round((min(abs(dd), 24.0) / 24.0) * 235, 1), 8.0)
+        wd = max(round((abs(dd) / max_dd) * 235.0, 1), 8.0)
         if is_xlp:
             dcol = "#D55E00"
         elif abs(dd) >= 15:
@@ -644,7 +651,7 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
         if is_xlk and abs(dd) >= 15:
             lbl_d = f"{dd:.1f}%（仍打8折）"
         elif is_xlp and abs(dd) <= 5:
-            lbl_d = f"{dd:.1f}%（高位偏贵!）"
+            lbl_d = f"{dd:.1f}%（高位偏贵）"
         else:
             lbl_d = f"{dd:.1f}%"
         bars += f'<text x="{x_dd0-wd-6}" y="{y+13.5}" text-anchor="end" font-size="9.0" fill="{dcol}" font-weight="700">{lbl_d}</text>'
@@ -656,7 +663,7 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
     )
     title_u6 = _norm_chart_title(
         u6_nest.get("title") or cl.get("u6_title")
-        or "美股 11 大板块反差——科技暴涨近 9% 仍离高点跌两成，必选消费却挤在山顶！"
+        or "美股 11 大板块反差——科技暴涨近 9% 仍离高点跌两成，必选消费却挤在山顶"
     )
     sub_u6 = html_mod.escape(clean_svg_text(str(
         u6_nest.get("sub") or cl.get("u6_sub")
@@ -664,7 +671,7 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
     )))
     takeaway = html_mod.escape(clean_svg_text(str(
         u6_nest.get("takeaway") or cl.get("u6_takeaway")
-        or "科技股（XLK）11/23 虽涨最猛，但离高点仍跌去近两成（打八折），12 月底风浪过后弹性最大；能源（XLE）同样回撤近 15% 跌出便宜价值；而超市必选消费（XLP）几乎没跌（仅 -3.3%）、估值挤在山顶，千万别盲目当“便宜避风港”！"
+        or "科技股（XLK）11/23 虽涨最猛，但离高点仍跌去近两成（打八折），12 月底风浪过后弹性最大；能源（XLE）同样回撤近 15% 跌出便宜价值；而超市必选消费（XLP）几乎没跌（仅 -3.3%）、估值挤在山顶，切忌盲目当作“便宜避风港”。"
     )))
     note_u6 = html_mod.escape(clean_svg_text(str(
         u6_nest.get("note") or cl.get("u6_note")
@@ -702,7 +709,7 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
 
     title_u7 = _norm_chart_title(
         u7_nest.get("title") or cl.get("u7_title")
-        or "一眼识破美股“伪防御陷阱”——真防弹衣在左上角，苹果/沃尔玛/好市多贵在右下角！"
+        or "一眼识破美股“伪防御陷阱”——真防弹衣在左上角，苹果/沃尔玛/好市多贵在右下角"
     )
     sub_u7 = html_mod.escape(clean_svg_text(str(
         u7_nest.get("sub") or cl.get("u7_sub")
@@ -710,7 +717,7 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
     )))
     takeaway_u7 = html_mod.escape(clean_svg_text(str(
         u7_nest.get("takeaway") or cl.get("u7_takeaway")
-        or f"垂直蓝虚线（{parity_pe:.1f} 倍）代表买无风险 10 年美债拿 {us10y:.2f}% 利息的等效估值——右下角的苹果（34 倍）、沃尔玛（42 倍）、好市多（48 倍）远贵于美债线，绝非安全股！真防弹衣在左上角的伯克希尔、大银行、大油企、洛马与艾伯维。"
+        or f"垂直蓝虚线（{parity_pe:.1f} 倍）代表买无风险 10 年美债拿 {us10y:.2f}% 利息的等效估值——右下角的苹果（34 倍）、沃尔玛（42 倍）、好市多（48 倍）远贵于美债线，绝非安全股；真防弹衣在左上角的伯克希尔、大银行、大油企、洛马与艾伯维。"
     )))
     note_u7 = html_mod.escape(clean_svg_text(str(
         u7_nest.get("note") or cl.get("u7_note")
@@ -721,7 +728,7 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
     for item in pts:
         nm, x, y, sh, col, dx, dy, anc = item
         dots += svg_shape(str(sh), float(x), float(y), str(col))
-        dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="8.8" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
+        dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="9.0" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
 
     return f'''
     <div class="chart-box">
@@ -734,21 +741,21 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
         <rect x="34" y="168" width="416" height="110" fill="#fffbeb" opacity="0.65"/>
         <rect x="450" y="168" width="384" height="110" fill="#fef2f2" opacity="0.78"/>
         <line x1="{parity_x}" y1="34" x2="{parity_x}" y2="278" stroke="#0072B2" stroke-width="1.1" stroke-dasharray="3,3" opacity="0.75"/>
-        <text x="{parity_x}" y="25" text-anchor="middle" font-size="8.6" fill="#0072B2" font-weight="700">10年美债等效线 {parity_pe:.1f}x ({us10y:.2f}%)</text>
+        <text x="{parity_x}" y="25" text-anchor="middle" font-size="9.0" fill="#0072B2" font-weight="700">10年美债等效线 {parity_pe:.1f}x ({us10y:.2f}%)</text>
         <line x1="450" y1="34" x2="450" y2="278" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>
         <line x1="34" y1="168" x2="834" y2="168" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>
         <rect x="34" y="34" width="800" height="244" fill="none" stroke="#cbd5e1" stroke-width="1"/>
         <text x="44" y="49" font-size="9.0" fill="#166534" font-weight="800">● 真防弹衣 &amp; 未来硬科技区（价格合理、现金流硬）</text>
         <text x="824" y="49" text-anchor="end" font-size="9.0" fill="#1e40af" font-weight="800">◆ 稳健巨头偏贵区（等回调再买）</text>
-        <text x="44" y="270" font-size="8.9" fill="#92400e" font-weight="800">▲ 表面低估但有听证/强周期/高债暗流（勿盲抄）</text>
-        <text x="824" y="270" text-anchor="end" font-size="8.9" fill="#991b1b" font-weight="800">× 伪防御高估 &amp; 泡沫雷区（坚决避开！）</text>
-        <text x="34" y="24" font-size="8.8" fill="#475569" font-weight="700">↑ 纵轴越高 = 安全垫与自由现金流越扎实</text>
-        <text x="44" y="294" font-size="8.6" fill="#475569" font-weight="600">← 很便宜（10–18 倍）</text>
-        <text x="450" y="294" text-anchor="middle" font-size="8.6" fill="#475569" font-weight="600">高利率警戒线（25 倍）</text>
-        <text x="824" y="294" text-anchor="end" font-size="8.6" fill="#b91c1c" font-weight="600">严重透支（37–50+ 倍）→</text>
+        <text x="44" y="270" font-size="9.0" fill="#92400e" font-weight="800">▲ 表面低估但有听证/强周期/高债暗流（勿盲抄）</text>
+        <text x="824" y="270" text-anchor="end" font-size="9.0" fill="#991b1b" font-weight="800">× 伪防御高估 &amp; 泡沫雷区（坚决避开）</text>
+        <text x="34" y="24" font-size="9.0" fill="#475569" font-weight="700">↑ 纵轴越高 = 安全垫与自由现金流越扎实</text>
+        <text x="44" y="294" font-size="9.0" fill="#475569" font-weight="600">← 很便宜（10–18 倍）</text>
+        <text x="450" y="294" text-anchor="middle" font-size="9.0" fill="#475569" font-weight="600">高利率警戒线（25 倍）</text>
+        <text x="824" y="294" text-anchor="end" font-size="9.0" fill="#b91c1c" font-weight="600">严重透支（37–50+ 倍）→</text>
         {dots}
         <rect x="34" y="302" width="800" height="18" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.7" rx="3"/>
-        <text x="434" y="315" text-anchor="middle" font-size="8.7" fill="#334155" font-weight="600">图例：<tspan fill="#009E73" font-weight="800">●</tspan> 当下底座（防弹衣） ｜ <tspan fill="#0072B2" font-weight="800">◆</tspan> 未来主攻（已上锁，12/21 后解锁） ｜ <tspan fill="#D97706" font-weight="800">▲</tspan> 分歧观察 ｜ <tspan fill="#D55E00" font-weight="800">×</tspan> 伪防御/高债回避</text>
+        <text x="434" y="315" text-anchor="middle" font-size="9.0" fill="#334155" font-weight="600">图例：<tspan fill="#009E73" font-weight="800">●</tspan> 当下底座（防弹衣） ｜ <tspan fill="#0072B2" font-weight="800">◆</tspan> 未来主攻（已上锁，12/21 后解锁） ｜ <tspan fill="#D97706" font-weight="800">▲</tspan> 分歧观察 ｜ <tspan fill="#D55E00" font-weight="800">×</tspan> 伪防御/高债回避</text>
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway_u7}</div>
       <div class="chart-note">{note_u7}</div>
@@ -760,7 +767,8 @@ def main() -> None:
     DAILY_DIR.mkdir(parents=True, exist_ok=True)
     args = sys.argv[1:]
     if "--check" in args:
-        assert Path(CHROME_BIN).exists(), f"Chrome missing: {CHROME_BIN}"
+        chrome = resolve_chrome_bin()
+        assert Path(chrome).exists(), f"Chrome missing: {chrome}"
         import bs4  # noqa: F401
         from PIL import Image  # noqa: F401
         meta = load_meta()
@@ -805,17 +813,24 @@ def main() -> None:
     render_pdf_atomic(full_pdf_html, pdf_path, HTML_PDF_PATH, TMP_PDF_PATH)
     print(f"Wrote PDF ({pdf_path.stat().st_size:,} bytes): {pdf_path}")
 
-    if not no_docx:
-        render_docx_atomic(full_pdf_html, docx_path, market="us_stock", footer_title=page_footer)
-        write_equity_receipt(frozen, pdf_path, docx_path)
-        print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
+    if no_docx:
+        receipt_path = md_path.with_suffix(".artifacts.json")
+        if receipt_path.exists():
+            receipt_path.unlink()
+            print(f"Removed stale artifact receipt: {receipt_path.name}")
+        print("[WARN] --no-docx skips syncing *_latest.* to prevent PDF/DOCX divergence.")
+        return
+
+    render_docx_atomic(full_pdf_html, docx_path, market="us_stock", footer_title=page_footer)
+    write_equity_receipt(frozen, pdf_path, docx_path)
+    print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
 
     latest_md = OUT_DIR / "us_stock_market_report_latest.md"
     latest_pdf = OUT_DIR / "us_stock_market_report_latest.pdf"
     latest_docx = OUT_DIR / "us_stock_market_report_latest.docx"
     atomic_copy(md_path, latest_md)
     atomic_copy(pdf_path, latest_pdf)
-    if not no_docx and docx_path.exists():
+    if docx_path.exists():
         atomic_copy(docx_path, latest_docx)
         print(f"Synced: {latest_md}, {latest_pdf} & {latest_docx}")
     else:

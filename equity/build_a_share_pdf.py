@@ -21,7 +21,6 @@ from pathlib import Path
 
 from pdf_common import (
     BASE_DIR,
-    CHROME_BIN,
     DAILY_DIR,
     atomic_copy,
     build_theme_css,
@@ -32,6 +31,7 @@ from pdf_common import (
     render_docx_atomic,
     render_md_body,
     render_pdf_atomic,
+    resolve_chrome_bin,
     run_lint_gate,
     svg_shape,
     write_equity_receipt,
@@ -54,7 +54,7 @@ DEFAULT_A_SECTORS = [
     {"name": "电力设备", "pct": 1.74, "flow": 2.1, "camp": "base"},
     {"name": "家用电器", "pct": 0.54, "flow": 12.9, "camp": "def"},
     {"name": "非银金融", "pct": -0.73, "flow": 4.6, "camp": "base"},
-    {"name": "银行(逆势吸金!)", "pct": -0.80, "flow": 17.3, "camp": "def"},
+    {"name": "银行(逆势吸金)", "pct": -0.80, "flow": 17.3, "camp": "def"},
     {"name": "公用事业", "pct": -0.87, "flow": -0.6, "camp": "def"},
     {"name": "煤炭", "pct": -1.17, "flow": 0.6, "camp": "def"},
     {"name": "石油石化", "pct": -1.25, "flow": 4.5, "camp": "def"},
@@ -108,7 +108,7 @@ DEFAULT_A4_CARDS = [
         ],
     },
     {
-        "header": "12/21–12/24（● 主攻窗口！）",
+        "header": "12/21–12/24（● 主攻窗口）",
         "color": "#009E73",
         "bg": "#f0fdf4",
         "border": "#4ade80",
@@ -126,7 +126,7 @@ DEFAULT_A4_CARDS = [
         "border": "#009E73",
         "items": [
             ("• 01/10 中美关税休战到期大限", "#14532d", True),
-            ("• 01/27 严避长鑫 550 亿大解禁!", "#dc2626", True),
+            ("• 01/27 严避长鑫 550 亿大解禁", "#dc2626", True),
             ("• 03 月全国两会定调财政赤字", "#14532d", True),
             ("→ 顺风站稳年线满配 5.8 成股票", "#065f46", False),
         ],
@@ -146,13 +146,13 @@ DEFAULT_A7_POINTS = [
     ("中际旭创 18.8x",      378,  66, "y", "#D97706",  0, -10, "middle"),
     ("贵州茅台 22.1x",      414, 196, "y", "#D97706", -8,   4, "end"),
     ("五粮液(Q3-48%倒挂)",   292, 234, "r", "#D55E00",  0,  14, "middle"),
-    ("山东黄金(Q3首亏!)",    462, 240, "r", "#D55E00",  0,  14, "middle"),
+    ("山东黄金(Q3首亏)",     462, 240, "r", "#D55E00",  0,  14, "middle"),
     ("长鑫(1.27大解禁)",     384, 218, "r", "#D55E00",  8,   3, "start"),
     ("恒瑞医药 38x",        488,  92, "b", "#0072B2",  8,   3, "start"),
     ("中微公司 50x",        548,  70, "b", "#0072B2",  0, -10, "middle"),
     ("北方华创(11/25急挫)",  592, 186, "y", "#D97706",  0,  15, "middle"),
     ("寒武纪 140x",         696, 102, "y", "#D97706",  0, -10, "middle"),
-    ("宇树科技 518x!",      782, 218, "r", "#D55E00", -8, -10, "end"),
+    ("宇树科技 518x",       782, 218, "r", "#D55E00", -8, -10, "end"),
 ]
 
 
@@ -240,11 +240,11 @@ def svg_chart_a1_cycles(meta_override: dict | None = None) -> str:
             nodes += f'<text x="{x}" y="{y3-10}" text-anchor="middle" font-size="9.4" fill="#0072B2" font-weight="700" {halo}>{c3:,}</text>'
 
         if idx == 0:
-            nodes += f'<text x="{x-4}" y="{ys+15}" text-anchor="middle" font-size="8.9" fill="#b45309" font-weight="600" {halo}>{ss:,}</text>'
+            nodes += f'<text x="{x-4}" y="{ys+15}" text-anchor="middle" font-size="9.0" fill="#b45309" font-weight="600" {halo}>{ss:,}</text>'
         elif idx in (1, 2, 4, 6):
-            nodes += f'<text x="{x}" y="{ys+15}" text-anchor="middle" font-size="8.9" fill="#b45309" font-weight="600" {halo}>{ss:,}</text>'
+            nodes += f'<text x="{x}" y="{ys+15}" text-anchor="middle" font-size="9.0" fill="#b45309" font-weight="600" {halo}>{ss:,}</text>'
         elif idx == 7:
-            nodes += f'<text x="{x-8}" y="{ys+5}" text-anchor="end" font-size="8.9" fill="#b45309" font-weight="700" {halo}>{ss:,}</text>'
+            nodes += f'<text x="{x-8}" y="{ys+5}" text-anchor="end" font-size="9.0" fill="#b45309" font-weight="700" {halo}>{ss:,}</text>'
         elif idx == 8:
             nodes += f'<text x="{x+7}" y="{ys+5}" text-anchor="start" font-size="9.4" fill="#b45309" font-weight="700" {halo}>{ss:,}</text>'
 
@@ -269,7 +269,7 @@ def svg_chart_a1_cycles(meta_override: dict | None = None) -> str:
         <rect x="136" y="{y_300_200w-21}" width="218" height="17" fill="#fef2f2" fill-opacity="0.96" stroke="#fca5a5" stroke-width="0.8" rx="3"/>
         <text x="245" y="{y_300_200w-9}" text-anchor="middle" font-size="9.0" fill="#b91c1c" font-weight="700">{c3_tag}</text>
         <rect x="122" y="{y_sse_200w+5}" width="180" height="17" fill="#ecfdf5" fill-opacity="0.96" stroke="#86efac" stroke-width="0.8" rx="3"/>
-        <text x="212" y="{y_sse_200w+17}" text-anchor="middle" font-size="8.9" fill="#047857" font-weight="700">{sse_tag}</text>
+        <text x="212" y="{y_sse_200w+17}" text-anchor="middle" font-size="9.0" fill="#047857" font-weight="700">{sse_tag}</text>
         {nodes}
         <rect x="64" y="10" width="14" height="4.5" fill="#0072B2"/>
         <text x="83" y="16" font-size="10.0" fill="#1e293b" font-weight="600">沪深 300（当前 {c3_now:,}，距 2026.06 高点 {dd_pct:+.1f}%）</text>
@@ -292,7 +292,7 @@ def svg_chart_a2_split_and_futures(meta_override: dict | None = None) -> str:
 
     title_a2 = _norm_chart_title(
         a2_nest.get("title") or cl.get("a2_title")
-        or "11/24 科创领涨但中小盘集体回落，中证 1000 期货贴水继续走阔！"
+        or "11/24 科创领涨但中小盘集体回落，中证 1000 期货贴水继续走阔"
     )
     sub_a2 = html_mod.escape(clean_svg_text(str(
         a2_nest.get("sub") or cl.get("a2_sub")
@@ -347,9 +347,9 @@ def svg_chart_a2_split_and_futures(meta_override: dict | None = None) -> str:
                 ann_lbl = "期现平水"
         right += f'<rect x="440" y="{y}" width="396" height="53" fill="{bg}" stroke="{col}" stroke-width="1.1" rx="5"/>'
         right += f'<text x="450" y="{y+16}" font-size="9.4" fill="#0f172a" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
-        right += f'<text x="828" y="{y+16}" text-anchor="end" font-size="8.6" fill="#475569">{ann_lbl}</text>'
-        right += f'<text x="450" y="{y+32}" font-size="8.9" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(headline)))}</text>'
-        right += f'<text x="450" y="{y+46}" font-size="8.4" fill="#475569">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
+        right += f'<text x="828" y="{y+16}" text-anchor="end" font-size="9.0" fill="#475569">{ann_lbl}</text>'
+        right += f'<text x="450" y="{y+32}" font-size="9.0" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(headline)))}</text>'
+        right += f'<text x="450" y="{y+46}" font-size="9.0" fill="#475569">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
 
     return f'''
     <div class="chart-box">
@@ -411,7 +411,7 @@ def svg_chart_a3_macro_k_split(meta_override: dict | None = None) -> str:
         y = 46 + i * 39
         rows_c += f'<rect x="14" y="{y}" width="404" height="33" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.9" rx="4"/>'
         rows_c += f'<text x="22" y="{y+14}" font-size="9.3" fill="#1e293b" font-weight="700">{html_mod.escape(clean_svg_text(str(k)))}</text>'
-        rows_c += f'<text x="22" y="{y+27}" font-size="8.4" fill="#64748b">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
+        rows_c += f'<text x="22" y="{y+27}" font-size="9.0" fill="#64748b">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
         rows_c += f'<text x="410" y="{y+18}" text-anchor="end" font-size="9.4" fill="#b45309" font-weight="800">{html_mod.escape(clean_svg_text(str(v)))}</text>'
 
     rows_h = ""
@@ -420,7 +420,7 @@ def svg_chart_a3_macro_k_split(meta_override: dict | None = None) -> str:
         y = 46 + i * 39
         rows_h += f'<rect x="432" y="{y}" width="404" height="33" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="0.9" rx="4"/>'
         rows_h += f'<text x="440" y="{y+14}" font-size="9.3" fill="#064e3b" font-weight="700">{html_mod.escape(clean_svg_text(str(k)))}</text>'
-        rows_h += f'<text x="440" y="{y+27}" font-size="8.4" fill="#047857">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
+        rows_h += f'<text x="440" y="{y+27}" font-size="9.0" fill="#047857">{html_mod.escape(clean_svg_text(str(sub)))}</text>'
         rows_h += f'<text x="828" y="{y+18}" text-anchor="end" font-size="9.4" fill="#009E73" font-weight="800">{html_mod.escape(clean_svg_text(str(v)))}</text>'
 
     return f'''
@@ -454,7 +454,7 @@ def svg_chart_a4_clock(meta_override: dict | None = None) -> str:
     score_s = f"{score:g}"
     tier_s = html_mod.escape(clean_svg_text(str(cl.get("tier_short", "红灯防守期"))))
     line1 = html_mod.escape(clean_svg_text(str(cl.get("status_line1", "当前综合体检 2.5 / 6 分：政策护盘与成交放量亮绿灯，但大盘仍压在 4 年成本线（4,025点）下方"))))
-    line2 = html_mod.escape(clean_svg_text(str(cl.get("status_line2", "行动铁律：当下不追高！手里余下 6 成防御资金耐心等 11 月底与 12 月中旬两轮大考过关后再分批上车"))))
+    line2 = html_mod.escape(clean_svg_text(str(cl.get("status_line2", "行动铁律：当下不追高，手里余下 6 成防御资金耐心等 11 月底与 12 月中旬两轮大考过关后再分批上车"))))
     cards = a4_nest.get("cards") or DEFAULT_A4_CARDS
 
     title_a4 = _norm_chart_title(
@@ -502,7 +502,7 @@ def svg_chart_a4_clock(meta_override: dict | None = None) -> str:
             else:
                 txt, tc, bold = str(it), "#1e293b", False
             fw = "700" if bold else "500"
-            cards_svg += f'<text x="{cx+8}" y="{ys[j]}" font-size="8.6" fill="{tc}" font-weight="{fw}">{html_mod.escape(clean_svg_text(txt))}</text>'
+            cards_svg += f'<text x="{cx+8}" y="{ys[j]}" font-size="9.0" fill="{tc}" font-weight="{fw}">{html_mod.escape(clean_svg_text(txt))}</text>'
         if arrow_col:
             ax = cx + cw + 4
             cards_svg += f'<polygon points="{ax},81 {ax+10},85 {ax},89" fill="{arrow_col}"/>'
@@ -525,7 +525,7 @@ def svg_chart_a4_clock(meta_override: dict | None = None) -> str:
         <polygon points="{ptr_x},204 {ptr_x+8},215 {ptr_x-8},215" fill="{ptr_col}"/>
         <rect x="16" y="218" width="820" height="40" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.9" rx="4"/>
         <text x="426" y="234" text-anchor="middle" font-size="9.0" fill="#0f172a" font-weight="700">{line1}</text>
-        <text x="426" y="250" text-anchor="middle" font-size="8.8" fill="#475569">{line2}</text>
+        <text x="426" y="250" text-anchor="middle" font-size="9.0" fill="#475569">{line2}</text>
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway_a4}</div>
       <div class="chart-note">{note_a4}</div>
@@ -553,7 +553,7 @@ def svg_chart_a5_targets_and_math(meta_override: dict | None = None) -> str:
 
     x_now = x_c(c3_now)
     left = f'<line x1="{x_now}" y1="42" x2="{x_now}" y2="210" stroke="#D55E00" stroke-width="1.5" stroke-dasharray="4,3"/>'
-    left += f'<text x="{x_now}" y="36" text-anchor="middle" font-size="8.8" fill="#D55E00" font-weight="700">{as_short} {c3_now:,}</text>'
+    left += f'<text x="{x_now}" y="36" text-anchor="middle" font-size="9.0" fill="#D55E00" font-weight="700">{as_short} {c3_now:,}</text>'
     for v in [3500, 4000, 4500, 5000]:
         xv = x_c(v)
         left += f'<line x1="{xv}" y1="44" x2="{xv}" y2="210" stroke="#f1f5f9" stroke-width="1"/>'
@@ -563,19 +563,19 @@ def svg_chart_a5_targets_and_math(meta_override: dict | None = None) -> str:
         y = 52 + i * 26.5
         x1, x2, xm = x_c(lo), x_c(hi), x_c(mid)
         pct = ((mid - c3_now) / float(c3_now)) * 100.0
-        left += f'<text x="169" y="{y+10}" text-anchor="end" font-size="8.8" fill="#1e293b" font-weight="600">{nm}</text>'
+        left += f'<text x="169" y="{y+10}" text-anchor="end" font-size="9.0" fill="#1e293b" font-weight="600">{nm}</text>'
         left += f'<line x1="{x1}" y1="{y+6}" x2="{x2}" y2="{y+6}" stroke="{col}" stroke-width="5.0" opacity="0.28" stroke-linecap="round"/>'
         left += f'<circle cx="{xm}" cy="{y+6}" r="4.0" fill="{col}"/>'
         lbl = f"{mid:,} ({pct:+.0f}%)"
         if i == 0:
-            left += f'<text x="{xm}" y="{y-2}" text-anchor="middle" font-size="8.6" fill="{col}" font-weight="700">{lbl}</text>'
+            left += f'<text x="{xm}" y="{y-2}" text-anchor="middle" font-size="9.0" fill="{col}" font-weight="700">{lbl}</text>'
         else:
-            left += f'<text x="{x2+5}" y="{y+9.5}" font-size="8.8" fill="{col}" font-weight="700">{lbl}</text>'
+            left += f'<text x="{x2+5}" y="{y+9.5}" font-size="9.0" fill="{col}" font-weight="700">{lbl}</text>'
 
     cards = [
         ("2006–2026.11 年化收益（含2026回调）", "纯股债 7.65%", "加15%黄金 8.12%", "年化多赚 +0.47%", "#009E73"),
         ("2006–2025 长期年化收益", "纯股债 8.21%", "加15%黄金 8.89%", "复利滚雪球更快", "#009E73"),
-        ("历史上最惨一年跌了多少（越少越好）", "纯股债 -21.2%", "加15%黄金 -18.3%", "少亏近 3 个百分点!", "#0072B2"),
+        ("历史上最惨一年跌了多少（越少越好）", "纯股债 -21.2%", "加15%黄金 -18.3%", "少亏近 3 个百分点", "#0072B2"),
         ("每承担 1 份波动换来的回报（性价比）", "纯股债 0.349", "加15%黄金 0.391", "综合性价比 +12%", "#7c3aed"),
     ]
     right = ""
@@ -583,7 +583,7 @@ def svg_chart_a5_targets_and_math(meta_override: dict | None = None) -> str:
         y = 42 + i * 47
         right += f'<rect x="466" y="{y}" width="370" height="39" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.9" rx="5"/>'
         right += f'<text x="476" y="{y+15}" font-size="9.0" fill="#0f172a" font-weight="700">{title_c}</text>'
-        right += f'<text x="826" y="{y+15}" text-anchor="end" font-size="8.6" fill="{col}" font-weight="700">{badge}</text>'
+        right += f'<text x="826" y="{y+15}" text-anchor="end" font-size="9.0" fill="{col}" font-weight="700">{badge}</text>'
         right += f'<text x="476" y="{y+31}" font-size="9.0" fill="#64748b">{v1}  →  <tspan fill="{col}" font-weight="800">{v2}</tspan></text>'
 
     return f'''
@@ -644,11 +644,11 @@ def svg_chart_a6_sector_heatmap(meta_override: dict | None = None) -> str:
             w = max(round(pct * px_pct, 1), 2.0)
             col = "#c94a4a" if pct >= 2.5 else "#e67e22"
             bars += f'<rect x="{x_pct0}" y="{y+1.5}" width="{w}" height="13" fill="{col}" opacity="0.86" rx="2"/>'
-            bars += f'<text x="{x_pct0+w+5}" y="{y+12.5}" font-size="8.9" fill="{col}" font-weight="700">▲+{pct:.2f}%</text>'
+            bars += f'<text x="{x_pct0+w+5}" y="{y+12.5}" font-size="9.0" fill="{col}" font-weight="700">▲+{pct:.2f}%</text>'
         else:
             w = max(round(abs(pct) * px_pct, 1), 2.0)
             bars += f'<rect x="{x_pct0-w}" y="{y+1.5}" width="{w}" height="13" fill="#0f766e" opacity="0.86" rx="2"/>'
-            bars += f'<text x="{x_pct0+5}" y="{y+12.5}" font-size="8.9" fill="#0f766e" font-weight="700">▼{pct:.2f}%</text>'
+            bars += f'<text x="{x_pct0+5}" y="{y+12.5}" font-size="9.0" fill="#0f766e" font-weight="700">▼{pct:.2f}%</text>'
 
         if flw >= 0:
             wf = max(round(flw * px_flw, 1), 2.0)
@@ -657,11 +657,11 @@ def svg_chart_a6_sector_heatmap(meta_override: dict | None = None) -> str:
             lbl_f = f"+{flw:.1f}亿"
             if is_contra and flw > 0:
                 lbl_f += "（净流入）"
-            bars += f'<text x="{x_flw0+wf+5}" y="{y+12.5}" font-size="8.9" fill="{fcol}" font-weight="700">{lbl_f}</text>'
+            bars += f'<text x="{x_flw0+wf+5}" y="{y+12.5}" font-size="9.0" fill="{fcol}" font-weight="700">{lbl_f}</text>'
         else:
             wf = max(round(abs(flw) * px_flw, 1), 2.0)
             bars += f'<rect x="{x_flw0-wf}" y="{y+1.5}" width="{wf}" height="13" fill="#64748b" opacity="0.85" rx="2"/>'
-            bars += f'<text x="{x_flw0+5}" y="{y+12.5}" font-size="8.9" fill="#64748b" font-weight="700">{flw:.1f}亿</text>'
+            bars += f'<text x="{x_flw0+5}" y="{y+12.5}" font-size="9.0" fill="#64748b" font-weight="700">{flw:.1f}亿</text>'
 
     axes = (
         f'<line x1="442" y1="10" x2="442" y2="{svg_h-12}" stroke="#e2e8f0" stroke-width="1.2"/>'
@@ -712,7 +712,7 @@ def svg_chart_a7_stock_quadrant(meta_override: dict | None = None) -> str:
 
     title_a7 = _norm_chart_title(
         a7_nest.get("title") or cl.get("a7_title")
-        or "A 股精选 19 只核心龙头“贵不贵 × 赚不赚钱”四象限地图（一眼分清谁便宜、谁泡沫！）"
+        or "A 股精选 19 只核心龙头“贵不贵 × 赚不赚钱”四象限地图（一眼分清谁便宜、谁泡沫）"
     )
     sub_a7 = html_mod.escape(clean_svg_text(str(
         a7_nest.get("sub") or cl.get("a7_sub")
@@ -731,7 +731,7 @@ def svg_chart_a7_stock_quadrant(meta_override: dict | None = None) -> str:
     for item in pts:
         nm, x, y, sh, col, dx, dy, anc = item
         dots += svg_shape(str(sh), float(x), float(y), str(col))
-        dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="8.7" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
+        dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="9.0" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
 
     return f'''
     <div class="chart-box">
@@ -749,14 +749,14 @@ def svg_chart_a7_stock_quadrant(meta_override: dict | None = None) -> str:
         <text x="44" y="50" font-size="9.0" fill="#166534" font-weight="800">● 黄金性价比区：估值便宜 + 赚钱给力</text>
         <text x="824" y="50" text-anchor="end" font-size="9.0" fill="#1e40af" font-weight="800">◆ 高成长偏贵区：好公司但等回调/解锁</text>
         <text x="44" y="268" font-size="9.0" fill="#92400e" font-weight="800">▲ 底部磨底/事件或解禁扰动区：耐心排雷</text>
-        <text x="824" y="268" text-anchor="end" font-size="9.0" fill="#991b1b" font-weight="800">× 泡沫/减速/高危区：新手坚决绕开！</text>
-        <text x="34" y="24" font-size="8.9" fill="#475569" font-weight="700">↑ 纵轴越高 = 业绩增速与筹码安全垫越高</text>
-        <text x="44" y="292" font-size="8.7" fill="#475569" font-weight="600">← 极便宜（8–15年回本）</text>
-        <text x="440" y="292" text-anchor="middle" font-size="8.7" fill="#475569" font-weight="600">估值合理分界（约 25–30 倍）</text>
-        <text x="824" y="292" text-anchor="end" font-size="8.7" fill="#b91c1c" font-weight="600">极贵/泡沫（100–500 倍）→</text>
+        <text x="824" y="268" text-anchor="end" font-size="9.0" fill="#991b1b" font-weight="800">× 泡沫/减速/高危区：新手坚决绕开</text>
+        <text x="34" y="24" font-size="9.0" fill="#475569" font-weight="700">↑ 纵轴越高 = 业绩增速与筹码安全垫越高</text>
+        <text x="44" y="292" font-size="9.0" fill="#475569" font-weight="600">← 极便宜（8–15年回本）</text>
+        <text x="440" y="292" text-anchor="middle" font-size="9.0" fill="#475569" font-weight="600">估值合理分界（约 25–30 倍）</text>
+        <text x="824" y="292" text-anchor="end" font-size="9.0" fill="#b91c1c" font-weight="600">极贵/泡沫（100–500 倍）→</text>
         {dots}
         <rect x="34" y="300" width="800" height="18" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.7" rx="3"/>
-        <text x="434" y="313" text-anchor="middle" font-size="8.7" fill="#334155" font-weight="600">图例：<tspan fill="#009E73" font-weight="800">●</tspan> 当下底座（可逢低配） ｜ <tspan fill="#0072B2" font-weight="800">◆</tspan> 未来主攻（已上锁，等转绿/回调） ｜ <tspan fill="#D97706" font-weight="800">▲</tspan> 分歧观察 ｜ <tspan fill="#D55E00" font-weight="800">×</tspan> 高危回避（不碰）</text>
+        <text x="434" y="313" text-anchor="middle" font-size="9.0" fill="#334155" font-weight="600">图例：<tspan fill="#009E73" font-weight="800">●</tspan> 当下底座（可逢低配） ｜ <tspan fill="#0072B2" font-weight="800">◆</tspan> 未来主攻（已上锁，等转绿/回调） ｜ <tspan fill="#D97706" font-weight="800">▲</tspan> 分歧观察 ｜ <tspan fill="#D55E00" font-weight="800">×</tspan> 高危回避（不碰）</text>
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway_a7}</div>
       <div class="chart-note">{note_a7}</div>
@@ -768,7 +768,8 @@ def main() -> None:
     DAILY_DIR.mkdir(parents=True, exist_ok=True)
     args = sys.argv[1:]
     if "--check" in args:
-        assert Path(CHROME_BIN).exists(), f"Chrome missing: {CHROME_BIN}"
+        chrome = resolve_chrome_bin()
+        assert Path(chrome).exists(), f"Chrome missing: {chrome}"
         import bs4  # noqa: F401
         from PIL import Image  # noqa: F401
         meta = load_meta()
@@ -813,17 +814,24 @@ def main() -> None:
     render_pdf_atomic(full_pdf_html, pdf_path, HTML_PDF_PATH, TMP_PDF_PATH)
     print(f"Wrote PDF ({pdf_path.stat().st_size:,} bytes): {pdf_path}")
 
-    if not no_docx:
-        render_docx_atomic(full_pdf_html, docx_path, market="a_share", footer_title=page_footer)
-        write_equity_receipt(frozen, pdf_path, docx_path)
-        print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
+    if no_docx:
+        receipt_path = md_path.with_suffix(".artifacts.json")
+        if receipt_path.exists():
+            receipt_path.unlink()
+            print(f"Removed stale artifact receipt: {receipt_path.name}")
+        print("[WARN] --no-docx skips syncing *_latest.* to prevent PDF/DOCX divergence.")
+        return
+
+    render_docx_atomic(full_pdf_html, docx_path, market="a_share", footer_title=page_footer)
+    write_equity_receipt(frozen, pdf_path, docx_path)
+    print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
 
     latest_md = OUT_DIR / "a_share_market_report_latest.md"
     latest_pdf = OUT_DIR / "a_share_market_report_latest.pdf"
     latest_docx = OUT_DIR / "a_share_market_report_latest.docx"
     atomic_copy(md_path, latest_md)
     atomic_copy(pdf_path, latest_pdf)
-    if not no_docx and docx_path.exists():
+    if docx_path.exists():
         atomic_copy(docx_path, latest_docx)
         print(f"Synced: {latest_md}, {latest_pdf} & {latest_docx}")
     else:
