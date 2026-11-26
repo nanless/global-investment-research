@@ -1,5 +1,4 @@
 from contextlib import closing, redirect_stderr
-from dataclasses import replace
 from io import StringIO
 import json
 from pathlib import Path
@@ -9,59 +8,29 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from scripts import artifact_receipt
 from scripts import publish_site as publish
 
 
-class ArtifactReceiptTests(unittest.TestCase):
-    def test_archive_keeps_same_receipt_and_ignores_historical_midday_issue(self):
+class DailyDiscoveryTests(unittest.TestCase):
+    def test_archive_discovery_ignores_historical_midday_and_rejects_duplicates(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             daily = root / "equity" / "daily"
             archive = daily / "archive" / "2026-11"
             archive.mkdir(parents=True)
-            archived = daily / "2026-11-23_1800_a_share.md"
+            archived = archive / "2026-11-23_1800_a_share.md"
             old_midday = daily / "2026-11-24_1630_a_share.md"
-            pdf, docx = archived.with_suffix(".pdf"), archived.with_suffix(".docx")
-            for path in (archived, old_midday, pdf, docx):
+            for path in (archived, old_midday):
                 path.write_text(path.name, encoding="utf-8")
-            frozen = artifact_receipt.freeze_inputs(archived, root=root)
-            artifact_receipt.write_receipt(frozen, pdf, docx)
-            outputs = {"pdf": artifact_receipt.sha256_file(pdf), "docx": artifact_receipt.sha256_file(docx)}
-            for path in (archived, pdf, docx, archived.with_suffix(".artifacts.json")):
-                path.rename(archive / path.name)
 
             pattern = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})_a_share(?:_r(\d+))?\.md")
             selected = publish._latest_daily(daily, pattern)
-            self.assertEqual(selected, archive / archived.name)
-            artifact_receipt.verify_receipt(selected, repository=root, tree=root, inputs=[], outputs=outputs)
-            archived.write_text("duplicate scheduled issue", encoding="utf-8")
+            self.assertEqual(selected, archived)
+
+            duplicate = daily / archived.name
+            duplicate.write_text("duplicate scheduled issue", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "Duplicate scheduled issue"):
                 publish._latest_daily(daily, pattern)
-
-    def test_receipt_rejects_changed_render_metadata_or_binary(self):
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp).resolve()
-            md = root / "issue.md"
-            meta = root / "meta.json"
-            pdf, docx = md.with_suffix(".pdf"), md.with_suffix(".docx")
-            for path in (md, meta, pdf, docx):
-                path.write_text(path.name, encoding="utf-8")
-            inputs = artifact_receipt.freeze_inputs(md, inputs=[meta], root=root)
-            artifact_receipt.write_receipt(inputs, pdf, docx)
-            outputs = {"pdf": artifact_receipt.sha256_file(pdf), "docx": artifact_receipt.sha256_file(docx)}
-            artifact_receipt.verify_receipt(md, repository=root, tree=root, inputs=["meta.json"], outputs=outputs)
-
-            meta.write_text("new chart values", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "stale"):
-                artifact_receipt.verify_receipt(md, repository=root, tree=root, inputs=["meta.json"], outputs=outputs)
-            with self.assertRaisesRegex(ValueError, "changed during compilation"):
-                artifact_receipt.write_receipt(inputs, pdf, docx)
-
-            meta.write_text(meta.name, encoding="utf-8")
-            outputs["docx"] = "0" * 64
-            with self.assertRaisesRegex(ValueError, "fingerprints"):
-                artifact_receipt.verify_receipt(md, repository=root, tree=root, inputs=["meta.json"], outputs=outputs)
 
 
 class PublicationEntryTests(unittest.TestCase):
@@ -81,118 +50,7 @@ class PublicationEntryTests(unittest.TestCase):
                 prepare.assert_not_called()
 
 
-class FakeRelease:
-    repository = "example/research"
-
-    def __init__(self):
-        self.remote = {}
-        self.content = {}
-        self.next_id = 1
-
-    def add(self, name, digest):
-        if name in self.remote:
-            raise RuntimeError("duplicate GitHub asset")
-        item = publish.RemoteAsset(self.next_id, name, digest)
-        self.next_id += 1
-        self.remote[name] = item
-        return item
-
-    def assets(self):
-        return self.remote.copy()
-
-    def json_asset(self, asset):
-        return self.content[asset.id]
-
-    def upload(self, path):
-        item = self.add(path.name, artifact_receipt.sha256_file(path))
-        self.content[item.id] = json.loads(path.read_text(encoding="utf-8"))
-
-    def delete(self, asset):
-        if self.remote[asset.name].id != asset.id:
-            raise RuntimeError("another process replaced an asset")
-        del self.remote[asset.name]
-
-    def rename(self, asset, name):
-        if name in self.remote:
-            raise RuntimeError("duplicate GitHub asset")
-        self.delete(asset)
-        self.remote[name] = replace(asset, name=name)
-
-    def stage(self, asset):
-        self.add(asset.staged_name, asset.digest)
-
-
-class PublicationRecoveryTests(unittest.TestCase):
-    def test_cross_clone_recovers_pair_with_both_stable_names_present(self):
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            first, fresh = root / "first", root / "fresh"
-            first.mkdir()
-            fresh.mkdir()
-            candidate = "a" * 40
-            pdf = publish.LocalAsset(root / "gir-next-issue.pdf", "issue.pdf", "PDF", "b" * 64)
-            docx = publish.LocalAsset(root / "gir-next-issue.docx", "issue.docx", "Word", "b" * 64)
-            release = FakeRelease()
-            old_pdf = release.add(pdf.backup_name, "a" * 64)
-            release.add(pdf.name, pdf.digest)
-            old_docx = release.add(docx.name, "a" * 64)
-            journal = first / publish.REMOTE_JOURNAL
-            publish._save_json(journal, {
-                "schema": 1, "sha": candidate,
-                "expected": {pdf.name: pdf.digest, docx.name: docx.digest},
-                "previous": {
-                    pdf.name: {"id": old_pdf.id, "digest": old_pdf.digest},
-                    docx.name: {"id": old_docx.id, "digest": old_docx.digest},
-                },
-            })
-            release.upload(journal)
-
-            def stop_after_recovery(asset):
-                raise RuntimeError("injected upload failure")
-
-            with patch.object(release, "stage", stop_after_recovery), \
-                 patch.object(publish, "GitHubRelease", return_value=release), \
-                 patch.object(publish, "_remote_main", return_value=candidate):
-                with self.assertRaisesRegex(RuntimeError, "upload failure"):
-                    publish._publish_release(
-                        release.repository, [(pdf, docx)], fresh, {}, force=False, sha=candidate,
-                    )
-            self.assertEqual(release.remote[pdf.name].id, old_pdf.id)
-            self.assertEqual(release.remote[docx.name].id, old_docx.id)
-            self.assertNotIn(publish.REMOTE_LOCK, release.remote)
-            with patch.object(publish, "GitHubRelease", return_value=release), \
-                 patch.object(publish, "_remote_main", return_value=candidate):
-                verified = publish._publish_release(
-                    release.repository, [(pdf, docx)], fresh, {}, force=False, sha=candidate,
-                )
-            self.assertEqual(verified, {pdf.name: pdf.digest, docx.name: docx.digest})
-            self.assertEqual(set(release.remote), {pdf.name, docx.name})
-            self.assertEqual(json.loads((fresh / "last_release_commit.json").read_text())["sha"], candidate)
-
-    def test_newer_main_refuses_an_older_release_before_remote_mutation(self):
-        with patch.object(publish, "_remote_main", return_value="b" * 40), \
-             patch.object(publish, "GitHubRelease") as remote:
-            with self.assertRaisesRegex(RuntimeError, "no longer points"):
-                publish._publish_release(
-                    "example/research", [], Path("."), {}, force=False, sha="a" * 40,
-                )
-        remote.assert_not_called()
-
-    def test_another_clone_cannot_take_over_a_live_release_lock(self):
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            first, second = root / "first", root / "second"
-            first.mkdir()
-            second.mkdir()
-            release = FakeRelease()
-            with publish._remote_release_lock(release, first, first, "a" * 40, None):
-                lock = release.remote[publish.REMOTE_LOCK]
-                with self.assertRaisesRegex(RuntimeError, "Another publisher"):
-                    with publish._remote_release_lock(release, second, second, "b" * 40, None):
-                        self.fail("a different clone acquired the active remote lock")
-                self.assertEqual(release.remote[publish.REMOTE_LOCK].id, lock.id)
-            self.assertNotIn(publish.REMOTE_LOCK, release.remote)
-
+class WebPublicationRecoveryTests(unittest.TestCase):
     def test_push_timeout_checks_if_the_selected_commit_landed(self):
         sha = "a" * 40
         with patch.object(publish, "_remote_main", side_effect=[None, sha]), \
@@ -214,14 +72,15 @@ class PublicationRecoveryTests(unittest.TestCase):
                  patch.object(publish.edition_run, "check_publication_candidate") as preflight, \
                  patch.object(publish.edition_run, "record_push") as record, \
                  patch.object(publish, "_git", return_value=sha), \
-                 patch.object(publish, "_validate_revision", return_value=[]), \
+                 patch.object(publish, "_validate_revision"), \
                  patch.object(publish, "_prepare_commit") as prepare, \
                  patch.object(publish, "_push_verified_commit") as push:
-                confirmed, _, _ = publish._push_edition(
+                confirmed, intent = publish._push_edition(
                     token, edition, repo, {}, git_dir=root, common=root, work=root,
-                    output=root / "site", copies=root / "copies", message=None,
+                    output=root / "site", message=None,
                 )
             self.assertEqual(confirmed, sha)
+            self.assertFalse(intent.exists())
             prepare.assert_not_called()
             preflight.assert_called_once_with(token, sha=sha, repository=repo)
             push.assert_called_once_with({}, sha, already_pushed=False)
@@ -244,47 +103,10 @@ class PublicationRecoveryTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "old commit"):
                     publish._push_edition(
                         token, edition, "example/research", {}, git_dir=root, common=root, work=root,
-                        output=root / "site", copies=root / "copies", message=None,
+                        output=root / "site", message=None,
                     )
             self.assertFalse(publish.edition_run.push_intent_path(root, token).exists())
             record.assert_not_called()
-
-    def test_remote_release_lock_does_not_mask_primary_exception(self):
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            # Case 1: confirm_owner() fails during finally: -> primary exception propagates unmasked
-            case1 = root / "case1"
-            case1.mkdir()
-            release1 = FakeRelease()
-            with redirect_stderr(StringIO()) as err1:
-                with self.assertRaisesRegex(RuntimeError, "primary upload failure"):
-                    with publish._remote_release_lock(release1, case1, case1, "a" * 40, None):
-                        release1.remote.clear()  # causes confirm_owner() to raise in finally:
-                        raise RuntimeError("primary upload failure")
-            self.assertIn("Release lock cleanup failed after error", err1.getvalue())
-
-            # Case 2: release.delete() fails during finally: -> primary exception propagates unmasked
-            case2 = root / "case2"
-            case2.mkdir()
-            release2 = FakeRelease()
-
-            def fail_delete(_asset):
-                raise RuntimeError("delete API 503")
-
-            with patch.object(release2, "delete", fail_delete), redirect_stderr(StringIO()) as err2:
-                with self.assertRaisesRegex(ValueError, "primary switch error"):
-                    with publish._remote_release_lock(release2, case2, case2, "b" * 40, None):
-                        raise ValueError("primary switch error")
-            self.assertIn("delete API 503", err2.getvalue())
-
-            # Case 3: without a primary exception, cleanup failure still raises normally
-            case3 = root / "case3"
-            case3.mkdir()
-            release3 = FakeRelease()
-            with patch.object(release3, "delete", fail_delete):
-                with self.assertRaisesRegex(RuntimeError, "delete API 503"):
-                    with publish._remote_release_lock(release3, case3, case3, "c" * 40, None):
-                        pass
 
 
 if __name__ == "__main__":

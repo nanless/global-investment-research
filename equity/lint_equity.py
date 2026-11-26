@@ -978,35 +978,16 @@ def _check_rsi_metrics(data: dict) -> list[str]:
 
 def _check_index_links(index: Path, *, precheck: bool) -> list[str]:
     errors = []
-    latest_stems = {
-        reports[-1].with_suffix("").resolve()
-        for market in MARKETS if (reports := _market_daily_files(market))
-    }
     for href in re.findall(r"\[[^\]]+\]\(([^)\s]+)\)", index.read_text(encoding="utf-8")):
         if href.startswith(("http://", "https://", "#")):
             continue
         target = Path(href[len("file://") :]) if href.startswith("file://") else (index.parent / href).resolve()
         suffix = target.suffix.lower()
+        if suffix in (".pdf", ".docx"):
+            errors.append(f"Gate 4 失败：INDEX.md 含已弃用的 PDF/Word 链接 {href}")
+            continue
         if target.is_file():
             continue
-        if suffix in (".pdf", ".docx") and target.is_relative_to(DAILY_DIR.resolve()):
-            source = target.with_suffix(".md")
-            if (source.is_file() and parse_daily_sort_key(source)[0] != "0000-00-00"
-                    and (precheck or source.with_suffix("").resolve() not in latest_stems)):
-                continue
-        if precheck and target in {DAILY_DIR / f"latest_{market}.html" for market in MARKETS}:
-            continue
-        if precheck and target.parent == BASE_DIR and suffix in (".md", ".pdf", ".docx"):
-            flagship = re.fullmatch(r"(a_share|hk_stock|us_stock)_market_report_(latest|\d{4}_\d{2})", target.stem)
-            if flagship:
-                market, slug = flagship.groups()
-                if slug == "latest":
-                    try:
-                        slug = _read_flagship_meta(market)["period_slug"]
-                    except (OSError, ValueError):
-                        slug = ""
-                if (BASE_DIR / f"{market}_market_report_{slug}.md").is_file():
-                    continue
         errors.append(f"Gate 4 失败：INDEX.md 死链 {href}")
     return errors
 
@@ -1191,20 +1172,12 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
             except (OSError, ValueError) as exc:
                 errs.append(f"Gate 6 失败：{meta_f.name} JSON 解析失败: {exc}")
                 continue
-            for ext in ("md", "pdf", "docx"):
-                p_cur = BASE_DIR / f"{market}_market_report_{slug}.{ext}"
-                p_lat = BASE_DIR / f"{market}_market_report_latest.{ext}"
-                if not p_cur.exists():
-                    errs.append(f"Gate 6 失败：缺失当期旗舰文件 {p_cur.name}")
-                elif not p_lat.exists() or p_cur.read_bytes() != p_lat.read_bytes():
-                    errs.append(f"Gate 6 失败：{p_lat.name} 未与 {p_cur.name} 原子同步")
-            mob = DAILY_DIR / f"latest_{market}.html"
-            if not mob.exists() or mob.stat().st_size < 5000:
-                errs.append(f"Gate 6 失败：缺失或过小的手机端 HTML {mob.name}")
-            else:
-                mtxt = mob.read_text(encoding="utf-8")
-                if "viewport-fit=cover" not in mtxt or "nav-switch" not in mtxt:
-                    errs.append(f"Gate 6 失败：{mob.name} 缺少三市手机端导航或安全区适配")
+            p_cur = BASE_DIR / f"{market}_market_report_{slug}.md"
+            p_lat = BASE_DIR / f"{market}_market_report_latest.md"
+            if not p_cur.exists():
+                errs.append(f"Gate 6 失败：缺失当期旗舰源稿 {p_cur.name}")
+            elif not p_lat.exists() or p_cur.read_bytes() != p_lat.read_bytes():
+                errs.append(f"Gate 6 失败：{p_lat.name} 未与 {p_cur.name} 原子同步")
     return errs, warns
 
 
@@ -1323,39 +1296,6 @@ def main() -> None:
         if long_bullets:
             all_warnings.append(f"{p.name}: 存在 {long_bullets} 条超过 210 字的超长列表项（防密墙）")
 
-        if not precheck:
-            md_mtime = p.stat().st_mtime
-            pdf_p = p.with_suffix(".pdf")
-            docx_p = p.with_suffix(".docx")
-            pdf_older = pdf_p.is_file() and pdf_p.stat().st_mtime < md_mtime - 2.0
-            docx_older = docx_p.is_file() and docx_p.stat().st_mtime < md_mtime - 2.0
-            receipt_verified = (pdf_older or docx_older) and _has_matching_artifact_receipt(p, mkt, is_flagship=is_flag)
-            ed_type = "" if is_flag else str((meta or {}).get("edition_type", "")).strip().lower()
-            min_pdf_bytes = 25_000 if (not is_flag and ed_type in ("light", "holiday_watch")) else 50_000
-            if not pdf_p.exists() or pdf_p.stat().st_size < min_pdf_bytes:
-                all_errors.append(f"Gate 6 失败：缺失或过小的 PDF {pdf_p.name}")
-            elif pdf_p.read_bytes()[:5] != b"%PDF-":
-                all_errors.append(f"Gate 6 失败：{pdf_p.name} 文件头非法")
-            elif pdf_older and not receipt_verified:
-                all_errors.append(f"Gate 6 失败：{pdf_p.name} 修改时间早于 {p.name}")
-            else:
-                n_pages = _count_pdf_pages(pdf_p)
-                if n_pages is not None:
-                    if is_flag and not (16 <= n_pages <= 32):
-                        all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（旗舰手册建议 16–32 页）")
-                    elif not is_flag:
-                        if ed_type == "main" and not (3 <= n_pages <= 7):
-                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} (main) 共 {n_pages} 页（主刊建议 5–6 页，容忍 3–7 页）")
-                        elif ed_type in ("light", "holiday_watch") and not (1 <= n_pages <= 4):
-                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} ({ed_type}) 共 {n_pages} 页（守望/轻刊建议 2–3 页，容忍 1–4 页）")
-                        elif not ed_type and n_pages > 7:
-                            all_warnings.append(f"Gate 6 页数提醒：{pdf_p.name} 共 {n_pages} 页（日报偏长，建议 ≤7 页）")
-
-            exp_charts = len(_CHART_PLACEHOLDER_RE.findall(body_no_meta)) if is_flag or meta else 0
-            de, dw = _check_docx_forensics(docx_p, md_mtime, exp_charts, receipt_verified=receipt_verified)
-            all_errors.extend([f"{p.name}: {x}" for x in de])
-            all_warnings.extend([f"{p.name}: {x}" for x in dw])
-
     we, ww = check_workspace_state(precheck=precheck)
     all_errors.extend(we)
     all_warnings.extend(ww)
@@ -1365,7 +1305,7 @@ def main() -> None:
         all_errors.extend(ce)
         all_warnings.extend(cw)
 
-    mode_str = "PRECHECK (Gates 0-5 + SVG)" if precheck else "FULL FORENSIC (Gates 0-6 + Cross-Project)"
+    mode_str = "PRECHECK (Gates 0-5 + SVG)" if precheck else "WEB-ONLY FORENSIC (Gates 0-5 + SVG + SSOT + Cross-Project)"
     print(f"=== lint_equity.py [{mode_str}] checked {len(targets)} file(s) ===")
     for e in all_errors:
         print(f"  [FAIL] {e}")

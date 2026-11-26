@@ -1,8 +1,9 @@
-# Compiled binary deliverables (kept locally for reading & linters; published via GitHub Releases)
+# Deprecated local binary/print artifacts (web-only publishing; never tracked)
 *.pdf
 *.docx
+*.artifacts.json
 
-# Generated static site & standalone mobile HTML snapshots
+# Generated static site & legacy local HTML previews
 _site/
 equity/daily/latest_*.html
 gold/daily/latest_gold.html

@@ -1215,12 +1215,8 @@ def check_file(
                 if str(save_r) not in full_combined:
                     warnings.append(f"[Gate 5 省钱差额未对齐] 正文未检测到快照婚庆省钱差额 {save_r} 元/克")
 
-    # Gate 6: PDF & Native OOXML DOCX forensic verification (skipped in --precheck mode)
-    if not precheck:
-        check_pdf_and_docx_artifacts(
-            md_path, raw, errors, warnings, is_current_daily=is_current_daily, is_master=is_master,
-        )
-
+    # Web-only publishing mode: Gates 0–5 cover all manuscript, chart-input, snapshot, and ledger gates.
+    # Binary PDF/DOCX artifacts are no longer produced or required.
     return errors, warnings
 
 
@@ -1423,13 +1419,10 @@ def main():
             exit_code = 1
             continue
         errs, warns = check_file(p, daily_snap, master_snap, precheck=precheck)
-        mode_label = "Pre-Compile Gate 0–5 Check (--precheck)" if precheck else "7-Gate Readability, Accuracy & OOXML Lint"
+        mode_label = "Web-Only Readability & Accuracy Lint (Gates 0–5)"
         print(f"=== {mode_label}: {p.name} ===")
         if not errs and not warns:
-            if precheck:
-                print("  PASS: Gates 0–5 passed with 0 errors and 0 warnings (Gate 6 PDF/DOCX skipped).")
-            else:
-                print("  PASS: All 7 quality gates passed with 0 errors and 0 warnings.")
+            print("  PASS: All web-publishing quality gates (Gates 0–5) passed with 0 errors and 0 warnings.")
         else:
             for e in errs:
                 print(f"  [FAIL] {e}")

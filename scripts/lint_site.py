@@ -91,30 +91,12 @@ LINK_ATTR_BY_TAG: dict[str, str] = {
     "img": "src",
 }
 
-# Exact 16-file canonical kebab-case ASCII release asset allowlist matching scripts/publish_site.py
-CANONICAL_RELEASE_ASSETS: frozenset[str] = frozenset(
-    {
-        "gold-master-latest.pdf",
-        "gold-master-latest.docx",
-        "gold-daily-latest.pdf",
-        "gold-daily-latest.docx",
-        "a-share-flagship-latest.pdf",
-        "a-share-flagship-latest.docx",
-        "a-share-daily-latest.pdf",
-        "a-share-daily-latest.docx",
-        "hk-stock-flagship-latest.pdf",
-        "hk-stock-flagship-latest.docx",
-        "hk-stock-daily-latest.pdf",
-        "hk-stock-daily-latest.docx",
-        "us-stock-flagship-latest.pdf",
-        "us-stock-flagship-latest.docx",
-        "us-stock-daily-latest.pdf",
-        "us-stock-daily-latest.docx",
-    }
+# Web-only publishing: forbid PDF/Word download links and deprecated latest-reports Release links.
+FORBIDDEN_BINARY_LINK_RE = re.compile(
+    r"(?:/releases/(?:download|tag)/latest-reports\b|\.(?:pdf|docx)(?:[?#]|$))",
+    re.IGNORECASE,
 )
-RELEASE_DL_ASSET_RE = re.compile(
-    r"/releases/download/latest-reports/([^?#\s\"'<>]+)", re.IGNORECASE
-)
+MULTI_ASSET_CHANNELS_PATH = REPO_ROOT / "equity" / "state" / "multi_asset_channels.json"
 
 # HTML5 void elements that never have a closing tag.
 VOID_ELEMENTS = frozenset(
@@ -923,15 +905,11 @@ def run_gate_s2(
                     )
                 continue
 
-            # Validate canonical GitHub Releases direct-download URLs against the 16-file ASCII allowlist.
-            m_rel = RELEASE_DL_ASSET_RE.search(raw_ref)
-            if m_rel:
-                asset_name = m_rel.group(1)
-                if not asset_name.isascii() or asset_name not in CANONICAL_RELEASE_ASSETS:
-                    errors.append(
-                        f"[S2] {rel_path}:{link.lineno}: non-canonical GitHub Release asset URL "
-                        f"\"{asset_name}\" (must match 16-file ASCII kebab-case allowlist)"
-                    )
+            # Web-only portal check: forbid PDF/Word links and deprecated Release download URLs.
+            if FORBIDDEN_BINARY_LINK_RE.search(raw_ref) and not raw_ref.startswith(("http://", "https://")) or "/releases/download/latest-reports" in raw_ref.lower() or "/releases/tag/latest-reports" in raw_ref.lower():
+                errors.append(
+                    f"[S2] {rel_path}:{link.lineno}: forbidden PDF/Word or Release download link in web-only portal: {raw_ref!r}"
+                )
 
             lower_ref = raw_ref.lower()
             if lower_ref.startswith(EXTERNAL_SCHEMES):
@@ -1682,6 +1660,27 @@ def run_gate_s6(
                         if isinstance(v, str) and SCREENER_RAW_MARKUP_RE.search(v):
                             errors.append(f"[S6] etfs.html: ETF {cd} field '{k}' contains raw markup")
                             break
+
+    # Verify all 8 personal multi-asset channels are rendered in detail on index.html.
+    channels_obj = _load_json_if_present(
+        MULTI_ASSET_CHANNELS_PATH, "equity/state/multi_asset_channels.json", errors
+    )
+    if index_doc is not None and isinstance(channels_obj, dict):
+        ch_items = channels_obj.get("channels")
+        if isinstance(ch_items, list) and ch_items:
+            for ch in ch_items:
+                if not isinstance(ch, dict):
+                    continue
+                ch_id = str(ch.get("id", "")).strip()
+                ch_name = str(ch.get("name", "")).strip()
+                if ch_id and f"ch-{ch_id}" not in index_doc.ids:
+                    errors.append(
+                        f"[S6] index.html: missing detailed channel section #ch-{ch_id} ({ch_name})"
+                    )
+                if ch_name and ch_name not in index_doc.visible_text:
+                    errors.append(
+                        f"[S6] index.html: missing channel title {ch_name!r} in homepage visible text"
+                    )
 
     # A dated archive preserves its original decisions. Check live pages and this edition's dated copies.
     if gold_new_buy_blocked:

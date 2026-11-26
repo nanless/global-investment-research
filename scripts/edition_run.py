@@ -27,14 +27,7 @@ GOLD_HISTORY_LEDGERS = ("gold/daily/AUDIT_LOG.md", "gold/daily/CHANGELOG.md")
 LAST_EDITION_WITHOUT_REVIEW = ("2026-11-25", 1800, 2)
 LAST_EDITION_WITHOUT_REVIEW_CLOSURE = ("2026-11-25", 1800, 3)
 SHA_RE = re.compile(r"[a-f0-9]{40}")
-DIGEST_RE = re.compile(r"[a-f0-9]{64}")
 REPOSITORY_RE = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
-EXPECTED_ASSETS = frozenset(
-    f"{stem}-latest.{extension}"
-    for stem in ("gold-master", "gold-daily", "a-share-flagship", "a-share-daily",
-                 "hk-stock-flagship", "hk-stock-daily", "us-stock-flagship", "us-stock-daily")
-    for extension in ("pdf", "docx")
-)
 DEPLOY_JOB = "Deploy to GitHub Pages"
 
 
@@ -483,22 +476,6 @@ def record_push(token: str, *, sha: str, repository: str) -> None:
         runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (utc_now(), token))
 
 
-def record_publication(token: str, *, sha: str, repository: str, assets: dict[str, str]) -> None:
-    if assets.keys() != EXPECTED_ASSETS or any(not DIGEST_RE.fullmatch(value) for value in assets.values()):
-        raise ValueError("A publication receipt requires SHA-256 for all 16 stable downloads.")
-    with closing(open_runs()) as runs, runs:
-        runs.execute("BEGIN IMMEDIATE")
-        _publishing_run(runs, token)
-        receipt = _publication(runs, token)
-        if receipt is None or (receipt["sha"], receipt["repository"]) != (sha, repository):
-            raise ValueError("Attachment receipt does not match this edition's recorded push.")
-        encoded = json.dumps(assets, sort_keys=True)
-        if receipt["assets_json"] not in (None, encoded):
-            raise ValueError("Verified downloads changed for the same edition commit.")
-        runs.execute("UPDATE publications SET assets_json = ? WHERE token = ?", (encoded, token))
-        runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (utc_now(), token))
-
-
 def _gh_json(*args: str):
     gh = shutil.which("gh") or next(
         (str(p) for p in (Path("/opt/homebrew/bin/gh"), Path("/usr/local/bin/gh")) if p.is_file()), None,
@@ -560,24 +537,13 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
         time.sleep(min(5, max(0, deadline - time.monotonic())))
 
 
-def verify_downloads(repository: str, assets: dict[str, str]) -> None:
-    release = _gh_json("api", f"repos/{repository}/releases/tags/latest-reports")
-    live = {
-        item["name"]: item.get("digest")
-        for item in release["assets"] if item["name"] in EXPECTED_ASSETS
-    }
-    if live != {name: f"sha256:{digest}" for name, digest in assets.items()}:
-        raise ValueError("Public downloads differ from this edition's verified receipt. Resume or review publication.")
-
-
 def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
     _publishing_run(runs, token)
     receipt = _publication(runs, token)
-    if receipt is None or receipt["assets_json"] is None:
-        raise ValueError("No verified push and attachment receipt for this edition. Finish the same publication first.")
+    if receipt is None or not receipt["sha"] or not receipt["repository"]:
+        raise ValueError("No verified push receipt for this edition. Finish the same publication first.")
     sha, repository = receipt["sha"], receipt["repository"]
     url = verify_pages(sha, repository, wait)
-    verify_downloads(repository, json.loads(receipt["assets_json"]))
     runs.execute("BEGIN IMMEDIATE")
     _publishing_run(runs, token)
     runs.execute(
@@ -590,7 +556,7 @@ def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
 def reconcile_previous_deployment(runs: sqlite3.Connection) -> str | None:
     row = runs.execute("""
         SELECT runs.token FROM runs JOIN publications USING(token)
-         WHERE runs.status = 'running' AND publications.assets_json IS NOT NULL
+         WHERE runs.status = 'running' AND publications.sha IS NOT NULL
     """).fetchone()
     if row is None:
         return None
@@ -663,8 +629,7 @@ def close_superseded(runs: sqlite3.Connection, edition: str, attempt: str, reaso
 def status(runs: sqlite3.Connection) -> list[dict]:
     rows = runs.execute("""
         SELECT runs.token, edition, phase, status, started, updated, outcome, substr(runs.token, 1, 12) AS attempt,
-               coalesce(attempts.source, 'legacy') AS source, publications.sha AS pushed_commit,
-               publications.assets_json IS NOT NULL AS downloads_verified
+               coalesce(attempts.source, 'legacy') AS source, publications.sha AS pushed_commit
           FROM runs LEFT JOIN attempts USING(token) LEFT JOIN publications USING(token)
          ORDER BY runs.rowid DESC LIMIT 10
     """)

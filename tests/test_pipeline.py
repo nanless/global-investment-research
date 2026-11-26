@@ -80,15 +80,9 @@ class EditionRunTest(unittest.TestCase):
             edition_run.record_push(token, sha=previous, repository="example/project")
         sha = self.committed_edition()
         edition_run.record_push(token, sha=sha, repository="example/project")
-        with self.assertRaisesRegex(ValueError, "all 16"):
-            edition_run.record_publication(token, sha=sha, repository="example/project", assets={})
-        assets = {name: "c" * 64 for name in edition_run.EXPECTED_ASSETS}
-        edition_run.record_publication(token, sha=sha, repository="example/project", assets=assets)
         self.git("commit", "--allow-empty", "-qm", "Unrelated later local HEAD")
-        with patch.object(edition_run, "verify_pages", return_value="https://example.invalid/run") as deploy:
-            with patch.object(edition_run, "verify_downloads") as downloads, self.runs:
-                self.assertEqual(edition_run.complete(self.runs, token), "https://example.invalid/run")
-            downloads.assert_called_once_with("example/project", assets)
+        with patch.object(edition_run, "verify_pages", return_value="https://example.invalid/run") as deploy, self.runs:
+            self.assertEqual(edition_run.complete(self.runs, token), "https://example.invalid/run")
         deploy.assert_called_once_with(sha, "example/project", 180)
         self.assertEqual(edition_run.status(self.runs)[0]["status"], "complete")
 
@@ -228,13 +222,15 @@ class EditionRunTest(unittest.TestCase):
             with self.assertRaises(edition_run.DeploymentPending):
                 edition_run.verify_pages(sha, "example/project", wait=0)
 
-    def test_release_drift_blocks_complete(self):
-        assets = {name: "c" * 64 for name in edition_run.EXPECTED_ASSETS}
-        remote = [{"name": name, "digest": f"sha256:{digest}"} for name, digest in assets.items()]
-        remote[-1]["digest"] = "sha256:" + "d" * 64
-        with patch.object(edition_run, "_gh_json", return_value={"assets": remote}):
-            with self.assertRaisesRegex(ValueError, "Public downloads differ"):
-                edition_run.verify_downloads("example/project", assets)
+    def test_reconcile_previous_deployment_completes_recorded_push(self):
+        token = self.reach_publish()
+        sha = self.committed_edition()
+        edition_run.record_push(token, sha=sha, repository="example/project")
+        with patch.object(edition_run, "verify_pages", return_value="https://example.invalid/pages") as deploy, self.runs:
+            url = edition_run.reconcile_previous_deployment(self.runs)
+        self.assertEqual(url, "https://example.invalid/pages")
+        deploy.assert_called_once_with(sha, "example/project", 0)
+        self.assertEqual(edition_run.status(self.runs)[0]["status"], "complete")
 
     def test_stale_unpushed_lock_auto_reaped_but_pushed_preserved(self):
         old_edition = "2026-11-26_0730"
@@ -916,6 +912,22 @@ class OperationalRegressionTest(unittest.TestCase):
         self.assertIn("储蓄国债", ch_html)
         self.assertIn("table-wrap", ch_html)
         self.assertIn("data-channel-cat", ch_html)
+
+        # Homepage (cockpit) renders ALL 8 investment channels in detail + ETF showcase + ZERO PDF/Word links
+        cockpit_html = build_site.build_cockpit_page(
+            {"as_of_short": "2026-11-26 18:30", "tier_code": "Tier 0", "new_buy_allowed": False},
+            {"as_of_cst": "2026-11-26T18:30:00+08:00"},
+            {},
+            {"a-share": 76, "hk-stock": 75, "us-stock": 80},
+            channels_data=ch_data,
+            etf_data=etf_data,
+        )
+        for ch in ch_data["channels"]:
+            self.assertIn(f'id="ch-{ch["id"]}"', cockpit_html)
+            self.assertIn(ch["name"], cockpit_html)
+        self.assertIn('id="sec-etf-radar"', cockpit_html)
+        for forbidden in ("PDF ↗", "Word ↗", "latest-reports", "离线下载中心"):
+            self.assertNotIn(forbidden, cockpit_html)
 
         etf_html = build_site.build_etfs_page(etf_data)
         self.assertGreaterEqual(len(etf_data["etfs"]), 75)

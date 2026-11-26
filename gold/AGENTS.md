@@ -97,20 +97,16 @@
 
 ---
 
-## 6. 标准发刊闭环与强制门禁
+## 6. 标准发刊闭环与强制门禁（纯网页版）
 
-任何报告更新必须完整走完以下闭环方可视为完成：
+任何报告更新必须完整走完以下闭环方可视为完成（本项目采用纯网页静态门户交付，**不生成 PDF、Word 或 Release 附件**）：
 1. 更新 `data_snapshot.json`（同步维护跨项目 SSOT 裁决键 `tier_code`、`new_buy_allowed`、四关精确输入、`vix_10d_session_closes`、`vix_daily_row_checks`、`etf_cn`、`data_caveats`、`rmb_channels` 与 `cross_ratios` 算术自洽；若命中主报告 5 大触发条件，方全量读取并同步更新主报告、`master_snapshot.json` 与 `MASTER_BASELINE`）；
 2. 撰写/修订目标 Markdown（无人值守定时任务一律用 `write_file` 全量写盘，同日同班次修订加 `_r2` 后缀防覆写），并将【新增 / 更新 / 修正 / 删除】、红队消歧与 `GOLD_EDITION_REVIEW`/`GOLD_EDITION_CHANGELOG`/`GOLD_EDITION_SCORECARD` 同步记入 `daily/CHANGELOG.md`（最新置顶）、`daily/AUDIT_LOG.md` 与公开记分卡 `daily/SCORECARD.md`（零内部工程/RSI 词汇、历史记录零篡改；跨月时历史账本可按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）；
-3. **编译前秒检（`--precheck --strict` · 先拦截再编译）**：运行 `python3 <REPO_ROOT>/gold/lint_readability.py --precheck --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`（同步更新主报告时一并传入主报告路径），跳过尚未生成的 Gate 6，毫秒级拦截组件错键、图 2 左标签超宽、三档禁词、全篇内部词/文件名泄露、感叹号、加粗密度、裸数字反引号、外置日历/记分卡异常与快照冲突，**0 错 0 警后再进入编译**；
-4. 运行预授权绝对路径编译脚本生成 PDF、原生 OOXML DOCX 与手机端响应式单文件 HTML（最新日报自动原子写入 `daily/latest_gold.html`），并用 `read_file` 抽检生成 PDF 关键页确认零文字碰撞、零断尾白页：
-   - 日报：`python3 <REPO_ROOT>/gold/build_daily.py <REPO_ROOT>/gold/daily/<本刊文件名>.md`
-   - 主报告（仅满足 5 大触发条件时）：`python3 <REPO_ROOT>/gold/build_report.py`
-5. **强制运行 7 道门禁全量严格模式**（退出码必须为 `0`，**0 errors、0 warnings**）：
+3. **强制运行源稿严格门禁**（退出码必须为 `0`，**0 errors、0 warnings**）：
    - 仅发日报：`python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`
    - 同步更新主报告时：`python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md <REPO_ROOT>/gold/黄金跨世纪周期与2026-2030终审研究报告.md`
-6. **独立 RSI 自我复盘与递归优化闭环（一体化班次于 Step 5 联合执行）**：
-   - 在每日 `07:30` / `18:00` 一体化班次中，黄金 Step 3 全绿后先交棒 Step 4 全球权益串行出刊，再由 **Step 5 的 1 路统一只读 `research` 盲审子代理**联合复盘黄金与三地权益（单跑黄金轨时单独启动 1 路盲审），按 6 维定量量表（数据零幻觉 / 上期预判回验 / 可读性与精炼度 / 视觉排版 / 检索效率 / 工具稳健性，每维 1–5 分、满分 30）严苛自审本刊；
-   - **Tier A 必做**：追加结构化记录至 `daily/rsi_metrics.json`，提炼 1–3 条高杠杆规则滚动精炼写入 `daily/RSI_PLAYBOOK.md`（软限 ≤180 行 / 硬上限 200 行，合并旧项防膨胀；每满 10 刊自动执行一次 Meta-RSI 趋势总复盘）；
-   - **Tier B 慎做 / Tier C 仅提案**：如有确凿确定性小 Bug 且改后能通过 `--check` + 重编 + `--strict` + 视觉复核，最多安全落地 1 处补丁（失败立即回滚）；宪法级策略与配置变更一律记入 `RSI_PLAYBOOK.md` 提案区；最后补跑一次 `lint_readability.py --strict` 确保 RSI 账本与手册全绿，并在快报末尾汇报本轮 RSI 得分与优化动作。
-7. **双轨门禁全绿后单次发布网站**：一体化班次待两轨和统一 RSI 复检全绿后，按根契约登记进入 `publish`，运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`，再用同一 token 验证对应 Pages 部署及 Release 附件。独立手动发布遵循根文档的发布条件。仅本地预演时用 `publish_site.py --dry-run`，不传班次 token。
+4. **独立 RSI 自我复盘与递归优化闭环（一体化班次于 Step 5 联合执行）**：
+   - 在每日 `07:30` / `18:00` 一体化班次中，黄金 Step 3 全绿后先交棒 Step 4 全球权益出刊，再由 **Step 5 的 1 路统一只读 `research` 盲审子代理**联合复盘黄金与三地权益，按 6 维定量量表（满分 30）严苛自审本刊；
+   - **Tier A 必做**：追加结构化记录至 `daily/rsi_metrics.json`，提炼 1–3 条高杠杆规则滚动精炼写入 `daily/RSI_PLAYBOOK.md`（软限 ≤180 行 / 硬上限 200 行）；
+   - **Tier B 慎做 / Tier C 仅提案**：如有确凿确定性小 Bug，最多安全落地 1 处 ≤40 行补丁并重跑 `--strict` 与静态站构建严检（失败立即回滚）；宪法级策略与配置变更一律记入 `RSI_PLAYBOOK.md` 提案区；最后补跑 `lint_readability.py --strict` 确保全绿。
+5. **双轨门禁全绿后单次纯网页发布**：一体化班次待两轨和统一 RSI 复检全绿后，登记进入 `publish`，运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>` 构建、严检并推送静态网页，再用同一 token 运行 `edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功即闭环。仅本地预演时用 `publish_site.py --dry-run`，不传班次 token。

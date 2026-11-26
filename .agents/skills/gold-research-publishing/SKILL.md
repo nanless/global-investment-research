@@ -1,11 +1,11 @@
 ---
 name: gold-research-publishing
-description: Orchestrates the informed-retail, institutional-grade gold deep-research and financial report publishing pipeline (converged 5-6p 07:30 morning / 18:00 evening / weekend editions and the 1971-2030 master report in global-investment-research/gold) with bounded RSI self-review. Use whenever writing, updating, auditing, or troubleshooting daily or master gold research reports, updating data_snapshot.json, invoking the two-stage 一体化 6+1 / 独立 5+1 research and red-team workflow, compiling magazine-grade Chrome PDFs and native ECMA-376 OOXML Word (.docx) files, passing the 7-gate readability and integrity linter, or publishing via scripts/publish_site.py, or when reusing this 4-layer financial publishing architecture for similar investor reports.
+description: Orchestrates the informed-retail, institutional-grade pure-web gold deep-research and financial report publishing pipeline (converged 07:30 morning / 18:00 evening / weekend editions and the 1971-2030 master report in global-investment-research/gold) with bounded RSI self-review. Use whenever writing, updating, auditing, or troubleshooting daily or master gold research reports, updating data_snapshot.json, invoking the two-stage 一体化 8+1 research and red-team workflow, passing the readability and integrity linter, or publishing the static web portal via scripts/publish_site.py (web-only, no PDF or Word binaries).
 ---
 
 # Gold Research Publishing System (`gold-research-publishing`)
 
-本 Skill 沉淀了 `global-investment-research/gold` 黄金投研模块的全套研究、编辑、数据、排版、原生 Word（OOXML）编译、7 道门禁自动化质检、三层安全 RSI 自优化与统一静态门户发布体系，面向「懂一点基础财经、比普通人多一点市场认知的理性投资者」，适用于执行或维护每日黄金双刊（`>= 2026-11-26_1800` 收敛主刊 5–6 页，重大议息/危机日 7–8 页；07:30 早报 / 18:00 晚报 / 周末专项版）与跨世纪全景主报告（21–24 页）。
+本 Skill 沉淀了 `global-investment-research/gold` 黄金投研模块的全套研究、编辑、数据、自动化质检、三层安全 RSI 自优化与**纯网页静态门户发布体系（不生成 PDF、Word 或 GitHub Releases 离线附件）**，面向「懂一点基础财经、比普通人多一点市场认知的理性投资者」。
 
 ---
 

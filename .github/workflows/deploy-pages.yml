@@ -30,10 +30,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Python test dependencies
-        run: python3 -m pip install --no-cache-dir beautifulsoup4 Pillow
-
-      - name: Test release recovery and source receipts
+      - name: Run zero-dependency pipeline & workflow tests
         run: python3 -m unittest discover -s tests
 
       - name: Strict lint gold and equity manuscripts

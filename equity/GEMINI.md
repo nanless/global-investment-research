@@ -1,6 +1,6 @@
 # 投研报告永久写作与交付宪法（Workspace Rule）
 
-本工作区根目录 `<REPO_ROOT>/equity` **永久冻结不改名**。所有面向读者的交付物——包括 `daily/YYYY-MM-DD_{0730,1800}_{a_share,hk_stock,us_stock}.{md,pdf,docx}`（兼容历史 `1630` 快照）、`daily/latest_{a_share,hk_stock,us_stock}.html`、`{a_share,hk_stock,us_stock}_market_report_{YYYY_MM,latest}.{md,pdf,docx}`、`report_meta_*.json`、`state/{multi_asset_channels,etf_universe,deep_dossiers}.json`、`daily/INDEX.md`、`daily/CHANGELOG.md` 与 `daily/SCORECARD.md`——必须无条件遵守本宪法。
+本工作区根目录 `<REPO_ROOT>/equity` **永久冻结不改名**。本项目采用**纯网页静态门户直读交付（不生成 PDF、Word 或独立本地 HTML）**；所有面向读者的源稿与数据底座——包括 `daily/YYYY-MM-DD_{0730,1800}_{a_share,hk_stock,us_stock}.md`（兼容历史 `1630` 快照）、`{a_share,hk_stock,us_stock}_market_report_{YYYY_MM,latest}.md`、`report_meta_*.json`、`state/{market_state,multi_asset_channels,etf_universe,deep_dossiers}.json`、`daily/INDEX.md`（纯网页/Markdown 链接，严禁 `.pdf`/`.docx`）、`daily/CHANGELOG.md` 与 `daily/SCORECARD.md`——必须无条件遵守本宪法。
 
 > **单一权威详规索引（防跨文件重复与漂移）**：
 > - 单仓库顶层一体化编排（07:30/18:00 双任务、共享 8+1 深度调研、Step 3 黄金→Step 4 权益/多元渠道/ETF/7维深研→Step 5 统一发布） → 唯一详规见 `../AGENTS.md`
@@ -77,20 +77,20 @@
 
 ---
 
-## 5. 工具、独立法证 Linter、原生 OOXML 与编译铁律
+## 5. 工具、独立法证 Linter 与纯网页发布铁律
 
 - **写文件铁律**：修改或创建任何工作区文件一律使用 `write_file` 全量写入，**严禁调用 `edit_file`**。
-- **原生 Word 与稳健 Chrome 编译底线**：三本旗舰与每日早晚刊均通过 `docx_embed.py` 纯 Python 生成严格符合 ECMA-376 标准的原生 `.docx`，**严禁使用 `textutil`**；Chrome 无头 PDF 编译支持 `CHROME_BIN` 环境变量解析与独立临时目录 1 次自动重试。
-- **定时任务命令**：定时模板以绝对路径逐条执行其授权命令（`lint_equity.py`、`build_{a_share,hk_stock,us_stock}_pdf.py`、`build_daily.py`、`edition_run.py`、`publish_site.py`）。
+- **纯网页零二进制交付**：不生成 PDF、Word（`.docx`）或 GitHub Releases 离线附件；由 `scripts/build_site.py` 读取 Markdown 源稿、21 张 SVG 矢量图表模块与三大深研 JSON，统一编译为响应式静态网页（含首页全渠道详览、`channels.html`、`etfs.html` 与 231 股 7 维 `screener.html`）。
+- **定时任务命令**：定时模板以绝对路径逐条执行其授权命令（`lint_equity.py`、`build_site.py`、`lint_site.py`、`edition_run.py`、`publish_site.py`）。
 - **统一工作区 Skill 分工（`../.agents/skills/`）**：
-  - 出版编译、原生 OOXML、独立 Linter、**21 张矢量图**、三市休市/跨月滚存与模板 → `../.agents/skills/equity-report-publishing`；
+  - 出版结构、独立 Linter、**21 张矢量图**、三市休市/跨月滚存与模板 → `../.agents/skills/equity-report-publishing`；
   - 投研写作、7 维度大盘、8+1 深研、8 大多元渠道、7 维个股/ETF 审校、10 项门禁、双账户税费与 Step 5 受控 RSI 盲审 → `../.agents/skills/equity-research-editorial-qa`。
 
 ---
 
 ## 6. 任务后受控三层 RSI 自我复盘闭环（摘要，详规见 `rsi_self_review_protocol.md`）
 
-每次正常发刊通过 `lint_equity.py --strict`（0 错 0 警）与 PDF 视觉抽检后，必须执行 Step 5 有界 RSI 闭环：
+每次正常发刊通过 `lint_equity.py --strict`（0 错 0 警）后，必须执行 Step 5 有界 RSI 闭环：
 1. 启动 1 路独立只读 `research` 盲审子代理，对本期 **黄金 + 三市（A/港/美）** 日报、台账及三大扩展数据库（`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`）按 6 维（`/30`）客观打分，按 `resolved` / `deferred_data` / `disclosed_caveat` 闭环登记 `review_closure`；
 2. 严守三层权限边界：**Tier A** 每刊自动更新 `state/rsi_metrics.json` 与 `state/RSI_PLAYBOOK.md`（≤180 行）；**Tier B**（含 `edition_plan.py`、`pdf_common.py`、`docx_embed.py`、`build_*.py`、`lint_equity.py`、`DAILY_REPORT_SPEC.md`）仅在复现确凿 Bug 时实施 ≤1 处 ≤40 行确定性补丁并重验；**Tier C**（`../AGENTS.md`/`GEMINI.md`/核心风控红线/`../.agents/skills/`/`../automations/`）永不自动改写，仅列提案待批；
 3. 每累计满 10 刊触发一次跨周期复盘。Tier A/B 落盘后复跑双轨严检，随后按令牌流程完成发布与部署校验。

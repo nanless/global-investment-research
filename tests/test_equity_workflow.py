@@ -321,54 +321,19 @@ class EquityWorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("不得保留 vix_intraday_high", result.stdout)
 
-    def test_strict_checks_old_artifacts_against_the_publish_receipt(self):
-        scripts = self.root / "scripts"
-        scripts.mkdir()
-        shutil.copy2(ROOT / "scripts/artifact_receipt.py", scripts)
+    def test_strict_web_only_checks_flagship_md_sync_without_pdf_or_docx(self):
         md = self.root / "equity/a_share_market_report_2026_11.md"
-        pdf, docx = md.with_suffix(".pdf"), md.with_suffix(".docx")
-        pdf_bytes = b"%PDF-1.4\n" + b"/Type /Page\n" * 16 + b" " * 50_000
-        pdf.write_bytes(pdf_bytes)
-        with ZipFile(docx, "w") as word:
-            for name in ("[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels",
-                         "word/styles.xml", "word/settings.xml", "word/footer1.xml"):
-                word.writestr(name, "<root/>")
-            word.writestr("word/document.xml", (
-                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-                '<w:body><w:tbl/><w:sectPr/></w:body></w:document>'
-            ))
-        inputs = artifact_receipt.equity_render_inputs("a_share", flagship=True)
-        frozen = artifact_receipt.freeze_inputs(md, root=self.root, inputs=[self.root / p for p in inputs])
-        artifact_receipt.write_receipt(frozen, pdf, docx)
-        old = md.stat().st_mtime - 300
-        for output in (pdf, docx):
-            os.utime(output, (old, old))
+        latest_md = self.root / "equity/a_share_market_report_latest.md"
+        latest_md.write_bytes(md.read_bytes())
+        result = self.lint("--strict", str(md))
+        self.assertIn("WEB-ONLY FORENSIC", result.stdout, result.stderr)
+        self.assertNotIn("缺失或过小的 PDF", result.stdout)
+        self.assertNotIn("缺失原生 Word", result.stdout)
 
-        def check_expected_timestamps(count):
-            result = self.lint("--strict", str(md))
-            self.assertIn("FULL FORENSIC", result.stdout, result.stderr)
-            self.assertEqual(result.stdout.count("修改时间早于"), count, result.stdout)
-
-        check_expected_timestamps(0)
-
-        pdf.write_bytes(pdf_bytes + b"changed PDF bytes")
-        os.utime(pdf, (old, old))
-        check_expected_timestamps(2)
-        pdf.write_bytes(pdf_bytes)
-        os.utime(pdf, (old, old))
-
-        original = md.read_bytes()
-        md.write_bytes(original + b"\nEdit after compiling\n")
-        check_expected_timestamps(2)
-        md.write_bytes(original)
-
-        receipt_path = md.with_suffix(".artifacts.json")
-        partial = json.loads(receipt_path.read_text())
-        del partial["inputs"]["equity/report_meta_a_share.json"]
-        receipt_path.write_text(json.dumps(partial), encoding="utf-8")
-        check_expected_timestamps(2)
-        receipt_path.unlink()
-        check_expected_timestamps(2)
+        latest_md.write_text("stale latest copy\n", encoding="utf-8")
+        result = self.lint("--strict", str(md))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("未与 a_share_market_report_2026_11.md 原子同步", result.stdout)
 
     def test_backfill_and_archive_duplicates_fail(self):
         self.advance("2026-11-28_0730")
@@ -393,24 +358,23 @@ class EquityWorkflowTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("edition_id", result.stderr)
 
-    def test_index_historical_binaries_can_be_rebuilt_but_real_dead_links_fail(self):
+    def test_index_rejects_deprecated_pdf_docx_and_dead_links(self):
         self.advance("2026-11-26_0730")
         for market, kind in zip(MARKETS, ("light", "light", "main")):
             self.issue(market, kind)
         index = self.root / "equity/daily/INDEX.md"
         with index.open("a", encoding="utf-8") as file:
             file.write(
-                "\n[上一期](2026-11-25_1800_us_stock_r2.pdf)\n"
-                "[这一期](2026-11-26_0730_us_stock.pdf)\n"
-                "[不存在的上一期](2026-11-24_1800_us_stock.docx)\n"
+                "\n[这一期Markdown](2026-11-26_0730_us_stock.md)\n"
+                "[弃用PDF](2026-11-26_0730_us_stock.pdf)\n"
+                "[弃用Word](2026-11-24_1800_us_stock.docx)\n"
+                "[死链](2026-11-24_1800_us_stock.md)\n"
             )
         result = self.lint("--strict")
-        self.assertIn("INDEX.md 死链 2026-11-24_1800_us_stock.docx", result.stdout)
-        self.assertIn("INDEX.md 死链 2026-11-26_0730_us_stock.pdf", result.stdout)
-        self.assertNotIn("INDEX.md 死链 2026-11-25_1800_us_stock_r2.pdf", result.stdout)
-        result = self.lint("--precheck", "--strict")
-        self.assertIn("INDEX.md 死链 2026-11-24_1800_us_stock.docx", result.stdout)
-        self.assertNotIn("INDEX.md 死链 2026-11-26_0730_us_stock.pdf", result.stdout)
+        self.assertIn("INDEX.md 含已弃用的 PDF/Word 链接 2026-11-26_0730_us_stock.pdf", result.stdout)
+        self.assertIn("INDEX.md 含已弃用的 PDF/Word 链接 2026-11-24_1800_us_stock.docx", result.stdout)
+        self.assertIn("INDEX.md 死链 2026-11-24_1800_us_stock.md", result.stdout)
+        self.assertNotIn("2026-11-26_0730_us_stock.md", result.stdout)
 
     def test_rsi_and_gold_action_scope(self):
         dims = list("abcdef")
