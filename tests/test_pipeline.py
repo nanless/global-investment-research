@@ -1375,7 +1375,7 @@ class OperationalRegressionTest(unittest.TestCase):
             ):
                 shutil.copy2(real_root / rel, sandbox / rel)
 
-            next_ed = "2026-11-26_1800_r2"
+            next_ed = "2099-12-31_1800_r99"
             for rel in ("gold/data_snapshot.json", "equity/state/market_state.json"):
                 obj = json.loads((sandbox / rel).read_text(encoding="utf-8"))
                 obj["edition_id"] = next_ed
@@ -1385,8 +1385,8 @@ class OperationalRegressionTest(unittest.TestCase):
             patch_path = sandbox / "equity/state/_edition_patch.json"
             good_patch = {
                 "edition_id": next_ed,
-                "as_of_date": "2026-11-26",
-                "as_of_label": "2026-11-26 23:55 CST",
+                "as_of_date": "2099-12-31",
+                "as_of_label": "2099-12-31 23:55 CST",
                 "gold_tier0_locked": True,
                 "multi_asset_channels": {
                     "channels_patch": {
@@ -1403,7 +1403,7 @@ class OperationalRegressionTest(unittest.TestCase):
                 "deep_dossiers": {
                     "dossiers_patch": {
                         "a-share:600519": {
-                            "catalysts": "【2026-11-26 补丁核验】跟踪年末经销商回款与飞天批价节奏。"
+                            "catalysts": "【2099-12-31 补丁核验】跟踪年末经销商回款与飞天批价节奏。"
                         }
                     }
                 },
@@ -1423,13 +1423,13 @@ class OperationalRegressionTest(unittest.TestCase):
             self.assertEqual(ch_after["edition_id"], next_ed)
             self.assertEqual(etf_after["edition_id"], next_ed)
             self.assertEqual(dos_after["edition_id"], next_ed)
-            self.assertEqual(dos_after["dossiers"]["a-share:600519"]["updated_at"], "2026-11-26")
+            self.assertEqual(dos_after["dossiers"]["a-share:600519"]["updated_at"], "2099-12-31")
 
             # 2. Gold Tier-0 violation must abort with zero file mutation
             before_bytes = (sandbox / "equity/state/multi_asset_channels.json").read_bytes()
             bad_patch = {
                 "edition_id": next_ed,
-                "as_of_date": "2026-11-26",
+                "as_of_date": "2099-12-31",
                 "gold_tier0_locked": True,
                 "multi_asset_channels": {
                     "channels_patch": {
@@ -1453,7 +1453,7 @@ class OperationalRegressionTest(unittest.TestCase):
                     f"### {next_ed} 修订刊记录\n\n- 完成测试无损头插验收。\n"
                 ),
                 "audit_review_block_md": (
-                    f'<!-- GOLD_EDITION_REVIEW {{"edition_id": "{next_ed}", "as_of_short": "2026-11-26 23:55", '
+                    f'<!-- GOLD_EDITION_REVIEW {{"edition_id": "{next_ed}", "as_of_short": "2099-12-31 23:55", '
                     f'"passed": true, "checked_by": "test"}} -->\n'
                     f"### {next_ed} 审计记录\n\n- 审计测试通过。\n"
                 ),
