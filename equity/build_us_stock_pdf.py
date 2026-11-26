@@ -240,7 +240,7 @@ def svg_chart_u1_crises_and_mas(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_u1}</div>
       <div class="chart-sub">{sub_u1}</div>
-      <svg viewBox="0 0 850 274" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 274" width="100%" role="img" aria-label="{title_u1}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="274" fill="#ffffff" rx="6"/>
         <text x="14" y="23" font-size="10.0" fill="#0f172a" font-weight="700">A. 历次危机最大跌幅（左橙红） vs 触底后 1 年回报（右青绿）</text>
         <text x="448" y="23" font-size="10.0" fill="#0f172a" font-weight="700">B. 标普 500 关键点位地图（从高到低）</text>
@@ -331,7 +331,7 @@ def svg_chart_u2_storm_timeline(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_u2}</div>
       <div class="chart-sub">{sub_u2}</div>
-      <svg viewBox="0 0 850 300" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 300" width="100%" role="img" aria-label="{title_u2}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="300" fill="#ffffff" rx="6"/>
         <rect x="516" y="20" width="188" height="226" fill="#fff1f2" opacity="0.55"/>
         <text x="610" y="34" text-anchor="middle" font-size="9.2" fill="#be123c" font-weight="700">11 月中旬五日连环风暴</text>
@@ -398,7 +398,7 @@ def svg_chart_u3_credit_split(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_u3}</div>
       <div class="chart-sub">{sub_u3}</div>
-      <svg viewBox="0 0 850 272" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 272" width="100%" role="img" aria-label="{title_u3}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="272" fill="#ffffff" rx="6"/>
         <rect x="14" y="10" width="398" height="26" fill="#009E73" rx="4"/>
         <text x="213" y="27" text-anchor="middle" font-size="9.8" fill="#ffffff" font-weight="700">● 水面之上：传统银行绿灯（美联储暂不急着救市）</text>
@@ -474,13 +474,14 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
             ax = cx + cw + 4
             cards_svg += f'<polygon points="{ax},81 {ax+10},85 {ax},89" fill="{arrow_col}"/>'
 
+    bjt_tag = "" if "北京时间" in horizon else "（北京时间）"
     return f'''
     <div class="chart-box">
       <div class="chart-title">{title_u4}</div>
       <div class="chart-sub">{sub_u4}</div>
-      <svg viewBox="0 0 850 268" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 268" width="100%" role="img" aria-label="{title_u4}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="268" fill="#ffffff" rx="6"/>
-        <text x="16" y="22" font-size="10.0" fill="#0f172a" font-weight="700">A. {horizon}美股关键大考（北京时间）与分步上车节奏</text>
+        <text x="16" y="22" font-size="10.0" fill="#0f172a" font-weight="700">A. {horizon}美股关键大考{bjt_tag}与分步上车节奏</text>
         {cards_svg}
         <text x="16" y="162" font-size="10.0" fill="#0f172a" font-weight="700">B. 10 年期美债“地心引力”温度条（决定股市贵不贵的总开关 · {tier_s}）</text>
         <rect x="16" y="173" width="264" height="26" fill="#dcfce7" stroke="#009E73" stroke-width="1.3" rx="4"/>
@@ -566,7 +567,7 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_u5}</div>
       <div class="chart-sub">{sub_u5}</div>
-      <svg viewBox="0 0 850 {svg_h}" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 {svg_h}" width="100%" role="img" aria-label="{title_u5}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="{svg_h}" fill="#ffffff" rx="6"/>
         {grid}
         <line x1="{x_spx}" y1="30" x2="{x_spx}" y2="{grid_y2}" stroke="#D55E00" stroke-width="1.6" stroke-dasharray="5,3"/>
@@ -674,7 +675,7 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_u6}</div>
       <div class="chart-sub">{sub_u6}</div>
-      <svg viewBox="0 0 850 {svg_h}" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 {svg_h}" width="100%" role="img" aria-label="{title_u6}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="{svg_h}" fill="#ffffff" rx="6"/>
         {bg_rects}
         <text x="16" y="23" font-size="10.0" fill="#0f172a" font-weight="700">A. {as_short} 单日涨跌幅（{up_cnt} 涨 / {dn_cnt} 跌）</text>
@@ -728,7 +729,7 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_u7}</div>
       <div class="chart-sub">{sub_u7}</div>
-      <svg viewBox="0 0 850 326" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 326" width="100%" role="img" aria-label="{title_u7}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="326" fill="#ffffff" rx="6"/>
         <rect x="34" y="34" width="416" height="134" fill="#f0fdf4" opacity="0.72"/>
         <rect x="450" y="34" width="384" height="134" fill="#eff6ff" opacity="0.72"/>

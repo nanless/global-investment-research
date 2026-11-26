@@ -37,7 +37,7 @@
 | `csi300` / `sse` / `csi300_200w` / `sse_200w` | `number` | `A1`, `A5` | 沪深 300、上证指数及各自 200 周均线（4 年平均成本线） |
 | `stock_pool_count` | `number` | `A7` & Gate 3B | 核心代表龙头池实时总数（**弹性 65–85 只**，扩容基准 **`76`**），须与 `state/market_state.json`、`state/deep_dossiers.json` 及旗舰附表二实际行数 100% 一致 |
 | `score` / `tier_short` / `status_line1` / `status_line2` | `number` / `string` | `A4` | 体检分（`0–6`）、四灯纯中文名（**A4 自动拼接 `当前 {score} 分 · {tier_short}`，须仅填纯灯号如 `"红灯防守期"` 避免重复拼分**）与总开关下方两行诊断与纪律 |
-| `a2` | `object` | `A2` | `{ "title", "sub", "indices": [[name, pct, hex], ...], "futures": [[name, ann_disc, headline, sub, col, bg], ...], "takeaway", "note" }`（`ann_disc` 为 `null` 时渲染灰卡；拆分结算待补核与席位待补核避免误标） |
+| `a2` | `object` | `A2` | `{ "title", "sub", "indices": [[name, pct, hex], ...], "futures": [[name, ann_disc, headline, sub, col, bg], ...], "takeaway", "note" }`（**符号铁律：`ann_disc > 0` 代表折价/贴水，`ann_disc < 0` 代表升水**，贴水如「基差 -50.75」必须填正数年化贴水如 `20.5`，严禁填负号引发门禁拦截；`ann_disc` 为 `null` 时渲染灰卡；拆分结算待补核与席位待补核避免误标） |
 | `a3` | `object` | `A3` | 中国宏观冷热 K 型六维动态覆写：`{ "title", "sub", "cold": [[label, val, desc], ...], "hot": [[label, val, desc], ...], "takeaway", "note" }`（向下兼容 `cold_items`/`hot_items`） |
 | `a4` | `object` | `A4` | 未来窗口阶段卡覆写：`{ "title", "sub", "horizon", "cards": [{"header","color","bg","border","items":[...]}], "takeaway", "note" }`（须覆盖跨年至 3 月全国两会；**黄金红灯期卡片严禁写“补足/新买黄金”，统一写“黄金待亮黄灯后再分批转入”**） |
 | `a6` | `object` | `A6` | 申万行业热力图覆写：`{ "title", "sub", "date_short", "sectors": [{"name","pct","flow","camp"}], "sectors_total_flow", "takeaway", "note" }`（须严格区分“全市场总额”与“展示行业小计”，避免算术打架；标题行业数与 `sectors` 长度相等） |

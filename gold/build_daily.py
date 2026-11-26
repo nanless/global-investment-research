@@ -535,6 +535,28 @@ def _ref_crossing_penalty(
     return pen
 
 
+def _polyline_crossing_penalty(
+    bbox: tuple[float, float, float, float],
+    segments: list[tuple[float, float, float, float]],
+) -> float:
+    """Softly penalize point labels that cut across polyline segments."""
+    bx0, by0, bx1, by1 = bbox
+    pen = 0.0
+    for x1, y1, x2, y2 in segments:
+        if max(x1, x2) < bx0 or min(x1, x2) > bx1 or max(y1, y2) < by0 or min(y1, y2) > by1:
+            continue
+        # Sample interior points along segment to estimate overlap with label pill
+        hits = 0
+        for step in (0.2, 0.35, 0.5, 0.65, 0.8):
+            sx = x1 + (x2 - x1) * step
+            sy = y1 + (y2 - y1) * step
+            if bx0 <= sx <= bx1 and by0 <= sy <= by1:
+                hits += 1
+        if hits:
+            pen += hits * 14.0
+    return pen
+
+
 def render_chart_timeline(cfg: dict) -> str:
     cfg = normalize_chart("DAILY_CHART_TIMELINE", cfg)
     title = esc(cfg.get("title", "金价走势核心结论"))
@@ -572,8 +594,12 @@ def render_chart_timeline(cfg: dict) -> str:
 
     placed_boxes: list[tuple[float, float, float, float]] = []
     all_dot_boxes: list[tuple[float, float, float, float]] = [
-        (xs[j] - 5.5, y_w(vals[j]) - 5.5, xs[j] + 5.5, y_w(vals[j]) + 5.5)
+        (xs[j] - 6.0, y_w(vals[j]) - 6.0, xs[j] + 6.0, y_w(vals[j]) + 6.0)
         for j in range(n)
+    ]
+    poly_segments: list[tuple[float, float, float, float]] = [
+        (xs[j], y_w(vals[j]), xs[j + 1], y_w(vals[j + 1]))
+        for j in range(n - 1)
     ]
 
     zone_svg = ""
@@ -652,6 +678,7 @@ def render_chart_timeline(cfg: dict) -> str:
             )
 
     poly = " ".join(f"{xs[i]},{y_w(val)}" for i, val in enumerate(vals))
+    leaders_svg = ""
     dots_svg = ""
     point_labels_svg = ""
     axis_labels_svg = ""
@@ -664,7 +691,8 @@ def render_chart_timeline(cfg: dict) -> str:
         dy_extra = float(p.get("dy", 0.0))
         anc = _sanitize_svg_anchor(p.get("anchor"), "middle")
         y_default = round(max(34.0, min(212.0, (y - 11.0 if pos == "above" else y + 17.5) + dy_extra)), 1)
-        y_alt = round(max(34.0, min(212.0, (y + 17.5 if pos == "above" else y - 11.0) + dy_extra)), 1)
+        # Do NOT apply pos's dy_extra onto the opposite flipped side
+        y_alt = round(max(34.0, min(212.0, y + 17.5 if pos == "above" else y - 11.0)), 1)
         val_txt = p.get("val_label") or _fmt_axis_val(vals[i], span, unit_prefix, unit_suffix)
         x_default = _clamp_label_x(max(66.0, min(614.0, x + dx)), val_txt, 11.0, anc)
         r = "5.0" if p.get("highlight") else "4.2"
@@ -674,25 +702,28 @@ def render_chart_timeline(cfg: dict) -> str:
             return round(max(34.0, min(212.0, val_y)), 1)
 
         cands_2d: list[tuple[float, float, str]] = []
-        # 1. Same-x vertical offsets (preserving preferred anchor)
-        for cy in (
-            y_default,
-            y_alt,
-            _cy(y_default - 15.0),
-            _cy(y_default + 15.0),
-            _cy(y_alt - 15.0),
-            _cy(y_alt + 15.0),
-            _cy(y_default - 28.0),
-            _cy(y_default + 28.0),
-        ):
-            cands_2d.append((x_default, cy, anc))
-        # 2. Lateral side-shift x±10 flipping anchor to end/start
+        y_above_base = y_default if pos == "above" else y_alt
+        y_below_base = y_alt if pos == "above" else y_default
+        first_dir = (y_above_base, -1.0) if pos == "above" else (y_below_base, 1.0)
+        second_dir = (y_below_base, 1.0) if pos == "above" else (y_above_base, -1.0)
+
+        # 1. Same-x fine vertical offsets (+0, +4, +8, +12, +16) before wider jumps
+        for base_y, sign in (first_dir, second_dir):
+            for step in (0.0, 4.0, 8.0, 12.0, 16.0, 22.0, 28.0):
+                cands_2d.append((x_default, _cy(base_y + sign * step), anc))
+        # 2. Fine horizontal x±12 shifts before lateral flips
+        for dx_fine in (-12.0, 12.0):
+            cx_f = _clamp_label_x(x + dx_fine, val_txt, 11.0, anc)
+            for base_y, sign in (first_dir, second_dir):
+                for step in (0.0, 4.0, 8.0, 12.0, 16.0):
+                    cands_2d.append((cx_f, _cy(base_y + sign * step), anc))
+        # 3. Lateral side-shift x±10 flipping anchor to end/start
         cx_left = _clamp_label_x(x - 10.0, val_txt, 11.0, "end")
         cx_right = _clamp_label_x(x + 10.0, val_txt, 11.0, "start")
         for cx_side, anc_side in ((cx_left, "end"), (cx_right, "start")):
             for dy_s in (4.0, -9.0, 16.0, -20.0, 26.0):
                 cands_2d.append((cx_side, _cy(y + dy_s), anc_side))
-        # 3. Horizontal dx ±26 / ±38 shifts with clamped x
+        # 4. Horizontal dx ±26 / ±38 shifts with clamped x
         for dx_shift in (-26.0, 26.0, -38.0, 38.0):
             cx_sh = _clamp_label_x(x + dx_shift, val_txt, 11.0, anc)
             for cy in (y_default, y_alt, _cy(y + 4.0), _cy(y - 15.0), _cy(y + 20.0)):
@@ -707,10 +738,20 @@ def render_chart_timeline(cfg: dict) -> str:
         for cand_x, cand_y, cand_anc in dict.fromkeys(cands_2d):
             pill, bbox = _svg_label_pill(cand_x, cand_y, val_txt, 11.0, cand_anc)
             overlap_pen = sum(_boxes_overlap_area(bbox, ob) for ob in placed_boxes)
-            dot_pen = 2.0 * sum(_boxes_overlap_area(bbox, db, pad_x=0.5, pad_y=0.5) for db in all_dot_boxes)
+            dot_pen = 2.0 * sum(_boxes_overlap_area(bbox, db, pad_x=1.0, pad_y=1.0) for db in all_dot_boxes)
             cross_pen = _ref_crossing_penalty(vals[i], bbox, ref_coords)
-            hard_pen = cross_pen + overlap_pen * 10.0 + dot_pen * 5.0
-            dist_pen = abs(cand_x - x_default) * 1.2 + abs(cand_y - y_default) + (4.0 if cand_anc != anc else 0.0)
+            hard_pen = cross_pen + overlap_pen * 10.0 + dot_pen * 35.0
+            lbl_cx = (bbox[0] + bbox[2]) / 2.0
+            lbl_cy = (bbox[1] + bbox[3]) / 2.0
+            poly_pen = _polyline_crossing_penalty(bbox, poly_segments)
+            side_pen = 3.0 if ((pos == "above" and lbl_cy > y) or (pos == "below" and lbl_cy < y)) else 0.0
+            dist_pen = (
+                abs(lbl_cx - x) * 1.15
+                + abs(lbl_cy - y)
+                + poly_pen
+                + side_pen
+                + (4.0 if cand_anc != anc else 0.0)
+            )
             key = (hard_pen, dist_pen)
             if key < best_key:
                 best_key = key
@@ -719,9 +760,16 @@ def render_chart_timeline(cfg: dict) -> str:
                 best_anc = cand_anc
                 best_pill = pill
                 best_bbox = bbox
-            if hard_pen == 0.0 and dist_pen == 0.0:
+            if hard_pen == 0.0 and poly_pen == 0.0 and cand_x == x_default and cand_y == y_default and cand_anc == anc:
                 break
         placed_boxes.append(best_bbox)
+        if abs(best_y - y) > 20.0:
+            lx_end = round(max(best_bbox[0], min(x, best_bbox[2])), 1)
+            ly_end = round(max(best_bbox[1], min(y, best_bbox[3])), 1)
+            leaders_svg += (
+                f'<line x1="{x}" y1="{y}" x2="{lx_end}" y2="{ly_end}" '
+                f'stroke="#94a3b8" stroke-width="1" stroke-dasharray="2,2"/>'
+            )
         point_labels_svg += best_pill
         point_labels_svg += f'<text x="{best_x}" y="{best_y}" text-anchor="{best_anc}" font-size="11" fill="{col}" font-weight="800">{svg_esc(val_txt)}</text>'
         axis_labels_svg += f'<text x="{x}" y="234" text-anchor="middle" font-size="10.5" fill="#0f172a" font-weight="700">{svg_esc(p.get("time", ""))}</text>'
@@ -733,12 +781,13 @@ def render_chart_timeline(cfg: dict) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       {sub_html}
-      <svg viewBox="0 0 {vb_w} {vb_h}" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 {vb_w} {vb_h}" width="100%" role="img" aria-label="{title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="{vb_w}" height="{vb_h}" fill="#ffffff" rx="6"/>
         {zone_svg}
         {grid_svg}
         {ref_lines_svg}
         <polyline fill="none" stroke="#1e3a5f" stroke-width="2.6" points="{poly}"/>
+        {leaders_svg}
         {dots_svg}
         {ref_labels_svg}
         {point_labels_svg}
@@ -828,7 +877,7 @@ def render_chart_switch(cfg: dict) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       {sub_html}
-      <svg viewBox="0 0 {vb_w} {vb_h}" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 {vb_w} {vb_h}" width="100%" role="img" aria-label="{title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="{vb_w}" height="{vb_h}" fill="#ffffff" rx="6"/>
         <text x="16" y="18" font-size="11.6" fill="#1e3a8a" font-weight="800">一、历史水位尺（帮你一秒判断压力有多大）</text>
         {gauge_svg}
@@ -983,7 +1032,7 @@ def render_chart_cross(cfg: dict) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       {sub_html}
-      <svg viewBox="0 0 {vb_w} {vb_h}" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 {vb_w} {vb_h}" width="100%" role="img" aria-label="{title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="{vb_w}" height="{vb_h}" fill="#ffffff" rx="6"/>
         <text x="{x_label}" y="18" text-anchor="end" font-size="10.6" fill="#64748b" font-weight="700">核心资产</text>
         <text x="{x_zero}" y="18" text-anchor="middle" font-size="10.6" fill="#334155" font-weight="700">0%</text>

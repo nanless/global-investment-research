@@ -733,6 +733,56 @@ def _check_report_structure(
             errors.append("[Gate 0 主报告图数错误] 七张主报告图必须各出现一次")
 
 
+_CN_COUNT_MAP: dict[str, int] = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5}
+_SIGNAL_COUNT_RE = re.compile(
+    r"([1-9]|[一二两三四五])\s*(?:件|条|个)\s*(?:晚间|早间|盘前|盘后|实盘|真|核心)?(?:真信号|信号)"
+)
+_NOISE_COUNT_RE = re.compile(
+    r"([1-9]|[一二两三四五])\s*(?:件|条|个)\s*(?:刚出现的)?(?:晚间|早间|盘前|实盘|热传|隔夜|全网|今日|流行)?(?:假象|误导|谣言|噪音)"
+)
+
+
+def _parse_small_cn_int(tok: str) -> int | None:
+    if tok.isdigit():
+        return int(tok)
+    return _CN_COUNT_MAP.get(tok)
+
+
+def _check_directive_item_counts(
+    raw: str, directives: dict[str, list[dict]], errors: list[str],
+) -> None:
+    """Verify explicit signal/noise counts stated in Part 1 lead or DAILY_SIGNAL_NOISE.title match item arrays."""
+    sn_list = directives.get("DAILY_SIGNAL_NOISE", [])
+    if len(sn_list) != 1 or not isinstance(sn_list[0], dict):
+        return
+    sn = sn_list[0]
+    signals = sn.get("signals")
+    noises = sn.get("noises")
+    if not isinstance(signals, list) or not isinstance(noises, list):
+        return
+
+    m_p1 = re.search(r"^#\s*第一部分", raw, re.MULTILINE)
+    m_sn = re.search(r"<!--\s*DAILY_SIGNAL_NOISE\b", raw)
+    lead_seg = ""
+    if m_p1 and m_sn and m_p1.start() < m_sn.start():
+        lead_seg = _strip_comments_keep_lines(raw[m_p1.start() : m_sn.start()])
+    title_str = str(sn.get("title", "")) if isinstance(sn.get("title"), str) else ""
+    scan_text = f"{lead_seg}\n{title_str}"
+
+    for m in _SIGNAL_COUNT_RE.finditer(scan_text):
+        stated = _parse_small_cn_int(m.group(1))
+        if stated is not None and stated != len(signals):
+            errors.append(
+                f"[Gate 0 信号计数冲突] 文中声称「{m.group(0)}」，但 DAILY_SIGNAL_NOISE.signals 实有 {len(signals)} 项"
+            )
+    for m in _NOISE_COUNT_RE.finditer(scan_text):
+        stated = _parse_small_cn_int(m.group(1))
+        if stated is not None and stated != len(noises):
+            errors.append(
+                f"[Gate 0 噪音计数冲突] 文中声称「{m.group(0)}」，但 DAILY_SIGNAL_NOISE.noises 实有 {len(noises)} 项"
+            )
+
+
 def _check_daily_verdict(directives: dict[str, list[dict]], snap: dict, errors: list[str]) -> None:
     tier = snap.get("tier_code")
     passed = snap.get("tier1_passed")
@@ -932,6 +982,8 @@ def check_file(
 
     if is_master or filename_edition:
         _check_report_structure(raw, directives, is_master=is_master, is_converged=is_converged, errors=errors)
+    if not is_master and directives.get("DAILY_SIGNAL_NOISE"):
+        _check_directive_item_counts(raw, directives, errors)
     if is_current_daily or daily_meta.get("edition_id") is not None:
         if filename_key is None or daily_meta.get("edition_id") != filename_edition:
             errors.append("[Gate 0 日报刊期不匹配] DAILY_META.edition_id 须与文件名含修订号一致")
@@ -1344,6 +1396,72 @@ def _check_edition_ledgers(
         errors.append("[黄金预判验真缺项] 记录状态、核验说明与证据链接，结案必须附证据")
 
 
+def _reconcile_gold_scorecard(sc_text: str, errors: list[str]) -> None:
+    """Reconcile Gold SCORECARD.md overview summary counts against Table 1 (settled) & Table 2 (tracking) rows."""
+    m_settled = re.search(
+        r"\|\s*\*\*已到期公开回验\*\*\s*\|\s*\*\*(\d+)\s*项\*\*（计分\s*(\d+)\s*项）\s*\|"
+        r"\s*\*\*(\d+)\s*项\*\*\s*\|\s*\*\*(\d+)\s*项\*\*\s*\|\s*\*\*(\d+)\s*项\*\*\s*\|\s*\*\*(\d+)\s*项\*\*",
+        sc_text,
+    )
+    m_track = re.search(r"\|\s*\*\*当前持续追踪中\*\*\s*\|\s*\*\*(\d+)\s*项\*\*", sc_text)
+    if not m_settled and not m_track:
+        return
+
+    def _extract_table_rows(section_body: str) -> list[list[str]]:
+        tbl_lines = [ln.strip() for ln in section_body.splitlines() if ln.strip().startswith("|") and ln.strip().endswith("|")]
+        if len(tbl_lines) < 3:
+            return []
+        rows: list[list[str]] = []
+        for ln in tbl_lines[1:]:
+            cells = [c.strip() for c in ln.strip("|").split("|")]
+            if cells and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                continue
+            rows.append(cells)
+        return rows
+
+    if m_settled:
+        exp_tot, exp_scored, exp_pass, exp_partial, exp_fail, exp_untrig = (int(x) for x in m_settled.groups())
+        if exp_tot != exp_pass + exp_partial + exp_fail + exp_untrig:
+            errors.append(
+                f"[公开记分卡总览算术错] 已到期 {exp_tot} 项 ≠ 兑现({exp_pass})+部分({exp_partial})+证伪({exp_fail})+未触发({exp_untrig})"
+            )
+        if exp_scored != exp_pass + exp_partial + exp_fail:
+            errors.append(
+                f"[公开记分卡总览算术错] 计分 {exp_scored} 项 ≠ 兑现({exp_pass})+部分({exp_partial})+证伪({exp_fail})"
+            )
+        m_t1 = re.search(r"^##\s*二、[^\n]*\n(.*?)(?=^##\s*三、|\Z)", sc_text, flags=re.MULTILINE | re.DOTALL)
+        if m_t1:
+            t1_rows = _extract_table_rows(m_t1.group(1))
+            act_pass = act_partial = act_fail = act_untrig = 0
+            for cells in t1_rows:
+                verdict_cell = cells[4] if len(cells) >= 5 else ""
+                if "✅" in verdict_cell:
+                    act_pass += 1
+                elif "⚠️" in verdict_cell or "部分兑现" in verdict_cell:
+                    act_partial += 1
+                elif "❌" in verdict_cell or "证伪" in verdict_cell:
+                    act_fail += 1
+                elif "⚪" in verdict_cell or "条件未触发" in verdict_cell:
+                    act_untrig += 1
+            if (len(t1_rows), act_pass, act_partial, act_fail, act_untrig) != (
+                exp_tot, exp_pass, exp_partial, exp_fail, exp_untrig
+            ):
+                errors.append(
+                    f"[公开记分卡表一对账错] 头部汇总=(总{exp_tot}: ✅{exp_pass}/⚠️{exp_partial}/❌{exp_fail}/⚪{exp_untrig}) "
+                    f"≠ 表一实有行=(总{len(t1_rows)}: ✅{act_pass}/⚠️{act_partial}/❌{act_fail}/⚪{act_untrig})"
+                )
+
+    if m_track:
+        exp_track = int(m_track.group(1))
+        m_t2 = re.search(r"^##\s*三、[^\n]*\n(.*?)(?=^##\s*四、|^---|\Z)", sc_text, flags=re.MULTILINE | re.DOTALL)
+        if m_t2:
+            t2_rows = _extract_table_rows(m_t2.group(1))
+            if len(t2_rows) != exp_track:
+                errors.append(
+                    f"[公开记分卡表二对账错] 头部汇总持续追踪={exp_track} 项 ≠ 表二实有行={len(t2_rows)} 项"
+                )
+
+
 def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None:
     """Validate external 60+ day market_calendar.json and public zero-jargon daily/SCORECARD.md."""
     if not MARKET_CALENDAR_PATH.exists():
@@ -1369,6 +1487,7 @@ def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None
             errors.append(
                 f"[公开记分卡内部词泄露] daily/SCORECARD.md 含禁止内部工程/RSI 词: {', '.join(sorted(set(leaked)))}"
             )
+        _reconcile_gold_scorecard(sc_text, errors)
 
     if CHANGELOG_PATH.exists():
         cl_text = _strip_comments_keep_lines(CHANGELOG_PATH.read_text(encoding="utf-8"))

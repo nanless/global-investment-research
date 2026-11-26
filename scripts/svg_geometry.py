@@ -15,6 +15,44 @@ import xml.etree.ElementTree as ET
 _SVG_BLOCK_RE = re.compile(r"<svg\b[^>]*>.*?</svg>", flags=re.DOTALL | re.IGNORECASE)
 _WS_RE = re.compile(r"\s+")
 _NUM_UNIT_RE = re.compile(r"^\s*([+-]?\d+(?:\.\d+)?)")
+_TRANSLATE_RE = re.compile(
+    r"translate\(\s*([+-]?\d+(?:\.\d+)?)(?:[\s,]+([+-]?\d+(?:\.\d+)?))?\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _parse_translate(transform: str | None) -> tuple[float, float]:
+    """Sum translate(x[, y]) offsets from an SVG transform attribute."""
+    if not transform:
+        return 0.0, 0.0
+    dx = 0.0
+    dy = 0.0
+    for m in _TRANSLATE_RE.finditer(transform):
+        try:
+            dx += float(m.group(1))
+            if m.group(2) is not None:
+                dy += float(m.group(2))
+        except ValueError:
+            continue
+    return dx, dy
+
+
+def _parse_length_px(raw: str | None, font_size: float) -> float | None:
+    """Parse an SVG length supporting bare px numbers and em units."""
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    m = _NUM_UNIT_RE.match(s)
+    if not m:
+        return None
+    try:
+        val = float(m.group(1))
+    except ValueError:
+        return None
+    rest = s[m.end() :].strip()
+    if rest == "em":
+        return val * font_size
+    return val
 
 
 def _parse_style(style_str: str | None) -> dict[str, str]:
@@ -160,6 +198,114 @@ def _parse_viewbox(svg_el: ET.Element) -> tuple[float, float, float, float] | No
     return vals  # type: ignore[return-value]
 
 
+def _make_text_box(
+    x: float,
+    y: float,
+    width: float,
+    eff_fs: float,
+    anchor: str,
+    baseline: str,
+    txt: str,
+) -> tuple[float, float, float, float, str]:
+    if anchor == "middle":
+        x0, x1 = x - width / 2.0, x + width / 2.0
+    elif anchor == "end":
+        x0, x1 = x - width, x
+    else:
+        x0, x1 = x, x + width
+
+    if baseline in ("middle", "central"):
+        y0, y1 = y - eff_fs * 0.50, y + eff_fs * 0.50
+    elif baseline in ("hanging", "text-before-edge"):
+        y0, y1 = y, y + eff_fs * 1.00
+    else:
+        y0, y1 = y - eff_fs * 0.82, y + eff_fs * 0.18
+    return (x0, y0, x1, y1, txt)
+
+
+def _extract_text_boxes(
+    node: ET.Element,
+    tx: float,
+    ty: float,
+    style: dict[str, str],
+) -> list[tuple[float, float, float, float, str]]:
+    """Extract one or more text bounding boxes from <text>, handling <tspan dy/x/y/dx>."""
+    raw_x = _parse_float(node.attrib.get("x"))
+    raw_y = _parse_float(node.attrib.get("y"))
+    if raw_x is None and raw_y is None:
+        return []
+    base_x = (raw_x or 0.0) + tx
+    base_y = (raw_y or 0.0) + ty
+    fs = _parse_float(_get_attr(node, "font-size", style, "10")) or 10.0
+    is_bold = _is_bold_weight(_get_attr(node, "font-weight", style))
+    anchor = _get_attr(node, "text-anchor", style, "start").lower()
+    baseline = _get_attr(node, "dominant-baseline", style).lower()
+
+    # Check if any <tspan> child shifts position explicitly via dy/y/x
+    has_positioned_tspan = False
+    for child in node:
+        if child.tag.split("}")[-1].lower() != "tspan":
+            continue
+        dy_val = _parse_length_px(child.attrib.get("dy"), fs)
+        if (
+            child.attrib.get("y") is not None
+            or child.attrib.get("x") is not None
+            or (dy_val is not None and abs(dy_val) > 1e-6)
+        ):
+            has_positioned_tspan = True
+            break
+
+    if not has_positioned_tspan:
+        txt, width, eff_fs = _estimate_text_element_width(node, fs, is_bold)
+        if not txt or width <= 0.0:
+            return []
+        return [_make_text_box(base_x, base_y, width, eff_fs, anchor, baseline, txt)]
+
+    out: list[tuple[float, float, float, float, str]] = []
+    cur_x = base_x
+    cur_y = base_y
+    lead_txt = _WS_RE.sub(" ", node.text or "").strip()
+    if lead_txt:
+        lw = _estimate_run_width(lead_txt, fs, is_bold)
+        if lw > 0.0:
+            out.append(_make_text_box(cur_x, cur_y, lw, fs, anchor, baseline, lead_txt))
+
+    for child in node:
+        ctag = child.tag.split("}")[-1].lower()
+        cstyle = _parse_style(child.attrib.get("style"))
+        cfs = _parse_float(_get_attr(child, "font-size", cstyle)) or fs
+        cfw = _get_attr(child, "font-weight", cstyle)
+        cbold = _is_bold_weight(cfw) if cfw else is_bold
+        canc = _get_attr(child, "text-anchor", cstyle, anchor).lower()
+        cbase = _get_attr(child, "dominant-baseline", cstyle, baseline).lower()
+
+        if ctag == "tspan":
+            cx_attr = _parse_float(child.attrib.get("x"))
+            cy_attr = _parse_float(child.attrib.get("y"))
+            cdx = _parse_length_px(child.attrib.get("dx"), cfs) or 0.0
+            cdy = _parse_length_px(child.attrib.get("dy"), cfs) or 0.0
+            if cx_attr is not None:
+                cur_x = cx_attr + tx
+            cur_x += cdx
+            if cy_attr is not None:
+                cur_y = cy_attr + ty
+            cur_y += cdy
+
+        ctext = _WS_RE.sub(" ", "".join(child.itertext())).strip()
+        if ctext:
+            cw = _estimate_run_width(ctext, cfs, cbold)
+            if cw > 0.0:
+                out.append(_make_text_box(cur_x, cur_y, cw, cfs, canc, cbase, ctext))
+
+        if child.tail:
+            tail_txt = _WS_RE.sub(" ", child.tail).strip()
+            if tail_txt:
+                tw = _estimate_run_width(tail_txt, fs, is_bold)
+                if tw > 0.0:
+                    out.append(_make_text_box(cur_x, cur_y, tw, fs, anchor, baseline, tail_txt))
+    return out
+
+
 def check_svg_text_geometry(
     svg_xml: str,
     *,
@@ -167,8 +313,10 @@ def check_svg_text_geometry(
     oob_tol: float = 2.0,
     min_overlap_x: float = 2.0,
     min_overlap_y: float = 2.0,
+    check_circles: bool = True,
 ) -> list[str]:
-    """Check all chart <svg> blocks in svg_xml for text out-of-bounds and pairwise overlap.
+    """Check all chart <svg> blocks in svg_xml for text out-of-bounds, pairwise overlap,
+    and text-vs-data-circle collisions (accumulating <g>/<text> translate transforms and <tspan dy>).
 
     Small icons (viewBox width < 300) are skipped automatically.
     """
@@ -190,58 +338,53 @@ def check_svg_text_geometry(
             continue
 
         boxes: list[tuple[float, float, float, float, str]] = []
-        for node in root.iter():
-            if node.tag.split("}")[-1].lower() != "text":
-                continue
+        circles: list[tuple[float, float, float]] = []
+
+        def _walk(node: ET.Element, acc_tx: float, acc_ty: float) -> None:
             style = _parse_style(node.attrib.get("style"))
             if (
                 _get_attr(node, "display", style).lower() == "none"
                 or _get_attr(node, "visibility", style).lower() == "hidden"
             ):
-                continue
+                return
             op = _parse_float(_get_attr(node, "opacity", style))
             if op is not None and op <= 0.0:
-                continue
+                return
 
-            x = _parse_float(node.attrib.get("x"))
-            y = _parse_float(node.attrib.get("y"))
-            if x is None or y is None:
-                continue
+            ntx, nty = _parse_translate(node.attrib.get("transform"))
+            cur_tx = acc_tx + ntx
+            cur_ty = acc_ty + nty
+            el_tag = node.tag.split("}")[-1].lower()
 
-            fs = _parse_float(_get_attr(node, "font-size", style, "10")) or 10.0
-            is_bold = _is_bold_weight(_get_attr(node, "font-weight", style))
-            txt, width, eff_fs = _estimate_text_element_width(node, fs, is_bold)
-            if not txt or width <= 0.0:
-                continue
+            if el_tag == "text":
+                for box in _extract_text_boxes(node, cur_tx, cur_ty, style):
+                    x0, y0, x1, y1, txt = box
+                    if (
+                        x0 < vb_x - oob_tol
+                        or x1 > vb_x + vb_w + oob_tol
+                        or y0 < vb_y - oob_tol
+                        or y1 > vb_y + vb_h + oob_tol
+                    ):
+                        issues.append(
+                            f"[{tag}] SVG 文字越界 '{txt[:28]}' "
+                            f"box=({x0:.1f},{y0:.1f},{x1:.1f},{y1:.1f}) "
+                            f"viewBox=({vb_x:.0f},{vb_y:.0f},{vb_w:.0f},{vb_h:.0f})"
+                        )
+                    boxes.append(box)
+                return
 
-            anchor = _get_attr(node, "text-anchor", style, "start").lower()
-            if anchor == "middle":
-                x0, x1 = x - width / 2.0, x + width / 2.0
-            elif anchor == "end":
-                x0, x1 = x - width, x
-            else:
-                x0, x1 = x, x + width
+            if el_tag == "circle":
+                cx = _parse_float(node.attrib.get("cx"))
+                cy = _parse_float(node.attrib.get("cy"))
+                rad = _parse_float(node.attrib.get("r"))
+                if cx is not None and cy is not None and rad is not None and rad >= 3.0:
+                    circles.append((cx + cur_tx, cy + cur_ty, rad))
+                return
 
-            baseline = _get_attr(node, "dominant-baseline", style).lower()
-            if baseline in ("middle", "central"):
-                y0, y1 = y - eff_fs * 0.50, y + eff_fs * 0.50
-            elif baseline in ("hanging", "text-before-edge"):
-                y0, y1 = y, y + eff_fs * 1.00
-            else:
-                y0, y1 = y - eff_fs * 0.82, y + eff_fs * 0.18
+            for child in node:
+                _walk(child, cur_tx, cur_ty)
 
-            if (
-                x0 < vb_x - oob_tol
-                or x1 > vb_x + vb_w + oob_tol
-                or y0 < vb_y - oob_tol
-                or y1 > vb_y + vb_h + oob_tol
-            ):
-                issues.append(
-                    f"[{tag}] SVG 文字越界 '{txt[:28]}' "
-                    f"box=({x0:.1f},{y0:.1f},{x1:.1f},{y1:.1f}) "
-                    f"viewBox=({vb_x:.0f},{vb_y:.0f},{vb_w:.0f},{vb_h:.0f})"
-                )
-            boxes.append((x0, y0, x1, y1, txt))
+        _walk(root, 0.0, 0.0)
 
         for i in range(len(boxes)):
             ax0, ay0, ax1, ay1, at = boxes[i]
@@ -254,4 +397,23 @@ def check_svg_text_geometry(
                         f"[{tag}] SVG 文字重叠 (ox={ox:.1f}px, oy={oy:.1f}px): "
                         f"'{at[:24]}' 与 '{bt[:24]}'"
                     )
+
+        if check_circles and circles:
+            for cx, cy, rad in circles:
+                # Skip legend strips / header/footer indicator dots
+                if cy < vb_y + 42.0 or cy > vb_y + vb_h - 24.0:
+                    continue
+                eff_r_sq = max(0.0, rad - 0.5) ** 2
+                for x0, y0, x1, y1, txt in boxes:
+                    nx = max(x0, min(cx, x1))
+                    ny = max(y0, min(cy, y1))
+                    if (cx - nx) ** 2 + (cy - ny) ** 2 < eff_r_sq:
+                        issues.append(
+                            f"[{tag}] SVG 文字与数据圆点重叠: '{txt[:24]}' "
+                            f"box=({x0:.1f},{y0:.1f},{x1:.1f},{y1:.1f}) "
+                            f"与 circle({cx:.1f},{cy:.1f},r={rad:.1f})"
+                        )
     return issues
+
+
+check_svg_geometry = check_svg_text_geometry

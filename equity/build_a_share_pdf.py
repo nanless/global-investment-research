@@ -241,7 +241,7 @@ def svg_chart_a1_cycles(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_txt}</div>
       <div class="chart-sub">2015–2026 年 A 股按真实时间跨度绘制的五大轮牛熊拐点（蓝线 = 沪深 300，橙虚线 = 上证指数）</div>
-      <svg viewBox="0 0 850 298" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 298" width="100%" role="img" aria-label="{title_txt}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="298" fill="#ffffff" rx="6"/>
         {grid}
         <line x1="60" y1="{y_300_200w}" x2="834" y2="{y_300_200w}" stroke="#D55E00" stroke-width="1.5" stroke-dasharray="5,3"/>
@@ -322,6 +322,7 @@ def svg_chart_a2_split_and_futures(meta_override: dict | None = None) -> str:
             if col.lower() in ("#009e73", "#16a34a", "#15803d"):
                 col, bg = "#64748b", "#f8fafc"
         else:
+            # ann_f > 0 => annualized discount (折价/贴水); ann_f < 0 => annualized premium (升水)
             ann_f = float(ann)
             if ann_f > 0:
                 ann_lbl = f"折价约 {ann_f:.1f}%/年"
@@ -339,7 +340,7 @@ def svg_chart_a2_split_and_futures(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_a2}</div>
       <div class="chart-sub">{sub_a2}</div>
-      <svg viewBox="0 0 850 302" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 302" width="100%" role="img" aria-label="{title_a2}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="302" fill="#ffffff" rx="6"/>
         <text x="16" y="24" font-size="10.0" fill="#0f172a" font-weight="700">A. 宽基涨跌对比（权重蓝筹 vs 中小成长）</text>
         <text x="440" y="24" font-size="10.0" fill="#0f172a" font-weight="700">B. 股指期货（聪明钱底牌与基差监控）</text>
@@ -411,7 +412,7 @@ def svg_chart_a3_macro_k_split(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_a3}</div>
       <div class="chart-sub">{sub_a3}</div>
-      <svg viewBox="0 0 850 284" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 284" width="100%" role="img" aria-label="{title_a3}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="284" fill="#ffffff" rx="6"/>
         <rect x="14" y="10" width="404" height="26" fill="#475569" rx="4"/>
         <text x="216" y="27" text-anchor="middle" font-size="9.8" fill="#ffffff" font-weight="700">▼ 偏冷的一面：传统内需与财政承压（封顶全面普涨）</text>
@@ -495,7 +496,7 @@ def svg_chart_a4_clock(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_a4}</div>
       <div class="chart-sub">{sub_a4}</div>
-      <svg viewBox="0 0 850 268" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 268" width="100%" role="img" aria-label="{title_a4}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="268" fill="#ffffff" rx="6"/>
         <text x="16" y="22" font-size="10.0" fill="#0f172a" font-weight="700">A. {horizon}关键节点与分步上车节奏（从防守 4.0 成 → 逐步加到 5.8 成股票）</text>
         {cards_svg}
@@ -570,11 +571,12 @@ def svg_chart_a5_targets_and_math(meta_override: dict | None = None) -> str:
         right += f'<text x="826" y="{y+15}" text-anchor="end" font-size="9.0" fill="{col}" font-weight="700">{badge}</text>'
         right += f'<text x="476" y="{y+31}" font-size="9.0" fill="#64748b">{v1}  →  <tspan fill="{col}" font-weight="800">{v2}</tspan></text>'
 
+    title_a5 = _norm_chart_title("2027 年大盘基准看涨约 +12% 至 +15%；实证证明“股 + 债 + 黄金”更稳更赚")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {{{{CHART_NUM}}}}：2027 年大盘基准看涨约 +12% 至 +15%；实证证明“股 + 债 + 黄金”更稳更赚</div>
+      <div class="chart-title">{title_a5}</div>
       <div class="chart-sub">左：沪深 300 四大情景（10 点条 = 10 次里约发生几次）与外资目标 ｜ 右：21 年实测“纯股债”vs“加 15% 黄金”</div>
-      <svg viewBox="0 0 850 236" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 236" width="100%" role="img" aria-label="{title_a5}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="236" fill="#ffffff" rx="6"/>
         <text x="16" y="20" font-size="9.8" fill="#0f172a" font-weight="700">A. 沪深 300 2027 年情景与主流外资目标</text>
         <text x="466" y="20" font-size="9.8" fill="#0f172a" font-weight="700">B. 过去 21 年人民币资产实测（40股/60债 vs 加15%金）</text>
@@ -673,7 +675,7 @@ def svg_chart_a6_sector_heatmap(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_a6}</div>
       <div class="chart-sub">{sub_a6}</div>
-      <svg viewBox="0 0 850 {svg_h}" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 {svg_h}" width="100%" role="img" aria-label="{title_a6}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="{svg_h}" fill="#ffffff" rx="6"/>
         {bg_rects}
         <text x="16" y="23" font-size="9.8" fill="#0f172a" font-weight="700">A. 行业涨跌（%）</text>
@@ -723,7 +725,7 @@ def svg_chart_a7_stock_quadrant(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title_a7}</div>
       <div class="chart-sub">{sub_a7}</div>
-      <svg viewBox="0 0 850 322" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 322" width="100%" role="img" aria-label="{title_a7}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="322" fill="#ffffff" rx="6"/>
         <rect x="34" y="34" width="406" height="132" fill="#f0fdf4" opacity="0.72"/>
         <rect x="440" y="34" width="394" height="132" fill="#eff6ff" opacity="0.72"/>

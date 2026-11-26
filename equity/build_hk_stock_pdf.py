@@ -136,7 +136,7 @@ def svg_chart_h1_cycles(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       <div class="chart-sub">{sub}</div>
-      <svg viewBox="0 0 850 288" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 288" width="100%" role="img" aria-label="{title}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="288" fill="#ffffff" rx="6"/>
         <rect x="58" y="42" width="766" height="196" fill="#f8fafc"/>
         {grid}
@@ -242,7 +242,7 @@ def svg_chart_h2_flow_and_rebalance(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       <div class="chart-sub">{sub}</div>
-      <svg viewBox="0 0 850 286" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 286" width="100%" role="img" aria-label="{title}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="286" fill="#ffffff" rx="6"/>
         <text x="16" y="25" font-size="9.8" fill="#0f172a" font-weight="800">A. 港股核心指数实盘分化（{_svg_esc(as_short)}）</text>
         <text x="404" y="25" font-size="9.8" fill="#0f172a" font-weight="800">B. 流动性温度与 11/30–12/04 被动调仓冲击</text>
@@ -328,7 +328,7 @@ def svg_chart_h3_peg_and_erp(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       <div class="chart-sub">{sub}</div>
-      <svg viewBox="0 0 850 296" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 296" width="100%" role="img" aria-label="{title}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="296" fill="#ffffff" rx="6"/>
         <rect x="20" y="14" width="405" height="106" fill="#fef2f2" stroke="#fecaca" stroke-width="1" rx="6"/>
         <text x="34" y="34" font-size="9.4" fill="#991b1b" font-weight="800">阀门 1：联系汇率 美元/港元 = {usdhkd:.3f}（紧贴 7.85 弱方线）</text>
@@ -416,7 +416,7 @@ def svg_chart_h4_clock(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       <div class="chart-sub">{sub}</div>
-      <svg viewBox="0 0 850 218" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 218" width="100%" role="img" aria-label="{title}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="218" fill="#ffffff" rx="6"/>
         {cards_xml}
         <rect x="16" y="154" width="818" height="52" fill="{b_fill}" stroke="{b_brd}" stroke-width="1.3" rx="6"/>
@@ -499,7 +499,7 @@ def svg_chart_h5_targets_and_scenarios(meta_override: dict | None = None) -> str
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       <div class="chart-sub">{sub}</div>
-      <svg viewBox="0 0 850 280" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 280" width="100%" role="img" aria-label="{title}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="280" fill="#ffffff" rx="6"/>
         <text x="16" y="25" font-size="9.6" fill="#0f172a" font-weight="800">A. 2027 年大行恒指目标点位（虚线为现价 {hsi:,.0f}）</text>
         <text x="488" y="25" font-size="9.6" fill="#0f172a" font-weight="800">B. 2027 四大情景剧本（概率之和 = 100%）</text>
@@ -588,7 +588,7 @@ def svg_chart_h6_ah_arbitrage_and_sectors(meta_override: dict | None = None) -> 
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       <div class="chart-sub">{sub}</div>
-      <svg viewBox="0 0 850 {svg_h}" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 {svg_h}" width="100%" role="img" aria-label="{title}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="{svg_h}" fill="#ffffff" rx="6"/>
         <text x="16" y="24" font-size="9.2" fill="#0f172a" font-weight="800">双地核心标的</text>
         <text x="296" y="24" text-anchor="middle" font-size="9.0" fill="#475569" font-weight="700">← H 股更贵(倒挂) ｜ A 股更贵(买 H 省钱) →</text>
@@ -661,7 +661,7 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
     <div class="chart-box">
       <div class="chart-title">{title}</div>
       <div class="chart-sub">{sub}</div>
-      <svg viewBox="0 0 850 326" width="100%" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 850 326" width="100%" role="img" aria-label="{title}" font-family="PingFang SC, Hiragino Sans GB, sans-serif" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="850" height="326" fill="#ffffff" rx="6"/>
         <rect x="34" y="34" width="406" height="134" fill="#f0fdf4" opacity="0.72"/>
         <rect x="440" y="34" width="394" height="134" fill="#eff6ff" opacity="0.72"/>

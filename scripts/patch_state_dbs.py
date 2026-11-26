@@ -24,6 +24,7 @@ import re
 import sys
 import tempfile
 from typing import Any
+from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -109,8 +110,42 @@ EXACT_PCT_RE = re.compile(r"^(\d+(?:\.\d+)?)%$")
 RANGE_PCT_RE = re.compile(r"\d+(?:\.\d+)?%\s*[–\-~至]\s*\d+(?:\.\d+)?%")
 RESTRICTED_CODES_RE = re.compile(r"(?<![0-9])(?:968118|968001|00011)(?![0-9])")
 RESTRICTED_WARN_RE = re.compile(
-    r"(?:暂停|封盘|已停|停售|限购|退市|私有化|勿买|勿选|勿误配|严禁|禁止|切忌|避坑|避开|不可|高危|雷区|警示|清盘|改以|替代)"
+    r"(?:暂停|停申|停购|封盘|已停|停售|限购|退市|私有化|勿买|勿选|勿误配|"
+    r"严禁|禁止|严避|禁买|禁推|禁配|禁碰|切忌|避坑|避开|绕开|远离|回避|"
+    r"不可|不买|不推|莫买|别买|别碰|慎碰|高危|雷区|警示|清盘|剔除|弃用|改以|替代)"
 )
+
+ENTRY_GATE_IDS = ("real_yield", "rate_spread", "vix", "ny_close")
+AS_OF_SHORT_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
+ALLOWED_FORECAST_REVIEW_STATUSES = frozenset({"settled", "none_due", "pending_evidence"})
+DEPRECATED_BINARY_LINK_RE = re.compile(
+    r"(?:\[[^\]]+\]\((?!https?://)[^)\s]+\.(?:pdf|docx)(?:#[^)\s]*)?\)"
+    r"|/releases/download/"
+    r"|\{md,pdf,docx\}"
+    r"|(?:daily/|archive/|\.\.?/)[^\s`\"'()<>]+\.(?:pdf|docx))",
+    flags=re.IGNORECASE,
+)
+FEE_EXCLUDE_SPAN_RE = re.compile(
+    r"(?:申购费?|赎回费?|1折|一折|佣金|销服(?:优惠至|费)?|销售服务费)"
+    r"[^\s｜|，,；;）)。”\"·]{0,12}?"
+    r"\d+(?:\.\d+)?%(?:\s*[–\-~至]\s*\d+(?:\.\d+)?%)?"
+)
+DYNAMIC_SIGNED_PCT_RE = re.compile(r"(?<![0-9A-Za-z%])[+\-]\d+(?:\.\d+)?%")
+DYNAMIC_COUNT_RE = re.compile(r"\d+\s*只(?:跨境|纳指|美股|停牌)")
+HISTORICAL_CTX_RE = re.compile(
+    r"(?:对\d+/\d+|较|原|前日|昨日|自.{0,8}降至|由.{0,8}升至|历史|11/\d+)"
+)
+AH_PREMIUM_MENTION_RE = re.compile(
+    r"(?:AH\s*溢价|A/H\s*溢价|A\s*股较\s*H\s*股[^，。；]{0,24}?溢价|"
+    r"A\s*折\s*H|AH\s*(?:罕见|深度)?倒挂|A/H\s*(?:仍呈)?倒挂)"
+    r"[^0-9+\-，。；（）]{0,14}([+\-]?\d+(?:\.\d+)?)%"
+    r"(?:\s*[–\-~～至]\s*([+\-]?\d+(?:\.\d+)?)%)?"
+)
+CHANNEL_META_KEYS = frozenset({
+    "id", "order", "category", "category_label", "money_bucket",
+    "high_net_worth_only", "min_amount_tier", "risk_stars", "status_tone",
+    "related_etf_codes",
+})
 
 GOLD_ETF_CODES = frozenset({
     "518660", "518880", "518850", "159934", "159937", "518800",
@@ -291,8 +326,77 @@ def _serialize_json(obj: dict[str, Any]) -> bytes:
     return (json.dumps(obj, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
+def _target_file_mode(dest: Path) -> int:
+    if dest.exists():
+        orig_mode = dest.stat().st_mode & 0o777
+        return 0o644 if orig_mode == 0o600 else orig_mode
+    return 0o644
+
+
+def _is_strict_https_url(value: object) -> bool:
+    if not isinstance(value, str) or not value or any(c.isspace() for c in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname or ""
+        return (
+            parsed.scheme == "https"
+            and bool(host)
+            and "." in host
+            and not host.startswith(".")
+            and not host.endswith(".")
+            and parsed.username is None
+        )
+    except ValueError:
+        return False
+
+
+def _strip_html_comments(text: str) -> str:
+    return re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+
+
+def _extract_annual_fee_pcts(fee_text: str) -> list[float]:
+    cleaned = FEE_EXCLUDE_SPAN_RE.sub("", fee_text)
+    return [float(m.group(1)) for m in re.finditer(r"(\d+(?:\.\d+)?)%", cleaned)]
+
+
+def _extract_dynamic_tokens(obj: object) -> set[str]:
+    tokens: set[str] = set()
+    for _, sval in _walk_json_strings(obj, ""):
+        for m in DYNAMIC_SIGNED_PCT_RE.finditer(sval):
+            tokens.add(m.group(0))
+        for m in DYNAMIC_COUNT_RE.finditer(sval):
+            tokens.add(re.sub(r"\s+", "", m.group(0)))
+    return tokens
+
+
+def _check_sibling_token_drift(
+    obj_label: str,
+    replaced_tokens: set[str],
+    untouched_items: list[tuple[str, str]],
+) -> None:
+    if not replaced_tokens:
+        return
+    for field_path, sval in untouched_items:
+        for tok in sorted(replaced_tokens):
+            if tok.endswith("%"):
+                pat = re.compile(rf"(?<![0-9A-Za-z%]){re.escape(tok)}")
+            else:
+                # Allow optional spaces between digits and 只
+                m_cnt = re.fullmatch(r"(\d+)(.+)", tok)
+                pat = re.compile(rf"(?<![0-9]){m_cnt.group(1)}\s*{re.escape(m_cnt.group(2))}") if m_cnt else re.compile(re.escape(tok))
+            for m in pat.finditer(sval):
+                win = sval[max(0, m.start() - 20) : min(len(sval), m.end() + 20)]
+                if not HISTORICAL_CTX_RE.search(win):
+                    raise ValueError(
+                        f"Stale sibling token drift in {obj_label}.{field_path}: "
+                        f"replaced token {tok!r} still appears without historical context -> {win!r}"
+                    )
+
+
 def _atomic_write_single(dest: Path, content: bytes) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
+    target_mode = _target_file_mode(dest)
     fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(dest.parent))
     tmp_path = Path(tmp_name)
     try:
@@ -300,6 +404,7 @@ def _atomic_write_single(dest: Path, content: bytes) -> None:
             fh.write(content)
             fh.flush()
             os.fsync(fh.fileno())
+        os.chmod(tmp_path, target_mode)
         os.replace(tmp_path, dest)
     except Exception:
         tmp_path.unlink(missing_ok=True)
@@ -318,6 +423,7 @@ def _atomic_write_transaction(writes: list[tuple[Path, bytes]]) -> None:
         # Phase 1: Stage and fsync every temp file in its target directory first.
         for (dest, new_bytes), (_, orig_bytes) in zip(writes, originals):
             dest.parent.mkdir(parents=True, exist_ok=True)
+            target_mode = _target_file_mode(dest)
             fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(dest.parent))
             tmp_path = Path(tmp_name)
             try:
@@ -325,6 +431,7 @@ def _atomic_write_transaction(writes: list[tuple[Path, bytes]]) -> None:
                     fh.write(new_bytes)
                     fh.flush()
                     os.fsync(fh.fileno())
+                os.chmod(tmp_path, target_mode)
             except Exception:
                 tmp_path.unlink(missing_ok=True)
                 raise
@@ -369,7 +476,12 @@ def _merge_multi_asset(
         ma["gold_mutex_note"] = patch_root["gold_mutex_note"].strip()
 
     sec = patch_root.get("multi_asset_channels")
-    stats = {"top_keys_updated": 0, "channels_patched": 0, "products_upserted": 0}
+    stats: dict[str, Any] = {
+        "top_keys_updated": 0,
+        "channels_patched": 0,
+        "products_upserted": 0,
+        "untouched_channel_siblings": {},
+    }
     if sec is None:
         return ma, stats
     if not isinstance(sec, dict):
@@ -404,6 +516,11 @@ def _merge_multi_asset(
             if not isinstance(upd, dict):
                 raise ValueError(f"channels_patch[{cid!r}] must be an object.")
             target_ch = by_id[cid]
+            orig_ch = copy.deepcopy(target_ch)
+            old_tokens: set[str] = set()
+            new_tokens: set[str] = set()
+            touched_top_keys: set[str] = set()
+            touched_product_fields: dict[str, set[str]] = {}
             stats["channels_patched"] += 1
             for k, v in upd.items():
                 if k == "id":
@@ -411,6 +528,7 @@ def _merge_multi_asset(
                         raise ValueError(f"Cannot change channel id {cid!r} -> {v!r}.")
                     continue
                 if k == "products_upsert":
+                    touched_top_keys.add("products")
                     if not isinstance(v, list):
                         raise ValueError(f"channels_patch[{cid!r}].products_upsert must be a list.")
                     prods = target_ch.setdefault("products", [])
@@ -427,7 +545,12 @@ def _merge_multi_asset(
                             None,
                         )
                         if existing is not None:
+                            p_touched = touched_product_fields.setdefault(p_key, set())
                             for pk, pv in p_upd.items():
+                                if pk != "code":
+                                    old_tokens |= _extract_dynamic_tokens(existing.get(pk))
+                                    new_tokens |= _extract_dynamic_tokens(pv)
+                                    p_touched.add(pk)
                                 existing[pk] = copy.deepcopy(pv)
                         else:
                             for req_f in ("code", "name", "metric", "fee", "note"):
@@ -435,18 +558,51 @@ def _merge_multi_asset(
                                     raise ValueError(
                                         f"New product in channels_patch[{cid!r}].products_upsert[{pi}] missing non-empty {req_f!r}."
                                     )
+                            new_tokens |= _extract_dynamic_tokens(p_upd)
                             prods.append(copy.deepcopy(p_upd))
                         stats["products_upserted"] += 1
                 elif k == "products_remove":
+                    touched_top_keys.add("products")
                     if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
                         raise ValueError(f"channels_patch[{cid!r}].products_remove must be a list of product codes.")
                     rem_keys = {x.strip().upper() for x in v}
                     prods = target_ch.get("products", [])
+                    for p in prods:
+                        if isinstance(p, dict) and str(p.get("code", "")).strip().upper() in rem_keys:
+                            old_tokens |= _extract_dynamic_tokens(p)
                     target_ch["products"] = [
                         p for p in prods if not (isinstance(p, dict) and str(p.get("code", "")).strip().upper() in rem_keys)
                     ]
                 else:
+                    touched_top_keys.add(k)
+                    old_tokens |= _extract_dynamic_tokens(orig_ch.get(k))
+                    new_tokens |= _extract_dynamic_tokens(v)
                     target_ch[k] = copy.deepcopy(v)
+
+            replaced_tokens = old_tokens - new_tokens
+            untouched_strings: list[tuple[str, str]] = []
+            for sk, sv in target_ch.items():
+                if sk in CHANNEL_META_KEYS:
+                    continue
+                if sk not in touched_top_keys:
+                    untouched_strings.extend(_walk_json_strings(sv, sk))
+                elif sk == "products" and "products" not in upd and isinstance(sv, list):
+                    for pi, prod in enumerate(sv):
+                        if not isinstance(prod, dict):
+                            continue
+                        pk_norm = str(prod.get("code", "")).strip().upper()
+                        t_fields = touched_product_fields.get(pk_norm)
+                        if t_fields is None:
+                            untouched_strings.extend(_walk_json_strings(prod, f"products[{pi}]"))
+                        else:
+                            for pf, pval in prod.items():
+                                if pf != "code" and pf not in t_fields:
+                                    untouched_strings.extend(_walk_json_strings(pval, f"products[{pi}].{pf}"))
+            _check_sibling_token_drift(f"multi_asset_channels[{cid}]", replaced_tokens, untouched_strings)
+            untouched_sibs = sorted(
+                sk for sk in target_ch.keys() if sk not in touched_top_keys and sk not in CHANNEL_META_KEYS
+            )
+            stats["untouched_channel_siblings"][cid] = untouched_sibs
 
     return ma, stats
 
@@ -554,11 +710,25 @@ def _merge_etf_universe(
                 if norm_code in index_by_norm:
                     target = index_by_norm[norm_code]
                     canonical_code = target["code"]
+                    orig_etf = copy.deepcopy(target)
+                    old_tokens: set[str] = set()
+                    new_tokens: set[str] = set()
+                    touched_keys: set[str] = set()
                     for k, v in entry.items():
                         if k == "code":
                             continue  # Preserve existing canonical code format
+                        touched_keys.add(k)
+                        old_tokens |= _extract_dynamic_tokens(orig_etf.get(k))
+                        new_tokens |= _extract_dynamic_tokens(v)
                         target[k] = copy.deepcopy(v)
                     target["code"] = canonical_code
+                    replaced_tokens = old_tokens - new_tokens
+                    untouched_strings: list[tuple[str, str]] = []
+                    for sk, sv in target.items():
+                        if sk == "code" or sk in touched_keys:
+                            continue
+                        untouched_strings.extend(_walk_json_strings(sv, sk))
+                    _check_sibling_token_drift(f"etf_universe[{canonical_code}]", replaced_tokens, untouched_strings)
                     stats["etfs_updated"] += 1
                 else:
                     missing_keys = sorted(ETF_ALL_21_KEYS - set(entry.keys()))
@@ -606,11 +776,48 @@ def _merge_etf_universe(
     return eu, stats
 
 
+def _build_ah_twin_map(
+    market_state: dict[str, Any] | None,
+    dossiers: dict[str, Any],
+) -> dict[str, tuple[str, float]]:
+    twin_map: dict[str, tuple[str, float]] = {}
+    if not isinstance(market_state, dict):
+        return twin_map
+    benchmarks = (
+        market_state.get("cross_market_linkages", {})
+        .get("ah_premium_radar", {})
+        .get("benchmarks")
+    )
+    if not isinstance(benchmarks, list):
+        return twin_map
+    for b in benchmarks:
+        if not isinstance(b, dict):
+            continue
+        a_code = b.get("a")
+        h_code = b.get("h")
+        ah_pct = b.get("ah_premium_pct")
+        if (
+            not isinstance(a_code, str) or not a_code.strip()
+            or not isinstance(h_code, str) or not h_code.strip()
+            or not isinstance(ah_pct, (int, float)) or isinstance(ah_pct, bool)
+        ):
+            continue
+        ak = f"a-share:{a_code.strip()}"
+        hk = f"hk-stock:{h_code.strip()}"
+        if ak in dossiers and hk in dossiers:
+            pct = float(ah_pct)
+            twin_map[ak] = (hk, pct)
+            twin_map[hk] = (ak, pct)
+    return twin_map
+
+
 def _merge_deep_dossiers(
     orig: dict[str, Any],
     patch_root: dict[str, Any],
     edition_id: str,
     as_of_date: str,
+    *,
+    market_state: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     dd = copy.deepcopy(orig)
     dd["edition_id"] = edition_id
@@ -621,7 +828,12 @@ def _merge_deep_dossiers(
     if not isinstance(dossiers, dict):
         raise ValueError("deep_dossiers.json missing 'dossiers' object.")
 
-    stats = {"top_keys_updated": 0, "stocks_patched": 0}
+    twin_map = _build_ah_twin_map(market_state, dossiers)
+    stats: dict[str, Any] = {
+        "top_keys_updated": 0,
+        "stocks_patched": 0,
+        "unpatched_ah_twins": {},
+    }
     sec = patch_root.get("deep_dossiers")
     if sec is not None:
         if not isinstance(sec, dict):
@@ -662,6 +874,36 @@ def _merge_deep_dossiers(
                     target[k] = copy.deepcopy(v)
                 target["updated_at"] = as_of_date
                 stats["stocks_patched"] += 1
+
+            # A/H Twin Sync Guard: if baseline_note or valuation_anchor changed on one side,
+            # ensure its unpatched A/H twin does not drift >1.5pct from market_state benchmark.
+            for stock_key, upd in dp.items():
+                if not isinstance(upd, dict):
+                    continue
+                if "baseline_note" not in upd and "valuation_anchor" not in upd:
+                    continue
+                twin_info = twin_map.get(stock_key)
+                if twin_info is None:
+                    continue
+                twin_key, bench_pct = twin_info
+                if twin_key in dp:
+                    continue
+                stats["unpatched_ah_twins"][stock_key] = twin_key
+                twin_entry = dossiers.get(twin_key)
+                if not isinstance(twin_entry, dict):
+                    continue
+                for field in ("baseline_note", "valuation_anchor"):
+                    fval = str(twin_entry.get(field, ""))
+                    for m_ah in AH_PREMIUM_MENTION_RE.finditer(fval):
+                        v1 = float(m_ah.group(1))
+                        v2 = float(m_ah.group(2)) if m_ah.group(2) is not None else v1
+                        lo, hi = min(v1, v2), max(v1, v2)
+                        if bench_pct < lo - 1.5 or bench_pct > hi + 1.5:
+                            raise ValueError(
+                                f"A/H twin sync required: patched {stock_key!r} without twin {twin_key!r}, "
+                                f"whose {field} still states {m_ah.group(0)!r} vs market_state benchmark "
+                                f"{bench_pct:+.1f}% (drift > 1.5pct)."
+                            )
 
     dd["total_stocks"] = len(dossiers)
     dd["core_deep_count"] = sum(
@@ -797,6 +1039,7 @@ def _validate_merged_equity_dbs(
         if eu.get("total_etfs") != len(etfs):
             errs.append(f"etf_universe.json: total_etfs ({eu.get('total_etfs')}) != len(etfs) ({len(etfs)}).")
         seen_etf_codes: set[str] = set()
+        etf_fee_map: dict[str, float] = {}
         for idx, item in enumerate(etfs):
             if not isinstance(item, dict):
                 errs.append(f"etf_universe.json: etfs[{idx}] must be an object.")
@@ -815,6 +1058,17 @@ def _validate_merged_equity_dbs(
                     errs.append(f"etf_universe.json: etfs[{idx}]({code}) missing non-empty {field}.")
                 elif RAW_MARKUP_RE.search(val):
                     errs.append(f"etf_universe.json: etfs[{idx}]({code}).{field} contains raw Markdown/HTML markup.")
+            fee_num = item.get("fee_num")
+            if isinstance(fee_num, (int, float)) and not isinstance(fee_num, bool):
+                fee_num_f = float(fee_num)
+                if norm:
+                    etf_fee_map[norm] = fee_num_f
+                fee_total = str(item.get("fee_total_pct", "")).strip()
+                m_ft = re.match(r"^(\d+(?:\.\d+)?)%", fee_total)
+                if m_ft and abs(float(m_ft.group(1)) - fee_num_f) > 0.005:
+                    errs.append(
+                        f"etf_universe.json: etfs[{idx}]({code}) fee_total_pct ({fee_total!r}) != fee_num ({fee_num})."
+                    )
             mkt = str(item.get("market", "")).strip()
             if mkt not in ETF_ALLOWED_MARKETS:
                 errs.append(f"etf_universe.json: etfs[{idx}]({code}) invalid market {mkt!r}.")
@@ -832,6 +1086,51 @@ def _validate_merged_equity_dbs(
                         errs.append(
                             f"Gold Tier-0 互斥冲突 (etf_universe:{code})：黄金/金矿 ETF 严禁标为底座/买入/推荐/定投/配置 -> {role!r}"
                         )
+
+        # Cross-DB ETF Fee Consistency: multi_asset_channels.json x etf_universe.json
+        if isinstance(channels, list) and etf_fee_map:
+            for ch_obj in channels:
+                if not isinstance(ch_obj, dict):
+                    continue
+                cid = str(ch_obj.get("id", "")).strip()
+                prods = ch_obj.get("products")
+                if not isinstance(prods, list):
+                    continue
+                for pi, prod in enumerate(prods):
+                    if not isinstance(prod, dict):
+                        continue
+                    pcode = str(prod.get("code", ""))
+                    pfee = str(prod.get("fee", ""))
+                    matched: dict[str, float] = {}
+                    for tok in re.findall(r"[A-Za-z0-9.]+", pcode):
+                        nt = _normalize_etf_code(tok)
+                        if nt in etf_fee_map:
+                            matched[nt] = etf_fee_map[nt]
+                    if not matched:
+                        continue
+                    parsed_fees = _extract_annual_fee_pcts(pfee)
+                    if len(matched) == 1:
+                        only_code, ssot_fee = next(iter(matched.items()))
+                        if parsed_fees and abs(parsed_fees[0] - ssot_fee) > 0.005:
+                            errs.append(
+                                f"multi_asset_channels.json: channel {cid}.products[{pi}]({pcode}) "
+                                f"fee {pfee!r} ({parsed_fees[0]:.2f}%) != etf_universe {only_code} ({ssot_fee:.2f}%)."
+                            )
+                    else:
+                        lo_fee = min(matched.values())
+                        hi_fee = max(matched.values())
+                        if hi_fee - lo_fee > 0.05:
+                            if len(parsed_fees) < 2 or min(parsed_fees) > lo_fee + 0.005 or max(parsed_fees) < hi_fee - 0.005:
+                                errs.append(
+                                    f"multi_asset_channels.json: channel {cid}.products[{pi}]({pcode}) "
+                                    f"lists ETFs with distinct fees {matched} ({lo_fee:.2f}%..{hi_fee:.2f}%), "
+                                    f"but fee {pfee!r} does not disclose both or a covering range."
+                                )
+                        elif parsed_fees and (parsed_fees[0] < lo_fee - 0.005 or parsed_fees[0] > hi_fee + 0.005):
+                            errs.append(
+                                f"multi_asset_channels.json: channel {cid}.products[{pi}]({pcode}) "
+                                f"fee {pfee!r} ({parsed_fees[0]:.2f}%) != etf_universe {matched}."
+                            )
 
     # 4. Validate deep_dossiers (expected_pool stocks, all 7 dims non-empty, zero markup, anti-template, Gold Tier-0)
     dossiers = dd.get("dossiers")
@@ -976,7 +1275,16 @@ def apply_equity_patch(
 
     merged_ma, ma_stats = _merge_multi_asset(orig_ma, patch_root, edition_id, as_of_date)
     merged_eu, eu_stats = _merge_etf_universe(orig_eu, patch_root, edition_id, as_of_date)
-    merged_dd, dd_stats = _merge_deep_dossiers(orig_dd, patch_root, edition_id, as_of_date)
+    merged_dd, dd_stats = _merge_deep_dossiers(
+        orig_dd,
+        patch_root,
+        edition_id,
+        as_of_date,
+        market_state=market_state,
+    )
+
+    untouched_channel_siblings = ma_stats.pop("untouched_channel_siblings", {})
+    unpatched_ah_twins = dd_stats.pop("unpatched_ah_twins", {})
 
     # Mirror live Gold Tier-0 status if patch did not explicitly override
     if gold_snap is not None and "gold_tier0_locked" not in patch_root:
@@ -1014,6 +1322,10 @@ def apply_equity_patch(
             "total_stocks": merged_dd["total_stocks"],
             "core_deep_count": merged_dd["core_deep_count"],
         },
+        "review_hints": {
+            "untouched_channel_siblings": untouched_channel_siblings,
+            "unpatched_ah_twins": unpatched_ah_twins,
+        },
         "patch_deleted": False,
     }
 
@@ -1036,21 +1348,122 @@ def _preserves_order(prior: list[bytes], candidate: list[bytes]) -> bool:
     return all(line in remaining for line in prior)
 
 
-def _insert_before_anchor(text: str, anchor: str, block: str, *, file_label: str) -> str:
-    idx = text.find(anchor)
-    if idx < 0:
-        raise ValueError(f"{file_label}: anchor {anchor!r} not found; cannot safely prepend.")
+def _insert_before_anchor(
+    text: str,
+    anchor: str,
+    block: str,
+    *,
+    file_label: str,
+    allow_rollover_fallback: bool = False,
+) -> str:
     clean_block = block.strip()
     if not clean_block:
         raise ValueError(f"{file_label}: insertion block must be non-empty.")
     lines = clean_block.splitlines()
     ends_with_hr = bool(lines and lines[-1].strip() == "---")
     sep = "\n\n" if ends_with_hr else "\n\n---\n\n"
-    prefix = text[:idx]
-    suffix = text[idx:]
-    if prefix and not prefix.endswith("\n\n"):
-        prefix = prefix.rstrip("\n") + "\n\n"
-    return f"{prefix}{clean_block}{sep}{suffix}"
+
+    idx = text.find(anchor)
+    if idx >= 0:
+        prefix = text[:idx]
+        suffix = text[idx:]
+        if prefix and not prefix.endswith("\n\n"):
+            prefix = prefix.rstrip("\n") + "\n\n"
+        return f"{prefix}{clean_block}{sep}{suffix}"
+
+    if not allow_rollover_fallback:
+        raise ValueError(f"{file_label}: anchor {anchor!r} not found; cannot safely prepend.")
+
+    # Monthly-rollover fallback: insert after first '---' separator, or after the first '# ...' heading block.
+    m_hr = re.search(r"(?:^|\n)[ \t]*---[ \t]*(?:\n|$)", text)
+    if m_hr is not None:
+        prefix = text[: m_hr.end()].rstrip("\n") + "\n\n"
+        suffix = text[m_hr.end() :]
+        if suffix.strip():
+            return f"{prefix}{clean_block}{sep}{suffix.lstrip(chr(10))}"
+        return f"{prefix}{clean_block}\n"
+
+    m_h1 = re.search(r"(?:^|\n)#+ [^\n]*(?:\n|$)", text)
+    if m_h1 is not None:
+        pos = m_h1.end()
+        tail = text[pos:]
+        # Keep any immediately contiguous intro blockquote / blank lines attached to the H1 header.
+        offset = 0
+        for raw_ln in tail.splitlines(keepends=True):
+            stripped = raw_ln.strip()
+            if stripped == "" or stripped.startswith(">"):
+                offset += len(raw_ln)
+            else:
+                break
+        split_at = pos + offset
+        prefix = text[:split_at].rstrip("\n") + "\n\n---\n\n"
+        suffix = text[split_at:]
+        if suffix.strip():
+            return f"{prefix}{clean_block}{sep}{suffix.lstrip(chr(10))}"
+        return f"{prefix}{clean_block}\n"
+
+    raise ValueError(
+        f"{file_label}: anchor {anchor!r} not found and no '---' or heading block available for monthly-rollover fallback."
+    )
+
+
+def _validate_gold_edition_review(
+    review_obj: object,
+    edition_id: str,
+    gold_snap: dict[str, Any] | None,
+) -> None:
+    if not isinstance(review_obj, dict):
+        raise ValueError("audit_review_block_md GOLD_EDITION_REVIEW must be a JSON object.")
+    if review_obj.get("edition_id") != edition_id:
+        raise ValueError(
+            f"audit_review_block_md GOLD_EDITION_REVIEW.edition_id ({review_obj.get('edition_id')!r}) != {edition_id!r}."
+        )
+    as_of_short = review_obj.get("as_of_short")
+    if not isinstance(as_of_short, str) or not AS_OF_SHORT_RE.fullmatch(as_of_short):
+        raise ValueError(
+            f"GOLD_EDITION_REVIEW.as_of_short must match YYYY-MM-DD HH:MM, got {as_of_short!r}."
+        )
+    try:
+        datetime.strptime(as_of_short, "%Y-%m-%d %H:%M")
+    except ValueError as exc:
+        raise ValueError(f"GOLD_EDITION_REVIEW.as_of_short invalid timestamp {as_of_short!r}: {exc}") from exc
+    if isinstance(gold_snap, dict) and gold_snap.get("edition_id") == edition_id:
+        snap_as_of = gold_snap.get("as_of_short")
+        if snap_as_of != as_of_short:
+            raise ValueError(
+                f"GOLD_EDITION_REVIEW.as_of_short ({as_of_short!r}) != gold/data_snapshot.json as_of_short ({snap_as_of!r})."
+            )
+
+    note = review_obj.get("note")
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError("GOLD_EDITION_REVIEW.note must be a non-empty string.")
+
+    sources = review_obj.get("sources")
+    if not isinstance(sources, dict):
+        raise ValueError("GOLD_EDITION_REVIEW.sources must be an object containing all 4 entry gates.")
+    for gate_id in ENTRY_GATE_IDS:
+        links = sources.get(gate_id)
+        if not isinstance(links, list) or not links or not all(_is_strict_https_url(link) for link in links):
+            raise ValueError(
+                f"GOLD_EDITION_REVIEW.sources[{gate_id!r}] must be a non-empty list of strict https:// URLs."
+            )
+
+    forecast = review_obj.get("forecast_review")
+    if not isinstance(forecast, dict):
+        raise ValueError("GOLD_EDITION_REVIEW.forecast_review must be a JSON object.")
+    fc_status = forecast.get("status")
+    if fc_status not in ALLOWED_FORECAST_REVIEW_STATUSES:
+        raise ValueError(
+            f"GOLD_EDITION_REVIEW.forecast_review.status must be one of {sorted(ALLOWED_FORECAST_REVIEW_STATUSES)}, got {fc_status!r}."
+        )
+    fc_note = forecast.get("note")
+    if not isinstance(fc_note, str) or not fc_note.strip():
+        raise ValueError("GOLD_EDITION_REVIEW.forecast_review.note must be a non-empty string.")
+    fc_sources = forecast.get("sources")
+    if not isinstance(fc_sources, list) or not all(_is_strict_https_url(link) for link in fc_sources):
+        raise ValueError("GOLD_EDITION_REVIEW.forecast_review.sources must be a list of strict https:// URLs.")
+    if fc_status == "settled" and not fc_sources:
+        raise ValueError("GOLD_EDITION_REVIEW.forecast_review.sources must be non-empty when status == 'settled'.")
 
 
 def prepend_gold_ledgers(
@@ -1062,6 +1475,7 @@ def prepend_gold_ledgers(
     patch_path = _safe_repo_path(repo_root, "gold", "daily", "_ledger_patch.json")
     changelog_path = _safe_repo_path(repo_root, "gold", "daily", "CHANGELOG.md")
     audit_path = _safe_repo_path(repo_root, "gold", "daily", "AUDIT_LOG.md")
+    gold_snap_path = _safe_repo_path(repo_root, "gold", "data_snapshot.json")
 
     patch = _read_json_obj(patch_path, "gold/daily/_ledger_patch.json")
     unknown = set(patch.keys()) - ALLOWED_LEDGER_PATCH_KEYS
@@ -1088,6 +1502,19 @@ def prepend_gold_ledgers(
         if LOCAL_PATH_RE.search(sval):
             raise ValueError(f"_ledger_patch.json.{label} leaks a local filesystem path.")
 
+    # Pre-write check on public changelog_entry_md: zero internal leaks & zero deprecated binary links
+    visible_cl = _strip_html_comments(changelog_entry)
+    cl_leaks = BANNED_INTERNAL_RE.findall(visible_cl)
+    if cl_leaks:
+        raise ValueError(
+            f"_ledger_patch.json.changelog_entry_md leaks banned internal term(s): {sorted(set(cl_leaks))}"
+        )
+    cl_bin_links = DEPRECATED_BINARY_LINK_RE.findall(visible_cl)
+    if cl_bin_links:
+        raise ValueError(
+            f"_ledger_patch.json.changelog_entry_md contains deprecated local binary/release link(s): {sorted(set(cl_bin_links))[:5]}"
+        )
+
     # Ensure CHANGELOG entry carries the canonical edition marker matching edition_id
     cl_markers = GOLD_CHANGELOG_MARKER_RE.findall(changelog_entry)
     if cl_markers:
@@ -1099,18 +1526,21 @@ def prepend_gold_ledgers(
     else:
         normalized_changelog_entry = f"<!-- GOLD_EDITION_CHANGELOG {edition_id} -->\n\n{changelog_entry.strip()}"
 
-    # Validate GOLD_EDITION_REVIEW JSON inside audit_review_block_md if present
+    # Validate GOLD_EDITION_REVIEW JSON inside audit_review_block_md (mirroring gold/lint_readability.py)
     review_matches = GOLD_REVIEW_BLOCK_RE.findall(audit_review_block)
-    if not review_matches:
-        raise ValueError("audit_review_block_md must contain a <!-- GOLD_EDITION_REVIEW {...} --> JSON block.")
+    if len(review_matches) != 1:
+        raise ValueError(
+            f"audit_review_block_md must contain exactly one <!-- GOLD_EDITION_REVIEW {{...}} --> JSON block (found {len(review_matches)})."
+        )
     try:
         review_obj = json.loads(review_matches[0])
     except json.JSONDecodeError as exc:
         raise ValueError(f"audit_review_block_md GOLD_EDITION_REVIEW JSON syntax error: {exc}") from exc
-    if not isinstance(review_obj, dict) or review_obj.get("edition_id") != edition_id:
-        raise ValueError(
-            f"audit_review_block_md GOLD_EDITION_REVIEW.edition_id ({review_obj.get('edition_id') if isinstance(review_obj, dict) else None!r}) != {edition_id!r}."
-        )
+
+    gold_snap: dict[str, Any] | None = None
+    if gold_snap_path.is_file():
+        gold_snap = _read_json_obj(gold_snap_path, "gold/data_snapshot.json")
+    _validate_gold_edition_review(review_obj, edition_id, gold_snap)
 
     if not changelog_path.is_file():
         raise ValueError("Missing gold/daily/CHANGELOG.md.")
@@ -1139,21 +1569,26 @@ def prepend_gold_ledgers(
         "<!-- GOLD_EDITION_CHANGELOG",
         normalized_changelog_entry,
         file_label="gold/daily/CHANGELOG.md",
+        allow_rollover_fallback=True,
     )
     new_audit = _insert_before_anchor(
         orig_audit,
         "<!-- GOLD_EDITION_REVIEW",
         audit_review_block,
         file_label="gold/daily/AUDIT_LOG.md",
+        allow_rollover_fallback=True,
     )
     source_index_inserted = False
     if audit_source_index is not None:
-        new_audit = _insert_before_anchor(
-            new_audit,
-            "### 📌 最新 8 大类",
-            audit_source_index,
-            file_label="gold/daily/AUDIT_LOG.md",
-        )
+        if "### 📌 最新 8 大类" in new_audit:
+            new_audit = _insert_before_anchor(
+                new_audit,
+                "### 📌 最新 8 大类",
+                audit_source_index,
+                file_label="gold/daily/AUDIT_LOG.md",
+            )
+        else:
+            new_audit = f"{new_audit.rstrip()}\n\n---\n\n{audit_source_index.strip()}\n"
         source_index_inserted = True
 
     new_changelog_bytes = new_changelog.encode("utf-8")

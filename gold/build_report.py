@@ -171,11 +171,12 @@ def svg_chart_real_vs_nominal(fig_num: int = 1) -> str:
         box_y = round(y_spot + 14.0, 1)
         stem_y1, stem_y2 = round(y_spot + 5.0, 1), round(y_spot + 14.0, 1)
 
+    chart_title = esc(f"图 {fig_num}：扣掉 55 年通货膨胀后，{time_word}金价恰好回到 1980 年历史大顶附近")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：扣掉 55 年通货膨胀后，{time_word}金价恰好回到 1980 年历史大顶附近</div>
+      <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">1971–{yr}.{mmdd.replace("/",".")} 历史标价（橙虚线）vs 折合今日购买力的真实金价（深蓝线 · 美元/盎司 · 非等距关键年份）</div>
-      <svg viewBox="0 0 640 288" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 640 288" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="288" fill="#ffffff" rx="6"/>
         {grid_lines}
         <line x1="56" y1="{y_1980}" x2="622" y2="{y_1980}" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="6,4"/>
@@ -185,7 +186,7 @@ def svg_chart_real_vs_nominal(fig_num: int = 1) -> str:
         <polyline fill="none" stroke="#d97706" stroke-width="2.0" stroke-dasharray="4,3" points="{nom_poly}"/>
         {dots}
         <text x="142" y="{round(y_coord(anchor_1980_r)-9,1)}" text-anchor="middle" font-size="10.8" fill="#1e3a8a" font-weight="700" {HALO}>${anchor_1980_r:,}</text>
-        <text x="216" y="{round(y_coord(512)+16,1)}" text-anchor="middle" font-size="10.2" fill="#64748b" font-weight="600" {HALO}>$512</text>
+        <text x="216" y="{round(y_coord(512)-9,1)}" text-anchor="middle" font-size="10.2" fill="#64748b" font-weight="600" {HALO}>$512</text>
         <text x="290" y="{round(y_coord(2856)-9,1)}" text-anchor="middle" font-size="10.6" fill="#1e3a8a" font-weight="600" {HALO}>$2,856</text>
         <text x="362" y="{round(y_coord(1493)-9,1)}" text-anchor="middle" font-size="10.2" fill="#64748b" font-weight="600" {HALO}>$1,493</text>
         <text x="506" y="{round(y_coord(5807)-9,1)}" text-anchor="end" font-size="11" fill="#1e3a8a" font-weight="800" {HALO}>2026年1月真实顶 $5,807</text>
@@ -291,11 +292,12 @@ def svg_chart_2026_bear_and_vacuum(fig_num: int = 2) -> str:
         candles += f'<rect x="{x-9}" y="{top}" width="18" height="{box_h}" fill="{color}" opacity="0.92" rx="1.5"/>'
         candles += f'<text x="{x}" y="286" text-anchor="middle" font-size="10.4" fill="#334155" font-weight="600">{svg_esc(m)}</text>'
 
+    chart_title = esc(f"图 {fig_num}：2026 年冲顶 $5,596 后已回调 {abs(dd_pct):.0f}%，上方套牢盘厚、强支撑在 $3,121–$3,467")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：2026 年冲顶 $5,596 后已回调 {abs(dd_pct):.0f}%，上方套牢盘厚、强支撑在 $3,121–$3,467</div>
+      <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">2026 年 {mo_span_lbl}国际现货金月度走势（截至 {mmdd} ${spot:,}）｜ [中文惯例：红涨 / 绿跌]</div>
-      <svg viewBox="0 0 640 302" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 640 302" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="302" fill="#ffffff" rx="6"/>
         <rect x="54" y="{y_trap_top}" width="570" height="{round(y_trap_bot - y_trap_top,1)}" fill="#fee2e2" opacity="0.45"/>
         <rect x="54" y="{y_vac_top}" width="570" height="{round(y_vac_bot - y_vac_top,1)}" fill="#fef3c7" opacity="0.48"/>
@@ -371,11 +373,12 @@ def svg_chart_china_tax_channels(fig_num: int = 5) -> str:
             bars += f'<rect x="{round(x_base+1,1)}" y="{y+2}" width="{max(1.5, round(extra_w-1,1))}" height="17" fill="{color}" rx="2" opacity="0.94"/>'
         bars += f'<text x="{round(x0+w+6,1)}" y="{y+15}" font-size="10.2" fill="{color}" font-weight="700">{price:,}元  {svg_esc(note)}</text>'
 
+    chart_title = esc(f"图 {fig_num}：同样买 1 克真金，品牌金店比“银行金条 + 水贝加工”每克多花 {save_g} 元")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：同样买 1 克真金，品牌金店比“银行金条 + 水贝加工”每克多花 {save_g} 元</div>
+      <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">{cn_date}中国七大买金渠道克价实测（元/克 · 深蓝段为相同 {base} 元真金原料，彩色段为渠道税费与溢价）</div>
-      <svg viewBox="0 0 640 292" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 640 292" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="292" fill="#ffffff" rx="6"/>
         {bars}
         {scale_svg}
@@ -429,11 +432,12 @@ def svg_chart_48h_crash_and_weekend(fig_num: int = 3) -> str:
             nodes += f'<text x="{x}" y="{257 + li*14}" text-anchor="middle" font-size="10.2" fill="#475569">{svg_esc(dl)}</text>'
 
     y_ceil = y_w(float(case_fair_usd))
+    chart_title = esc(f"图 {fig_num}：经典复盘——从 11/21 跌到 $3,503 到 11/24 凌晨冲上 ${case_peak:,} 又回落")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：经典复盘——从 11/21 跌到 $3,503 到 11/24 凌晨冲上 ${case_peak:,} 又回落</div>
+      <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">2026 年 11 月 18–24 日流动性冲击与高利息天花板历史教学案例（国际现货金 · 美元/盎司 · 北京时间）</div>
-      <svg viewBox="0 0 640 286" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 640 286" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="286" fill="#ffffff" rx="6"/>
         <rect x="336" y="34" width="130" height="188" fill="#fef2f2" opacity="0.65" rx="4"/>
         <text x="401" y="48" text-anchor="middle" font-size="10.4" fill="#991b1b" font-weight="700">周五恐慌抽血谷底</text>
@@ -524,11 +528,12 @@ def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
             f'<text x="{x+10}" y="{y+38}" font-size="10.4" fill="#374151">{svg_esc(detail)}</text>'
         )
 
+    chart_title = esc(f"图 {fig_num}：12 月中旬前仍是加息逆风期，明年 1 月中旬大基金强制进货才是顺风窗")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：12 月中旬前仍是加息逆风期，明年 1 月中旬大基金强制进货才是顺风窗</div>
+      <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">跨年资金节奏时间表（上）与买金四步红绿灯体检仪（下 · 当前满足 {passed}/{total} 项）</div>
-      <svg viewBox="0 0 640 342" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 640 342" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="342" fill="#ffffff" rx="6"/>
         <text x="14" y="19" font-size="11.4" fill="#1e3a8a" font-weight="800">一、跨年资金节奏（先避开 12 月逆风，再看 1 月大资金强制买盘）</text>
         {cal_svg}
@@ -641,11 +646,12 @@ def svg_chart_institutional_targets(fig_num: int = 7) -> str:
     y_spot_lbl = 13 if stagger_spot else 24
     y_med_lbl = 27 if stagger_spot else 24
     ref_y1 = 35 if stagger_spot else 34
+    chart_title = esc(f"图 {fig_num}：{len(pt_vals)} 家年末点位记录的 2027 年金价中位为 ${ye_med:,.0f}")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：{len(pt_vals)} 家年末点位记录的 2027 年金价中位为 ${ye_med:,.0f}</div>
+      <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">2027 年末点位（青绿）、全年均价（琥珀）、其他期限及旧稿（灰色）· 美元/盎司</div>
-      <svg viewBox="0 0 640 {vb_h}" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 640 {vb_h}" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="{vb_h}" fill="#ffffff" rx="6"/>
         {grid}
         <line x1="{x_spot}" y1="{ref_y1}" x2="{x_spot}" y2="{bot_y}" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="5,3"/>
@@ -764,11 +770,12 @@ def svg_chart_fx_and_cross_ratios(fig_num: int = 6) -> str:
                 )
             bot_bars += f'<text x="{round(x_zero+8,1)}" y="{y+14}" font-size="10.6" fill="{col}" font-weight="700">{dev:.0f}% 偏便宜</text>'
 
+    chart_title = esc(f"图 {fig_num}：人民币若升值会吃掉约 5–8 个百分点涨幅；且黄金相对原油、白银并不算全面便宜")
     return f'''
     <div class="chart-box">
-      <div class="chart-title">图 {fig_num}：人民币若升值会吃掉约 5–8 个百分点涨幅；且黄金相对原油、白银并不算全面便宜</div>
+      <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">上：国际金涨到 ${ye_med:,.0f} 时的国内克价（0 元起诚实比例，对比{time_word} {base_rmb:.0f} 元）｜ 下：相对 50 年历史比价位置</div>
-      <svg viewBox="0 0 640 406" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 640 406" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="406" fill="#ffffff" rx="6"/>
         <text x="14" y="20" font-size="11.2" fill="#1e3a8a" font-weight="800">一、汇率账本：如果国际金涨到 ${ye_med:,.0f}（美元涨 +{usd_up:.1f}%），你手里的人民币金能赚多少？</text>
         {top_bars}

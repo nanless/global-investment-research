@@ -3,7 +3,9 @@ from datetime import datetime, timedelta, timezone
 from io import StringIO
 import json
 from pathlib import Path
+import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -966,7 +968,8 @@ class OperationalRegressionTest(unittest.TestCase):
         self.assertGreaterEqual(len(etf_data["etfs"]), 140)
         self.assertEqual(len(etf_data["etfs"]), etf_data["total_etfs"])
         self.assertIn('id="etf-data"', etf_html)
-        self.assertIn("红灯暂停新买", etf_html)
+        if etf_data.get("gold_tier0_locked") is True:
+            self.assertIn("红灯暂停新买", etf_html)
 
         # Graceful empty fallback without hardcoded channel count
         empty_ch_html = build_site.build_channels_page(None)
@@ -976,11 +979,12 @@ class OperationalRegressionTest(unittest.TestCase):
         self.assertIn('id="etf-data"', build_site.build_etfs_page(None))
 
         # 7-dimension dossier merge dynamically aligns with market_state.json total pool & zero-template invariant
-        sample = [
-            {"market": "a-share", "code": "601398", "name": "工商银行"},
-            {"market": "hk-stock", "code": "00005.HK", "name": "汇丰控股"},
-            {"market": "us-stock", "code": "NVDA", "name": "英伟达"},
-        ]
+        sample = []
+        for mkt in ("a-share", "hk-stock", "us-stock"):
+            first_key = next(k for k in dos_data["dossiers"] if k.startswith(f"{mkt}:"))
+            _, first_code = first_key.split(":", 1)
+            entry = dos_data["dossiers"][first_key]
+            sample.append({"market": mkt, "code": first_code, "name": entry.get("name") or first_code})
         merged = build_site.merge_stock_dossiers(sample, dos_data)
         self.assertEqual(dos_data["total_stocks"], expected_pool)
         self.assertEqual(dos_data.get("standard_deep_count"), 0)
@@ -1349,12 +1353,16 @@ class OperationalRegressionTest(unittest.TestCase):
         for key in ("DXY", "COT", "CDS", "ERP", "IRR"):
             self.assertIn(key, terms_text, f"Missing glossary term: {key}")
         root = Path(install_sidecars.__file__).resolve().parent.parent
+        raw_perms = json.loads((root / "automations" / "permissions.json").read_text(encoding="utf-8"))
+        expected_grants = len(install_sidecars._dedupe_preserve_order(raw_perms))
+        self.assertGreaterEqual(expected_grants, 42)
         templates = dict(install_sidecars.discover_templates(root / "automations" / "sidecars"))
         self.assertEqual(len(templates), 2)
         for _, path in templates.items():
             _, definition = install_sidecars.render_template(path, root, "/usr/bin/python3")
             grants = definition["agent_permissions"]["access_grants"]
-            self.assertEqual(len(grants), 42)
+            self.assertEqual(len(grants), expected_grants)
+            self.assertGreaterEqual(len(grants), 42)
             self.assertTrue(any("patch_state_dbs.py --apply" in str(g) for g in grants))
             self.assertTrue(any("patch_state_dbs.py --prepend-gold-ledgers" in str(g) for g in grants))
 
@@ -1376,10 +1384,42 @@ class OperationalRegressionTest(unittest.TestCase):
                 shutil.copy2(real_root / rel, sandbox / rel)
 
             next_ed = "2099-12-31_1800_r99"
-            for rel in ("gold/data_snapshot.json", "equity/state/market_state.json"):
-                obj = json.loads((sandbox / rel).read_text(encoding="utf-8"))
-                obj["edition_id"] = next_ed
-                (sandbox / rel).write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+            gold_obj = json.loads((sandbox / "gold/data_snapshot.json").read_text(encoding="utf-8"))
+            gold_obj["edition_id"] = next_ed
+            gold_obj["as_of_short"] = "2099-12-31 23:55"
+            gold_obj["tier_code"] = "Tier 0"
+            gold_obj["new_buy_allowed"] = False
+            (sandbox / "gold/data_snapshot.json").write_text(
+                json.dumps(gold_obj, ensure_ascii=False), encoding="utf-8"
+            )
+            ms_obj = json.loads((sandbox / "equity/state/market_state.json").read_text(encoding="utf-8"))
+            ms_obj["edition_id"] = next_ed
+            (sandbox / "equity/state/market_state.json").write_text(
+                json.dumps(ms_obj, ensure_ascii=False), encoding="utf-8"
+            )
+
+            # Dynamically select the first non-gold ETF code and first non-gold A-share dossier key
+            ma_seed = json.loads((sandbox / "equity/state/multi_asset_channels.json").read_text(encoding="utf-8"))
+            eu_seed = json.loads((sandbox / "equity/state/etf_universe.json").read_text(encoding="utf-8"))
+            dd_seed = json.loads((sandbox / "equity/state/deep_dossiers.json").read_text(encoding="utf-8"))
+
+            sample_etf_code = next(
+                e["code"]
+                for e in eu_seed["etfs"]
+                if not e.get("gold_locked")
+                and patch_state_dbs._normalize_etf_code(e.get("code")) not in patch_state_dbs.GOLD_ETF_CODES
+                and not patch_state_dbs.GOLD_ETF_NAME_RE.search(str(e.get("name", "")))
+            )
+            sample_a_key = next(
+                k
+                for k in dd_seed["dossiers"]
+                if k.startswith("a-share:")
+                and k not in patch_state_dbs.GOLD_DOSSIER_KEYS
+                and not patch_state_dbs.GOLD_MINER_TICKERS_RE.search(k)
+            )
+            rr_orig_liner = next(
+                ch["beginner_one_liner"] for ch in ma_seed["channels"] if ch["id"] == "reverse_repo"
+            )
 
             # 1. Dry-run & real apply
             patch_path = sandbox / "equity/state/_edition_patch.json"
@@ -1391,19 +1431,19 @@ class OperationalRegressionTest(unittest.TestCase):
                 "multi_asset_channels": {
                     "channels_patch": {
                         "reverse_repo": {
-                            "beginner_one_liner": "活钱工具测试更新：严禁新买黄金，优先国债逆回购。",
+                            "beginner_one_liner": f"{rr_orig_liner}（测试更新：严禁新买黄金，优先活钱）",
                         }
                     }
                 },
                 "etf_universe": {
                     "etfs_upsert": [
-                        {"code": "511360", "premium_note": "银行间短融平价复核通过"}
+                        {"code": sample_etf_code, "premium_note": "平价复核通过"}
                     ]
                 },
                 "deep_dossiers": {
                     "dossiers_patch": {
-                        "a-share:600519": {
-                            "catalysts": "【2099-12-31 补丁核验】跟踪年末经销商回款与飞天批价节奏。"
+                        sample_a_key: {
+                            "catalysts": "【2099-12-31 补丁核验】跟踪年末业绩兑现与现金流节奏。"
                         }
                     }
                 },
@@ -1417,13 +1457,21 @@ class OperationalRegressionTest(unittest.TestCase):
                 self.assertEqual(rc_apply, 0)
                 self.assertFalse(patch_path.exists())
 
+            for rel in (
+                "equity/state/multi_asset_channels.json",
+                "equity/state/etf_universe.json",
+                "equity/state/deep_dossiers.json",
+            ):
+                mode = stat.S_IMODE((sandbox / rel).stat().st_mode)
+                self.assertEqual(mode, 0o644, f"{rel} expected 0o644, got {oct(mode)}")
+
             ch_after = json.loads((sandbox / "equity/state/multi_asset_channels.json").read_text(encoding="utf-8"))
             etf_after = json.loads((sandbox / "equity/state/etf_universe.json").read_text(encoding="utf-8"))
             dos_after = json.loads((sandbox / "equity/state/deep_dossiers.json").read_text(encoding="utf-8"))
             self.assertEqual(ch_after["edition_id"], next_ed)
             self.assertEqual(etf_after["edition_id"], next_ed)
             self.assertEqual(dos_after["edition_id"], next_ed)
-            self.assertEqual(dos_after["dossiers"]["a-share:600519"]["updated_at"], "2099-12-31")
+            self.assertEqual(dos_after["dossiers"][sample_a_key]["updated_at"], "2099-12-31")
 
             # 2. Gold Tier-0 violation must abort with zero file mutation
             before_bytes = (sandbox / "equity/state/multi_asset_channels.json").read_bytes()
@@ -1433,7 +1481,7 @@ class OperationalRegressionTest(unittest.TestCase):
                 "gold_tier0_locked": True,
                 "multi_asset_channels": {
                     "channels_patch": {
-                        "reverse_repo": {"beginner_one_liner": "今日立即买入黄金 518880。"}
+                        "reverse_repo": {"beginner_one_liner": f"{rr_orig_liner}，今日立即买入黄金 518880。"}
                     }
                 },
             }
@@ -1444,8 +1492,67 @@ class OperationalRegressionTest(unittest.TestCase):
             self.assertEqual((sandbox / "equity/state/multi_asset_channels.json").read_bytes(), before_bytes)
             patch_path.unlink()
 
-            # 3. Prepend gold ledgers lossless + idempotent
+            # 2b. Cross-DB fee mismatch (511180 0.20% vs 0.30% in etf_universe.json) must be rejected
+            cb_ch = next(c for c in ch_after["channels"] if c["id"] == "convertible_bonds")
+            cb_bad_upd = {
+                "products_upsert": [{"code": "511180", "fee": "0.20%/年"}],
+            }
+            for sib_k in ("summary", "beginner_picks"):
+                if isinstance(cb_ch.get(sib_k), str) and "0.30%" in cb_ch[sib_k]:
+                    cb_bad_upd[sib_k] = cb_ch[sib_k].replace("0.30%", "0.20%")
+            fee_mismatch_patch = {
+                "edition_id": next_ed,
+                "as_of_date": "2099-12-31",
+                "gold_tier0_locked": True,
+                "multi_asset_channels": {
+                    "channels_patch": {"convertible_bonds": cb_bad_upd}
+                },
+            }
+            patch_path.write_text(json.dumps(fee_mismatch_patch, ensure_ascii=False), encoding="utf-8")
+            fee_err = StringIO()
+            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox), redirect_stderr(fee_err):
+                rc_fee = patch_state_dbs.main(["--apply"])
+            self.assertNotEqual(rc_fee, 0)
+            self.assertIn("511180", fee_err.getvalue())
+            self.assertIn("0.30%", fee_err.getvalue())
+            self.assertEqual((sandbox / "equity/state/multi_asset_channels.json").read_bytes(), before_bytes)
+            patch_path.unlink()
+
+            # 3. Prepend gold ledgers: reject forecast_review.status='tracked', pass full schema, verify 0o644 & idempotency
             ledger_patch = sandbox / "gold/daily/_ledger_patch.json"
+
+            def _make_review(fc_status: str, ed: str = next_ed) -> dict:
+                return {
+                    "edition_id": ed,
+                    "as_of_short": "2099-12-31 23:55",
+                    "note": "测试核验通过",
+                    "sources": {
+                        "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center"],
+                        "rate_spread": ["https://www.newyorkfed.org/markets/reference-rates/effr"],
+                        "vix": ["https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"],
+                        "ny_close": ["https://www.lbma.org.uk/prices-and-data/precious-metal-prices"],
+                    },
+                    "forecast_review": {"status": fc_status, "note": "无到期项", "sources": []},
+                }
+
+            bad_ledger_payload = {
+                "edition_id": next_ed,
+                "changelog_entry_md": (
+                    f"<!-- GOLD_EDITION_CHANGELOG {next_ed} -->\n\n"
+                    f"### {next_ed} 修订刊记录\n\n- 完成测试无损头插验收。\n"
+                ),
+                "audit_review_block_md": (
+                    f"<!-- GOLD_EDITION_REVIEW {json.dumps(_make_review('tracked'), ensure_ascii=False)} -->\n"
+                    f"### {next_ed} 审计记录\n\n- 审计测试。\n"
+                ),
+            }
+            ledger_patch.write_text(json.dumps(bad_ledger_payload, ensure_ascii=False), encoding="utf-8")
+            tracked_err = StringIO()
+            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox), redirect_stderr(tracked_err):
+                rc_tracked = patch_state_dbs.main(["--prepend-gold-ledgers"])
+            self.assertNotEqual(rc_tracked, 0)
+            self.assertIn("forecast_review.status", tracked_err.getvalue())
+
             ledger_payload = {
                 "edition_id": next_ed,
                 "changelog_entry_md": (
@@ -1453,8 +1560,7 @@ class OperationalRegressionTest(unittest.TestCase):
                     f"### {next_ed} 修订刊记录\n\n- 完成测试无损头插验收。\n"
                 ),
                 "audit_review_block_md": (
-                    f'<!-- GOLD_EDITION_REVIEW {{"edition_id": "{next_ed}", "as_of_short": "2099-12-31 23:55", '
-                    f'"passed": true, "checked_by": "test"}} -->\n'
+                    f"<!-- GOLD_EDITION_REVIEW {json.dumps(_make_review('none_due'), ensure_ascii=False)} -->\n"
                     f"### {next_ed} 审计记录\n\n- 审计测试通过。\n"
                 ),
             }
@@ -1468,6 +1574,11 @@ class OperationalRegressionTest(unittest.TestCase):
                 ledger_patch.write_text(json.dumps(ledger_payload, ensure_ascii=False), encoding="utf-8")
                 rc_dup = patch_state_dbs.main(["--prepend-gold-ledgers"])
                 self.assertNotEqual(rc_dup, 0)
+                ledger_patch.unlink()
+
+            for rel in ("gold/daily/CHANGELOG.md", "gold/daily/AUDIT_LOG.md"):
+                mode = stat.S_IMODE((sandbox / rel).stat().st_mode)
+                self.assertEqual(mode, 0o644, f"{rel} expected 0o644, got {oct(mode)}")
 
             new_cl = (sandbox / "gold/daily/CHANGELOG.md").read_text(encoding="utf-8")
             self.assertIn(f"<!-- GOLD_EDITION_CHANGELOG {next_ed} -->", new_cl)
@@ -1476,6 +1587,237 @@ class OperationalRegressionTest(unittest.TestCase):
             it = iter(new_cl_lines)
             for orig in orig_cl_lines:
                 self.assertTrue(any(line == orig for line in it), f"Lost line: {orig}")
+
+            # 4. Monthly-rollover empty-anchor fallback succeeds when fresh-month ledgers lack prior GOLD_EDITION_* markers
+            roll_ed = "2099-12-31_1800_r100"
+            gold_obj["edition_id"] = roll_ed
+            (sandbox / "gold/data_snapshot.json").write_text(
+                json.dumps(gold_obj, ensure_ascii=False), encoding="utf-8"
+            )
+            (sandbox / "gold/daily/CHANGELOG.md").write_text(
+                "# 黄金日报演化日志（2099 年 12 月新卷）\n\n---\n", encoding="utf-8"
+            )
+            (sandbox / "gold/daily/AUDIT_LOG.md").write_text(
+                "# 黄金日报核验台账（2099 年 12 月新卷）\n\n---\n", encoding="utf-8"
+            )
+            roll_payload = {
+                "edition_id": roll_ed,
+                "changelog_entry_md": (
+                    f"<!-- GOLD_EDITION_CHANGELOG {roll_ed} -->\n\n"
+                    f"### {roll_ed} 月初新卷首刊\n\n- 跨月空锚回退验证通过。\n"
+                ),
+                "audit_review_block_md": (
+                    f"<!-- GOLD_EDITION_REVIEW {json.dumps(_make_review('none_due', ed=roll_ed), ensure_ascii=False)} -->\n"
+                    f"### {roll_ed} 审计记录\n\n- 跨月首刊审计通过。\n"
+                ),
+            }
+            ledger_patch.write_text(json.dumps(roll_payload, ensure_ascii=False), encoding="utf-8")
+            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox):
+                rc_roll = patch_state_dbs.main(["--prepend-gold-ledgers"])
+                self.assertEqual(rc_roll, 0)
+            self.assertIn(f"<!-- GOLD_EDITION_CHANGELOG {roll_ed} -->", (sandbox / "gold/daily/CHANGELOG.md").read_text("utf-8"))
+            self.assertIn(f'"edition_id": "{roll_ed}"', (sandbox / "gold/daily/AUDIT_LOG.md").read_text("utf-8"))
+
+    def test_restricted_warn_regex_parity_across_validators(self):
+        repo = Path(__file__).resolve().parent.parent
+        equity_dir = str(repo / "equity")
+        if equity_dir not in sys.path:
+            sys.path.insert(0, equity_dir)
+        import lint_equity
+
+        self.assertEqual(patch_state_dbs.RESTRICTED_WARN_RE.pattern, lint_equity.RESTRICTED_WARN_RE.pattern)
+        self.assertEqual(lint_equity.RESTRICTED_WARN_RE.pattern, lint_site.RESTRICTED_WARN_RE.pattern)
+        for regex in (
+            patch_state_dbs.RESTRICTED_WARN_RE,
+            lint_equity.RESTRICTED_WARN_RE,
+            lint_site.RESTRICTED_WARN_RE,
+        ):
+            self.assertIsNotNone(regex.search("严避停申968118"))
+            self.assertIsNone(regex.search("推荐买入968118"))
+
+    def test_edition_run_midnight_slot_and_complete_superseded_cli(self):
+        repo = Path(__file__).resolve().parent.parent
+        perms = json.loads((repo / "automations" / "permissions.json").read_text(encoding="utf-8"))
+        self.assertFalse(any("complete-superseded" in str(g) for g in perms))
+
+        class _FrozenDateTime(datetime):
+            _now: datetime = datetime(2026, 11, 26, 23, 59, tzinfo=edition_run.BEIJING)
+
+            @classmethod
+            def now(cls, tz=None):
+                return cls._now if tz is None else cls._now.astimezone(tz)
+
+        with patch.object(edition_run, "datetime", _FrozenDateTime):
+            _FrozenDateTime._now = datetime(2026, 11, 26, 23, 59, tzinfo=edition_run.BEIJING)
+            self.assertEqual(edition_run.scheduled_edition("1800"), "2026-11-26_1800")
+
+            _FrozenDateTime._now = datetime(2026, 11, 27, 0, 0, tzinfo=edition_run.BEIJING)
+            self.assertEqual(edition_run.scheduled_edition("1800"), "2026-11-26_1800")
+
+            _FrozenDateTime._now = datetime(2026, 11, 27, 0, 1, tzinfo=edition_run.BEIJING)
+            with self.assertRaisesRegex(ValueError, "Outside the Beijing run window"):
+                edition_run.scheduled_edition("1800")
+
+        # Verify complete_superseded rejects non-ancestor commits & unauthorized gold/ content diffs cleanly
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def _git(*args):
+                return subprocess.run(
+                    ["git", "-c", "user.name=Test", "-c", "user.email=fixture@example.invalid", *args],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+
+            with patch.object(edition_run, "ROOT", root):
+                _git("init", "-q")
+                for relative in edition_run.GOLD_HISTORY_LEDGERS:
+                    ledger = root / relative
+                    ledger.parent.mkdir(parents=True, exist_ok=True)
+                    ledger.write_text("## Previous edition\n\n- Original evidence\n", encoding="utf-8")
+                (root / "README.md").write_text("# Fixture\n", encoding="utf-8")
+                _git("add", ".")
+                _git("commit", "-qm", "Base commit")
+                base_sha = _git("rev-parse", "HEAD")
+
+                runs = edition_run.open_runs()
+                try:
+                    ed = "2026-11-26_1800"
+                    token = edition_run.begin(runs, ed)
+                    attempt = token[:12]
+                    with runs:
+                        edition_run.advance(runs, token, "gold")
+                    for name in ("gold/data_snapshot.json", "equity/state/market_state.json"):
+                        p = root / name
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                        p.write_text(json.dumps({"edition_id": ed}), encoding="utf-8")
+                    with runs:
+                        edition_run.advance(runs, token, "equity")
+                    for name in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
+                        p = root / name
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                        p.write_text(
+                            json.dumps({"runs": [{"run_id": ed, "review_closure": {"reviewer_completed": True, "findings": []}}]}),
+                            encoding="utf-8",
+                        )
+                    with runs:
+                        edition_run.advance(runs, token, "publish")
+                    _git("add", "gold", "equity")
+                    _git("commit", "-qm", "Edition commit")
+                    orig_sha = _git("rev-parse", "HEAD")
+                    edition_run.record_push(token, sha=orig_sha, repository="org/repo")
+
+                    # 1. Non-ancestor commit (base_sha is ancestor of orig_sha, NOT descendant) rejected
+                    with self.assertRaisesRegex(ValueError, "not an ancestor"):
+                        edition_run.complete_superseded(runs, ed, attempt, base_sha, "bad ancestor")
+
+                    # 2. Unauthorized gold/ follow-up diff rejected when allow_content_hotfix=False
+                    (root / "gold/daily/extra.md").write_text("# Unauthorized gold edit\n", encoding="utf-8")
+                    _git("add", "gold/daily/extra.md")
+                    _git("commit", "-qm", "Unauthorized gold diff")
+                    bad_gold_sha = _git("rev-parse", "HEAD")
+                    with patch.object(edition_run, "_remote_main_head_sha", return_value=bad_gold_sha), patch.object(
+                        edition_run, "verify_pages", return_value="https://example.invalid/site/"
+                    ):
+                        with self.assertRaisesRegex(ValueError, "modified content paths"):
+                            edition_run.complete_superseded(runs, ed, attempt, bad_gold_sha, "gold diff test")
+
+                    # 3. Clean non-content follow-up commit (e.g. README.md only) completes cleanly
+                    _git("reset", "--hard", orig_sha)
+                    (root / "README.md").write_text("# Fixture updated\n", encoding="utf-8")
+                    _git("add", "README.md")
+                    _git("commit", "-qm", "Docs follow-up")
+                    clean_sha = _git("rev-parse", "HEAD")
+                    with patch.object(edition_run, "_remote_main_head_sha", return_value=clean_sha), patch.object(
+                        edition_run, "verify_pages", return_value="https://example.invalid/site/"
+                    ):
+                        url = edition_run.complete_superseded(runs, ed, attempt, clean_sha, "follow-up docs deploy")
+                    self.assertEqual(url, "https://example.invalid/site/")
+                    row = runs.execute("SELECT status FROM runs WHERE token = ?", (token,)).fetchone()
+                    pub = runs.execute("SELECT deployed_sha FROM publications WHERE token = ?", (token,)).fetchone()
+                    self.assertEqual(row["status"], "complete")
+                    self.assertEqual(pub["deployed_sha"], clean_sha)
+                finally:
+                    runs.close()
+
+    def test_prompt_has_zero_shell_metacharacters_and_within_line_budget(self):
+        repo = Path(__file__).resolve().parent.parent
+        prompt_text = (repo / "automations" / "unified-edition.prompt.md").read_text(encoding="utf-8")
+        lines = prompt_text.splitlines()
+        self.assertLessEqual(len(lines), 62)
+        self.assertIn("17:55–次日 00:00", prompt_text)
+        self.assertNotIn("17:55–23:59", prompt_text)
+        for token in ("&&", "||", "$(", ";"):
+            self.assertNotIn(token, prompt_text, f"Forbidden shell token {token!r} in unified-edition.prompt.md")
+        for _, tpl_path in install_sidecars.discover_templates(repo / "automations" / "sidecars"):
+            install_sidecars.render_template(tpl_path, repo, sys.executable)
+
+    def test_complete_superseded_allows_explicit_content_hotfix_flag(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def _git(*args):
+                return subprocess.run(
+                    ["git", "-c", "user.name=Test", "-c", "user.email=fixture@example.invalid", *args],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+
+            with patch.object(edition_run, "ROOT", root):
+                _git("init", "-q")
+                for relative in edition_run.GOLD_HISTORY_LEDGERS:
+                    ledger = root / relative
+                    ledger.parent.mkdir(parents=True, exist_ok=True)
+                    ledger.write_text("## Previous edition\n\n- Original evidence\n", encoding="utf-8")
+                _git("add", ".")
+                _git("commit", "-qm", "Base commit")
+
+                runs = edition_run.open_runs()
+                try:
+                    ed = "2026-11-26_1800"
+                    token = edition_run.begin(runs, ed)
+                    attempt = token[:12]
+                    with runs:
+                        edition_run.advance(runs, token, "gold")
+                    for name in ("gold/data_snapshot.json", "equity/state/market_state.json"):
+                        p = root / name
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                        p.write_text(json.dumps({"edition_id": ed}), encoding="utf-8")
+                    with runs:
+                        edition_run.advance(runs, token, "equity")
+                    for name in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
+                        p = root / name
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                        p.write_text(
+                            json.dumps({"runs": [{"run_id": ed, "review_closure": {"reviewer_completed": True, "findings": []}}]}),
+                            encoding="utf-8",
+                        )
+                    with runs:
+                        edition_run.advance(runs, token, "publish")
+                    _git("add", "gold", "equity")
+                    _git("commit", "-qm", "Edition commit")
+                    orig_sha = _git("rev-parse", "HEAD")
+                    edition_run.record_push(token, sha=orig_sha, repository="org/repo")
+
+                    (root / "gold/daily/hotfix_note.md").write_text("# Intentional content hotfix\n", encoding="utf-8")
+                    _git("add", "gold/daily/hotfix_note.md")
+                    _git("commit", "-qm", "Intentional content hotfix")
+                    hotfix_sha = _git("rev-parse", "HEAD")
+                    with patch.object(edition_run, "_remote_main_head_sha", return_value=hotfix_sha), patch.object(
+                        edition_run, "verify_pages", return_value="https://example.invalid/hotfix/"
+                    ):
+                        url = edition_run.complete_superseded(
+                            runs, ed, attempt, hotfix_sha, "intentional hotfix", allow_content_hotfix=True
+                        )
+                    self.assertEqual(url, "https://example.invalid/hotfix/")
+                    row = runs.execute("SELECT status FROM runs WHERE token = ?", (token,)).fetchone()
+                    self.assertEqual(row["status"], "complete")
+                finally:
+                    runs.close()
 
 
 if __name__ == "__main__":

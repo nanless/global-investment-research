@@ -691,6 +691,8 @@
 
   let activeTermPop = null;
   let activeTermTrigger = null;
+  let activeTermOpenY = 0;
+  let activeTermOpenAt = 0;
 
   function closeTermPopover() {
     if (activeTermPop && activeTermPop.parentNode) {
@@ -750,6 +752,8 @@
     trigger.setAttribute("aria-expanded", "true");
     activeTermPop = pop;
     activeTermTrigger = trigger;
+    activeTermOpenY = window.scrollY || window.pageYOffset || 0;
+    activeTermOpenAt = Date.now();
   }
 
   document.addEventListener("click", function (e) {
@@ -765,6 +769,14 @@
     }
   });
   window.addEventListener("resize", closeTermPopover, { passive: true });
+  window.addEventListener("scroll", function () {
+    if (!activeTermPop) return;
+    if (Date.now() - activeTermOpenAt < 250) return;
+    const curY = window.scrollY || window.pageYOffset || 0;
+    if (Math.abs(curY - activeTermOpenY) > 40) {
+      closeTermPopover();
+    }
+  }, { passive: true });
 
   /* Global Keyboard Dispatcher (Cmd/Ctrl+K, Chart Shortcuts, Modal Escape/Tab) */
   document.addEventListener("keydown", function (e) {
@@ -839,6 +851,7 @@
         document.getElementById("scr-search") ||
         document.getElementById("etf-search") ||
         document.getElementById("arc-search") ||
+        document.getElementById("sc-search") ||
         document.getElementById("guide-term-search");
       if (searchBox) {
         e.preventDefault();
@@ -1515,7 +1528,8 @@
       if (dossierFootLink) dossierFootLink.setAttribute("href", st.report_url || "#");
       if (dossierFootDate) {
         const fallbackDate = dossierFootDate.getAttribute("data-default-date") || "最新班次";
-        dossierFootDate.textContent = "更新日期：" + (d.updated_at || fallbackDate);
+        const bmPrefix = st.benchmark_time ? "主表基线（旗舰基准）：" + st.benchmark_time + " ｜ " : "";
+        dossierFootDate.textContent = bmPrefix + "7 维档案刷新日：" + (d.updated_at || fallbackDate);
       }
       showDialog(dossierModal);
     }
@@ -1595,11 +1609,176 @@
       return valid;
     }
 
+    const scSearchInput = document.getElementById("sc-search");
+    const scClearBtn = document.getElementById("sc-clear");
+    const scStatusEl = document.getElementById("sc-filter-status");
+    let scSearchTimer = 0;
+
+    function resetPanelVisibility(body) {
+      if (!body) return;
+      body.querySelectorAll("[data-sc-hidden]").forEach(function (el) {
+        el.removeAttribute("data-sc-hidden");
+        el.style.display = "";
+      });
+    }
+
+    function setScHidden(el, hide) {
+      if (!el) return;
+      if (hide) {
+        el.setAttribute("data-sc-hidden", "1");
+        el.style.display = "none";
+      } else {
+        el.removeAttribute("data-sc-hidden");
+        el.style.display = "";
+      }
+    }
+
+    function applyScorecardFilter() {
+      const q = scSearchInput ? scSearchInput.value.trim() : "";
+      if (scClearBtn) {
+        scClearBtn.hidden = !q;
+        scClearBtn.style.display = q ? "" : "none";
+      }
+      document.querySelectorAll(".tab-panel .article-body").forEach(resetPanelVisibility);
+      const activePanel = document.querySelector(".tab-panel.active .article-body");
+      if (!q || !activePanel) {
+        if (scStatusEl) scStatusEl.textContent = "";
+        return;
+      }
+
+      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const matchText = function (txt) {
+        const low = String(txt || "").toLowerCase();
+        return tokens.every(function (tk) { return low.indexOf(tk) !== -1; });
+      };
+
+      const children = Array.from(activePanel.children);
+      const sections = [];
+      let curSec = { head: null, items: [] };
+      children.forEach(function (ch) {
+        if (ch.tagName === "H2") {
+          if (curSec.head || curSec.items.length > 0) sections.push(curSec);
+          curSec = { head: ch, items: [] };
+        } else {
+          curSec.items.push(ch);
+        }
+      });
+      if (curSec.head || curSec.items.length > 0) sections.push(curSec);
+
+      let matchedCount = 0;
+      sections.forEach(function (sec) {
+        if (sec.head && matchText(sec.head.textContent)) {
+          matchedCount += 1;
+          return;
+        }
+        let secHits = 0;
+        let pendingSubHeads = [];
+        const flushSubHeads = function (keep) {
+          pendingSubHeads.forEach(function (h) { setScHidden(h, !keep); });
+          pendingSubHeads = [];
+        };
+
+        sec.items.forEach(function (el) {
+          const tag = el.tagName;
+          if (tag === "H1") {
+            return;
+          }
+          if (tag === "HR") {
+            setScHidden(el, true);
+            return;
+          }
+          if (tag === "H3" || tag === "H4") {
+            flushSubHeads(false);
+            if (matchText(el.textContent)) {
+              secHits += 1;
+              matchedCount += 1;
+            } else {
+              pendingSubHeads.push(el);
+            }
+            return;
+          }
+          const table = tag === "TABLE" ? el : (el.classList.contains("table-wrap") ? el.querySelector("table") : null);
+          if (table) {
+            const rows = Array.from(table.querySelectorAll("tbody tr"));
+            let rowHits = 0;
+            rows.forEach(function (tr) {
+              const ok = matchText(tr.textContent);
+              setScHidden(tr, !ok);
+              if (ok) rowHits += 1;
+            });
+            setScHidden(el, rowHits === 0);
+            if (rowHits > 0) {
+              flushSubHeads(true);
+              secHits += rowHits;
+              matchedCount += rowHits;
+            }
+            return;
+          }
+          if (tag === "UL" || tag === "OL") {
+            const lis = Array.from(el.children).filter(function (c) { return c.tagName === "LI"; });
+            let liHits = 0;
+            lis.forEach(function (li) {
+              const ok = matchText(li.textContent);
+              setScHidden(li, !ok);
+              if (ok) liHits += 1;
+            });
+            setScHidden(el, liHits === 0);
+            if (liHits > 0) {
+              flushSubHeads(true);
+              secHits += liHits;
+              matchedCount += liHits;
+            }
+            return;
+          }
+          const ok = matchText(el.textContent);
+          setScHidden(el, !ok);
+          if (ok) {
+            flushSubHeads(true);
+            secHits += 1;
+            matchedCount += 1;
+          }
+        });
+        flushSubHeads(false);
+        if (sec.head) {
+          setScHidden(sec.head, secHits === 0);
+        }
+      });
+
+      if (scStatusEl) {
+        scStatusEl.textContent =
+          matchedCount > 0
+            ? "当前标签匹配 " + matchedCount + " 条记录"
+            : "当前标签未找到匹配项（可切换上方其他标签试试）";
+      }
+    }
+
     tabBtns.forEach(function (btn) {
       btn.addEventListener("click", function () {
         activateTab(btn.getAttribute("data-tab-target"), true);
+        applyScorecardFilter();
       });
     });
+    if (scSearchInput) {
+      scSearchInput.addEventListener("input", function () {
+        if (scClearBtn) {
+          const hasQ = !!scSearchInput.value;
+          scClearBtn.hidden = !hasQ;
+          scClearBtn.style.display = hasQ ? "" : "none";
+        }
+        window.clearTimeout(scSearchTimer);
+        scSearchTimer = window.setTimeout(applyScorecardFilter, 60);
+      });
+    }
+    if (scClearBtn) {
+      scClearBtn.addEventListener("click", function () {
+        window.clearTimeout(scSearchTimer);
+        if (scSearchInput) {
+          scSearchInput.value = "";
+          scSearchInput.focus();
+        }
+        applyScorecardFilter();
+      });
+    }
     const initHash = (window.location.hash || "").replace(/^#/, "");
     const matchedInit = activateTab(initHash || tabBtns[0].getAttribute("data-tab-target"), false);
     if (initHash && matchedInit) {
@@ -1609,6 +1788,7 @@
     window.addEventListener("hashchange", function () {
       const h = (window.location.hash || "").replace(/^#/, "");
       if (h && activateTab(h, false)) {
+        applyScorecardFilter();
         keepTabBarVisible();
       }
     });
@@ -1619,16 +1799,20 @@
      ------------------------------------------------------------------------ */
   const arcItems = Array.from(document.querySelectorAll("[data-arc-item]"));
   if (arcItems.length > 0) {
-    const arcState = { market: "all", session: "all", editionType: "all", q: "" };
+    const arcState = { market: "all", session: "all", editionType: "all", q: "", showSuperseded: false };
     const arcMktBtns = Array.from(document.querySelectorAll("[data-arc-market]"));
     const arcSesBtns = Array.from(document.querySelectorAll("[data-arc-session]"));
     const arcTypeBtns = Array.from(document.querySelectorAll("[data-arc-type]"));
     const arcSearchInput = document.getElementById("arc-search");
     const arcClearBtn = document.getElementById("arc-clear-x");
+    const arcShowSupInput = document.getElementById("arc-show-superseded");
     const arcCountEl = document.getElementById("arc-count");
     const arcEmptyEl = document.getElementById("arc-empty");
     const arcResetBtn = document.getElementById("arc-reset");
     const arcEmptyResetBtn = document.getElementById("arc-empty-reset");
+    const arcActiveTotal = arcItems.filter(function (el) {
+      return el.getAttribute("data-superseded") !== "1";
+    }).length;
 
     function normalizeEditionType(val) {
       const s = String(val || "main").trim().toLowerCase();
@@ -1657,6 +1841,9 @@
       arcTypeBtns.forEach(function (x) {
         x.classList.toggle("active", (x.getAttribute("data-arc-type") || "all") === arcState.editionType);
       });
+      if (arcShowSupInput) {
+        arcShowSupInput.checked = !!arcState.showSuperseded;
+      }
     }
 
     function applyArchiveFilter() {
@@ -1673,7 +1860,9 @@
         const m = el.getAttribute("data-market") || "";
         const s = el.getAttribute("data-session") || "";
         const ed = normalizeEditionType(el.getAttribute("data-edition-type"));
+        const isSup = el.getAttribute("data-superseded") === "1";
         let ok =
+          (!isSup || arcState.showSuperseded) &&
           (arcState.market === "all" || m === arcState.market) &&
           (arcState.session === "all" || s === arcState.session) &&
           (arcState.editionType === "all" || ed === arcState.editionType);
@@ -1683,19 +1872,25 @@
           ok = tokens.every(function (tk) { return hay.indexOf(tk) !== -1; });
         }
 
+        el.hidden = !ok;
         el.style.display = ok ? "" : "none";
         if (ok) shown++;
       });
 
       document.querySelectorAll(".archive-day").forEach(function (day) {
-        const vis = Array.from(day.querySelectorAll("[data-arc-item]")).some(function (el) {
-          return el.style.display !== "none";
-        });
-        day.style.display = vis ? "" : "none";
+        const dayVis = Array.from(day.querySelectorAll("[data-arc-item]")).filter(function (el) {
+          return el.style.display !== "none" && !el.hidden;
+        }).length;
+        day.style.display = dayVis > 0 ? "" : "none";
+        const cntEl = day.querySelector(".arc-day-cnt");
+        if (cntEl) {
+          cntEl.textContent = "（共 " + dayVis + " 期）";
+        }
       });
 
+      const baseTotal = arcState.showSuperseded ? arcItems.length : arcActiveTotal;
       if (arcCountEl) {
-        arcCountEl.textContent = "共展示 " + shown + " / " + arcItems.length + " 期历史日报";
+        arcCountEl.textContent = "共展示 " + shown + " / " + baseTotal + " 期历史日报";
       }
       if (arcEmptyEl) {
         arcEmptyEl.hidden = shown > 0;
@@ -1708,9 +1903,18 @@
       arcState.session = "all";
       arcState.editionType = "all";
       arcState.q = "";
+      arcState.showSuperseded = false;
       if (arcSearchInput) arcSearchInput.value = "";
+      if (arcShowSupInput) arcShowSupInput.checked = false;
       syncArchiveUrlHash();
       applyArchiveFilter();
+    }
+
+    if (arcShowSupInput) {
+      arcShowSupInput.addEventListener("change", function () {
+        arcState.showSuperseded = !!arcShowSupInput.checked;
+        applyArchiveFilter();
+      });
     }
 
     arcMktBtns.forEach(function (b) {
@@ -1915,6 +2119,10 @@
      ------------------------------------------------------------------------ */
   const PREM_LABELS = { normal: "折溢价常规", watch: "买前核参考净值", high_risk: "高溢价/高危预警" };
 
+  function cleanEtfDisplayText(txt) {
+    return String(txt || "").replace(/[（(]红灯锁[）)]\s*$/, "").trim();
+  }
+
   function etfRoleClass(it) {
     if (it.gold_locked) return "role-lock";
     const r = String(it.action_role || "");
@@ -1938,7 +2146,7 @@
     function openEtfModal(code) {
       const it = etfByCode.get(String(code || ""));
       if (!it || !etfModal) return;
-      if (etfModalTitle) etfModalTitle.textContent = it.name + " (" + it.code + ")";
+      if (etfModalTitle) etfModalTitle.textContent = cleanEtfDisplayText(it.name) + " (" + it.code + ")";
       if (etfModalSub) {
         etfModalSub.textContent =
           "跟踪指数：" + it.tracking_index + " ｜ 规模：" + it.aum + " ｜ 年费率：" + it.fee_total_pct;
@@ -2180,9 +2388,11 @@
             "</div></td></tr>";
         } else {
           etfTbody.innerHTML = rows.map(function (it) {
+            const dispName = cleanEtfDisplayText(it.name);
+            const dispCat = cleanEtfDisplayText(it.category);
             return (
               "<tr>" +
-              '<td><div><strong>' + escHtml(it.name) + '</strong></div><div><span class="code-tag">' + escHtml(it.code) + '</span> <span class="etf-chan-tag">' + escHtml(it.category) + "</span></div></td>" +
+              '<td><div><strong>' + escHtml(dispName) + '</strong></div><div><span class="code-tag">' + escHtml(it.code) + '</span> <span class="etf-chan-tag">' + escHtml(dispCat) + "</span></div></td>" +
               '<td><div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + '</span></div><div><span class="etf-chan-tag">' + escHtml(it.channel) + "</span></div></td>" +
               "<td><div>" + escHtml(it.tracking_index) + '</div><div class="sec-sub">' + escHtml(it.yield_or_pe) + "</div></td>" +
               '<td class="col-num"><strong>' + escHtml(it.fee_total_pct) + "</strong></td>" +
@@ -2205,10 +2415,11 @@
             "</div>";
         } else {
           etfCardsEl.innerHTML = rows.map(function (it) {
+            const dispName = cleanEtfDisplayText(it.name);
             return (
               '<div class="etf-card">' +
               '<div class="etf-card-top">' +
-              '<div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(it.name) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
+              '<div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(dispName) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
               '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
               "</div>" +
               '<div class="etf-card-meta"><span><strong>通道：</strong>' + escHtml(it.channel) + "</span><span><strong>费率：</strong>" + escHtml(it.fee_total_pct) + "</span><span><strong>规模：</strong>" + escHtml(it.aum) + "</span></div>" +

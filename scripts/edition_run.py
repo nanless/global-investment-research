@@ -94,6 +94,17 @@ def _git_object_exists(spec: str) -> bool:
     return result.returncode == 0
 
 
+def _git_is_ancestor(ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=ROOT,
+        env=_clean_env(),
+        capture_output=True,
+        timeout=15,
+    )
+    return result.returncode == 0
+
+
 def git_directory() -> Path:
     return Path(git_value("rev-parse", "--path-format=absolute", "--git-common-dir"))
 
@@ -129,9 +140,13 @@ def open_runs() -> sqlite3.Connection:
         );
         CREATE TABLE IF NOT EXISTS publications (
             token TEXT PRIMARY KEY REFERENCES runs(token),
-            sha TEXT NOT NULL, repository TEXT NOT NULL, assets_json TEXT
+            sha TEXT NOT NULL, repository TEXT NOT NULL, assets_json TEXT,
+            deployed_sha TEXT
         );
     """)
+    pub_cols = {row["name"] for row in runs.execute("PRAGMA table_info(publications)").fetchall()}
+    if "deployed_sha" not in pub_cols:
+        runs.execute("ALTER TABLE publications ADD COLUMN deployed_sha TEXT")
     return runs
 
 
@@ -151,13 +166,22 @@ def scheduled_edition(slot: str) -> str:
     hhmm = now.strftime("%H%M")
     if slot == "0730":
         in_window = "0725" <= hhmm <= "1330"
+        edition_day = now.date()
     elif slot == "1800":
-        in_window = "1755" <= hhmm <= "2359"
+        if "1755" <= hhmm <= "2359":
+            in_window = True
+            edition_day = now.date()
+        elif hhmm == "0000":
+            in_window = True
+            edition_day = now.date() - timedelta(days=1)
+        else:
+            in_window = False
+            edition_day = now.date()
     else:
         raise ValueError(f"Unknown scheduled slot: {slot!r}")
     if not in_window:
         raise ValueError(f"Outside the Beijing run window for {slot}. Use a manual edition for recovery.")
-    return f"{now.date().isoformat()}_{slot}"
+    return f"{edition_day.isoformat()}_{slot}"
 
 
 def _reap_stale_unpushed_run(
@@ -726,6 +750,15 @@ def _remote_main_head_sha(repository: str) -> str | None:
     return None
 
 
+def _gh_is_ancestor(repository: str, ancestor: str, descendant: str) -> bool:
+    """Check ancestry via GitHub Compare API when local refs do not yet contain descendant."""
+    try:
+        cmp_data = _gh_json("api", f"repos/{repository}/compare/{ancestor}...{descendant}")
+        return isinstance(cmp_data, dict) and cmp_data.get("status") in {"ahead", "identical"}
+    except (subprocess.SubprocessError, ValueError, OSError, KeyError, TypeError, StopIteration):
+        return False
+
+
 def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
     """Require the actual main-branch deploy job for the recorded push."""
     deadline = time.monotonic() + wait
@@ -770,8 +803,8 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
             if current_main is not None and current_main != sha:
                 raise ValueError(
                     f"Pages deploy job did not succeed for {sha} ({failed_url}), and remote origin/main has "
-                    f"already moved ahead to {current_main}. Run `edition_run.py close-superseded` instead of "
-                    "rerunning the obsolete workflow."
+                    f"already moved ahead to {current_main}. Run edition_run.py complete-superseded "
+                    "(if deployed via a follow-up commit) or close-superseded (if abandoned)."
                 )
             raise ValueError(
                 f"Pages deploy job did not succeed for {sha}: {failed_url}. Rerun the workflow, then complete."
@@ -874,10 +907,101 @@ def close_superseded(runs: sqlite3.Connection, edition: str, attempt: str, reaso
         return edition
 
 
+def complete_superseded(
+    runs: sqlite3.Connection,
+    edition: str,
+    attempt: str,
+    deployed_sha: str,
+    reason: str,
+    *,
+    allow_content_hotfix: bool = False,
+) -> str:
+    """Maintainer-only: complete a publish-phase attempt deployed via a follow-up commit on main."""
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("A non-empty reason is required for complete-superseded.")
+    with _idle_publish_lock(), runs:
+        # 1. Identify active running attempt in publish phase with an existing publication receipt.
+        row = _identify_attempt(runs, edition, attempt)
+        if row["phase"] != "publish":
+            raise ValueError("Only an edition in its publish phase can be completed via complete-superseded.")
+        token = row["token"]
+        receipt = _publication(runs, token)
+        if receipt is None or not receipt["sha"] or not receipt["repository"]:
+            raise ValueError("No recorded publication receipt for this attempt; cannot complete-superseded.")
+        orig_sha = receipt["sha"]
+        repository = receipt["repository"]
+        if not SHA_RE.fullmatch(orig_sha) or not REPOSITORY_RE.fullmatch(repository):
+            raise ValueError("Recorded publication receipt contains an invalid commit or repository.")
+        attempt_row = runs.execute("SELECT base_sha FROM attempts WHERE token = ?", (token,)).fetchone()
+        if attempt_row is None:
+            raise ValueError("Recorded attempt metadata missing base_sha; cannot verify publication history.")
+        base_sha = attempt_row["base_sha"]
+
+        # 2. Validate deployed_sha is a 40-hex commit distinct from orig_sha and descending from orig_sha.
+        if not isinstance(deployed_sha, str) or not SHA_RE.fullmatch(deployed_sha):
+            raise ValueError(f"Invalid deployed_sha (must be 40-hex git commit): {deployed_sha!r}.")
+        if deployed_sha == orig_sha:
+            raise ValueError("deployed_sha equals the original pushed commit; use normal complete instead.")
+        if not _git_object_exists(f"{deployed_sha}^{{commit}}"):
+            raise ValueError(f"Commit {deployed_sha} does not exist in local git repository.")
+        if not _git_is_ancestor(orig_sha, deployed_sha):
+            raise ValueError(f"Original pushed commit {orig_sha} is not an ancestor of {deployed_sha}.")
+
+        # 3. Verify deployed_sha is reachable from remote origin/main (is HEAD or ancestor of it).
+        remote_main = _remote_main_head_sha(repository)
+        if remote_main is None:
+            raise ValueError(f"Cannot resolve remote origin/main HEAD for {repository}.")
+        if deployed_sha != remote_main:
+            if not _git_is_ancestor(deployed_sha, remote_main) and not _gh_is_ancestor(
+                repository, deployed_sha, remote_main
+            ):
+                raise ValueError(
+                    f"Commit {deployed_sha} is not reachable from remote origin/main ({remote_main})."
+                )
+
+        # 4. Verify deployed_sha still passes core edition publication checks.
+        if base_sha == deployed_sha:
+            raise ValueError("deployed_sha existed before the run started.")
+        _check_edition_document(edition, "gold/data_snapshot.json", deployed_sha)
+        _check_edition_document(edition, "equity/state/market_state.json", deployed_sha)
+        _check_extended_equity_documents(edition, sha=deployed_sha, base_sha=base_sha)
+        check_edition_reviews(edition, sha=deployed_sha)
+        _check_gold_ledger_history(base_sha, deployed_sha)
+
+        # 5. Refuse content mutations under gold/ or equity/ unless --allow-content-hotfix is explicitly set.
+        if not allow_content_hotfix:
+            changed_paths = [
+                p.strip()
+                for p in git_value("diff", "--name-only", orig_sha, deployed_sha).splitlines()
+                if p.strip()
+            ]
+            content_changes = [p for p in changed_paths if p.startswith(("gold/", "equity/"))]
+            if content_changes:
+                raise ValueError(
+                    f"Follow-up commits between {orig_sha[:12]} and {deployed_sha[:12]} modified content paths "
+                    f"({', '.join(content_changes[:5])}); pass --allow-content-hotfix only for an intentional content hotfix."
+                )
+
+        # 6. Verify GitHub Pages deployment succeeded for deployed_sha directly (wait=0).
+        url = verify_pages(deployed_sha, repository, wait=0)
+
+        runs.execute("BEGIN IMMEDIATE")
+        _identify_attempt(runs, edition, attempt)
+        _publishing_run(runs, token)
+        outcome = f"{deployed_sha} {url} (superseded {orig_sha[:12]}: {reason.strip()[:240]})"
+        runs.execute("UPDATE publications SET deployed_sha = ? WHERE token = ?", (deployed_sha, token))
+        runs.execute(
+            "UPDATE runs SET status = 'complete', updated = ?, outcome = ? WHERE token = ?",
+            (utc_now(), outcome, token),
+        )
+        return url
+
+
 def status(runs: sqlite3.Connection) -> list[dict]:
     rows = runs.execute("""
         SELECT runs.token, edition, phase, status, started, updated, outcome, substr(runs.token, 1, 12) AS attempt,
-               coalesce(attempts.source, 'legacy') AS source, publications.sha AS pushed_commit
+               coalesce(attempts.source, 'legacy') AS source, publications.sha AS pushed_commit,
+               publications.deployed_sha AS deployed_commit
           FROM runs LEFT JOIN attempts USING(token) LEFT JOIN publications USING(token)
          ORDER BY runs.rowid DESC LIMIT 10
     """)
@@ -919,6 +1043,19 @@ def main() -> int:
     superseded_cmd.add_argument("edition", type=edition_id)
     superseded_cmd.add_argument("attempt")
     superseded_cmd.add_argument("reason")
+    complete_sup_cmd = commands.add_parser(
+        "complete-superseded",
+        help="maintainer-only: complete a publish-phase attempt deployed via a follow-up commit on main",
+    )
+    complete_sup_cmd.add_argument("edition", type=edition_id)
+    complete_sup_cmd.add_argument("attempt")
+    complete_sup_cmd.add_argument("deployed_sha")
+    complete_sup_cmd.add_argument("reason")
+    complete_sup_cmd.add_argument(
+        "--allow-content-hotfix",
+        action="store_true",
+        help="allow follow-up commits modifying gold/ or equity/ content paths",
+    )
     args = parser.parse_args()
 
     try:
@@ -946,6 +1083,17 @@ def main() -> int:
                 print(resume(runs, args.edition, args.attempt))
             elif args.command == "close-superseded":
                 print(close_superseded(runs, args.edition, args.attempt, args.reason))
+            elif args.command == "complete-superseded":
+                print(
+                    complete_superseded(
+                        runs,
+                        args.edition,
+                        args.attempt,
+                        args.deployed_sha,
+                        args.reason,
+                        allow_content_hotfix=args.allow_content_hotfix,
+                    )
+                )
             else:
                 print(json.dumps(status(runs), ensure_ascii=False, indent=2))
     except DeploymentPending as exc:

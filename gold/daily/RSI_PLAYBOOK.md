@@ -24,7 +24,7 @@
   - **抗阻塞校验参数（`edition_validation.py`）**：单向班次截点宽限 **`[-5 分钟, +6 小时]`**；节日 `pending` 复查间隔 **4 小时**；普通交易日与半日市均支持 VIX `provisional_close`（普通日须在 **3 个自然日**内用官方 CSV 核销）；`market_calendar.json` 已延展至 `2027-06-30`；
   - **北美冬/夏令时统一由 `market_calendar.json` 驱动**：当前冬令时锁定 `EST = BJT − 13h`、`CST = BJT − 14h`（COMEX `13:30 EST` = `02:30 BJT`，感恩节 CME 停盘周五 `03:30–07:00 BJT`）；严守截点时间窗红线，严禁混入截点后数据（00:30 欧股/LSE、03:30 布油官结、07:30 东京 CPI）。
 - **同时间戳溢价与透明缺口 `data_caveats`**：算国内溢价必用同分钟 `国际金 × 汇率 ÷ 31.1035` 对比上海金、`Au(T+D)` 或沪金夜盘；未披露/暂定项写入纯读者中文的 `data_caveats`（零内部文件名）。
-- **双账本补丁与防卡壳红线**：**无人值守禁 `edit_file`：中小 Markdown/快照用 `write_file` 全量写盘，历史双账本（`CHANGELOG.md`/`AUDIT_LOG.md`）统一写 `_ledger_patch.json` 经 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（防 300s 超时）；写 `GOLD_EDITION_REVIEW` 时强制核对 `forecast_review.status` 仅取 `"settled"` 或 `"none_due"`**。
+- **双账本补丁与防卡壳红线**：**无人值守禁 `edit_file`：中小 Markdown/快照用 `write_file` 全量写盘，历史双账本（`CHANGELOG.md`/`AUDIT_LOG.md`）统一写 `_ledger_patch.json` 经 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（防 300s 超时）；写 `GOLD_EDITION_REVIEW` 时强制核对 `forecast_review.status` 仅取 `"settled"`、`"none_due"` 或 `"pending_evidence"`**。
 
 ### 2. 小白友好三层写作、跨轨统一口径与一次过 `--strict` 避坑
 - **组件校验与 6 门禁秒检铁律**：写 `DAILY_*` 必核 `DAILY_FORMAT_SPEC.md` 必填键（`DAILY_META.edition_id/as_of_short`、`DAILY_VERDICT.tier_code/new_buy_allowed/tier1_passed`、`DAILY_CHART_SWITCH.checks[].id`）；**正文引言中提及的真信号/假象条数必与 `DAILY_SIGNAL_NOISE` 数组长度 1:1 核对**；写完 MD 直接跑 `lint_readability.py --strict`（0 错 0 警）。
@@ -45,7 +45,7 @@
 ## 三、上期预测验真与迭代焦点（下班次优先复盘）
 
 - **最近班次（`2026-11-26_1800_r2` 晚报终校修订 · 截点 `23:55 CST` · 独立盲审 `26/30`，已全量热修后封版）**：
-  - **上期回验（`11/26_1800 → 11/26_1800_r2`）**：`2 hit + 1 partial + 0 miss`——一次性核销 6/6 核心交易所原表（`VIX_History.csv` 11/25 原行 `published`、11/26 LBMA 金 `$3,572.65/$3,578.90` & 银 `$41.54`、SGE 加权 `767.39`、SHFE `au2702` 结算 `756.32` & 席位 `+2,549`、三大黄金 ETF 净赎回 `-3.42 亿`、HKEX 老铺 `06181` 官收 `266.80`），并封账 20:30 欧央行鹰派纪要与 22:25 布油冲 96 美元、实现零跨日泄露与首次 `lint_retries=0`。独立盲审揪出 L39 引言“2 条假象”与组件 3 条假象计数口误（H5）及图 1 `$3,589` 标签避让下移，已发前全修通过全绿门禁。
+  - **上期回验（`11/26_1800 → 11/26_1800_r2`）**：`2 hit + 1 partial + 0 miss`——一次性核销 6/6 核心交易所原表（`VIX_History.csv` 11/25 原行 `published`、11/26 LBMA 金 `$3,562.40/$3,578.90` & 银 `$41.54`、SGE 加权 `767.39`、SHFE `au2702` 结算 `756.32` & 席位 `+2,549`、三大黄金 ETF 净赎回 `3.42 亿`、HKEX 老铺 `06181` 官收 `266.80`），并封账 20:30 欧央行鹰派纪要与 22:25 布油冲 96 美元、实现零跨日泄露与首次 `lint_retries=0`。独立盲审揪出 L39 引言“2 条假象”与组件 3 条假象计数口误（H5）及图 1 `$3,589` 标签避让下移，已发前全修通过全绿门禁。
   - **本轮落地优化**：新增引言信号/假象计数 1:1 核对、图 1 相邻高点横向分流与 `_ledger_patch.json` `forecast_review.status` 合法枚举预检。
   - **下班次（`2026-11-27_0730` 一体化早报 · 黑五半日市前瞻）3 条必验真追踪项（与 `rsi_metrics.json` 1:1 同步）**：
     1. **【黑五早报复市行情与 07:30 东京 CPI 核销】**封账 `11/27 00:30` 欧股与伦交所 UCITS 官收、`03:30` 布油官结、`03:30–07:00` CME 停盘复市行情、`07:30` 东京核心 CPI、`11/25` FRED OAS 与山东黄金说明会纪要；

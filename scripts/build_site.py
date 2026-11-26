@@ -399,6 +399,7 @@ _HARD_INFRA_RE = re.compile(
     r"chart_input\.py|install_sidecars\.py|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing|"
     r"5-plus-1-research-playbook(?:\.md)?|directives-and-snapshot-schema(?:\.md)?|"
+    r"矢量\s*SVG\s*图表完成逐像素|"
     r"\btextutil\b)",
     flags=re.IGNORECASE,
 )
@@ -408,7 +409,28 @@ _SOFT_FILENAME_REPS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"`?market_calendar\.json`?", re.IGNORECASE), "跨市场交易日历"),
     (re.compile(r"新架构与\s*RSI\s*闭环首次实战跑"), "日终清算与产业链深挖"),
     (re.compile(r"\s*\+\s*原生\s*OOXML\s*Word\s*引擎"), ""),
+    (re.compile(r"独立红队质检与法证审计账本"), "独立核查与辟谣账本"),
+    (re.compile(r"红队质检与法证审计账本"), "独立核查与辟谣账本"),
+    (re.compile(r"红队法证档案"), "独立核查档案"),
+    (re.compile(r"独立红队交叉核验"), "多源独立交叉核验"),
+    (re.compile(r"红队交叉核验"), "多源独立交叉核验"),
+    (re.compile(r"红队审计记录"), "独立核查记录"),
+    (re.compile(r"独立红队"), "独立核查"),
+    (re.compile(r"红队"), "独立核查"),
+    (re.compile(r"Tier\s*0\s*/\s*1\s*/\s*2\s*/\s*3", re.IGNORECASE), "四档红绿灯（红灯停/黄灯/绿灯/重仓）"),
+    (re.compile(r"\bTier\s*0\b", re.IGNORECASE), "红灯停"),
+    (re.compile(r"\bTier\s*1\b", re.IGNORECASE), "黄灯试探"),
+    (re.compile(r"\bTier\s*2\b", re.IGNORECASE), "绿灯建仓"),
+    (re.compile(r"\bTier\s*3\b", re.IGNORECASE), "顺风重仓"),
+    (re.compile(r"\d+\s*门禁\s*Linter", re.IGNORECASE), "多源数据自动核查"),
+    (re.compile(r"\bLinter\b", re.IGNORECASE), "多源数据自动核查"),
+    (re.compile(r"[（(](?:AUDIT_LOG|CHANGELOG|INDEX)[）)]"), ""),
+    (re.compile(r"`?AUDIT_LOG\s*#(\d+)`?"), r"核查记录 #\1"),
+    (re.compile(r"<code>\s*daily/[A-Za-z0-9_*.\u4e00-\u9fff-]+\.md\s*</code>", re.IGNORECASE), "站内研报档案"),
+    (re.compile(r"(?<!\]\()(?<!href=\")(?<!href=')`?daily/[A-Za-z0-9_*.\u4e00-\u9fff-]+\.md`?"), "站内研报档案"),
+    (re.compile(r"daily/\s*目录下"), "站内"),
 )
+_SCORECARD_TOP_NAV_RE = re.compile(r"^>\s*(?:返回|快速导航|关联公开档案)\s*[：:]")
 
 
 def normalize_relative_md_links(md_text: str) -> str:
@@ -460,6 +482,18 @@ def _clean_soft_filenames(line: str) -> str:
     for pat, repl in _SOFT_FILENAME_REPS:
         out = pat.sub(repl, out)
     return out
+
+
+def _strip_scorecard_top_nav(md_text: str) -> str:
+    """Remove obsolete Markdown cross-file nav blockquotes (tabs already unify all 5 ledgers)."""
+    out: list[str] = []
+    for idx, line in enumerate(md_text.splitlines()):
+        if idx < 12 and _SCORECARD_TOP_NAV_RE.match(line.strip()):
+            if out and out[-1].endswith("  "):
+                out[-1] = out[-1].rstrip()
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 def sanitize_public_ledger_md(md_text: str, *, is_audit_log: bool = False) -> str:
@@ -2043,6 +2077,103 @@ def _term_tip(term_key: str, label: str) -> str:
     )
 
 
+# Automated first-occurrence glossary injector covering all 24 GLOSSARY_DICT keys.
+_GLOSSARY_SKIP_TAGS: frozenset[str] = frozenset(
+    {"svg", "a", "button", "h1", "h2", "h3", "h4", "code", "pre", "script", "style", "summary", "title", "option", "textarea"}
+)
+_GLOSSARY_RAW_BLOCKS_RE = re.compile(
+    r"(<(?:svg|script|style)\b[^>]*>.*?</(?:svg|script|style)>)",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+_GLOSSARY_TOKEN_RE = re.compile(r"(<!--.*?-->|<[^>]+>)", flags=re.DOTALL)
+_GLOSSARY_TAG_NAME_RE = re.compile(r"^<\s*(/)?\s*([A-Za-z][A-Za-z0-9:-]*)\b")
+_GLOSSARY_EXISTING_KEY_RE = re.compile(r'data-term="([a-z0-9_]+)"')
+_GLOSSARY_PHRASE_SPECS: tuple[tuple[str, str], ...] = (
+    ("four_buckets", r"四笔钱规划|四笔钱"),
+    ("traffic_light", r"买金四步红绿灯|四步买金红绿灯|红绿灯信号|红绿灯"),
+    ("dfii10", r"10\s*年(?:期)?美债真实利率|(?<![A-Za-z0-9])DFII10(?![A-Za-z0-9])"),
+    ("erp", r"股权风险溢价|\bERP\b"),
+    ("hibor", r"香港银行同业拆息|\bHIBOR\b"),
+    ("hkma_bal", r"香港金管局总结余|金管局总结余|银行体系总结余"),
+    ("vix", r"美股恐慌指数|\bVIX\b"),
+    ("us10y", r"10\s*年(?:期)?美债收益率|\bUS10Y\b"),
+    ("ah_premium", r"A/H\s*溢价|AH\s*溢价|A/H\s*倒挂|AH\s*倒挂"),
+    ("etf_vs_feeder", r"场外联接基金|场外联接"),
+    ("class_a_c", r"A\s*类\s*(?:vs|与|和|/)\s*C\s*类|A/C\s*类|销售服务费|惩罚性赎回费"),
+    ("premium_discount", r"参考净值（IOPV）|参考净值|\bIOPV\b|场内折溢价|场内溢价"),
+    ("duration", r"债券久期|超长久期|久期"),
+    ("nav_break", r"真净值化|阶段性破净|破净"),
+    ("t0_t1", r"(?<![A-Za-z0-9])T\+0\s*/\s*T\+1(?![A-Za-z0-9])|(?<![A-Za-z0-9])T\+0(?![A-Za-z0-9])|(?<![A-Za-z0-9])T\+1(?![A-Za-z0-9])"),
+    ("deposit_insurance", r"50\s*万元?存款保险|存款保险条例|存款保险|存保上限|存保红线|存保线"),
+    ("dividend_tax", r"港股通红利税|红利税"),
+    ("mrf_hedged", r"香港北向互认基金|香港互认基金|\bMRF\b"),
+    ("lof_delist", r"商品\s*LOF|退市回归净值|LOF\s*退市"),
+    ("cb_call", r"可转债强赎|强赎条款|「Z」标识|Z\s*标识|强赎"),
+    ("reits_irr", r"中债真实\s*IRR|中债隐含\s*IRR|特许经营权(?:类)?\s*REITs|真实内部收益率|\bIRR\b"),
+    ("dxy", r"美元指数|\bDXY\b"),
+    ("cot", r"期货大资金持仓报告|\bCOT\b"),
+    ("cds", r"债务违约保险费率|信用违约互换|\bCDS\b"),
+)
+_GLOSSARY_COMBINED_RE = re.compile(
+    "|".join(f"(?P<k_{key}>{pat})" for key, pat in _GLOSSARY_PHRASE_SPECS)
+)
+_GLOSSARY_ALL_KEYS_COUNT = len(_GLOSSARY_PHRASE_SPECS)
+
+
+def inject_glossary_tips(html_str: str) -> str:
+    """Wrap at most 1 first occurrence per glossary key with _term_tip outside protected tags."""
+    if not html_str:
+        return html_str
+    used_keys: set[str] = set(_GLOSSARY_EXISTING_KEY_RE.findall(html_str))
+    if len(used_keys) >= _GLOSSARY_ALL_KEYS_COUNT:
+        return html_str
+
+    raw_blocks = _GLOSSARY_RAW_BLOCKS_RE.split(html_str)
+    out_blocks: list[str] = []
+
+    def _replace_match(m: re.Match[str]) -> str:
+        group_name = m.lastgroup or ""
+        key = group_name[2:] if group_name.startswith("k_") else ""
+        if not key or key in used_keys:
+            return m.group(0)
+        used_keys.add(key)
+        return _term_tip(key, html_mod.unescape(m.group(0)))
+
+    for b_idx, block in enumerate(raw_blocks):
+        if b_idx % 2 == 1 or len(used_keys) >= _GLOSSARY_ALL_KEYS_COUNT:
+            out_blocks.append(block)
+            continue
+        tokens = _GLOSSARY_TOKEN_RE.split(block)
+        skip_depth = 0
+        out_tokens: list[str] = []
+        for tok in tokens:
+            if not tok:
+                continue
+            if tok.startswith("<!--"):
+                out_tokens.append(tok)
+                continue
+            if tok.startswith("<"):
+                tm = _GLOSSARY_TAG_NAME_RE.match(tok)
+                if tm:
+                    is_close = bool(tm.group(1))
+                    tname = tm.group(2).lower()
+                    is_self_close = tok.rstrip().endswith("/>")
+                    if tname in _GLOSSARY_SKIP_TAGS and not is_self_close:
+                        if is_close:
+                            if skip_depth > 0:
+                                skip_depth -= 1
+                        else:
+                            skip_depth += 1
+                out_tokens.append(tok)
+                continue
+            if skip_depth > 0 or len(used_keys) >= _GLOSSARY_ALL_KEYS_COUNT or not tok.strip():
+                out_tokens.append(tok)
+                continue
+            out_tokens.append(_GLOSSARY_COMBINED_RE.sub(_replace_match, tok))
+        out_blocks.append("".join(out_tokens))
+    return "".join(out_blocks)
+
+
 def _fmt_ch_num(order: Any, fallback_idx: int = 1) -> str:
     """Format channel order cleanly as 01..09, 10, 11, 12 (never 010/011/012)."""
     try:
@@ -3264,6 +3395,30 @@ def _match_related_etfs_for_channel(ch: dict[str, Any] | str, etf_data: dict[str
     return matched[:10]
 
 
+_ETF_LOCK_SUFFIX_RE = re.compile(r"[（(]红灯锁[）)]\s*$")
+_ETF_RISK_SUFFIX_RE = re.compile(
+    r"[（(](?:高危溢价！?|退市大限高危预警！?|高危预警！?|红灯锁)[）)]\s*$"
+)
+
+
+def _clean_etf_display_text(text: str, *, strip_risk_tag: bool = False) -> str:
+    raw = str(text or "").strip()
+    if strip_risk_tag:
+        return _ETF_RISK_SUFFIX_RE.sub("", raw).strip()
+    return _ETF_LOCK_SUFFIX_RE.sub("", raw).strip()
+
+
+def _short_live_pill(label: str, max_len: int = 28) -> str:
+    txt = str(label or "").strip()
+    if len(txt) <= max_len:
+        return txt
+    first_clause = re.split(r"[，,；;。]", txt, maxsplit=1)[0].strip()
+    if 6 <= len(first_clause) <= max_len:
+        return first_clause
+    cand = first_clause if len(first_clause) >= 6 else txt
+    return cand[: max_len - 1].rstrip(" ·，,；;：:-—") + "…"
+
+
 def build_channel_detail_page(
     ch: dict[str, Any],
     all_channels: list[dict[str, Any]],
@@ -3273,7 +3428,7 @@ def build_channel_detail_page(
     """Render a standalone channel detail page (channels/<id>.html) with 4-stage beginner loop + institutional depth."""
     cid = str(ch.get("id", "")).strip()
     as_of = str(channels_data.get("as_of_label") or "最新班次")
-    mutex_note = str(channels_data.get("gold_mutex_note") or "")
+    mutex_note = str(channels_data.get("gold_mutex_note") or "").replace("零档红灯停", "红灯停")
     tone = str(ch.get("status_tone", "blue")).strip().lower()
     if tone not in ("green", "blue", "amber", "red"):
         tone = "blue"
@@ -3376,7 +3531,7 @@ def build_channel_detail_page(
         prem_lbls = {"normal": "折溢价常规", "watch": "买前核参考净值", "high_risk": "高溢价/高危预警"}
         etf_rows = "".join(
             f"<tr>"
-            f'<td class="nw"><strong>{esc(it.get("name", ""))}</strong><br><span class="code-tag">{esc(it.get("code", ""))}</span></td>'
+            f'<td class="nw"><strong>{esc(_clean_etf_display_text(it.get("name", "")))}</strong><br><span class="code-tag">{esc(it.get("code", ""))}</span></td>'
             f'<td><span class="etf-chan-tag">{esc(it.get("channel", ""))}</span><div class="sec-sub">{esc(it.get("tracking_index", ""))}</div></td>'
             f'<td class="col-num nw"><strong>{esc(it.get("fee_total_pct", ""))}</strong></td>'
             f'<td><strong>{esc(it.get("aum", ""))}</strong><div class="sec-sub">{esc(it.get("yield_or_pe", ""))}</div></td>'
@@ -3425,7 +3580,7 @@ def build_channel_detail_page(
     )
     hnw_hero_badge = '<span class="ch-hnw-badge">300万合格投资者专享</span>' if is_hnw else ""
 
-    return f"""
+    detail_page_html = f"""
     <div class="doc-toolbar no-print">
       <div class="doc-toolbar-left">
         <nav class="breadcrumb" aria-label="面包屑">
@@ -3539,6 +3694,7 @@ def build_channel_detail_page(
       {nav_right}
     </div>
     """
+    return inject_glossary_tips(detail_page_html)
 
 
 def _render_home_etf_showcase(etf_data: dict[str, Any] | None, total_pool: int) -> str:
@@ -3583,18 +3739,24 @@ def _render_home_etf_showcase(etf_data: dict[str, Any] | None, total_pool: int) 
     high_risks = [x for x in etfs if x.get("premium_status") == "high_risk" and not x.get("gold_locked")]
     alert_html = ""
     if high_risks:
-        codes_str = "、".join(f'{x.get("code", "")}（{x.get("name", "")}）' for x in high_risks[:3])
-        extra = f" 等 {len(high_risks)} 只" if len(high_risks) > 3 else ""
+        codes_str = "、".join(
+            f'{x.get("code", "")}（{_clean_etf_display_text(x.get("name", ""), strip_risk_tag=True)}）'
+            for x in high_risks[:3]
+        )
+        extra = " 等" if len(high_risks) > 3 else ""
         alert_html = (
             f'<a class="home-etf-alert" href="etfs.html#preset=high-risk">'
-            f'<span>⚠️ <strong>高溢价 / 高危预警</strong>：{esc(codes_str)}{extra} — 点击进入排雷清单</span>'
+            f'<span>⚠️ <strong>重点 ETF 雷达高溢价/退市预警（共 {len(high_risks)} 只）</strong>：{esc(codes_str)}{extra} — 点击进入排雷清单</span>'
             f'<span class="nw">立即查看 →</span>'
             f"</a>"
         )
 
     return f"""
     <div class="sec-head" id="sec-etf-radar">
-      <h2>全球 {len(etfs)} 只重点 ETF 市场分类入口（基准 {esc(as_of)}）</h2>
+      <div>
+        <h2>全球 {len(etfs)} 只重点 ETF 市场分类入口</h2>
+        <span class="sec-sub">基准：{esc(as_of)}</span>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <a href="etfs.html" class="btn btn-sm btn-primary">全部 {len(etfs)} 只 ETF 雷达 →</a>
         <a href="screener.html" class="btn btn-sm">全部 {total_pool} 股 7 维深研 →</a>
@@ -3712,13 +3874,33 @@ def build_cockpit_page(
     gold_spot = _positive_quote(gold_snap.get("spot_gold_ny_close_usd"))
     gold_chg = _safe_float(gold_snap.get("spot_gold_ny_change_pct"))
     gold_asia_open = _positive_quote(gold_snap.get("spot_gold_asia_open_usd"))
+    gold_live = _positive_quote(gold_snap.get("spot_gold_live_usd"))
+    gold_live_chg = _safe_float(gold_snap.get("spot_gold_live_change_pct"))
+    lbma_pm = _positive_quote(gold_snap.get("lbma_pm_fix_usd"))
+    shfe_night = _positive_quote(gold_snap.get("shfe_gold_night_rmb"))
+    gold_as_of_short = str(gold_snap.get("as_of_short") or "")
+    m_hr = re.search(r"\b(\d{2}):(\d{2})\b", gold_as_of_short) or re.search(r"\b(\d{2}):(\d{2})\b", gold_as_of)
+    gold_hour = int(m_hr.group(1)) if m_hr else 7
+    gold_hhmm = f"{m_hr.group(1)}:{m_hr.group(2)}" if m_hr else ""
     if gold_spot is not None:
         gold_spot_val = (
             f"${gold_spot:,.2f} {_fmt_chg_span(gold_chg)}" if gold_chg is not None else f"${gold_spot:,.2f}"
         )
     else:
         gold_spot_val = "待核"
-    gold_asia_sub = f"亚盘约 ${gold_asia_open:,.0f}" if gold_asia_open is not None else "纽约官收基准"
+    if gold_hour >= 15 and gold_live is not None:
+        live_chg = gold_live_chg
+        if live_chg is None and gold_spot is not None and gold_spot > 0:
+            live_chg = ((gold_live / gold_spot) - 1.0) * 100.0
+        live_chg_txt = f" ({live_chg:+.2f}%)" if live_chg is not None else ""
+        ts_prefix = f"{gold_hhmm} " if gold_hhmm else ""
+        gold_asia_sub = f"{ts_prefix}实盘 ${gold_live:,.0f}{live_chg_txt}"
+    elif gold_hour >= 15 and lbma_pm is not None:
+        gold_asia_sub = f"伦敦午定盘 ${lbma_pm:,.0f}"
+    elif gold_hour < 12 and gold_asia_open is not None and (gold_spot is None or abs(gold_asia_open - gold_spot) >= 0.5):
+        gold_asia_sub = f"亚盘约 ${gold_asia_open:,.0f}"
+    else:
+        gold_asia_sub = "纽约官收基准"
     gold_autd_night = _positive_quote(gold_snap.get("sge_autd_night_rmb"))
     gold_autd_day = _positive_quote(gold_snap.get("sge_autd_day_rmb"))
     gold_dfii_val = _fmt_num(gold_snap.get("dfii10_live_pct"), ".2f", suffix="%")
@@ -3728,9 +3910,6 @@ def build_cockpit_page(
     etf_cn = _resolve_etf_cn(gold_snap)
 
     # SGE Au(T+D) session-aware display: >= 15:00 headlines day session; < 15:00 headlines night session
-    gold_as_of_short = str(gold_snap.get("as_of_short") or "")
-    m_hr = re.search(r"\b(\d{2}):\d{2}\b", gold_as_of_short)
-    gold_hour = int(m_hr.group(1)) if m_hr else 7
     if bank_bar is not None:
         bar_disp = f"{int(bank_bar)}" if bank_bar.is_integer() else f"{bank_bar:g}"
         bank_bar_txt = f"银行条 {bar_disp} 元"
@@ -3742,7 +3921,19 @@ def build_cockpit_page(
     if gold_hour >= 15 and gold_autd_day is not None:
         sge_main_lbl = "上金所 Au(T+D) 日盘"
         sge_main_val = f"{gold_autd_day:.2f} 元/克"
-        sub_parts = [f"夜盘 {gold_autd_night:.2f}" if gold_autd_night is not None else "", bank_bar_txt]
+        if gold_hour >= 21 and shfe_night is not None:
+            night_part = f"{gold_hhmm} 沪金夜盘 {shfe_night:.2f}" if gold_hhmm else f"沪金夜盘 {shfe_night:.2f}"
+        elif gold_autd_night is not None:
+            night_part = f"02:30 昨夜盘 {gold_autd_night:.2f}"
+        else:
+            night_part = ""
+        sub_parts = [night_part, bank_bar_txt]
+        sge_sub_txt = " · ".join(p for p in sub_parts if p) or "以上金所官方收盘为准"
+    elif gold_hour < 5 and shfe_night is not None and gold_autd_day is not None:
+        sge_main_lbl = "上金所 Au(T+D) 日盘"
+        sge_main_val = f"{gold_autd_day:.2f} 元/克"
+        night_part = f"{gold_hhmm} 沪金夜盘 {shfe_night:.2f}" if gold_hhmm else f"沪金夜盘 {shfe_night:.2f}"
+        sub_parts = [night_part, bank_bar_txt]
         sge_sub_txt = " · ".join(p for p in sub_parts if p) or "以上金所官方收盘为准"
     elif gold_autd_night is not None:
         sge_main_lbl = "上金所 Au(T+D) 夜盘"
@@ -3855,7 +4046,19 @@ def build_cockpit_page(
     if vix_close is None:
         vix_close = _safe_float(gold_snap.get("vix_close"))
     vix_high = _safe_float(brake.get("vix_intraday_high"))
-    vix_high_label = f"盘中峰 {vix_high:.2f}" if vix_high is not None else "盘中峰待核"
+    vix_prev_high = _safe_float(brake.get("vix_prev_session_high"))
+    if vix_prev_high is None:
+        vix_prev_high = _safe_float(gold_snap.get("vix_prev_session_high"))
+    vix_10d_high = _safe_float(gold_snap.get("vix_10d_peak_intraday"))
+    if vix_high is not None:
+        vix_high_label = f"盘中峰 {vix_high:.2f}"
+    elif vix_prev_high is not None:
+        vix_high_label = f"前日盘中峰 {vix_prev_high:.2f}"
+    elif vix_10d_high is not None:
+        vix_high_label = f"10日盘中峰 {vix_10d_high:.2f}"
+    else:
+        vix_high_label = "盘中峰待核"
+    vix_eff_high = vix_high if vix_high is not None else vix_prev_high
     vix_thr = _safe_float(brake.get("vix_brake_threshold"))
     if vix_thr is None:
         vix_thr = 30.0
@@ -3863,7 +4066,7 @@ def build_cockpit_page(
         vix_chip = ("chip-warn", "待核")
         vix_meter_pct = 0.0
     else:
-        vix_caution = (vix_high is not None and vix_high >= vix_thr) or vix_close >= 24
+        vix_caution = (vix_eff_high is not None and vix_eff_high >= vix_thr) or vix_close >= 24
         vix_chip = ("chip-danger", "已触红线") if vix_close >= vix_thr else (
             ("chip-warn", "逼近警戒") if vix_caution else ("chip-ok", "安全区间")
         )
@@ -4252,7 +4455,7 @@ def build_cockpit_page(
       <div class="buckets-head">
         <div>
           <h2 class="buckets-title">新手先看：先按「用钱时间」把钱分四笔</h2>
-          <p class="sec-sub" style="margin:2px 0 0 0;">点击下方任意一笔，直接定位下方对应合规渠道；切换资金档位自动淡化高门槛产品</p>
+          <p class="sec-sub" style="margin:2px 0 0 0;">用{_term_tip("four_buckets", "四笔钱")}管住期限：点击下方任意一笔，直接定位对应合规渠道；切换资金档位自动淡化高门槛产品</p>
         </div>
         <div class="cap-tier-bar" role="group" aria-label="按手头可投资金档位过滤">
           <button type="button" class="cap-tier-pill active" data-cap-tier="all">全部档位</button>
@@ -4338,8 +4541,8 @@ def build_cockpit_page(
     etf_count_num = len(etf_list)
 
     jump_pills: list[str] = [
-        '<a class="home-jump-pill" href="#sec-four-buckets">① 钱怎么分四笔</a>',
-        '<a class="home-jump-pill" href="#sec-core-markets">② 四大核心市场（金/A/港/美）</a>',
+        '<a class="home-jump-pill" href="#sec-core-markets">① 四大核心市场（金/A/港/美）</a>',
+        '<a class="home-jump-pill" href="#sec-four-buckets">② 钱怎么分四笔</a>',
     ]
     if home_channels_section_html:
         jump_pills.append(f'<a class="home-jump-pill" href="#sec-multi-channels">③ {ch_count_num} 大多元渠道卡片</a>')
@@ -4355,12 +4558,13 @@ def build_cockpit_page(
     if etf_count_num:
         coverage_parts.append(f"{etf_count_num} 只全球重点 ETF")
     coverage_summary = " · ".join(coverage_parts)
+    live_pill_short = _short_live_pill(alert_label, max_len=28)
 
     return f"""
     <section class="hero-deck">
       <div class="hero-main">
         <div class="hero-top">
-          <span class="live-pill"><span class="live-pulse"></span>{esc(alert_label)}</span>
+          <span class="live-pill" title="{esc(alert_label)}"><span class="live-pulse"></span>{esc(live_pill_short)}</span>
           <span class="live-cadence">每日 07:30 早报 · 18:00 晚报（北京时间）</span>
         </div>
         <h1 class="live-title">全球全渠道投资 10 秒水温驾驶舱</h1>
@@ -4403,8 +4607,6 @@ def build_cockpit_page(
 
     {jump_bar_html}
     {disclosure_html}
-    {action_lights_html}
-    {four_buckets_html}
 
     <div class="sec-head" id="sec-core-markets" style="margin-top:10px;">
       <h2>四大核心市场红绿灯水温卡片</h2>
@@ -4581,6 +4783,8 @@ def build_cockpit_page(
       </article>
     </section>
 
+    {action_lights_html}
+    {four_buckets_html}
     {home_channels_section_html}
     {home_etf_section_html}
 
@@ -5130,7 +5334,7 @@ def build_channels_page(
         or "系统追踪活钱现金、银行存款、外币定存、债券 ETF、基金理财、储蓄险、个人养老金、跨境互认、可转债、公募 REITs、非金商品与合规私募全版图"
     )
     as_of = str(data.get("as_of_label") or "最新班次")
-    mutex_note = str(data.get("gold_mutex_note") or "")
+    mutex_note = str(data.get("gold_mutex_note") or "").replace("零档红灯停", "红灯停")
     anchors = data.get("macro_anchors") if isinstance(data.get("macro_anchors"), list) else []
     templates = data.get("allocation_templates") if isinstance(data.get("allocation_templates"), list) else []
     proc = data.get("research_process") if isinstance(data.get("research_process"), dict) else {}
@@ -5288,7 +5492,7 @@ def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) 
     etfs = data.get("etfs") if isinstance(data.get("etfs"), list) else []
     total = len(etfs)
     as_of = str(data.get("as_of_label") or "最新班次")
-    lock_notice = str(data.get("gold_lock_notice") or "")
+    lock_notice = str(data.get("gold_lock_notice") or "").replace("零档红灯停", "红灯停")
     rules = data.get("key_2026_rules") if isinstance(data.get("key_2026_rules"), list) else []
     ch_link_lbl = f"查看 {channel_count} 大个人多元渠道详规 →" if channel_count > 0 else "查看个人多元渠道详规 →"
     ch_short_lbl = f"查看 {channel_count} 大多元渠道 →" if channel_count > 0 else "查看个人多元渠道 →"
@@ -5301,7 +5505,7 @@ def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) 
     prem_lbls = {"normal": "折溢价常规", "watch": "买前核参考净值", "high_risk": "高溢价/高危预警"}
     static_rows = "".join(
         f"<tr>"
-        f'<td><div><strong>{esc(it.get("name", ""))}</strong></div><div><span class="code-tag">{esc(it.get("code", ""))}</span> <span class="etf-chan-tag">{esc(it.get("category", ""))}</span></div></td>'
+        f'<td><div><strong>{esc(_clean_etf_display_text(it.get("name", "")))}</strong></div><div><span class="code-tag">{esc(it.get("code", ""))}</span> <span class="etf-chan-tag">{esc(_clean_etf_display_text(it.get("category", "")))}</span></div></td>'
         f'<td><div><span class="mkt-badge mkt-{esc(it.get("market", ""))}">{esc(it.get("market_label", ""))}</span></div><div><span class="etf-chan-tag">{esc(it.get("channel", ""))}</span></div></td>'
         f'<td><div>{esc(it.get("tracking_index", ""))}</div><div class="sec-sub">{esc(it.get("yield_or_pe", ""))}</div></td>'
         f'<td class="col-num"><strong>{esc(it.get("fee_total_pct", ""))}</strong></td>'
@@ -5340,7 +5544,8 @@ def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) 
             "</details>"
         )
 
-    return f"""
+    etfs_intro_html = inject_glossary_tips(
+        f"""
     <div class="sec-head" style="margin-top:4px;">
       <h2>全球 {total} 只重点 ETF 多通道深度雷达</h2>
       <span class="sec-sub">覆盖 A 股、港股三通道、美股原版、爱尔兰 UCITS、境内非美 QDII 及债券商品 ETF · 基准 {esc(as_of)}</span>
@@ -5348,6 +5553,11 @@ def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) 
 
     {f'<div class="etf-lock-banner">🛑 {esc(lock_notice)}</div>' if lock_notice else ''}
     {rules_box_html}
+    """
+    )
+
+    return f"""
+    {etfs_intro_html}
 
     <div class="screener-stats">
       <div class="stat-tile stat-total active" data-etf-stat-market="all" role="button" tabindex="0" aria-pressed="true">
@@ -5477,11 +5687,17 @@ def build_screener_page(
     static_rows = "".join(_render_static_screener_row(stock) for stock in stocks)
     date_fallback = default_date.strip() or "最新班次"
 
-    return f"""
+    screener_intro_html = inject_glossary_tips(
+        f"""
     <div class="sec-head" style="margin-top:4px;">
       <h2>全球 {total} 家核心龙头交互筛选器</h2>
-      <span class="sec-sub">各市场数据基准取自旗舰手册附表二 · {source_labels}</span>
+      <span class="sec-sub">主表基线（旗舰基准）：{source_labels} · 7 维档案刷新日见单股弹窗底部（支持筛选 A/H 倒挂与高股息）</span>
     </div>
+    """
+    )
+
+    return f"""
+    {screener_intro_html}
 
     <div class="screener-stats">
       <div class="stat-tile stat-total" data-stat-color="all" role="button" tabindex="0" aria-pressed="false">
@@ -5575,7 +5791,7 @@ def build_screener_page(
         </div>
         <div class="dossier-body" id="dossier-modal-body"></div>
         <div class="dossier-foot">
-          <span id="dossier-modal-date" data-default-date="{esc(date_fallback)}">更新日期：{esc(date_fallback)}</span>
+          <span id="dossier-modal-date" data-default-date="{esc(date_fallback)}">7 维档案刷新日：{esc(date_fallback)}</span>
           <a id="dossier-modal-link" href="reports/a-share.html" class="btn btn-sm">前往该市场全景手册 →</a>
         </div>
       </div>
@@ -5928,19 +6144,24 @@ def build_scorecard_page(
     eq_ring_lbl = f'{eq_st["at_least_partial_pct"]:.0f}%'
     gd_ring_lbl = f'{gd_st["at_least_partial_pct"]:.0f}%'
 
-    eq_sc_md = normalize_relative_md_links(eq_sc_raw_md)
-    gd_sc_md = normalize_relative_md_links(protect_backticked_comments(gd_sc_raw_md))
-    eq_cl_md = normalize_relative_md_links(
-        (EQUITY_DIR / "daily" / "CHANGELOG.md").read_text(encoding="utf-8")
+    eq_sc_md = normalize_relative_md_links(_clean_soft_filenames(_strip_scorecard_top_nav(eq_sc_raw_md)))
+    gd_sc_md = normalize_relative_md_links(
+        protect_backticked_comments(_clean_soft_filenames(_strip_scorecard_top_nav(gd_sc_raw_md)))
     )
+    eq_cl_raw_md = (EQUITY_DIR / "daily" / "CHANGELOG.md").read_text(encoding="utf-8")
+    eq_cl_md = normalize_relative_md_links(_clean_soft_filenames(_strip_scorecard_top_nav(eq_cl_raw_md)))
     gd_cl_md = normalize_relative_md_links(
         protect_backticked_comments(
-            _load_gold_ledger_with_archives("CHANGELOG", is_audit_log=False)
+            _clean_soft_filenames(
+                _strip_scorecard_top_nav(_load_gold_ledger_with_archives("CHANGELOG", is_audit_log=False))
+            )
         )
     )
     gd_al_md = normalize_relative_md_links(
         protect_backticked_comments(
-            _load_gold_ledger_with_archives("AUDIT_LOG", is_audit_log=True)
+            _clean_soft_filenames(
+                _strip_scorecard_top_nav(_load_gold_ledger_with_archives("AUDIT_LOG", is_audit_log=True))
+            )
         )
     )
 
@@ -6027,6 +6248,15 @@ def build_scorecard_page(
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab-target="gold-audit-log">🛡️ 黄金辟谣核查账本</button>
     </div>
 
+    <div class="sc-search-bar no-print">
+      <div class="search-wrap">
+        <input type="search" id="sc-search" class="search-input" placeholder="输入关键词过滤日期、标的或辟谣（如 2026-11、紫金、黄金、谣言）…" autocomplete="off">
+        <button type="button" id="sc-clear" class="search-clear" aria-label="清空记分卡搜索" hidden>×</button>
+        <kbd class="kbd-hint" aria-hidden="true">/</kbd>
+      </div>
+      <span id="sc-filter-status" class="sc-filter-status" role="status"></span>
+    </div>
+
     <section id="equity-scorecard" class="tab-panel active article-card">
       <div class="article-body">{eq_sc_html}</div>
     </section>
@@ -6071,9 +6301,15 @@ def build_archive_page(
         )
 
     by_date: dict[str, list[DailyItem]] = defaultdict(list)
+    max_rev_by_slot: dict[tuple[str, str, str], int] = {}
     for it in dailies:
         by_date[it.date_str].append(it)
+        slot_key = (it.date_str, it.market, it.hhmm)
+        if it.rev > max_rev_by_slot.get(slot_key, 0):
+            max_rev_by_slot[slot_key] = it.rev
 
+    superseded_count = 0
+    active_count = 0
     timeline_html = ""
     for dt in sorted(by_date.keys(), reverse=True):
         day_items = sorted(
@@ -6081,20 +6317,30 @@ def build_archive_page(
             key=lambda x: (-int(x.hhmm), -x.rev, MARKET_ORDER.get(x.market, 9)),
         )
         cards = []
+        day_active = 0
         for it in day_items:
             mm = MARKET_META[it.market]
+            is_superseded = it.rev < max_rev_by_slot[(it.date_str, it.market, it.hhmm)]
+            if is_superseded:
+                superseded_count += 1
+            else:
+                active_count += 1
+                day_active += 1
             chart_badge = f'<span class="session-pill">{it.chart_count} 图</span>' if it.chart_count else ""
             revision_badge = f'<span class="session-pill">修订 {it.rev}</span>' if it.rev > 1 else ""
+            old_badge = '<span class="session-pill arc-old-badge">修订前原版</span>' if is_superseded else ""
+            sup_attrs = ' data-superseded="1" hidden' if is_superseded else ""
             search_text = f"{it.date_str} {mm['short']} {it.session_label} {it.title} {it.summary}".lower()
             cards.append(
                 f'<a class="feed-card" href="{it.rel_url}" data-arc-item="1" '
                 f'data-market="{it.market}" data-session="{it.session_key}" '
-                f'data-edition-type="{esc(it.edition_type)}" data-search="{esc(search_text)}">'
+                f'data-edition-type="{esc(it.edition_type)}" data-search="{esc(search_text)}"{sup_attrs}>'
                 f'<div class="feed-meta">'
                 f'<span class="mkt-badge mkt-{it.market}">{mm["emoji"]} {mm["short"]}</span>'
                 f'{_edition_pill_html(it.edition_type)}'
                 f'<span class="session-pill">{esc(it.session_label)}</span>'
                 f"{revision_badge}"
+                f"{old_badge}"
                 f"{chart_badge}"
                 f'<span class="session-pill">约 {it.read_minutes} 分钟</span>'
                 f"</div>"
@@ -6104,10 +6350,19 @@ def build_archive_page(
             )
         timeline_html += (
             f'<div class="archive-day">'
-            f'<div class="archive-date-hdr">{esc(dt)} <span class="sec-sub">（共 {len(cards)} 期）</span></div>'
+            f'<div class="archive-date-hdr">{esc(dt)} <span class="sec-sub arc-day-cnt">（共 {day_active} 期）</span></div>'
             f'<div class="archive-list">{"".join(cards)}</div>'
             f"</div>"
         )
+
+    rev_toggle_html = (
+        '<label class="arc-rev-toggle">'
+        '<input type="checkbox" id="arc-show-superseded">'
+        f'<span>显示修订前原版（{superseded_count} 期）</span>'
+        "</label>"
+        if superseded_count > 0
+        else ""
+    )
 
     return f"""
     <div class="sec-head" style="margin-top:4px;">
@@ -6118,7 +6373,7 @@ def build_archive_page(
 
     <div class="sec-head">
       <h2>历史早晚报时间轴</h2>
-      <strong id="arc-count" class="sec-sub">共展示 {len(dailies)} 期历史日报</strong>
+      <strong id="arc-count" class="sec-sub">共展示 {active_count} 期历史日报</strong>
     </div>
 
     <section class="filter-panel">
@@ -6140,13 +6395,13 @@ def build_archive_page(
       <div class="filter-row">
         <button type="button" class="filter-pill active" data-arc-session="all">全部时段</button>
         <button type="button" class="filter-pill" data-arc-session="morning">早报 (07:30)</button>
-        <button type="button" class="filter-pill" data-arc-session="midday">午报 (16:30)</button>
         <button type="button" class="filter-pill" data-arc-session="evening">晚报 (18:00)</button>
       </div>
       <div class="filter-row">
         <button type="button" class="filter-pill active" data-arc-type="all">全部刊型</button>
         <button type="button" class="filter-pill" data-arc-type="main">深度主刊</button>
         <button type="button" class="filter-pill" data-arc-type="watch">守望 / 轻刊</button>
+        {rev_toggle_html}
       </div>
     </section>
 
@@ -6329,7 +6584,8 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     R.gold_report.REPORT_SHORT_DATE = str(g_snap_master.get("as_of_short", ""))
     g_cover = R.gold_report.build_cover_html()
     g_body_raw, _ = R.gold_report.convert_md_to_html_body(
-        normalize_relative_md_links(protect_backticked_comments(gold_md)), docx_mode=False
+        normalize_relative_md_links(protect_backticked_comments(_clean_soft_filenames(gold_md))),
+        docx_mode=False,
     )
     g_body, g_toc, g_charts = sanitize_and_extract_toc(
         g_body_raw, base_prefix="../", slug_map=slug_map, ctx_market="gold"
@@ -6492,6 +6748,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         body_clean, toc, n_charts = sanitize_and_extract_toc(
             body_raw, base_prefix="../", slug_map=slug_map, ctx_market=item.market
         )
+        body_clean = inject_glossary_tips(body_clean)
         # Also sanitize cover_html (strip any residual comments or file:// links)
         cover_clean, _, _ = sanitize_and_extract_toc(
             cover_html, base_prefix="../", slug_map=slug_map, ctx_market=item.market, extract_toc=False

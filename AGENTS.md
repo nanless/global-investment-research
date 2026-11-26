@@ -59,7 +59,7 @@ global-investment-research/
 | 6 | 储蓄型商业保险 | `savings_insurance` | 增额终身寿险、养老年金、分红险（预定利率、实现率、退保现价与真实 IRR 透明测算） |
 | 7 | 个人养老金与个人税优账户 | `tax_advantaged_accounts` | 个人养老金账户（1.2 万/年节税测算、Y 份额/养老储蓄/国债/保险）、税优健康险与适用税档 |
 | 8 | 场内外 QDII、香港互认与理财通 | `qdii_mrf` | 场内外 QDII 额度与溢价停牌、香港北向互认基金（MRF 累计份额避税与锁汇）、跨境理财通 2.0、LOF 退市红线 |
-| 9 | 可转债 | `convertible_bonds` | 转债全市场与投资级 ETF（`511380`/`511180`）、个券权限、去刚兑违约排雷、强赎与到期兑付核对 |
+| 9 | 可转债 | `convertible_bonds` | 转债全市场 `511380`（综合费率 0.20%/年）vs 投资级 AA+ `511180`（综合费率 0.30%/年）、个券权限、去刚兑违约排雷、强赎与到期兑付核对 |
 | 10 | 公募 REITs 与不动产租金对比 | `c_reits` | 产权类（NOI/出租率/Cap Rate）vs 特许经营权类（中债 IRR）、指数基金、薄量限价与住宅租售比参照 |
 | 11 | 非黄金大宗商品与白银/铂钯渠道 | `commodity_etfs` | 豆粕/有色/能化期货 ETF、白银/原油 LOF 溢价磨损退市风险、铂钯/贵金属跨市场合规渠道 |
 | 12 | 合规私募与标品信托 300 万专享 | `private_funds_trust` | 合格投资者门槛、私募证券（量化/主观/套利）与标品信托费率结构、锁定期、冷静期与尽调红线 |
@@ -84,7 +84,7 @@ global-investment-research/
 
 每次 `07:30` 或 `18:00` 一体化班次必须严格按以下顺序在同一会话内串行推进，严禁跳步或乱序：
 
-- **运行锁、单向时间窗与僵尸锁清理**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` 或 `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**严格较早期号**、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。
+- **运行锁、单向时间窗、僵尸锁清理与维护者专属运维命令**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` 或 `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**严格较早期号**、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。若历史已推送班次被后续提交覆盖，维护者可人工区分 **`complete-superseded`**（校验目标提交已是现网祖先且仅含授权文件变更后结案为 `complete`）与 **`close-superseded`**（将其标为 `superseded` 释锁）——**两项均为维护者专属手动运维命令，严禁纳入定时自动化 `automations/permissions.json` 白名单**。
 - **期号交接与三库同期锁**：当班黄金快照、黄金日报 `DAILY_META`、权益状态、新权益稿 `DAILY_META_JSON` 以及三大扩展数据库（`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。休市沿用旧稿时保留旧稿期号与时间，状态与三大数据库仍刷新至当班期号。
 
 1. **Step 0｜双轨 RSI 经验库冷启动**：
@@ -94,13 +94,13 @@ global-investment-research/
 3. **Step 2A｜共享 10 路并行 `research` 深度调研（10+1 架构）**：
    - 启动 **10 路只读 `research` 子代理**：① 黄金与贵金属、② 中国 A 股、③ 中国香港股市、④ 美国股市、⑤ 跨资产宏观汇率与大宗、⑥ 三地社区与谣言辟谣、**⑦A 境内活钱/存款/债券/基金理财/储蓄保险/个人养老金专线**、**⑦B 境内外币/QDII与MRF/可转债/C-REITs/非金商品与白银铂钯/私募信托与打新反诈专线**、**⑧A 全市场 140+ 重点 ETF 实时溢价/停牌/规模/费率专线**、**⑧B 当班 4–6 只焦点股（及周日 6–10 只全池轮换）7 维深研专线**。遇单项数据未发布或暂不可取时严禁编造、亦不阻塞发布，按规范挂账并写入纯读者中文 `data_caveats`。
 4. **Step 2B｜1 路统一发前红队对抗核验（10+1 架构）**：
-   - 跨轨交叉审计共享宏观数字、黄金红灯全载体锁、A/H 物理一致、100% 配置闭环、12 大多元渠道制度与风险红线、140+ ETF 6 通道分类与溢价防错、焦点股 7 维财报催化日期及小白友好白话清晰度。
+   - 跨轨交叉审计共享宏观数字、黄金红灯全载体锁、A/H 物理一致、100% 配置闭环、12 大多元渠道制度与风险红线、140+ ETF 6 通道分类与跨库费率防错（含 `511380` 0.20% vs `511180` 0.30%）、`CHART_A2` 贴水正号、焦点股 7 维现价实算股息/估值与财报催化日期及小白友好白话清晰度。
 5. **Step 3｜黄金 SSOT 优先落盘与 6 门禁严检（纯网页）**：
-   - 先用 `write_file` 全量更新 `gold/data_snapshot.json`（含纯读者中文 `data_caveats`）、当期黄金日报 Markdown 与 `gold/daily/SCORECARD.md`；持续增长的历史双账本（`gold/daily/CHANGELOG.md`、`gold/daily/AUDIT_LOG.md`，含本期 `GOLD_EDITION_REVIEW` 标记）通过 `write_file` 写微型补丁 `gold/daily/_ledger_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（防 300s 超时）。仅命中 5 大阈值时同步主报告与 `master_snapshot.json`。
+   - 先用 `write_file` 全量更新 `gold/data_snapshot.json`（含纯读者中文 `data_caveats`）、当期黄金日报 Markdown 与 `gold/daily/SCORECARD.md`；持续增长的历史双账本（`gold/daily/CHANGELOG.md`、`gold/daily/AUDIT_LOG.md`，含本期 `GOLD_EDITION_REVIEW` 标记）通过 `write_file` 写微型补丁 `gold/daily/_ledger_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（防 300s 超时；自动校验 `GOLD_EDITION_REVIEW` 全量 Schema——含 `as_of_short`/`note`/四关 HTTPS `sources` 及 `forecast_review.status ∈ {"settled","none_due","pending_evidence"}`、支持跨月空锚回退并锁定 `0o644` 权限）。仅命中 5 大阈值时同步主报告与 `master_snapshot.json`。
    - 运行：`python3 gold/lint_readability.py --strict <本刊路径>`（必须 `0 errors, 0 warnings`）。
 6. **Step 4｜全球权益三市、12 大多元渠道、140+ ETF 与 231 股 7 维深研库接力落盘与严检（纯网页）**：
-   - 只读校验本期黄金快照（两轨截点均须在所标班次 `[-5 分钟, +6 小时]` 单向窗口内且黄金早于或同分钟于权益、差值 `0–6 小时`）和 Tier-0 行动互斥锁。用 `write_file` 全量落盘本期日报 Markdown、`INDEX.md`（纯网页/Markdown 链接，禁用离线附件链接）、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`（含 `data_caveats`）与 `state/audit_ledger.md`；**权益三大扩展大 JSON（`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`，合计 ~830 KB）统一写微型补丁 `equity/state/_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --apply` 原子合并，强制同步 `edition_id` 并按分层矩阵增量更新 12 大渠道（含小白一句话、今日避坑与红/黄/绿灯）、140+ ETF 与 231 股零模板化 7 维深研**。
-   - 运行：`python3 equity/lint_equity.py --strict`（校验源稿、21 张 SVG 防重叠、三大深研库、跨项目黄金 SSOT 与旗舰 Markdown 同步，必须 `0 errors, 0 warnings`）。
+   - 只读校验本期黄金快照（两轨截点均须在所标班次 `[-5 分钟, +6 小时]` 单向窗口内且黄金早于或同分钟于权益、差值 `0–6 小时`）和 Tier-0 行动互斥锁。用 `write_file` 全量落盘本期日报 Markdown、`INDEX.md`（纯网页/Markdown 链接，禁用离线附件链接）、`CHANGELOG.md`、`SCORECARD.md`、`state/market_state.json`（含 `data_caveats`）与 `state/audit_ledger.md`；**权益三大扩展大 JSON（`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`，合计 ~830 KB）统一写微型补丁 `equity/state/_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --apply` 原子合并，强制同步 `edition_id`，并执行跨库费率一致性护栏、兄弟字段与 A/H 孪生股一致性校验、诚实单股 `updated_at`（严禁批量刷写未核查股票）以及 12 大渠道（含小白一句话、今日避坑与红/黄/绿灯）、140+ ETF 与 231 股零模板化 7 维深研全检**。
+   - 运行：`python3 equity/lint_equity.py --strict`（校验源稿、21 张 SVG 防重叠与 `CHART_A2` 贴水正号、三大深研库、跨项目黄金 SSOT 与旗舰 Markdown 同步，必须 `0 errors, 0 warnings`）。
 7. **Step 5｜统一 RSI 盲审闭环 + 单次纯网页门户发布**：
    - 启动 **1 路独立只读 `research` 盲审子代理**，按两轨各 6 维 `/30` 打分（第 4 维聚焦**纯网页视觉清晰度、SVG 零碰撞与小白 3 分钟可读性**）与预判验真，更新 `gold/daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 与 `equity/state/{rsi_metrics.json,RSI_PLAYBOOK.md}`（`findings` 支持 `resolved`、`deferred_data`、`disclosed_caveat`；仅 `open` 或未修硬错拦截发布）。
    - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict`，随后进入 `publish` 阶段运行 `python3 scripts/publish_site.py --edition-token <token>`（构建完整静态门户——首页 4 市场 + 小白导览 + 12 大渠道概览卡 + 5 大市场/资产分组 ETF 概览卡【底层覆盖 6 大交易通道】、12 个独立 `channels/<id>.html` 详情页、`channels.html`、`etfs.html`、`screener.html`、`guide.html`、`scorecard.html`、`archive.html`——通过 S1–S6 严检后单提交推送至 `origin/main`），最后运行 `python3 scripts/edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功即闭环。
@@ -117,6 +117,7 @@ global-investment-research/
    - 门户首页 `index.html` 必须清晰呈现四大核心市场、小白导览、全部 12 大个人多元渠道概览卡（直链各独立详情页 `channels/<id>.html`）与 5 大市场/资产分组 ETF 概览卡（底层覆盖 6 大交易通道）（由 `scripts/lint_site.py` Gate S6 强制核验）。
 3. **跨轨核心合规与费率口径完全统一**：
    - **黄金联接 `008142` / `008143`**：依据 2026 公募销售费改（商品基参照债基），A 类申购上限 0.30%（1 折 0.03%，旧合同过渡期 0.06%）、运营费 0.20%/年；C 类销售服务费上限 0.20%/年且自 2027-01-01 起满 1 年“先收后返”免收，但长持 ≥1 年仍以 1 折 A 类（`008142`）更省；现行尚未完成整改的旧合同 `008143` 仍按 0.55%/年（含 0.35% 销服费）且满 30 天免赎回费（严禁误写 7 天免赎回）；
+   - **可转债 ETF 费率区分**：全市场可转债 ETF **`511380`** 综合费率为 **0.20%/年**（管理 0.15%+托管 0.05%），而投资级上证可转债 ETF **`511180`** 综合费率为 **0.30%/年**（管理 0.25%+托管 0.05%），严禁跨库混写费率；
    - **MRF 禁推停申基金**：严禁推荐已暂停申购的 `968118`；
    - **二手大额存单**：多数国有大行禁止二次转让，且二手接盘单严禁直接提前支取（否则仅按原票面本金 + 活期计息致本金实亏）；
    - **债券 ETF 底层税负区分**：交易所公司债/科创债 ETF 底层债券付息环节仍扣 20% 税（区别于银行间市场的短融 ETF `511360` 等银行间标的）；
@@ -125,7 +126,7 @@ global-investment-research/
    - 确立 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据」** 三层结构；`DXY`/`COT`/`CDS`/`ERP`/`IRR` 等专业词移出“可不解释裸用”名单，首现配简短白话括注或交由站内术语浮窗解释；禁用居高临下说教口号，鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；
    - 所有公开文件与生成静态网页严禁出现本地绝对路径、密钥或内部工程/脚本/RSI 文件名（由 `scripts/lint_site.py` Gate S3 严守）。
 5. **无人值守分级写盘、预授权绝对路径裸命令与三道严格门禁零容忍**：
-   - 定时无人值守任务严禁调用 `edit_file`：中小 Markdown 与轻量快照（日报、记分卡、`INDEX.md`、`data_snapshot.json`、`market_state.json`、`rsi_metrics.json`、`RSI_PLAYBOOK.md` 等）一律使用 `write_file` 全量写盘；**权益三大扩展大 JSON（合计 ~830 KB）与黄金历史双账本（`CHANGELOG.md` / `AUDIT_LOG.md`）统一写微型补丁（`_edition_patch.json` / `_ledger_patch.json`）并调用预授权 `scripts/patch_state_dbs.py` 原子合并或无损头插**（彻底杜绝 300s 流式超时）；所有命令行操作仅运行 `sidecar.json` 预授权的绝对路径裸命令；
+   - 定时无人值守任务严禁调用 `edit_file`：中小 Markdown 与轻量快照（日报、记分卡、`INDEX.md`、`data_snapshot.json`、`market_state.json`、`rsi_metrics.json`、`RSI_PLAYBOOK.md` 等）一律使用 `write_file` 全量写盘；**权益三大扩展大 JSON（合计 ~830 KB）与黄金历史双账本（`CHANGELOG.md` / `AUDIT_LOG.md`）统一写微型补丁（`_edition_patch.json` / `_ledger_patch.json`）并调用预授权 `scripts/patch_state_dbs.py` 原子合并或无损头插**（自动校验完整 `GOLD_EDITION_REVIEW` Schema、跨月空锚回退、跨库费率护栏、兄弟字段与 A/H 孪生同步、诚实单股 `updated_at` 与 `0o644` 权限，彻底杜绝 300s 流式超时）；所有命令行操作仅运行 `sidecar.json` 预授权的绝对路径裸命令；
    - 交付与发布前，以下**三道严格门禁必须全部退出码 `0`（`0 errors, 0 warnings`）**：
      - `python3 gold/lint_readability.py --strict gold/daily/<最新黄金日报>.md`
      - `python3 equity/lint_equity.py --strict`

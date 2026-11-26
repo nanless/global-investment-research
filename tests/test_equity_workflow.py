@@ -906,6 +906,74 @@ class EquityWorkflowTests(unittest.TestCase):
         res = self.lint("--precheck", "--strict")
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
+    def test_chart_a2_futures_sign_contradiction_blocked(self):
+        self.advance("2026-11-26_1800")
+        a_daily = self.issue("a_share", "main")
+        self.issue("hk_stock", "main")
+        self.issue("us_stock", "holiday_watch")
+        meta, body = extract_daily_meta(a_daily.read_text(encoding="utf-8"), a_daily)
+
+        # Negative ann=-20.5 paired with "基差 -50.75" must be rejected as sign inversion
+        meta["chart_live"]["a2"] = {
+            "title": "A股宽基分化与股指期货基差",
+            "sub": "截至 2026-11-26 18:00 北京时间",
+            "indices": [["沪深300", -0.8, "#0072B2"], ["中证1000", -1.9, "#D55E00"]],
+            "futures": [
+                ["中证1000期货 IM", -20.5, "贴水加深", "基差 -50.75 点", "#D55E00", "#FEF2F2"],
+            ],
+            "takeaway": "小盘期指维持深度贴水。",
+            "note": "数据来源：中金所官收。",
+        }
+        a_daily.write_text(
+            f"{body}\n\n<!-- CHART_A2 -->\n\n<!-- DAILY_META_JSON {json.dumps(meta, ensure_ascii=False)} -->\n",
+            encoding="utf-8",
+        )
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("CHART_A2 正负号反转", res.stdout)
+
+        # Flipping ann to positive 20.5 for discount ("基差 -50.75") passes cleanly
+        meta["chart_live"]["a2"]["futures"][0][1] = 20.5
+        a_daily.write_text(
+            f"{body}\n\n<!-- CHART_A2 -->\n\n<!-- DAILY_META_JSON {json.dumps(meta, ensure_ascii=False)} -->\n",
+            encoding="utf-8",
+        )
+        res_ok = self.lint("--precheck", "--strict")
+        self.assertEqual(res_ok.returncode, 0, res_ok.stdout + res_ok.stderr)
+
+    def test_chart_a2_futures_premium_positive_ann_blocked(self):
+        self.advance("2026-11-26_1800")
+        a_daily = self.issue("a_share", "main")
+        self.issue("hk_stock", "main")
+        self.issue("us_stock", "holiday_watch")
+        meta, body = extract_daily_meta(a_daily.read_text(encoding="utf-8"), a_daily)
+
+        meta["chart_live"]["a2"] = {
+            "title": "A股宽基分化与股指期货基差",
+            "sub": "截至 2026-11-26 18:00 北京时间",
+            "indices": [["沪深300", 0.9, "#0072B2"]],
+            "futures": [
+                ["上证50期货 IH", 6.2, "小幅升水", "基差 +12.50 点", "#009E73", "#ECFDF5"],
+            ],
+            "takeaway": "大盘期指小幅升水。",
+            "note": "数据来源：中金所官收。",
+        }
+        a_daily.write_text(
+            f"{body}\n\n<!-- CHART_A2 -->\n\n<!-- DAILY_META_JSON {json.dumps(meta, ensure_ascii=False)} -->\n",
+            encoding="utf-8",
+        )
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("CHART_A2 正负号反转", res.stdout)
+
+        meta["chart_live"]["a2"]["futures"][0][1] = -6.2
+        a_daily.write_text(
+            f"{body}\n\n<!-- CHART_A2 -->\n\n<!-- DAILY_META_JSON {json.dumps(meta, ensure_ascii=False)} -->\n",
+            encoding="utf-8",
+        )
+        res_ok = self.lint("--precheck", "--strict")
+        self.assertEqual(res_ok.returncode, 0, res_ok.stdout + res_ok.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,9 +22,31 @@ import lint_readability as lint
 build_daily = load_renderers().gold_daily
 
 
-ARCHIVED_REPORT = GOLD / "daily" / "2026-11-25_1800_晚报_黄金深度研报_r2.md"
+def _resolve_archived_report(name: str = "2026-11-25_1800_晚报_黄金深度研报_r2.md") -> Path:
+    for candidate in (
+        GOLD / "daily" / name,
+        GOLD / "daily" / "archive" / "2026-11" / name,
+    ):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"Archived legacy gold report not found in daily/ or daily/archive/2026-11/: {name}"
+    )
+
+
+ARCHIVED_REPORT = _resolve_archived_report()
 EDITION = "2026-11-26_1800"
 AS_OF = "2026-11-26 18:00"
+
+
+def _legacy_snapshot():
+    snap = _fixture()
+    snap.update(
+        edition_id="2026-11-25_1800_r2",
+        as_of_short="2026-11-25 21:25",
+        as_of_bjt="2026年11月25日（周三）21:25",
+    )
+    return snap
 
 
 def _read_json(path):
@@ -459,7 +481,7 @@ class GoldWorkflowTests(unittest.TestCase):
     def test_new_report_requires_ledger_and_legacy_reports_keep_reading(self):
         snap = _fixture()
         master = _read_json(GOLD / "master_snapshot.json")
-        legacy = _read_json(GOLD / "data_snapshot.json")
+        legacy = _legacy_snapshot()
         self.assertEqual(lint.check_file(ARCHIVED_REPORT, legacy, master), ([], []))
 
         raw = _sanitize_for_converged(_modify_directive(
@@ -860,6 +882,63 @@ class GoldWorkflowTests(unittest.TestCase):
         )
         oob_issues = svg_geometry.check_svg_text_geometry(oob_svg)
         self.assertTrue(any("越界" in i for i in oob_issues), oob_issues)
+
+    def test_signal_noise_intro_count_mismatch_rejected(self):
+        snap = _fixture()
+        master = _read_json(GOLD / "master_snapshot.json")
+        self.changes.write_text(f"<!-- GOLD_EDITION_CHANGELOG {EDITION} -->", encoding="utf-8")
+        self.scorecard.write_text(f"<!-- GOLD_EDITION_SCORECARD {EDITION} -->", encoding="utf-8")
+        review = {
+            "edition_id": EDITION,
+            "as_of_short": AS_OF,
+            "note": "四关已核验。",
+            "sources": {gate_id: ["https://example.com/fixture"] for gate_id in rules.ENTRY_GATE_IDS},
+            "forecast_review": {"status": "none_due", "note": "本期无到期预测。", "sources": []},
+        }
+        self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(review) + " -->", encoding="utf-8")
+
+        raw = _sanitize_for_converged(_modify_directive(
+            ARCHIVED_REPORT.read_text(encoding="utf-8"), "DAILY_META",
+            lambda meta: meta.update(edition_id=EDITION, as_of_short=AS_OF, timestamp=AS_OF),
+        ))
+
+        def chart_ids(chart):
+            for check, gate_id in zip(chart["checks"], rules.ENTRY_GATE_IDS):
+                check["id"] = gate_id
+
+        raw = _modify_directive(raw, "DAILY_CHART_SWITCH", chart_ids)
+        # Expand noises to 3 items while Part 1 lead / title still claims 2 noise items ("2 条假象")
+        raw_mismatch = _modify_directive(
+            raw,
+            "DAILY_SIGNAL_NOISE",
+            lambda cfg: (
+                cfg.update(title="今晚资讯过滤器：只盯 2 件真信号，把 2 条假象直接划走"),
+                cfg["noises"].append({"head": "第三条假象传闻", "body": "官方口径明确澄清，纯属噪音。"}),
+            ),
+        )
+        report = self.path / f"{EDITION}_晚报_黄金深度研报.md"
+        report.write_text(raw_mismatch, encoding="utf-8")
+        errors, _ = lint.check_file(report, snap, master)
+        self.assertTrue(any("噪音计数冲突" in e or "计数冲突" in e for e in errors), errors)
+
+        # Updating both lead and title to 3 noise items passes cleanly
+        raw_fixed = _modify_directive(
+            raw_mismatch,
+            "DAILY_SIGNAL_NOISE",
+            lambda cfg: cfg.update(title="今晚资讯过滤器：只盯 2 件真信号，把 3 条假象直接划走"),
+        )
+        raw_fixed = raw_fixed.replace("把两条失实传言直接划走", "把三条失实传言直接划走")
+        report.write_text(raw_fixed, encoding="utf-8")
+        self.assertEqual(lint.check_file(report, snap, master), ([], []))
+
+    def test_resolve_archived_report_supports_monthly_archive_fallback(self):
+        with TemporaryDirectory() as tmp:
+            fake_gold = Path(tmp)
+            arch = fake_gold / "daily" / "archive" / "2026-11" / "sample_legacy.md"
+            arch.parent.mkdir(parents=True)
+            arch.write_text("# archived\n", encoding="utf-8")
+            with patch.object(sys.modules[__name__], "GOLD", fake_gold):
+                self.assertEqual(_resolve_archived_report("sample_legacy.md"), arch)
 
 
 if __name__ == "__main__":

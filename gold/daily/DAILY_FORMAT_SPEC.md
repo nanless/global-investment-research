@@ -28,9 +28,10 @@
    - **第三档 · 门禁硬拦（违者 FAIL）**：
      - **全篇（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）严禁**：① 内部工程词、版本号与文件名（`V2.x/V5.x/V6.x/V7.x`、`Subagent`、`红队`、`法证`、`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`、`market_calendar.json`、`_edition_patch.json`、`_ledger_patch.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`DAILY_FORMAT_SPEC.md`、`AGENTS.md`、`SKILL.md` 及 `patch_state_dbs.py` 等任意 `*.py` 脚本名）；② 6 个居高临下口号（`小白词典`、`直接抄`、`蠢事`、`1分钟定心丸`、`1 分钟定心丸`、`保命铁律`）；
      - **Layer 0–1 严禁**：生僻卖方量化词（`stop-through`、`IFRS 9`、`HQLA`、`FVOCI`、`ROTCE`、`Call Wall`/`Put Wall`、`负 Gamma`、`R²=`）、未消歧人名（`Daniel Ghali`/`Michael Hsueh`）、工程路数（`子代理`/`63 路`）、赌徒口语（`梭哈`、`做T`、`短线波段`、`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）及平行打分（`六灯`、`X/6`）；
-   - **感叹号、煽动词与排版密度红线**：Layer 0–1 感叹号严格 **0** 个（FAIL），收敛新刊全篇 **≤5** 个（旧刊 ≤2）；全篇禁用 **13 个夸张煽动词**（`神准`/`分毫不差`/`100%胜率`/`100% 胜率`/`无情推翻`/`核雷`/`拉爆`/`血洗`/`焊死`/`史诗级`/`史诗轧空`/`彻底打脸`/`惊天验证`）；Layer 0–1 自然段 ≤240 字；全篇**加粗密度 ≤14%**；**裸数字/金额/百分比不套反引号**（仅代码可用）。
-5. **少即是多 + 透明缺口 + 跨时区诚实标注**：
-   - 关键数字配齐 **`[当前读数 + 历史水位 + 决策含义]`**；未披露或暂定数据统一记入快照 `data_caveats`（纯读者中文、零内部文件名）并在正文中如实标注；**严禁把不同时点的国内外报价差混作“国内供需溢价”，亦严禁把 05:00 盘后讲话因果倒置归因到 02:30 已收盘的国内价**。
+   - **感叹号、煽动词、反重复读与排版密度红线**：Layer 0–1 感叹号严格 **0** 个（FAIL），收敛新刊全篇 **≤5** 个（旧刊 ≤2）；全篇禁用 **13 个夸张煽动词**（`神准`/`分毫不差`/`100%胜率`/`100% 胜率`/`无情推翻`/`核雷`/`拉爆`/`血洗`/`焊死`/`史诗级`/`史诗轧空`/`彻底打脸`/`惊天验证`）；Layer 0–1 自然段 ≤240 字，开篇导语总长 **≤160 字**；全篇**加粗密度 ≤14%**；**裸数字/金额/百分比不套反引号**（仅代码可用）；**反重复读与零后台审计腔**：同一核心数字正文提及 **≤3 次**，标题与导语严禁出现「旧缺口清零」「挂账核销成绩单」等后台运维话术，正文严禁塞入冗余「挂账核销成绩单」表；导语所述的信号/噪音条数必须与 `DAILY_SIGNAL_NOISE` 数组长度精确一致（Gate 5 强制拦截）。
+5. **少即是多 + 透明缺口 + 跨资产传导与对称情景闭环**：
+   - 关键数字配齐 **`[当前读数 + 历史水位 + 决策含义]`**；未披露或暂定数据统一记入快照 `data_caveats`（纯读者中文、零内部文件名）并在正文中如实标注；每刊须配齐 **1 句利率→汇率→信用→大宗→股票风险溢价（ERP）跨资产传导链**、**未来 48 小时上行/下行双向催化触发线**及**四情景完整概率拆分与理由**（合计精确 = 100%，严禁只甩偷懒单边概率）；**严禁把不同时点的国内外报价差混作“国内供需溢价”，亦严禁把 05:00 盘后讲话因果倒置归因到 02:30 已收盘的国内价**。
+   - **`SCORECARD.md` 投资预判纯粹性**：公开记分卡仅登记面向读者的可证伪价格/阈值/宏观投资预判，严禁混入后台数据回补工单（回补任务隔离至 `data_caveats` 与 `AUDIT_LOG.md`）。
 6. **纯网页零碰撞矢量图表规范**：
    - 全部 SVG 画布采用 **`viewBox="0 0 640 ..."`**、主标签字号 **`≥10.2px`**（辅助刻度/徽章 `9.8–10.0px`）、全部文本经 `svg_esc()` 剔除位图 Emoji 与控制字符（保留矢量 `✓`/`✕`），手机端支持流畅横滑不缩字；
    - **图 1（`DAILY_CHART_TIMELINE`）** 采用 `vb_h=284` + 半透明白底胶囊标签 `_svg_label_pill()` 与 2D 碰撞面积最小化避让算法；**图 2（`DAILY_CHART_CROSS`）** 采用 1:1 真实线性比例 + 动态 `x_zero` + back-to-front 动态网格刻度（底纹 → 刻度 → 条形/文字 → 零轴）+ 中文惯例 `[红涨 / 绿跌]` + 精准主角高亮（显式 `"highlight": true/false`）+ 独立反向指标栏；所有页面经 `scripts/build_site.py` 直接输出纯网页静态站并通过 `scripts/lint_site.py --strict` 验收。
@@ -93,7 +94,7 @@
 2. **标准发刊闭环（Step 3 黄金 SSOT 优先，绝对路径裸命令，无 `cd &&` 前缀）**：
    1) 启动先读 `market_calendar.json` 查明休市叠加模式与北美冬/夏令时换算，并按**惰性主报告加载**仅读轻量级 `master_snapshot.json` 核验 5 大触发条件（命中时才全量读取主报告 MD）；随后用 `write_file` 全量更新日报数据源 `<REPO_ROOT>/gold/data_snapshot.json`（标准无日期键 `cross_ratios`、`etf_cn`、结构化 `data_caveats`、跨项目 SSOT 裁决字段 `tier_code`/`new_buy_allowed`、四关完整证据、`rmb_channels` 与 `trust_assets`，供 Step 4 权益轨零延迟只读校验）；仅当触发主报告 5 大更新条件时，同步更新 `master_snapshot.json`、`MASTER_BASELINE` 与主报告正文；
    2) 用 `write_file` 全量撰写本刊收敛主刊 Markdown 与公开记分卡 `daily/SCORECARD.md`（落实小白友好三层结构 + 3 张 640px 矢量图；同场修订加 `_r2` 防覆写；记分卡零内部工程/RSI 词汇、历史记录零篡改）；将【新增/更新/修正/删除】、`GOLD_EDITION_CHANGELOG`、`GOLD_EDITION_REVIEW` 与口径消歧写入微型补丁 `_ledger_patch.json` 并运行预授权 `scripts/patch_state_dbs.py` 无损头插至 `daily/CHANGELOG.md`（最新置顶）与 `daily/AUDIT_LOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）；
-      - 新刊严检前，三个账本须同时登记本刊（`GOLD_EDITION_CHANGELOG` / `GOLD_EDITION_SCORECARD` / `GOLD_EDITION_REVIEW`）。记录格式见黄金技能的[快照与审阅台账契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)。预测情景须事前划定互斥区间与未覆盖时的处理方式。来源仍未披露的结论留待验，按事先锁定的原口径结算。
+      - 新刊严检前，三个账本须同时登记本刊（`GOLD_EDITION_CHANGELOG` / `GOLD_EDITION_SCORECARD` / `GOLD_EDITION_REVIEW`）。`GOLD_EDITION_REVIEW` JSON 必填 `edition_id`、`as_of_short`、`note`、四关 HTTPS `sources` 与 `forecast_review`（`status` 仅允许 `settled` / `none_due` / `pending_evidence`，严禁 `"tracked"`），并由 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 在无损头插前强制校验（支持跨月空锚回退）。记录格式见黄金技能的[快照与审阅台账契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)。预测情景须事前划定互斥区间与未覆盖时的处理方式。来源仍未披露的结论留待验，按事先锁定的原口径结算。
    3) **强制运行纯网页 6 门禁严格验收（退出码必须为 `0`，0 errors、0 warnings）**：
       - `python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`
       - 若同步更新了主报告，一并传入 `<REPO_ROOT>/gold/黄金跨世纪周期与2026-2030终审研究报告.md`；

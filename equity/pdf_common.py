@@ -451,16 +451,16 @@ def render_md_body(
             if is_flagship:
                 if any(k in txt for k in ("第一部分", "第二部分", "第三部分", "第四部分", "附录")):
                     sec_counter += 1
-                    html_out.append(f'<h1 id="sec-{sec_counter}" class="vol-header">{md_inline(txt)}</h1>')
+                    html_out.append(f'<h2 id="sec-{sec_counter}" class="vol-header">{md_inline(txt)}</h2>')
                 continue
             if any(k in txt for k in ("第一部分", "第二部分", "第三部分", "第四部分", "附录")):
                 sec_counter += 1
-                html_out.append(f'<h1 id="sec-{sec_counter}" class="vol-header">{md_inline(txt)}</h1>')
+                html_out.append(f'<h2 id="sec-{sec_counter}" class="vol-header">{md_inline(txt)}</h2>')
             elif title == default_title:
                 title = txt
             else:
                 sec_counter += 1
-                html_out.append(f'<h1 id="sec-{sec_counter}" class="vol-header">{md_inline(txt)}</h1>')
+                html_out.append(f'<h2 id="sec-{sec_counter}" class="vol-header">{md_inline(txt)}</h2>')
             continue
 
         if line.startswith("> ") or stripped == ">":
@@ -576,7 +576,7 @@ def render_cover_banner(
         cover = (
             f'<div class="cover-banner" id="top">\n'
             f'  <div class="cover-tag">{esc(fallback_tag)}</div>\n'
-            f'  <div class="cover-title">{md_inline(fallback_title)}</div>\n'
+            f'  <h1 class="cover-title">{md_inline(fallback_title)}</h1>\n'
             f"</div>"
         )
         return cover, clean_plain_text(fallback_title), clean_plain_text(fallback_footer), ""
@@ -605,7 +605,7 @@ def render_cover_banner(
     cover = (
         f'<div class="cover-banner" id="top">\n'
         f'  <div class="cover-tag">{tag}</div>\n'
-        f'  <div class="cover-title">{cov_title}</div>\n'
+        f'  <h1 class="cover-title">{cov_title}</h1>\n'
         f"{meta_line}{kpi_html}</div>"
     )
     doc_title = clean_plain_text(str(meta.get("title", fallback_title)))

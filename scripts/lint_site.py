@@ -26,6 +26,7 @@ import json
 import re
 import sys
 import urllib.parse
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from decimal import Decimal
 from html.parser import HTMLParser
@@ -278,6 +279,20 @@ S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"_edition_patch\.json|_ledger_patch\.json|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing)(?![A-Za-z0-9_])",
     re.IGNORECASE,
+)
+# Reader-facing internal terms / repo markdown paths banned on all active, flagship, scorecard & post-cutover pages.
+S3_READER_INTERNAL_TERM_RE = re.compile(
+    r"(?:红队|\bTier\s*[0-3]\b|\bLinter\b|daily/[A-Za-z0-9_*-]+\.md)",
+    re.IGNORECASE,
+)
+INTERNAL_LEAK_CUTOVER: tuple[str, int, int] = ("2026-11-26", 730, 1)
+
+# Canonical restricted-code & warning regexes synced byte-for-byte with patch_state_dbs.py & equity/lint_equity.py.
+RESTRICTED_CODES_RE = re.compile(r"(?<![0-9])(?:968118|968001|00011)(?![0-9])")
+RESTRICTED_WARN_RE = re.compile(
+    r"(?:暂停|停申|停购|封盘|已停|停售|限购|退市|私有化|勿买|勿选|勿误配|"
+    r"严禁|禁止|严避|禁买|禁推|禁配|禁碰|切忌|避坑|避开|绕开|远离|回避|"
+    r"不可|不买|不推|莫买|别买|别碰|慎碰|高危|雷区|警示|清盘|剔除|弃用|改以|替代)"
 )
 
 # ---------------------------------------------------------------------------
@@ -1160,6 +1175,18 @@ def _iter_json_strings(obj: object, prefix: str = "") -> Iterable[tuple[str, str
             yield from _iter_json_strings(v, f"{prefix}[{idx}]")
 
 
+def _iter_json_dicts(obj: object, prefix: str = "") -> Iterable[tuple[str, dict]]:
+    """Yield (path, dict_obj) pairs from nested JSON lists/objects."""
+    if isinstance(obj, dict):
+        yield prefix, obj
+        for k, v in obj.items():
+            sub = f"{prefix}.{k}" if prefix else str(k)
+            yield from _iter_json_dicts(v, sub)
+    elif isinstance(obj, list):
+        for idx, v in enumerate(obj):
+            yield from _iter_json_dicts(v, f"{prefix}[{idx}]")
+
+
 def _scan_embedded_json_payload(
     rel_path: str,
     json_id: str,
@@ -1170,7 +1197,8 @@ def _scan_embedded_json_payload(
     check_gold_tier0: bool = False,
     gate_tag: str = "S3",
 ) -> None:
-    """Scan string leaves in #screener-data / #etf-data / #ch-etf-data for engineering leaks, NaN/[object Object], and Gold Tier 0 buy directives."""
+    """Scan string leaves in #screener-data / #etf-data / #ch-etf-data for engineering leaks,
+    NaN/[object Object], restricted-code warnings, and Gold Tier 0 buy directives."""
     try:
         payload = json.loads(raw_json)
     except json.JSONDecodeError:
@@ -1179,9 +1207,27 @@ def _scan_embedded_json_payload(
     eng_hits = 0
     js_hits = 0
     gold_hits = 0
+    restricted_hits = 0
+
+    if check_eng:
+        for obj_path, dobj in _iter_json_dicts(payload):
+            if restricted_hits >= 5:
+                break
+            code_val = dobj.get("code")
+            if isinstance(code_val, str) and RESTRICTED_CODES_RE.search(code_val):
+                ctx = " ".join(
+                    str(v) for k, v in dobj.items() if k != "code" and isinstance(v, str)
+                )
+                if not RESTRICTED_WARN_RE.search(ctx):
+                    errors.append(
+                        f"[S3] {rel_path}: #{json_id} ({obj_path}) restricted code {code_val!r} "
+                        f"lacks mandatory suspend/delist/avoid warning in sibling fields"
+                    )
+                    restricted_hits += 1
+
     for field_path, val in _iter_json_strings(payload):
         if check_eng and eng_hits < 5:
-            m_eng = S3_INTERNAL_ENG_LEAK_RE.search(val)
+            m_eng = S3_INTERNAL_ENG_LEAK_RE.search(val) or S3_READER_INTERNAL_TERM_RE.search(val)
             if m_eng:
                 snippet = " ".join(val[max(0, m_eng.start() - 16) : min(len(val), m_eng.end() + 16)].split())
                 errors.append(
@@ -1196,6 +1242,16 @@ def _scan_embedded_json_payload(
                     f"[S3] {rel_path}: #{json_id} ({field_path}) leaked literal NaN/[object Object] -> {snippet!r}"
                 )
                 js_hits += 1
+        if check_eng and restricted_hits < 5 and not field_path.endswith(".code"):
+            for m_rc in RESTRICTED_CODES_RE.finditer(val):
+                win = val[max(0, m_rc.start() - 40) : min(len(val), m_rc.end() + 40)]
+                if not RESTRICTED_WARN_RE.search(win):
+                    errors.append(
+                        f"[S3] {rel_path}: #{json_id} ({field_path}) unguarded restricted code "
+                        f"{m_rc.group(0)} without ±40-char warning -> {win!r}"
+                    )
+                    restricted_hits += 1
+                    break
         if check_gold_tier0 and gold_hits < 5:
             for raw_seg in re.split(r"[\n。！？；，,]+", val):
                 seg = " ".join(raw_seg.split())
@@ -1293,6 +1349,22 @@ def run_gate_s3(
                 f"[S3] {rel_path}: leaked internal engineering filename/identifier -> {snippet!r}"
             )
 
+        # Enforce reader-facing internal term guard on all active, flagship, scorecard & post-cutover pages
+        m_dated_s3 = DAILY_DATED_RE.fullmatch(rel_path)
+        is_legacy_dated = bool(
+            m_dated_s3
+            and (m_dated_s3.group(2), int(m_dated_s3.group(3)), int(m_dated_s3.group(4) or 1)) < INTERNAL_LEAK_CUTOVER
+        )
+        if not is_legacy_dated:
+            m_term = S3_READER_INTERNAL_TERM_RE.search(doc.visible_text)
+            if m_term:
+                snippet = " ".join(
+                    doc.visible_text[max(0, m_term.start() - 18) : min(len(doc.visible_text), m_term.end() + 18)].split()
+                )
+                errors.append(
+                    f"[S3] {rel_path}: leaked internal engineering/tier/path term in public prose -> {snippet!r}"
+                )
+
         if doc.screener_json_raw is not None:
             _scan_embedded_json_payload(
                 rel_path,
@@ -1381,6 +1453,103 @@ def _min_daily_charts(
     return 2
 
 
+_SVG_RAW_BLOCK_RE = re.compile(r"<svg\b[^>]*>.*?</svg>", flags=re.DOTALL | re.IGNORECASE)
+_SVG_TRANSLATE_RE = re.compile(
+    r"translate\(\s*([+-]?\d+(?:\.\d+)?)(?:[\s,]+([+-]?\d+(?:\.\d+)?))?\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _check_svg_chart_a2_sign_contradictions(raw_html: str, rel_path: str) -> list[str]:
+    """Catch CHART_A2 SVG futures cards pairing negative basis ('基差 -' / '贴水') with '升水约'
+    (or positive basis with '折价约') inside the same card <rect>, same <g>, or <= 55px vertically on the same column."""
+    errs: list[str] = []
+    for idx, chunk in enumerate(_SVG_RAW_BLOCK_RE.findall(raw_html or ""), 1):
+        if "升水约" not in chunk and "折价约" not in chunk:
+            continue
+        try:
+            root = ET.fromstring(chunk)
+        except ET.ParseError:
+            continue
+
+        # Collect card <rect> boxes and <text> elements with translated coordinates + parent <g> id
+        card_rects: list[tuple[float, float, float, float]] = []
+        texts: list[tuple[float, float, str, int | None]] = []
+
+        def _walk(node: ET.Element, tx: float, ty: float, group_id: int | None) -> None:
+            tr = node.attrib.get("transform", "")
+            for tm in _SVG_TRANSLATE_RE.finditer(tr):
+                tx += float(tm.group(1))
+                if tm.group(2) is not None:
+                    ty += float(tm.group(2))
+            tag = node.tag.split("}")[-1].lower()
+            cur_gid = id(node) if tag == "g" else group_id
+            if tag == "rect":
+                try:
+                    rx = float(node.attrib.get("x", "0")) + tx
+                    ry = float(node.attrib.get("y", "0")) + ty
+                    rw = float(node.attrib.get("width", "0"))
+                    rh = float(node.attrib.get("height", "0"))
+                    if rw >= 200.0 and 30.0 <= rh <= 90.0:
+                        card_rects.append((rx, ry, rx + rw, ry + rh))
+                except ValueError:
+                    pass
+                return
+            if tag == "text":
+                t_val = " ".join("".join(node.itertext()).split())
+                if t_val:
+                    try:
+                        x = float(node.attrib.get("x", "0")) + tx
+                        y = float(node.attrib.get("y", "0")) + ty
+                        texts.append((x, y, t_val, cur_gid))
+                    except ValueError:
+                        pass
+                return
+            for ch in node:
+                _walk(ch, tx, ty, cur_gid)
+
+        _walk(root, 0.0, 0.0, None)
+
+        reported: set[tuple[int, float]] = set()
+        for bx, by, btxt, bgid in texts:
+            is_prem_badge = "升水约" in btxt
+            is_disc_badge = "折价约" in btxt
+            if not (is_prem_badge or is_disc_badge):
+                continue
+
+            # 1) Prefer exact enclosing card <rect> so adjacent cards never cross-match
+            enclosing = [r for r in card_rects if r[0] <= bx <= r[2] and r[1] <= by <= r[3]]
+            if enclosing:
+                rx0, ry0, rx1, ry1 = enclosing[0]
+                peers = [t for tx, ty, t, _ in texts if rx0 <= tx <= rx1 and ry0 <= ty <= ry1]
+            elif bgid is not None:
+                peers = [t for _, _, t, g in texts if g == bgid]
+            else:
+                peers = [
+                    t
+                    for tx, ty, t, _ in texts
+                    if abs(ty - by) <= 55.0 and abs(tx - bx) <= 420.0
+                ]
+
+            card_txt = " ".join(peers)
+            has_neg_basis = bool(re.search(r"基差\s*-\s*\d|贴水", card_txt))
+            has_pos_basis = bool(re.search(r"基差\s*\+\s*\d", card_txt))
+            key = (idx, round(by, 1))
+            if key in reported:
+                continue
+            if is_prem_badge and has_neg_basis and not has_pos_basis:
+                reported.add(key)
+                errs.append(
+                    f"[S4] {rel_path}: SVG#{idx} CHART_A2 符号矛盾 — 同卡出现「基差 -/贴水」与「{btxt}」({card_txt[:72]!r})"
+                )
+            elif is_disc_badge and has_pos_basis and not has_neg_basis:
+                reported.add(key)
+                errs.append(
+                    f"[S4] {rel_path}: SVG#{idx} CHART_A2 符号矛盾 — 同卡出现「基差 +」与「{btxt}」({card_txt[:72]!r})"
+                )
+    return errs
+
+
 def run_gate_s4(
     parsed_htmls: dict[str, ParsedHtml],
     market_state: dict | None,
@@ -1463,21 +1632,23 @@ def run_gate_s4(
                 f"(required >= {min_req})"
             )
 
-    # SVG <text> out-of-bounds & pairwise overlap check (non-legacy pages: 4 flagships + 4 latest + >= ALL_MAIN_CUTOVER dailies).
-    if check_svg_text_geometry is not None:
-        latest_pages = {DAILY_GOLD_LATEST_PAGE} | {p for _, p in DAILY_EQUITY_LATEST_PAGES}
-        for rel_path, doc in sorted(parsed_htmls.items()):
-            check_geom = rel_path in FLAGSHIP_MIN_CHARTS or rel_path in latest_pages
-            if not check_geom:
-                m_dated = DAILY_DATED_RE.fullmatch(rel_path)
-                if m_dated:
-                    _, date_s, hhmm_s, rev_s = m_dated.groups()
-                    if (date_s, int(hhmm_s), int(rev_s or 1)) >= ALL_MAIN_CUTOVER:
-                        check_geom = True
-            if not check_geom:
-                continue
+    # SVG <text> out-of-bounds, pairwise overlap & CHART_A2 sign-contradiction check
+    # (non-legacy pages: 4 flagships + 4 latest + >= ALL_MAIN_CUTOVER dailies).
+    latest_pages = {DAILY_GOLD_LATEST_PAGE} | {p for _, p in DAILY_EQUITY_LATEST_PAGES}
+    for rel_path, doc in sorted(parsed_htmls.items()):
+        check_geom = rel_path in FLAGSHIP_MIN_CHARTS or rel_path in latest_pages
+        if not check_geom:
+            m_dated = DAILY_DATED_RE.fullmatch(rel_path)
+            if m_dated:
+                _, date_s, hhmm_s, rev_s = m_dated.groups()
+                if (date_s, int(hhmm_s), int(rev_s or 1)) >= ALL_MAIN_CUTOVER:
+                    check_geom = True
+        if not check_geom:
+            continue
+        if check_svg_text_geometry is not None:
             for issue in check_svg_text_geometry(doc.raw_text, label=rel_path):
                 errors.append(f"[S4] {issue}")
+        errors.extend(_check_svg_chart_a2_sign_contradictions(doc.raw_text, rel_path))
 
 
 def run_gate_s5(
@@ -2167,7 +2338,28 @@ def run_gate_s6(
                     f"[S6] equity/state/multi_asset_channels.json: missing required standard channel IDs: {missing_ch_ids}"
                 )
 
-    # 5. A dated archive preserves its original decisions. Check live pages (incl. guide.html) and this edition's dated copies.
+    # 5. Restricted code warning guard across active pages (968118 / 968001 / 00011 must carry ±40-char warning).
+    active_restricted_roots = {"index.html", "channels.html", "etfs.html", "screener.html", "guide.html"}
+    for path, doc in sorted(parsed_htmls.items()):
+        if not (
+            path in active_restricted_roots
+            or path.startswith("channels/")
+            or path.endswith("-latest.html")
+        ):
+            continue
+        vis = doc.visible_text
+        rc_hits = 0
+        for m_rc in RESTRICTED_CODES_RE.finditer(vis):
+            win = vis[max(0, m_rc.start() - 40) : min(len(vis), m_rc.end() + 40)]
+            if not RESTRICTED_WARN_RE.search(win):
+                errors.append(
+                    f"[S6] {path}: unguarded restricted code {m_rc.group(0)} without ±40-char suspend/delist/avoid warning -> {win!r}"
+                )
+                rc_hits += 1
+                if rc_hits >= 5:
+                    break
+
+    # 6. A dated archive preserves its original decisions. Check live pages (incl. guide.html) and this edition's dated copies.
     if gold_new_buy_blocked:
         edition_slug = str((gold_snap or {}).get("edition_id", "")).replace("_", "-")
         live_root_pages = {"index.html", "channels.html", "etfs.html", "screener.html", "scorecard.html", "guide.html"}
