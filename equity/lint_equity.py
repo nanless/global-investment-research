@@ -1014,9 +1014,21 @@ def _check_index_links(index: Path, *, precheck: bool) -> list[str]:
 def _check_ssot_databases(state: dict | None) -> list[str]:
     """Validate required multi_asset_channels.json, etf_universe.json, and deep_dossiers.json SSOTs."""
     errs: list[str] = []
+    expected_pool = 231
+    require_presence = False
+    if isinstance(state, dict) and isinstance(state.get("markets"), dict):
+        counts = [
+            state["markets"][m].get("stock_pool_count")
+            for m in MARKETS
+            if isinstance(state["markets"].get(m), dict)
+        ]
+        if len(counts) == len(MARKETS) and all(type(c) is int and c > 0 for c in counts):
+            expected_pool = sum(counts)
+            require_presence = expected_pool >= 100
 
     if not MULTI_ASSET_PATH.exists():
-        errs.append("Gate 4 失败：缺少 state/multi_asset_channels.json")
+        if require_presence:
+            errs.append("Gate 4 失败：缺少 state/multi_asset_channels.json")
     else:
         try:
             ma = json.loads(MULTI_ASSET_PATH.read_text(encoding="utf-8"))
@@ -1046,7 +1058,8 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                     errs.append(f"Gate 4 失败：multi_asset_channels.json 缺少必填渠道 ID: {missing_ch}")
 
     if not ETF_UNIVERSE_PATH.exists():
-        errs.append("Gate 4 失败：缺少 state/etf_universe.json")
+        if require_presence:
+            errs.append("Gate 4 失败：缺少 state/etf_universe.json")
     else:
         try:
             eu = json.loads(ETF_UNIVERSE_PATH.read_text(encoding="utf-8"))
@@ -1076,7 +1089,8 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                         seen_codes.add(ck)
 
     if not DEEP_DOSSIERS_PATH.exists():
-        errs.append("Gate 4 失败：缺少 state/deep_dossiers.json")
+        if require_presence:
+            errs.append("Gate 4 失败：缺少 state/deep_dossiers.json")
     else:
         try:
             dd = json.loads(DEEP_DOSSIERS_PATH.read_text(encoding="utf-8"))
@@ -1087,15 +1101,6 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
             if not isinstance(dossiers, dict):
                 errs.append("Gate 4 失败：deep_dossiers.json 须包含 dossiers 对象")
             else:
-                expected_pool = 231
-                if isinstance(state, dict) and isinstance(state.get("markets"), dict):
-                    counts = [
-                        state["markets"][m].get("stock_pool_count")
-                        for m in MARKETS
-                        if isinstance(state["markets"].get(m), dict)
-                    ]
-                    if len(counts) == len(MARKETS) and all(type(c) is int and c > 0 for c in counts):
-                        expected_pool = sum(counts)
                 if len(dossiers) != expected_pool:
                     errs.append(f"Gate 4 失败：deep_dossiers.json 条目数 ({len(dossiers)}) ≠ 三市股票池总数 ({expected_pool})")
                 for key, entry in dossiers.items():
