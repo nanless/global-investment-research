@@ -46,6 +46,8 @@ REQUIRED_SENTINEL_FILES: tuple[str, ...] = (".nojekyll",)
 # Core site artifacts that MUST exist and be non-empty.
 REQUIRED_NONEMPTY_FILES: tuple[str, ...] = (
     "index.html",
+    "channels.html",
+    "etfs.html",
     "screener.html",
     "scorecard.html",
     "archive.html",
@@ -421,6 +423,7 @@ class ParsedHtml:
     edition_attr: str = ""
     stock_row_count: int = 0
     screener_json_raw: str | None = None
+    etf_json_raw: str | None = None
     inline_styles: list[str] = field(default_factory=list)
     visible_text: str = ""
     prose_text: str = ""
@@ -536,6 +539,8 @@ class SiteHtmlParser(HTMLParser):
         self._style_chunks: list[str] = []
         self._in_screener_json = False
         self._screener_json_chunks: list[str] = []
+        self._in_etf_json = False
+        self._etf_json_chunks: list[str] = []
         self._skip_text_depth = 0  # script / style / template
         self._code_depth = 0  # code / pre / kbd / samp
         self._vis_chunks: list[str] = []
@@ -682,6 +687,13 @@ class SiteHtmlParser(HTMLParser):
             ):
                 self._in_screener_json = True
                 self._screener_json_chunks = []
+            elif (
+                t == "script"
+                and elem_id == "etf-data"
+                and attr_map.get("type", "").strip().lower() == "application/json"
+            ):
+                self._in_etf_json = True
+                self._etf_json_chunks = []
         elif t in ("code", "pre", "kbd", "samp"):
             self._code_depth += 1
         elif t in ("button", "a"):
@@ -716,6 +728,11 @@ class SiteHtmlParser(HTMLParser):
             self._in_screener_json = False
             self.doc.screener_json_raw = "".join(self._screener_json_chunks)
             self._screener_json_chunks = []
+
+        if t == "script" and self._in_etf_json:
+            self._in_etf_json = False
+            self.doc.etf_json_raw = "".join(self._etf_json_chunks)
+            self._etf_json_chunks = []
 
         if t in ("script", "style", "template") and self._skip_text_depth > 0:
             self._skip_text_depth -= 1
@@ -752,6 +769,8 @@ class SiteHtmlParser(HTMLParser):
             self._style_chunks.append(data)
         if self._in_screener_json:
             self._screener_json_chunks.append(data)
+        if self._in_etf_json:
+            self._etf_json_chunks.append(data)
         if self._svg_stack and data.strip():
             self._svg_stack[-1].has_content = True
         if self._skip_text_depth == 0:
@@ -1372,7 +1391,7 @@ def _validate_screener_json(
             )
             bad_entries += 1
 
-        # Zero raw <br>, **, or ` in any string field
+        # Zero raw <br>, **, or ` in any string field (including nested 7-dim dossier)
         for k, v in entry.items():
             if isinstance(v, str) and SCREENER_RAW_MARKUP_RE.search(v):
                 errors.append(
@@ -1381,6 +1400,22 @@ def _validate_screener_json(
                 )
                 bad_entries += 1
                 break
+        dossier = entry.get("dossier")
+        if isinstance(dossier, dict):
+            for dk in ("moat", "financials", "valuation_anchor", "shareholder_flow", "catalysts", "bear_case", "action_etf"):
+                dv = dossier.get(dk)
+                if not isinstance(dv, str) or not dv.strip():
+                    errors.append(
+                        f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) missing dossier.{dk}"
+                    )
+                    bad_entries += 1
+                    break
+                if SCREENER_RAW_MARKUP_RE.search(dv):
+                    errors.append(
+                        f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) dossier.{dk} contains raw markup"
+                    )
+                    bad_entries += 1
+                    break
 
         if bad_entries >= 10:
             break
@@ -1614,11 +1649,45 @@ def run_gate_s6(
                     f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) < 100 minimum floor"
                 )
 
+    etfs_doc = parsed_htmls.get("etfs.html")
+    if etfs_doc is not None:
+        if etfs_doc.etf_json_raw is None:
+            errors.append('[S6] etfs.html: missing <script id="etf-data" type="application/json"> payload')
+        else:
+            try:
+                etf_payload = json.loads(etfs_doc.etf_json_raw)
+            except json.JSONDecodeError as exc:
+                errors.append(f"[S6] etfs.html: invalid JSON in #etf-data: {exc}")
+                etf_payload = None
+            if not isinstance(etf_payload, list) or len(etf_payload) < 75:
+                errors.append(
+                    f"[S6] etfs.html: #etf-data must contain >= 75 ETFs (got {len(etf_payload) if isinstance(etf_payload, list) else 'non-list'})"
+                )
+            else:
+                seen_etfs: set[str] = set()
+                gold_etf_codes = {"518660", "518880", "517520", "02840", "IAUM", "GLDM", "IGLN"}
+                for idx, it in enumerate(etf_payload):
+                    if not isinstance(it, dict):
+                        errors.append(f"[S6] etfs.html: #etf-data[{idx}] must be an object")
+                        break
+                    cd = str(it.get("code", "")).strip()
+                    if not cd or cd in seen_etfs:
+                        errors.append(f"[S6] etfs.html: missing or duplicate ETF code {cd!r}")
+                    seen_etfs.add(cd)
+                    if gold_new_buy_blocked and (it.get("gold_locked") or cd.upper() in gold_etf_codes):
+                        role = str(it.get("action_role", ""))
+                        if not it.get("gold_locked") or any(bad in role for bad in ("底座", "买入", "推荐", "加仓")):
+                            errors.append(f"[S6] etfs.html: Gold Tier 0 mutex violation on ETF {cd} (role={role!r})")
+                    for k, v in it.items():
+                        if isinstance(v, str) and SCREENER_RAW_MARKUP_RE.search(v):
+                            errors.append(f"[S6] etfs.html: ETF {cd} field '{k}' contains raw markup")
+                            break
+
     # A dated archive preserves its original decisions. Check live pages and this edition's dated copies.
     if gold_new_buy_blocked:
         edition_slug = str((gold_snap or {}).get("edition_id", "")).replace("_", "-")
         for path, doc in parsed_htmls.items():
-            if (path in {"index.html", "screener.html", "scorecard.html"}
+            if (path in {"index.html", "channels.html", "etfs.html", "screener.html", "scorecard.html"}
                     or path.startswith("reports/") or path.endswith("-latest.html")
                     or (edition_slug and path.startswith("daily/") and path.endswith(f"-{edition_slug}.html"))):
                 _check_gold_tier0_mutex(doc, errors)

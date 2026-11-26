@@ -905,6 +905,40 @@ class OperationalRegressionTest(unittest.TestCase):
             self.assertLess(combined.index("Dec entry"), combined.index("Nov entry"))
             self.assertLess(combined.index("Nov entry"), combined.index("Oct entry"))
 
+    def test_multi_asset_channels_etfs_and_dossiers_render_cleanly(self):
+        repo = Path(build_site.__file__).resolve().parent.parent
+        ch_data = json.loads((repo / "equity" / "state" / "multi_asset_channels.json").read_text("utf-8"))
+        etf_data = json.loads((repo / "equity" / "state" / "etf_universe.json").read_text("utf-8"))
+        dos_data = json.loads((repo / "equity" / "state" / "deep_dossiers.json").read_text("utf-8"))
+
+        ch_html = build_site.build_channels_page(ch_data)
+        self.assertEqual(len(ch_data["channels"]), 8)
+        self.assertIn("储蓄国债", ch_html)
+        self.assertIn("table-wrap", ch_html)
+        self.assertIn("data-channel-cat", ch_html)
+
+        etf_html = build_site.build_etfs_page(etf_data)
+        self.assertGreaterEqual(len(etf_data["etfs"]), 75)
+        self.assertIn('id="etf-data"', etf_html)
+        self.assertIn("红灯暂停新买", etf_html)
+
+        # Graceful empty fallback
+        self.assertIn("8 大合规", build_site.build_channels_page(None))
+        self.assertIn('id="etf-data"', build_site.build_etfs_page(None))
+
+        # 7-dimension dossier merge covers all 231 pool stocks
+        sample = [
+            {"market": "a-share", "code": "601398", "name": "工商银行"},
+            {"market": "hk-stock", "code": "00005.HK", "name": "汇丰控股"},
+            {"market": "us-stock", "code": "NVDA", "name": "英伟达"},
+        ]
+        merged = build_site.merge_stock_dossiers(sample, dos_data)
+        self.assertEqual(dos_data["total_stocks"], 231)
+        for st in merged:
+            self.assertIn("dossier", st)
+            for k in ("moat", "financials", "valuation_anchor", "shareholder_flow", "catalysts", "bear_case", "action_etf"):
+                self.assertTrue(st["dossier"][k].strip())
+
 
 if __name__ == "__main__":
     unittest.main()

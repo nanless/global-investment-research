@@ -29,9 +29,44 @@ from pdf_common import BASE_DIR, DAILY_DIR, lint_markdown_report
 GOLD_SNAPSHOT_PATH = BASE_DIR.parent / "gold" / "data_snapshot.json"
 GOLD_CALENDAR_PATH = GOLD_SNAPSHOT_PATH.with_name("market_calendar.json")
 STATE_PATH = BASE_DIR / "state" / "market_state.json"
+MULTI_ASSET_PATH = BASE_DIR / "state" / "multi_asset_channels.json"
+ETF_UNIVERSE_PATH = BASE_DIR / "state" / "etf_universe.json"
+DEEP_DOSSIERS_PATH = BASE_DIR / "state" / "deep_dossiers.json"
 BEIJING = timezone(timedelta(hours=8))
 EDITION_CUTOVER = ("2026-11-25", 1800, 2)
 ALL_MAIN_CUTOVER = getattr(_edition_plan_mod, "ALL_MAIN_CUTOVER", ("2026-11-26", 1800, 1))
+_REQUIRED_MULTI_ASSET_CHANNELS = (
+    "bonds",
+    "funds_wm",
+    "reverse_repo",
+    "qdii_mrf",
+    "large_cds",
+    "convertible_bonds",
+    "c_reits",
+    "commodity_etfs",
+)
+_ETF_REQUIRED_STR_FIELDS = (
+    "code",
+    "name",
+    "market",
+    "channel",
+    "fee_total_pct",
+    "thesis_deep",
+    "risk_boundary",
+    "action_role",
+)
+_DOSSIER_DIMENSIONS = (
+    "moat",
+    "financials",
+    "valuation_anchor",
+    "shareholder_flow",
+    "catalysts",
+    "bear_case",
+    "action_etf",
+)
+_DOSSIER_RAW_MARKUP_RE = re.compile(r"\*\*|<br\s*/?>|`", flags=re.IGNORECASE)
+_GOLD_ETF_CODES = frozenset({"518660", "518880", "517520", "02840", "IAUM", "GLDM", "IGLN"})
+_GOLD_ETF_FORBIDDEN_ROLE_RE = re.compile(r"(?:底座|买入|推荐)")
 _PERIOD_RE = re.compile(r"\d{4}_(?:0[1-9]|1[0-2])")
 _DAILY_NAME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})_(a_share|hk_stock|us_stock)(?:_r([2-9]|[1-9]\d+))?\.md")
 _REPORT_CUTOFF_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?:\s|$)")
@@ -50,7 +85,7 @@ _GOLD_DEFER_GUARD_RE = re.compile(
     r"|(?:原稿曾建议|原稿曾考虑|过去曾建议)[\s“‘「\x22]*$"
 )
 _GOLD_MINER_TICKERS_RE = re.compile(
-    r"(?:NEM|纽蒙特|山东黄金|中金黄金|赤峰黄金|山金国际|紫金黄金|招金|GLD|IAUM|518660|518880|159934)",
+    r"(?:NEM|纽蒙特|山东黄金|中金黄金|赤峰黄金|山金国际|紫金黄金|招金|GLD|GLDM|IAUM|IGLN|518660|518880|517520|159934|02840|02899|06181|01929)",
     flags=re.IGNORECASE,
 )
 _TEN_DOT_RE = re.compile(r"[●○]{10}")
@@ -678,6 +713,26 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
         idx_path = DAILY_DIR / "INDEX.md"
         if idx_path.exists():
             errs.extend(_scan_text_for_gold_buy(idx_path.name, idx_path.read_text(encoding="utf-8")))
+        for db_path in (MULTI_ASSET_PATH, ETF_UNIVERSE_PATH, DEEP_DOSSIERS_PATH):
+            if db_path.exists():
+                errs.extend(_scan_text_for_gold_buy(db_path.name, db_path.read_text(encoding="utf-8")))
+        if ETF_UNIVERSE_PATH.exists():
+            try:
+                etf_obj = json.loads(ETF_UNIVERSE_PATH.read_text(encoding="utf-8"))
+                for etf in etf_obj.get("etfs", []) if isinstance(etf_obj, dict) else []:
+                    if not isinstance(etf, dict):
+                        continue
+                    code = str(etf.get("code", "")).strip().upper()
+                    is_gold_etf = etf.get("gold_locked") is True or code in _GOLD_ETF_CODES
+                    if is_gold_etf:
+                        role = str(etf.get("action_role", "")).strip()
+                        if not role or _GOLD_ETF_FORBIDDEN_ROLE_RE.search(role):
+                            errs.append(
+                                f"Gate C2 跨项目硬冲突 ({ETF_UNIVERSE_PATH.name}:{code})："
+                                f"黄金红灯停期严禁将黄金/金矿 ETF action_role 标为底座/买入/推荐 -> {role!r}"
+                            )
+            except (OSError, ValueError) as exc:
+                errs.append(f"Gate C2 失败：{ETF_UNIVERSE_PATH.name} 解析异常: {exc}")
         for mkt_k, chart_k, mf in (
             ("a_share", "a7", BASE_DIR / "report_meta_a_share.json"),
             ("hk_stock", "h7", BASE_DIR / "report_meta_hk_stock.json"),
@@ -956,10 +1011,111 @@ def _check_index_links(index: Path, *, precheck: bool) -> list[str]:
     return errors
 
 
+def _check_ssot_databases(state: dict | None) -> list[str]:
+    """Validate required multi_asset_channels.json, etf_universe.json, and deep_dossiers.json SSOTs."""
+    errs: list[str] = []
+
+    if not MULTI_ASSET_PATH.exists():
+        errs.append("Gate 4 失败：缺少 state/multi_asset_channels.json")
+    else:
+        try:
+            ma = json.loads(MULTI_ASSET_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            errs.append(f"Gate 4 失败：multi_asset_channels.json 解析失败: {exc}")
+        else:
+            channels = ma.get("channels") if isinstance(ma, dict) else None
+            if not isinstance(channels, list):
+                errs.append("Gate 4 失败：multi_asset_channels.json 须包含 channels 数组")
+            else:
+                seen_ids: set[str] = set()
+                for idx, ch in enumerate(channels):
+                    if not isinstance(ch, dict):
+                        errs.append(f"Gate 4 失败：multi_asset_channels.json channels[{idx}] 须为对象")
+                        continue
+                    cid = ch.get("id")
+                    if isinstance(cid, str) and cid.strip():
+                        seen_ids.add(cid.strip())
+                    if not isinstance(ch.get("name"), str) or not ch["name"].strip():
+                        errs.append(f"Gate 4 失败：multi_asset_channels.json channels[{idx}]({cid}) 缺少非空 name")
+                    if not isinstance(ch.get("products"), list) or not ch["products"]:
+                        errs.append(f"Gate 4 失败：multi_asset_channels.json channels[{idx}]({cid}) 缺少非空 products")
+                    if not isinstance(ch.get("rules_and_redlines"), list) or not ch["rules_and_redlines"]:
+                        errs.append(f"Gate 4 失败：multi_asset_channels.json channels[{idx}]({cid}) 缺少非空 rules_and_redlines")
+                missing_ch = [cid for cid in _REQUIRED_MULTI_ASSET_CHANNELS if cid not in seen_ids]
+                if missing_ch:
+                    errs.append(f"Gate 4 失败：multi_asset_channels.json 缺少必填渠道 ID: {missing_ch}")
+
+    if not ETF_UNIVERSE_PATH.exists():
+        errs.append("Gate 4 失败：缺少 state/etf_universe.json")
+    else:
+        try:
+            eu = json.loads(ETF_UNIVERSE_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            errs.append(f"Gate 4 失败：etf_universe.json 解析失败: {exc}")
+        else:
+            etfs = eu.get("etfs") if isinstance(eu, dict) else None
+            if not isinstance(etfs, list):
+                errs.append("Gate 4 失败：etf_universe.json 须包含 etfs 数组")
+            else:
+                if len(etfs) < 75:
+                    errs.append(f"Gate 4 失败：etf_universe.json 收录数量不足 ({len(etfs)} < 75)")
+                seen_codes: set[str] = set()
+                for idx, item in enumerate(etfs):
+                    if not isinstance(item, dict):
+                        errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}] 须为对象")
+                        continue
+                    for field in _ETF_REQUIRED_STR_FIELDS:
+                        val = item.get(field)
+                        if not isinstance(val, str) or not val.strip():
+                            errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}]({item.get('code')}) 缺少非空 {field}")
+                    code = item.get("code")
+                    if isinstance(code, str) and code.strip():
+                        ck = code.strip()
+                        if ck in seen_codes:
+                            errs.append(f"Gate 4 失败：etf_universe.json 存在重复代码 {ck}")
+                        seen_codes.add(ck)
+
+    if not DEEP_DOSSIERS_PATH.exists():
+        errs.append("Gate 4 失败：缺少 state/deep_dossiers.json")
+    else:
+        try:
+            dd = json.loads(DEEP_DOSSIERS_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            errs.append(f"Gate 4 失败：deep_dossiers.json 解析失败: {exc}")
+        else:
+            dossiers = dd.get("dossiers") if isinstance(dd, dict) else None
+            if not isinstance(dossiers, dict):
+                errs.append("Gate 4 失败：deep_dossiers.json 须包含 dossiers 对象")
+            else:
+                expected_pool = 231
+                if isinstance(state, dict) and isinstance(state.get("markets"), dict):
+                    counts = [
+                        state["markets"][m].get("stock_pool_count")
+                        for m in MARKETS
+                        if isinstance(state["markets"].get(m), dict)
+                    ]
+                    if len(counts) == len(MARKETS) and all(type(c) is int and c > 0 for c in counts):
+                        expected_pool = sum(counts)
+                if len(dossiers) != expected_pool:
+                    errs.append(f"Gate 4 失败：deep_dossiers.json 条目数 ({len(dossiers)}) ≠ 三市股票池总数 ({expected_pool})")
+                for key, entry in dossiers.items():
+                    if not isinstance(entry, dict):
+                        errs.append(f"Gate 4 失败：deep_dossiers.json[{key}] 须为对象")
+                        continue
+                    for dim in _DOSSIER_DIMENSIONS:
+                        val = entry.get(dim)
+                        if not isinstance(val, str) or not val.strip():
+                            errs.append(f"Gate 4 失败：deep_dossiers.json[{key}] 缺少非空维度 {dim}")
+                        elif _DOSSIER_RAW_MARKUP_RE.search(val):
+                            errs.append(f"Gate 4 失败：deep_dossiers.json[{key}].{dim} 残留原始 Markdown/HTML 标记")
+    return errs
+
+
 def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[str]]:
     """Shared single-source workspace state, RSI playbook/metrics, ledger, INDEX link & _latest sync check."""
     errs: list[str] = []
     warns: list[str] = []
+    st: dict | None = None
     if not STATE_PATH.exists():
         errs.append("Gate 4 失败：缺少 state/market_state.json")
     else:
@@ -967,6 +1123,7 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
             st = json.loads(STATE_PATH.read_text(encoding="utf-8"))
             if not isinstance(st, dict):
                 errs.append("Gate 4 失败：market_state.json 根元素必须为对象")
+                st = None
             else:
                 for k in ("markets", "cross_market_linkages", "policy_radars", "pending_backfills", "calendar_overrides"):
                     if k not in st:
@@ -981,6 +1138,8 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
                 errs.extend(_check_state_schedule(st))
         except json.JSONDecodeError as exc:
             errs.append(f"Gate 4 失败：market_state.json JSON 语法错误: {exc}")
+
+    errs.extend(_check_ssot_databases(st))
 
     pb = BASE_DIR / "state" / "RSI_PLAYBOOK.md"
     if not pb.exists():

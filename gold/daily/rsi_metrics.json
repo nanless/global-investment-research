@@ -388,6 +388,109 @@
         "【国内早盘补涨验真与 SCORECARD 结案】核对 11/26 15:30 SGE Au99.99/Au(T+D) 官收、SHFE pm20261126.dat 席位龙虎榜、四大行金条实盘调价与 16:00 山东黄金三季报说明会，客观结案 SCORECARD.md 今日到期项",
         "【零重试与三区同步冲刺】发前核查 AUDIT_LOG.md 三区增量同步、图 1 顺时序标签、H1 ≤34 字及 Layer 0–1 ≤3 数字防 p1→p2 断句，冲刺 lint_retries=0 与 visual_retries=0"
       ]
+    },
+    {
+      "run_id": "2026-11-26_1800",
+      "edition_type": "weekday_evening_unified",
+      "report_file": "daily/2026-11-26_1800_晚报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-26 18:30",
+      "first_pass_strict": true,
+      "lint_retries": 0,
+      "visual_retries": 1,
+      "pdf_pages": 7,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "收敛主刊首刊首次 --precheck --strict 与全量 7 门禁 --strict 均 0 错 0 警（lint_retries=0）；独立盲审（24/30）揪出图 1 今欧低 $3,552 标签上跳横跨 $3,590 绿色虚线（A1）、D 类卡标题“三大鲜活样本”与 2 条正文不符（A2）及 B2 卡克价表述歧义，全部修正并重编 7 页 PDF/DOCX/HTML（visual_retries=1）通过 --strict 与第 3–4 页目检"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 3,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 24,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/26 07:30 追踪：【感恩节 Mode A 切换与 6 项滞后表全清零】切入感恩节 Mode A 并 100% 清零 6 项早报滞后官方表",
+          "outcome": "partial",
+          "evidence": "准确切入感恩节 Mode A（沿用 11/25 美盘四关、vix_live=null、明示 CME 停盘 3.5h），并集中核销 4.5/6 项（11/25 GLD 1,027.88t / +0.57t、11/25 GDX NAV $73.70、11/25 LBMA 金 $3,533.20/$3,466.35 & 银 $39.40、11/24 FRED HY/CCC OAS 372/1,405bp、11/26 四大行 783.07 / 周大福 1,068 / CFETS 6.6736）；但 Cboe VIX_History.csv 11/25 原表与 11/25 FRED OAS 因美盘休市尚未核销，已透明挂账次晨"
+        },
+        {
+          "claim": "11/26 07:30 追踪：【国内早盘补涨验真与 SCORECARD 结案】核对 11/26 SGE 官收、SHFE pm20261126.dat 席位、四大行调价与 16:00 山东黄金业绩会并结案 SCORECARD",
+          "outcome": "partial",
+          "evidence": "精准核对 11/26 SGE Au99.99 收 765.82 (+1.12%) / Au(T+D) 765.78 (+1.17%)、四大行金条 +4.91 元至 783.07 并客观结案 SCORECARD.md 到期项；但 11/26 SGE 加权均价/递延费、SHFE 结算价与 pm20261126.dat 席位及山东黄金 16:00 说明会全文在 18:30 截点未归档，已挂账次晨"
+        },
+        {
+          "claim": "11/26 07:30 追踪：【零重试与三区同步冲刺】AUDIT_LOG 三区增量同步、图 1 顺时序标签、lint_retries=0 且 visual_retries=0",
+          "outcome": "partial",
+          "evidence": "达成 lint_retries=0、AUDIT_LOG 三区增量零缺口与收敛主刊 7 页零孤页，但初编图 1 今欧低 $3,552 与右侧 $3,526 标签冲突触发上跳横跨 $3,590 且 D 类卡标题与正文条数不一致，触发 1 次盲审后重编（visual_retries=1）"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "gold/daily/2026-11-26_1800_晚报_黄金深度研报.md L179 图 1（DAILY_CHART_TIMELINE）中“今欧低”$3,552 标签因避让右侧 $3,526 参考线胶囊发生弹性上跳，横跨 $3,590 绿色虚线且视觉高于 $3,573",
+            "status": "resolved",
+            "evidence": "已将 L179“今欧低”调整为 dx=-32、dy=-9（L180“18:30”设为 dx=-6、dy=0），串行通过 lint_readability.py --precheck --strict、build_daily.py 重编 7 页 PDF/DOCX/HTML 与 lint_readability.py --strict（0 errors, 0 warnings），经 PDF 第 4 页目检确认 $3,552 稳落于 $3,590 虚线下方、$3,526 红线上方且视觉低于 $3,573，全程零碰撞"
+          },
+          {
+            "description": "gold/daily/2026-11-26_1800_晚报_黄金深度研报.md L122–128 D 类行动卡标题写“今日三大鲜活样本”且副标题列三项，实际仅含 2 条正文；另 B2 卡 L115“反抽至 775–785 元区间”紧邻矿股存在股价歧义",
+            "status": "resolved",
+            "evidence": "已将 L122–123 改为“D 类｜市场机制观察（今日两大鲜活样本）”与“汇率缓冲效应与矿股红灯纪律分层”，并将 L115 明确为“若明日国内金价反抽至 775–785 元/克区间”；重编 7 页产物通过 lint_readability.py --strict（0 errors, 0 warnings）及 PDF 第 3 页目检确认"
+          },
+          {
+            "description": "2026-11-26 美国感恩节休市，无周四纽约金官收、COMEX 结算价、美国国债曲线及美股收盘",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.cmegroup.com/tools-information/holiday-calendar.html",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "四关判定与跨资产锚严格沿用 11/25 官方读数，亚欧 3,573 美元仅标薄量参考，已在 gold/data_snapshot.json data_caveats、封面 KPI 与正文第三部分完整透明披露"
+            }
+          },
+          {
+            "description": "Cboe VIX_History.csv 2026-11-25 官方日线 OHLC 原表因美国感恩节尚未直连复核",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "保留 Cboe 官网与 FRED VIXCLS 双锁定 11/25 官收 28.29（provisional_close，vix_live=null），写入 vix_daily_row_checks 与 data_caveats，待 2026-11-27_0730（3 日核销窗内）核对官方 CSV 原表"
+            }
+          },
+          {
+            "description": "11/26 伦敦金早盘定盘（18:30 刚到点）、SGE 加权均价与递延费、SHFE 结算价与 pm20261126.dat 前 20 席位、国内黄金 ETF 晚间净值份额、山东黄金 16:00 说明会全文及 11/25 FRED 信用利差截至截点未归档",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.sge.com.cn/sjzx/mrhq",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "严守零编造原则省略未出读数并注明已核数据原交易日，全量登记于 gold/data_snapshot.json data_caveats、AUDIT_LOG.md 与正文第三部分，排入 2026-11-27_0730 早报核销"
+            }
+          },
+          {
+            "description": "老铺黄金 06181.HK 2026-11-26 港股公开行情源收盘价存在明显分歧",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.hkex.com.hk/",
+              "due_edition": "2026-11-27_0730",
+              "disposition": "暂沿用已核 11/25 官收 265.40 港元并警示明日 11/27 除净 18.02 元人民币贴权风险，已写入 gold/data_snapshot.json data_caveats 与正文第三部分"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化图 1（DAILY_CHART_TIMELINE）右侧参考线避让核查：右侧 align=end 参考线标签易与倒数第 2 点 below 碰撞触发大幅上跳，编写图 1 时须提前预判 placed_boxes 重叠或用负 dx 侧移，首轮目检必核数据点与所有虚线的相对上下次序",
+        "固化 DAILY_PERSONA 发前两秒校验：严格核对卡片标题/副标题计数 == actions 条数，且 B 类持仓卡同时提及矿股与国内克价时必显式写明“国内金价…元/克”"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【晚间挂账 6 项核销与老铺除净校验】清零 11/26 LBMA 定盘、SGE 加权均价与递延费、SHFE 结算价与 pm20261126.dat 席位、国内黄金 ETF 11/26 净值份额、山东黄金 16:00 说明会全文、11/25 FRED HY/CCC OAS 及老铺 06181.HK 11/26 官收与今日除净参考价；重试 Cboe VIX_History.csv 11/25 原始行（距 3 日核销窗余 2 日）",
+        "【黑五半日市前瞻、欧央行纪要与 07:30 东京 CPI】封账今晚 20:30 欧洲央行 10 月纪要与明晨 03:30–07:00 CME 停盘复市行情；跟踪 07:30 东京核心 CPI；明示黑五半日市周六 02:00 美股 / 03:00 美债 / 03:45 COMEX 提前收、第 4 关门槛滚降至 $3,589.85、第 1 关差 1bp 与工行 0 费率最后 1 天（11/28 到期）",
+        "【图 1 零碰撞 + 收敛主刊零视觉返工冲刺】发前逐项核对图 1 参考线胶囊与数据点相对高度、PERSONA 标题计数一致及克价单位显式标注，冲刺 lint_retries=0 且 visual_retries=0"
+      ]
     }
   ]
 }

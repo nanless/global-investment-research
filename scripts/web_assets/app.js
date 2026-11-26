@@ -530,6 +530,8 @@
         closeCmdPalette();
         closeChartModal();
         setTocDrawer(false);
+        hideDialog(document.getElementById("dossier-modal"));
+        hideDialog(document.getElementById("etf-modal"));
       } else if (e.key === "Tab") {
         const targets = dialog.querySelectorAll(modalFocusable);
         const first = targets[0];
@@ -548,7 +550,10 @@
     }
 
     if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditableElement(document.activeElement)) {
-      const scrSearch = document.getElementById("scr-search") || document.getElementById("arc-search");
+      const scrSearch =
+        document.getElementById("scr-search") ||
+        document.getElementById("etf-search") ||
+        document.getElementById("arc-search");
       if (scrSearch) {
         e.preventDefault();
         scrSearch.focus();
@@ -931,9 +936,11 @@
         if (!matchesPreset(st, state.preset)) return false;
         if (state.sectors.size > 0 && !state.sectors.has(st.sector)) return false;
         if (tokens.length > 0) {
+          const d = st.dossier || {};
           const hay = (
             st.name + " " + st.code + " " + st.sector + " " + st.market_label + " " +
-            st.summary + " " + st.action_label + " " + st.valuation
+            st.summary + " " + st.action_label + " " + st.valuation + " " +
+            (d.moat || "") + " " + (d.financials || "") + " " + (d.catalysts || "") + " " + (d.action_etf || "")
           ).toLowerCase();
           if (!tokens.every(function (tk) { return hay.indexOf(tk) !== -1; })) return false;
         }
@@ -980,6 +987,10 @@
           tbody.innerHTML = rows
             .map(function (st) {
               const mark = COLOR_MARK[st.color] || "●";
+              const dKey = st.market + ":" + st.code;
+              const dBtn = st.dossier
+                ? ' <button type="button" class="dossier-btn" data-dossier-key="' + escHtml(dKey) + '">7维深研</button>'
+                : "";
               return (
                 '<tr class="row-' + escHtml(st.color) + '" data-market="' + escHtml(st.market) + '">' +
                 '<td><span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span></td>" +
@@ -988,7 +999,7 @@
                 '<td><div><strong>' + escHtml(st.price) + "</strong></div>" + formatValuationChips(st) + "</td>" +
                 "<td>" + formatDivAhCell(st) + "</td>" +
                 '<td><span class="act-pill act-' + escHtml(st.color) + '">' + mark + " " + escHtml(st.action_label) + "</span></td>" +
-                "<td>" + formatAnchorBadge(st) + escHtml(st.summary) + ' <a href="' + escHtml(st.report_url) + '" class="nw">手册 →</a></td>' +
+                "<td>" + formatAnchorBadge(st) + escHtml(st.summary) + dBtn + ' <a href="' + escHtml(st.report_url) + '" class="nw">手册 →</a></td>' +
                 "</tr>"
               );
             })
@@ -1028,7 +1039,12 @@
                 formatValuationChips(st) +
                 (hasDivAh ? divAh : "") +
                 '<div class="sc-summary">' + escHtml(st.summary) + "</div>" +
-                '<div><a href="' + escHtml(st.report_url) + '" style="font-size:12.5px;font-weight:700;">查看该市场全景手册 →</a></div>' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
+                (st.dossier
+                  ? '<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(st.market + ":" + st.code) + '">查看 7 维深度档案</button>'
+                  : "") +
+                '<a href="' + escHtml(st.report_url) + '" style="font-size:12.5px;font-weight:700;">查看该市场全景手册 →</a>' +
+                "</div>" +
                 "</div>"
               );
             })
@@ -1170,11 +1186,84 @@
     if (resetBtn) {
       resetBtn.addEventListener("click", resetScreener);
     }
+    const dossierModal = document.getElementById("dossier-modal");
+    const dossierTitle = document.getElementById("dossier-modal-title");
+    const dossierSub = document.getElementById("dossier-modal-sub");
+    const dossierBadges = document.getElementById("dossier-modal-badges");
+    const dossierBody = document.getElementById("dossier-modal-body");
+    const dossierFootLink = document.getElementById("dossier-modal-link");
+    const dossierFootDate = document.getElementById("dossier-modal-date");
+    const stockByKey = new Map();
+    allStocks.forEach(function (st) {
+      stockByKey.set(st.market + ":" + st.code, st);
+    });
+    const DOSSIER_DIMS = [
+      ["moat", "① 护城河与商业拆解"],
+      ["financials", "② 财务质量、现金流与债墙"],
+      ["valuation_anchor", "③ 估值分位、利率锚与税务/AH"],
+      ["shareholder_flow", "④ 股东回报、回购与筹码微结构"],
+      ["catalysts", "⑤ 核心催化与 90 天排雷日历"],
+      ["bear_case", "⑥ 空头证伪与下行风险底线"],
+      ["action_etf", "⑦ 操作边界（IF→THEN）与低费 ETF 替身"],
+    ];
+
+    function openStockDossier(key) {
+      const st = stockByKey.get(key);
+      if (!st || !st.dossier || !dossierModal) return;
+      const d = st.dossier;
+      const mark = COLOR_MARK[st.color] || "●";
+      if (dossierTitle) dossierTitle.textContent = st.name + " (" + st.code + ")";
+      if (dossierSub) {
+        dossierSub.textContent =
+          (d.baseline_note ? d.baseline_note + " ｜ " : "") +
+          "赛道：" + st.sector + " ｜ 现价：" + st.price;
+      }
+      if (dossierBadges) {
+        const isCore = d.depth_tier === "core_deep";
+        dossierBadges.innerHTML =
+          '<span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span>" +
+          '<span class="act-pill act-' + escHtml(st.color) + '">' + mark + " " + escHtml(st.action_label) + "</span>" +
+          '<span class="dossier-depth-badge ' + (isCore ? "depth-core" : "depth-std") + '">' +
+          (isCore ? "核心旗舰 7 维全拆解" : "池内标准 7 维档案") + "</span>";
+      }
+      if (dossierBody) {
+        dossierBody.innerHTML =
+          '<div class="dossier-grid">' +
+          DOSSIER_DIMS.map(function (pair) {
+            const val = d[pair[0]] || "暂无补充";
+            return (
+              '<div class="dossier-dim">' +
+              '<div class="dossier-dim-lbl">' + escHtml(pair[1]) + "</div>" +
+              '<div class="dossier-dim-txt">' + escHtml(val) + "</div>" +
+              "</div>"
+            );
+          }).join("") +
+          "</div>";
+      }
+      if (dossierFootLink) dossierFootLink.setAttribute("href", st.report_url || "#");
+      if (dossierFootDate) dossierFootDate.textContent = "更新日期：" + (d.updated_at || "2026-11-26");
+      showDialog(dossierModal);
+    }
+
+    if (dossierModal) {
+      document.querySelectorAll("[data-action='close-dossier']").forEach(function (b) {
+        b.addEventListener("click", function () { hideDialog(dossierModal); });
+      });
+      dossierModal.addEventListener("click", function (e) {
+        if (e.target === dossierModal) hideDialog(dossierModal);
+      });
+    }
+
     [tbody, cardsEl].forEach(function (container) {
       if (!container) return;
       container.addEventListener("click", function (e) {
         if (e.target.closest("[data-action='scr-reset-all']")) {
           resetScreener();
+          return;
+        }
+        const dBtn = e.target.closest("[data-dossier-key]");
+        if (dBtn) {
+          openStockDossier(dBtn.getAttribute("data-dossier-key"));
         }
       });
     });
@@ -1372,5 +1461,305 @@
         applyArchiveFilter();
       }
     });
+  }
+
+  /* ------------------------------------------------------------------------
+     12. Multi-Asset Channels Category Filter (channels.html)
+     ------------------------------------------------------------------------ */
+  const chCards = Array.from(document.querySelectorAll(".channel-card[data-channel-cat]"));
+  if (chCards.length > 0) {
+    const chBtns = Array.from(document.querySelectorAll("[data-ch-cat]"));
+    const chCount = document.getElementById("ch-count");
+    let chCat = "all";
+    function applyChFilter() {
+      let shown = 0;
+      chBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-ch-cat") || "all") === chCat);
+      });
+      chCards.forEach(function (c) {
+        const ok = chCat === "all" || c.getAttribute("data-channel-cat") === chCat;
+        c.style.display = ok ? "" : "none";
+        if (ok) shown++;
+      });
+      if (chCount) {
+        chCount.textContent = "显示 " + shown + " / " + chCards.length + " 大合规个人投资渠道";
+      }
+    }
+    chBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        chCat = b.getAttribute("data-ch-cat") || "all";
+        applyChFilter();
+      });
+    });
+    applyChFilter();
+  }
+
+  /* ------------------------------------------------------------------------
+     13. Interactive 100+ Global ETF Radar & Deep Modal (etfs.html)
+     ------------------------------------------------------------------------ */
+  const etfDataEl = document.getElementById("etf-data");
+  if (etfDataEl) {
+    let allEtfs = [];
+    try {
+      const parsed = JSON.parse(etfDataEl.textContent || "[]");
+      if (Array.isArray(parsed)) allEtfs = parsed;
+    } catch (_) {
+      allEtfs = [];
+    }
+
+    const etfState = {
+      q: "",
+      market: "all",
+      channel: "all",
+      preset: "all",
+      sortKey: "default",
+      sortDir: 1,
+    };
+
+    const etfSearch = document.getElementById("etf-search");
+    const etfClear = document.getElementById("etf-clear");
+    const etfReset = document.getElementById("etf-reset");
+    const etfCount = document.getElementById("etf-count");
+    const etfTbody = document.getElementById("etf-tbody");
+    const etfCardsEl = document.getElementById("etf-cards");
+    const etfMktBtns = Array.from(document.querySelectorAll("[data-etf-market]"));
+    const etfChanBtns = Array.from(document.querySelectorAll("[data-etf-channel]"));
+    const etfPresetBtns = Array.from(document.querySelectorAll("[data-etf-preset]"));
+    const etfSortThs = Array.from(document.querySelectorAll("table.etf-table th.sortable"));
+
+    const etfModal = document.getElementById("etf-modal");
+    const etfModalTitle = document.getElementById("etf-modal-title");
+    const etfModalSub = document.getElementById("etf-modal-sub");
+    const etfModalBadges = document.getElementById("etf-modal-badges");
+    const etfModalBody = document.getElementById("etf-modal-body");
+    const etfByCode = new Map();
+    allEtfs.forEach(function (it) { etfByCode.set(it.code, it); });
+
+    const PREM_LABELS = { normal: "折溢价常规", watch: "买前核参考净值", high_risk: "高溢价/高危预警" };
+
+    function etfRoleClass(it) {
+      if (it.gold_locked) return "role-lock";
+      const r = String(it.action_role || "");
+      if (r.indexOf("高危") !== -1 || r.indexOf("高费") !== -1) return "role-danger";
+      if (r.indexOf("现金盾") !== -1) return "role-shield";
+      if (r.indexOf("底座") !== -1 || r.indexOf("核心") !== -1 || r.indexOf("卫星") !== -1) return "role-base";
+      return "role-watch";
+    }
+
+    function openEtfModal(code) {
+      const it = etfByCode.get(code);
+      if (!it || !etfModal) return;
+      if (etfModalTitle) etfModalTitle.textContent = it.name + " (" + it.code + ")";
+      if (etfModalSub) {
+        etfModalSub.textContent =
+          "跟踪指数：" + it.tracking_index + " ｜ 规模：" + it.aum + " ｜ 年费率：" + it.fee_total_pct;
+      }
+      if (etfModalBadges) {
+        etfModalBadges.innerHTML =
+          '<span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span>" +
+          '<span class="etf-chan-tag">' + escHtml(it.channel) + "</span>" +
+          '<span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + "</span>" +
+          '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>";
+      }
+      if (etfModalBody) {
+        const blocks = [
+          ["① 核心投资逻辑与定位", it.thesis_deep],
+          ["② 估值 / 股息 / 收益特征", it.yield_or_pe + " ｜ 流动性：" + it.liquidity],
+          ["③ 核心前五大重仓 / 底层资产", it.top_holdings],
+          ["④ 折溢价雷达与交易纪律", it.premium_note],
+          ["⑤ 税费、门槛与制度细则", it.tax_and_rules],
+          ["⑥ 核心风险与排雷边界", it.risk_boundary],
+          ["⑦ 场外联接或低费替身对照", it.otc_feeder || "暂无场外联接补充，详见频道主表"],
+        ];
+        etfModalBody.innerHTML =
+          '<div class="dossier-grid">' +
+          blocks.map(function (b) {
+            return (
+              '<div class="dossier-dim">' +
+              '<div class="dossier-dim-lbl">' + escHtml(b[0]) + "</div>" +
+              '<div class="dossier-dim-txt">' + escHtml(b[1]) + "</div>" +
+              "</div>"
+            );
+          }).join("") +
+          "</div>";
+      }
+      showDialog(etfModal);
+    }
+
+    if (etfModal) {
+      document.querySelectorAll("[data-action='close-etf']").forEach(function (b) {
+        b.addEventListener("click", function () { hideDialog(etfModal); });
+      });
+      etfModal.addEventListener("click", function (e) {
+        if (e.target === etfModal) hideDialog(etfModal);
+      });
+    }
+
+    function matchesEtfPreset(it, p) {
+      if (!p || p === "all") return true;
+      if (p === "low-fee") return typeof it.fee_num === "number" && it.fee_num <= 0.20;
+      if (p === "cash-shield") return String(it.action_role || "").indexOf("现金盾") !== -1;
+      if (p === "base") return !it.gold_locked && String(it.action_role || "").indexOf("底座") !== -1;
+      if (p === "high-risk") return it.premium_status === "high_risk" || String(it.action_role || "").indexOf("高危") !== -1;
+      if (p === "hide-gold") return !it.gold_locked;
+      return true;
+    }
+
+    function renderEtfs() {
+      etfMktBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-etf-market") || "all") === etfState.market);
+      });
+      etfChanBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-etf-channel") || "all") === etfState.channel);
+      });
+      etfPresetBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-etf-preset") || "all") === etfState.preset);
+      });
+      if (etfClear) {
+        etfClear.hidden = !etfState.q;
+        etfClear.style.display = etfState.q ? "" : "none";
+      }
+
+      const tokens = etfState.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      let rows = allEtfs.filter(function (it) {
+        if (etfState.market !== "all" && it.market !== etfState.market) return false;
+        if (etfState.channel !== "all" && it.channel !== etfState.channel) return false;
+        if (!matchesEtfPreset(it, etfState.preset)) return false;
+        if (tokens.length > 0) {
+          const hay = (
+            it.code + " " + it.name + " " + it.market_label + " " + it.channel + " " +
+            it.category + " " + it.tracking_index + " " + it.top_holdings + " " +
+            it.thesis_deep + " " + it.action_role + " " + (it.otc_feeder || "")
+          ).toLowerCase();
+          if (!tokens.every(function (tk) { return hay.indexOf(tk) !== -1; })) return false;
+        }
+        return true;
+      });
+
+      if (etfState.sortKey !== "default") {
+        const key = etfState.sortKey;
+        const dir = etfState.sortDir;
+        rows = rows.slice().sort(function (a, b) {
+          if (key === "fee_num") {
+            return ((a.fee_num || 99) - (b.fee_num || 99)) * dir;
+          }
+          return String(a[key] || "").localeCompare(String(b[key] || ""), "zh-Hans-CN", { numeric: true }) * dir;
+        });
+      }
+
+      if (etfCount) {
+        etfCount.textContent = "显示 " + rows.length + " / " + allEtfs.length + " 只重点 ETF";
+      }
+
+      if (etfTbody) {
+        if (rows.length === 0) {
+          etfTbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-title">未找到匹配的 ETF</div><div class="empty-sub">尝试清空搜索词或切换市场与通道</div></div></td></tr>';
+        } else {
+          etfTbody.innerHTML = rows.map(function (it) {
+            return (
+              "<tr>" +
+              '<td><div><strong>' + escHtml(it.name) + '</strong></div><div><span class="code-tag">' + escHtml(it.code) + '</span> <span class="etf-chan-tag">' + escHtml(it.category) + "</span></div></td>" +
+              '<td><div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + '</span></div><div><span class="etf-chan-tag">' + escHtml(it.channel) + "</span></div></td>" +
+              "<td><div>" + escHtml(it.tracking_index) + '</div><div class="sec-sub">' + escHtml(it.yield_or_pe) + "</div></td>" +
+              '<td class="col-num"><strong>' + escHtml(it.fee_total_pct) + "</strong></td>" +
+              "<td><div><strong>" + escHtml(it.aum) + '</strong></div><div class="sec-sub">' + escHtml(it.liquidity) + "</div></td>" +
+              '<td><div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + '</span></div><div class="sec-sub">' + escHtml(it.premium_note) + "</div></td>" +
+              '<td><div><span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + '</span></div><div style="margin-top:5px;"><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">深度拆解</button></div></td>' +
+              "</tr>"
+            );
+          }).join("");
+        }
+      }
+
+      if (etfCardsEl) {
+        if (rows.length === 0) {
+          etfCardsEl.innerHTML = '<div class="panel-card empty-state"><div class="empty-title">未找到匹配的 ETF</div></div>';
+        } else {
+          etfCardsEl.innerHTML = rows.map(function (it) {
+            return (
+              '<div class="etf-card">' +
+              '<div class="etf-card-top">' +
+              '<div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(it.name) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
+              '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
+              "</div>" +
+              '<div class="etf-card-meta"><span><strong>通道：</strong>' + escHtml(it.channel) + "</span><span><strong>费率：</strong>" + escHtml(it.fee_total_pct) + "</span><span><strong>规模：</strong>" + escHtml(it.aum) + "</span></div>" +
+              '<div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + "</span> <span class=\"sec-sub\">" + escHtml(it.yield_or_pe) + "</span></div>" +
+              '<div class="sc-summary">' + escHtml(it.thesis_deep) + "</div>" +
+              '<div><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">查看 ETF 7 维深度拆解</button></div>' +
+              "</div>"
+            );
+          }).join("");
+        }
+      }
+    }
+
+    let etfTimer = 0;
+    if (etfSearch) {
+      etfSearch.addEventListener("input", function () {
+        etfState.q = etfSearch.value;
+        window.clearTimeout(etfTimer);
+        etfTimer = window.setTimeout(renderEtfs, 60);
+      });
+    }
+    if (etfClear) {
+      etfClear.addEventListener("click", function () {
+        etfState.q = "";
+        if (etfSearch) { etfSearch.value = ""; etfSearch.focus(); }
+        renderEtfs();
+      });
+    }
+    if (etfReset) {
+      etfReset.addEventListener("click", function () {
+        etfState.q = "";
+        etfState.market = "all";
+        etfState.channel = "all";
+        etfState.preset = "all";
+        etfState.sortKey = "default";
+        etfState.sortDir = 1;
+        if (etfSearch) etfSearch.value = "";
+        renderEtfs();
+      });
+    }
+    etfMktBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        etfState.market = b.getAttribute("data-etf-market") || "all";
+        renderEtfs();
+      });
+    });
+    etfChanBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        etfState.channel = b.getAttribute("data-etf-channel") || "all";
+        renderEtfs();
+      });
+    });
+    etfPresetBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        const p = b.getAttribute("data-etf-preset") || "all";
+        etfState.preset = etfState.preset === p && p !== "all" ? "all" : p;
+        renderEtfs();
+      });
+    });
+    etfSortThs.forEach(function (th) {
+      const btn = th.querySelector("button") || th;
+      if (btn.tagName === "BUTTON") btn.disabled = false;
+      btn.addEventListener("click", function () {
+        const k = th.getAttribute("data-sort");
+        if (etfState.sortKey === k) etfState.sortDir *= -1;
+        else { etfState.sortKey = k; etfState.sortDir = 1; }
+        renderEtfs();
+      });
+    });
+    [etfTbody, etfCardsEl].forEach(function (container) {
+      if (!container) return;
+      container.addEventListener("click", function (e) {
+        const btn = e.target.closest("[data-etf-code]");
+        if (btn) openEtfModal(btn.getAttribute("data-etf-code"));
+      });
+    });
+
+    if (allEtfs.length > 0) {
+      renderEtfs();
+      root.classList.add("etf-enhanced");
+    }
   }
 })();
