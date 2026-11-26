@@ -28,6 +28,3 @@ __pycache__/
 *.log
 .venv/
 *.bak
-
-# Compiler provenance for local report pairs
-*.artifacts.json

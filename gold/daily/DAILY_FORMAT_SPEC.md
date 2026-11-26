@@ -1,39 +1,39 @@
 # 黄金研报体系《收敛主刊与全景主报告编写宪章》（永久规范）
 
-> **永久铁律（2026-11-26 收敛架构升级定版 · `CONVERGED_CUTOVER = 2026-11-26_1800`）**：面向“懂一点基础财经、比普通人多一点市场认知的理性投资者”，所有每日双刊（07:30 早报 / 18:00 晚报 / 周末专项版 / 工作日局部休市版）与跨世纪全景主报告均执行**「同源异构 · 双快照防撕裂 · 四层收敛 · 理性知情语调 · 全篇零内部泄露 · 原生 OOXML 表格与高清图表 100% 真嵌入」**的唯一标准。*（历史旧刊 `< 2026-11-26_1800` 继续由质检器兼容校验。）*
+> **永久铁律（纯网页收敛架构定版 · `CONVERGED_CUTOVER = 2026-11-26_1800`）**：面向普通家庭与进阶投资者，所有每日双刊（07:30 早报 / 18:00 晚报 / 周末专项版 / 工作日局部休市版）与跨世纪全景主报告均执行**「纯网页静态门户直读 · 同源异构 · 双快照防撕裂 · 小白友好三层递进 · 零内部泄露 · 640px 零碰撞矢量 SVG」**的唯一标准。*（历史旧刊 `< 2026-11-26_1800` 继续由质检器兼容校验。）*
 
 ---
 
 ## 一、六大呈现铁律（信息 · 论点 · 论据）
 
 1. **三色静默紧迫度牌 + `.sn-grid` 信号/噪音双栏（先降噪，再给结论）**：
-   - 日报首屏固定挂载紧迫度牌（**禁用绿色，防与绿灯可买撞色**；`L1` 在 PDF/DOCX 中自动渲染为**琥珀菱形** `.dot-diamond`，与买金红绿灯圆点物理区分）：
+   - 日报首屏固定挂载紧迫度牌（**禁用绿色，防与绿灯可买撞色**；`L1` 在网页端渲染为**琥珀菱形** `.dot-diamond`，与买金红绿灯圆点物理区分）：
      * `⚪ L0 沉稳灰蓝`：今日无操作 · 安心上班（约 80% 交易日）
      * `🟡 L1 暖琥珀`：关键节点临近 · 提前看预案（约 15% 交易日；**仅提示预案，绝非买点信号**）
      * `🚨 L2 深红警示`：正式信号触发 · 按计划核对仓位（全年仅 3–6 次）
-   - 紧接 **`.sn-grid` 信号（0–2 件）vs 噪音（3–5 件）双栏网格卡**（每条配 `break-inside: avoid` 彻底根治跨页断句，手机端自动单栏堆叠），帮投资者迅速清除市场噪音与传闻。
-2. **四层洋葱收敛结构与早报/主报告明确分工**：
-   - **Layer 0（首屏决策区）**：封面支持 **4 张高密度核心 KPI 卡**（`.kpi-strip.cols-4`，兼容 4–6 张）+ 静默牌 + 唯一买金红绿灯 + 1 句核心结论与底线风险（≤80 字，**0 感叹号、0 内部版本号、0 内部工程词/文件名**，优先报人民币元/克）。
-   - **Layer 1（核心行动区）**：`.sn-grid` 信号/噪音双栏 + 买金四步红绿灯（满足 X/4 项）+ 历史水位尺 + **10 万元人民币钱包账（6 周内锚定现行汇率，跨年显式标注汇率联动区间 `6.20–6.45`）+ A（空仓，统一 `30% + 45% + 25%` 配比，明示 `008142` 0.20%/年运营费 vs `008143` 0.55%/年含销售服务费及满 30 天免赎回）/ B（B1 轻仓套牢 · B2 重仓焦虑 · B3 早年浮盈）/ D（宏观原理）与 C（婚庆/实体省钱实算）紧凑操作卡**。
-   - **Layer 2（精炼深度专题）**：**必须以 `# 第二部分` / `## 专题一` / `## 周末专题` 或 `DAILY_LAYER_BADGE`（`tone: "deep"`）起头以触发门禁分层与自动分页**；自 `2026-11-26_1800` 起，每日 07:30 早报与 18:00 晚报均发布**精炼收敛主刊（目标 5–6 页，重大议息/危机日可扩至 7–8 页）**，保留 3 张 640px 矢量图，聚焦核心驱动、关键情景与 7 日排雷；全景主报告保持百科深度（目标 **21–24 页** · 7 张 640px 矢量图）；**严格分工不互抄**；`DAILY_GLOSSARY` 改为可选（0–1 次，不再强行硬塞）。
-   - **Layer 3（可选进阶复核区）**：顶部标明轻量眉批 `DAILY_LAYER_BADGE`（`tone: "pro"`），保留精确口径、Tier 0–3 阈值、高门槛工具（明标 50 万门槛）与官方数据自查路径；`DAILY_TRUST_BAR` 改为可选（0–1 次）；版本演进 Diff、子代理核验与人名勘误**物理分离**至 `daily/AUDIT_LOG.md` 与 `daily/CHANGELOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）。
-   - **统一 5 模块收敛主刊映射**：**Layer 0 → ① 核心裁决与 4 卡摘要**；**Layer 1 信号/噪音与水位 → ② 隔夜/日内主线与跨市传导**；**Layer 2 专题与 3 图 → ③ 深度专题与矢量图**；**Layer 1 钱包账与 A/B/D/C 行动卡 → ④ 实操配置与风控边界**；**Layer 2 排雷日历 + Layer 3 → ⑤ 关键日历与官方数据溯源**。
+   - 紧接 **`.sn-grid` 信号（0–2 件）vs 噪音（3–5 件）双栏网格卡**（电脑端并排对照、手机端自动单栏堆叠），帮读者迅速清除市场噪音与传闻。
+2. **小白友好三层递进 × 四层洋葱收敛结构**：
+   - **三层阅读体验映射**：**① 30 秒红绿灯白话结论**（Layer 0） → **② 10 万/1 万元钱包实算与三步怎么买**（Layer 1） → **③ 机构级硬核证据、3 张矢量图与官方自查**（Layer 2–3）。
+   - **Layer 0（首屏决策区）**：封面支持 **4 张高密度核心 KPI 卡**（`.kpi-strip.cols-4`，兼容 4–6 张）+ 静默牌 + 唯一买金红绿灯 + 1 句白话核心结论与底线风险（≤80 字，**0 感叹号、0 内部版本号、0 内部工程词/文件名**，优先报人民币元/克）。
+   - **Layer 1（核心行动与钱包实算区）**：`.sn-grid` 信号/噪音双栏 + 买金四步红绿灯（满足 X/4 项）+ 历史水位尺 + **10 万元与 1 万元双刻度人民币钱包实算（6 周内锚定现行汇率，跨年显式标注汇率联动区间）+ A（空仓，统一 `30% + 45% + 25%` 配比与三步怎么买，严格落实 `008142` / `008143` 统一费率与 2026 销售费改口径）/ B（B1 轻仓套牢 · B2 重仓焦虑 · B3 早年浮盈）/ D（宏观原理）与 C（婚庆/实体省钱实算）紧凑操作卡**。
+   - **Layer 2（精炼深度专题）**：**必须以 `# 第二部分` / `## 专题一` / `## 周末专题` 或 `DAILY_LAYER_BADGE`（`tone: "deep"`）起头以触发门禁分层**；每日 07:30 早报与 18:00 晚报均发布精炼收敛主刊，内嵌 3 张 640px 矢量图，聚焦核心驱动、关键情景与 7 日排雷；全景主报告保持百科深度并内嵌 7 张 640px 矢量图；**严格分工不互抄**；`DAILY_GLOSSARY`（「关键词白话速查」）为可选（0–1 次，亦可交由站内术语白话浮窗自动释义）。
+   - **Layer 3（可选进阶复核区）**：顶部标明轻量眉批 `DAILY_LAYER_BADGE`（`tone: "pro"`），保留精确口径、Tier 0–3 阈值、高门槛工具（明标 50 万门槛）与免费官方数据自查路径；`DAILY_TRUST_BAR` 为可选（0–1 次）；版本演进 Diff、子代理核验与人名勘误**物理分离**至 `daily/AUDIT_LOG.md` 与 `daily/CHANGELOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）。
+   - **统一 5 模块收敛主刊映射**：**Layer 0 → ① 3 分钟速读结论与 4 卡摘要**；**Layer 1 信号/噪音与水位 → ② 隔夜/日内主线与跨市传导**；**Layer 2 专题与 3 图 → ③ 深度专题与矢量图**；**Layer 1 双刻度钱包账与 A/B/D/C 行动卡 → ④ 实操配置与风控边界**；**Layer 2 排雷日历 + Layer 3 → ⑤ 关键日历与官方数据溯源**。
 3. **单一真相刻度（废除正文平行打分与部分过关误导）**：
    - 正文 Layer 0–1 彻底废除 `六灯 X.X/6`（含整数 `X/6` 及全角 `／6`）平行分制；全篇严禁出现「通过 0–3 关即可转黄/开新仓」等与四关全过原则冲突的错误表述（Gate 5 强制拦截），统一只用 **【历史水位尺】+【买金四步红绿灯（红灯停 Tier 0 / 黄灯试买 Tier 1 [30%] / 绿灯主买 Tier 2 [+45%→75%] / 满格配齐 Tier 3 [+25%→100%]，显示满足 X/4 项，四关全过方开新仓）】**。
-4. **理性知情语调与三档词汇标准（`>= 2026-11-26_1800`）**：
-   - 严格区分 **【客观事实】/【逻辑推论】/【概率与失效红线】**，绝不居高临下说教，也不堆砌生僻卖方量化词；
-   - **第一档 · 自由使用（主流投资者通用词）**：`VIX`、`DXY`、`GLD`、`GDX`、`ETF`、`CFTC`、`COT`、`CDS`、`鹰派`、`鸽派`、`提保`、`轧空`、`逼空`、`上影线`；
-   - **第二档 · 首次出现用 6–12 字中文括号轻注**：`DFII10`（10 年美债实际利率）、`2Y−FF`（2 年美债减政策利率利差）、`ON RRP`（联储隔夜逆回购余额）、`HY/CCC OAS`（高收益信用利差）、`IOPV`（盘中参考净值）、`bp`（基点）；
+4. **平等温和的白话语调与升级版三档词汇标准**：
+   - 严格区分 **【客观事实】/【逻辑推论】/【概率与失效红线】**，绝不居高临下说教，鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；
+   - **第一档 · 自由使用（仅日常极高频词与代码）**：`ETF`、`VIX`（首现建议顺带附“恐慌指数”）、`GLD`/`GDX`（仅代码）、`鹰派`、`鸽派`、`提保`、`轧空`、`逼空`、`上影线`；
+   - **第二档 · 首次出现必配简短白话括注（或交给站内术语白话浮窗，`DXY`/`COT`/`CDS` 移出裸用名单）**：`DXY`（美元指数）、`COT`（期货大资金持仓报告）、`CDS`（债务违约保险费率）、`CFTC`（美国期交委）、`DFII10`（10 年美债扣除通胀后的真实利率）、`2Y−FF`（2 年美债减政策利率利差）、`ON RRP`（联储隔夜逆回购余额）、`HY/CCC OAS`（高收益信用利差）、`IOPV`（盘中实时参考净值）、`bp`（基点，1% 的百分之一）；
    - **第三档 · 门禁硬拦（违者 FAIL）**：
-     - **全篇（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）严禁**：① 自 `2026-11-26_0730` 起拦截内部工程词、版本号与文件名（`V2.x/V6.x/V7.x`、`Subagent`、`红队`、`法证`、`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`DAILY_FORMAT_SPEC.md`、`AGENTS.md`、`SKILL.md` 及任意 `*.py` 脚本名）；② 自 `2026-11-26_1800` 起**全篇与全部组件（含 `DAILY_GLOSSARY`）统一拦截 6 个居高临下口号**（`小白词典`、`直接抄`、`蠢事`、`1分钟定心丸`、`1 分钟定心丸`、`保命铁律`）；
+     - **全篇（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）严禁**：① 内部工程词、版本号与文件名（`V2.x/V6.x/V7.x`、`Subagent`、`红队`、`法证`、`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`DAILY_FORMAT_SPEC.md`、`AGENTS.md`、`SKILL.md` 及任意 `*.py` 脚本名）；② 6 个居高临下口号（`小白词典`、`直接抄`、`蠢事`、`1分钟定心丸`、`1 分钟定心丸`、`保命铁律`）；
      - **Layer 0–1 严禁**：生僻卖方量化词（`stop-through`、`IFRS 9`、`HQLA`、`FVOCI`、`ROTCE`、`Call Wall`/`Put Wall`、`负 Gamma`、`R²=`）、未消歧人名（`Daniel Ghali`/`Michael Hsueh`）、工程路数（`子代理`/`63 路`）、赌徒口语（`梭哈`、`做T`、`短线波段`、`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）及平行打分（`六灯`、`X/6`）；
    - **感叹号、煽动词与排版密度红线**：Layer 0–1 感叹号严格 **0** 个（FAIL），收敛新刊全篇 **≤5** 个（旧刊 ≤2）；全篇禁用 **13 个夸张煽动词**（`神准`/`分毫不差`/`100%胜率`/`100% 胜率`/`无情推翻`/`核雷`/`拉爆`/`血洗`/`焊死`/`史诗级`/`史诗轧空`/`彻底打脸`/`惊天验证`）；Layer 0–1 自然段 ≤240 字；全篇**加粗密度 ≤14%**；**裸数字/金额/百分比不套反引号**（仅代码可用）。
 5. **少即是多 + 透明缺口 + 跨时区诚实标注**：
    - 关键数字配齐 **`[当前读数 + 历史水位 + 决策含义]`**；未披露或暂定数据统一记入快照 `data_caveats`（纯读者中文、零内部文件名）并在正文中如实标注；**严禁把不同时点的国内外报价差混作“国内供需溢价”，亦严禁把 05:00 盘后讲话因果倒置归因到 02:30 已收盘的国内价**。
-6. **零碰撞矢量图表 + 原生 ECMA-376 OOXML Word**：
-   - 全部 SVG 画布采用 **`viewBox="0 0 640 ..."`**、主标签字号 **`≥10.2px`**（辅助刻度/徽章 `9.8–10.0px`）、全部文本经 `svg_esc()` 剔除位图 Emoji 与控制字符（保留矢量 `✓`/`✕`）；
-   - **图 1（`DAILY_CHART_TIMELINE`）** 采用 `vb_h=284` + 半透明白底胶囊标签 `_svg_label_pill()` 与 2D 碰撞面积最小化避让算法；**图 2（`DAILY_CHART_CROSS`）** 采用 1:1 真实线性比例 + 动态 `x_zero` + back-to-front 动态网格刻度（底纹 → 刻度 → 条形/文字 → 零轴）+ 中文惯例 `[红涨 / 绿跌]` + 精准主角高亮（显式 `"highlight": true/false`）+ 独立反向指标栏；
-   - Word（`.docx`）**严禁使用 macOS `textutil`**，必须通过纯 Python 原生 OOXML 引擎（`docx_embed.py`）生成真 `<w:tbl>`、`word/settings.xml` 页码自动刷新、跨平台左色边卡片与 PIL 自动裁切的 **2× Retina PNG** 高清图表（支持 `CHROME_BIN` 环境变量及 1 次自动重试）。
+6. **纯网页零碰撞矢量图表规范**：
+   - 全部 SVG 画布采用 **`viewBox="0 0 640 ..."`**、主标签字号 **`≥10.2px`**（辅助刻度/徽章 `9.8–10.0px`）、全部文本经 `svg_esc()` 剔除位图 Emoji 与控制字符（保留矢量 `✓`/`✕`），手机端支持流畅横滑不缩字；
+   - **图 1（`DAILY_CHART_TIMELINE`）** 采用 `vb_h=284` + 半透明白底胶囊标签 `_svg_label_pill()` 与 2D 碰撞面积最小化避让算法；**图 2（`DAILY_CHART_CROSS`）** 采用 1:1 真实线性比例 + 动态 `x_zero` + back-to-front 动态网格刻度（底纹 → 刻度 → 条形/文字 → 零轴）+ 中文惯例 `[红涨 / 绿跌]` + 精准主角高亮（显式 `"highlight": true/false`）+ 独立反向指标栏；所有页面经 `scripts/build_site.py` 直接输出纯网页静态站并通过 `scripts/lint_site.py --strict` 验收。
 
 ---
 
@@ -43,26 +43,26 @@
 | :--- | :--- | :--- | :--- |
 | **工作日 07:30 早报** | `daily/YYYY-MM-DD_0730_早报_黄金深度研报.md` | 纽约 06:00 现货终盘（夏令时 05:00）、COMEX 02:30 官结（夏令时 01:30）、国内 02:30 沪金/延期夜盘、隔夜美欧股债油与美联储/白宫动向、07:30 亚盘早段 | **专题一**：图 1（隔夜走势折线）+ 图 2（跨资产线性分化）<br>**专题二**：图 3（历史水位尺 + 四步红绿灯） |
 | **工作日 18:00 晚报** | `daily/YYYY-MM-DD_1800_晚报_黄金深度研报.md` | 上金所 15:30 终盘及日终清算表、上期所 15:00 收盘及龙虎榜持仓、A/H 股与金矿/金饰股收盘及盘后财报、16:30 在岸人民币官收（`usd_cny_1630`）、16:00–18:00 伦敦盘与 17:00–18:00 欧洲数据（冬令时 18:30 伦敦定盘与晚间 A 股 ETF 净值未出则明标待出） | **专题一**：图 1（日内亚欧分时折线）+ 图 2（亚太与欧盘股汇金矿分化）<br>**专题二**：图 3（历史水位尺 + 四步红绿灯） |
-| **周末专项版（周六/周日）** | 仍严格沿用 `YYYY-MM-DD_0730_早报_黄金深度研报.md` 或 `1800_晚报`，主标题注明 **（周末专项版）** | 绝不编造休市盘口（休市市场明标“休市 · 沿用周五终盘”）；聚焦 7×24 链上黄金（XAUT/PAXG）与 BTC、周五盘后 CFTC COT、菜百/水贝周末线下客流、周日中东股市（沙特 TASI / 埃及 EGX30）与欧美周末政经访谈 | **周末专题一**：图 1（本周 5 日复盘折线）+ 图 2（全周跨资产累计涨跌）<br>**周末专题二**：图 3（周末静态水位尺 + 下周四步触发门槛） |
+| **周末专项版（周六/周日）** | 仍严格沿用 `YYYY-MM-DD_0730_早报_黄金深度研报.md` 或 `1800_晚报`，主标题注明 **（周末专项版）** | 绝不编造休市盘口（休市市场明标“休市 · 沿用周五终盘”）；聚焦 7×24 链上黄金（XAUT/PAXG）与 BTC、周五盘后期货持仓周报、菜百/水贝周末线下客流、周日中东股市（沙特 TASI / 埃及 EGX30）与欧美周末政经访谈 | **周末专题一**：图 1（本周 5 日复盘折线）+ 图 2（全周跨资产累计涨跌）<br>**周末专题二**：图 3（周末静态水位尺 + 下周四步触发门槛） |
 | **工作日局部休市叠加** | 沿用当日工作日 `0730_早报` / `1800_晚报` 文件名，文内醒目标注休市市场与恢复时刻 | 统一由外置日历 `market_calendar.json`（覆盖至 `2027-06-30`）驱动：**A 类（美盘休市/半日市提前收）** 沿用上一 NY 终盘聚焦伦敦/内盘与薄量预警，半日市（黑五 `11/27`、平安夜 `12/24`）支持 VIX `provisional_close`；**B 类（中国休市，如春节/清明/劳动节）** 内盘明标休市且自动放行金店价对齐预警，聚焦 COMEX/伦敦/离岸汇率；**C 类（欧英日港印单边休市）** 局部标注休市与复盘时间 | 同对应早/晚报 3 图结构，图中严禁伪造已休市市场当日新 K 线 |
 
-*命名与手机端补充铁律：同日同班次若因突发事件或勘误需要重发，须启用 **`_r2` 防覆写锁**（如 `YYYY-MM-DD_0730_早报_黄金深度研报_r2.md`），绝不覆盖既有已发归档；编译最新一期日报时，`build_daily.py` 自动通过 `.tmp` + `os.replace` 同步输出响应式单文件手机端 HTML `daily/latest_gold.html`（吸顶快捷导航 + 4–6 KPI 自适应 + `.sn-grid` 单栏 + 640px 图表横滑不缩字 + 护眼深色模式）。*
+*命名铁律：同日同班次若因突发事件或勘误需要重发，须启用 **`_r2` 防覆写锁**（如 `YYYY-MM-DD_0730_早报_黄金深度研报_r2.md`），绝不覆盖既有已发归档。*
 
 ---
 
 ## 三、10 个 `DAILY_*` 组件标准 JSON Schema 与结构化契约
 
-所有组件须置于独立 HTML 注释中 `<!-- DIRECTIVE_NAME { ...合法 JSON... } -->`（拼写错误、缺必填键或坏 JSON 均触发 `build_daily.py` 与 `lint_readability.py` 强制报错）：
+所有组件须置于独立 HTML 注释中 `<!-- DIRECTIVE_NAME { ...合法 JSON... } -->`（拼写错误、缺必填键或坏 JSON 均触发 `lint_readability.py` 与静态站构建器强制报错）：
 
-新刊与勘误版的 `DAILY_META` 必填 `edition_id` 和 `as_of_short`。刊号为 `YYYY-MM-DD_HHMM[_rN]`，与文件名和实时快照一致；数据截点为 `YYYY-MM-DD HH:MM`，与快照逐字相同。自 `2026-11-25_1800_r2` 之后的新刊起，班次仅用 `0730` 或 `1800`，北京时间截点须落在所标班次开始至随后 **6 小时**内（`MAX_EDITION_LAG = 6h`）。封面 `DAILY_META.timestamp`、快照 `as_of_bjt` 均须清楚显示同一截点（中文年月日或 ISO 日期均可）。休市栏继续注明上一可用报价的交易日或观测时间。
+新刊与勘误版的 `DAILY_META` 必填 `edition_id` 和 `as_of_short`。刊号为 `YYYY-MM-DD_HHMM[_rN]`，与文件名和实时快照一致；数据截点为 `YYYY-MM-DD HH:MM`，与快照逐字相同。班次仅用 `0730` 或 `1800`，北京时间截点须落在所标班次开始至随后 **6 小时**内（`MAX_EDITION_LAG = 6h`）。封面 `DAILY_META.timestamp`、快照 `as_of_bjt` 均须清楚显示同一截点（中文年月日或 ISO 日期均可）。休市栏继续注明上一可用报价的交易日或观测时间。
 
 首刊使用截至观测日已核证的日历；修订刊可用晚于原截点、但不晚于实际验收当天的日历确认原班次盘时，交易证据仍按原截点计算。日历硬底线为班次后至少 **30 天**（`<60 天` 输出提示）、核证有效期 **90 天**。
 
 1. **`DAILY_META`**：`{"edition_id": "YYYY-MM-DD_HHMM[_rN]", "as_of_short": "YYYY-MM-DD HH:MM", "tag": str, "timestamp": str, "summary": str, "accent": "#hex", "footer_title": str, "kpis": [{"label": str, "val": str, "sub": str} × 4–6]}`（收敛新刊推荐 **4 张**核心卡触发 `.kpi-strip.cols-4`，兼容 4–6 张；每条 `sub` 严控 ≤17 汉字当量；`footer_title` 严禁含 `V2.x/V7.x`）
 2. **`DAILY_VERDICT`**：`{"level": "L0"|"L1"|"L2", "badge": str, "traffic_light": str, "tier_code": "Tier 0"|"Tier 1"|"Tier 2"|"Tier 3", "new_buy_allowed": bool, "tier1_passed": int, "headline": str, "bullets": [str × 3], "risk_line": str}`（`badge` 禁用 `🟢`；`tier_code`/`new_buy_allowed`/`tier1_passed` 须与快照逐项一致）
-3. **`DAILY_SIGNAL_NOISE`**：`{"title": str, "signals": [{"head": str, "body": str}], "noises": [{"head": str, "body": str}]}`（`signals` 建议 0–2 件；渲染为 `.sn-grid` 双栏网格防跨页断句）
+3. **`DAILY_SIGNAL_NOISE`**：`{"title": str, "signals": [{"head": str, "body": str}], "noises": [{"head": str, "body": str}]}`（`signals` 建议 0–2 件；渲染为 `.sn-grid` 双栏网格）
 4. **`DAILY_PERSONA`**：`{"title": str, "cards": [{"group": "A"|"B"|"D"|"C", "heading": str, "subtitle": str, "actions": [str], "avoid": str}]}`
-5. **`DAILY_GLOSSARY`**（收敛新刊可选 0–1 次）：`{"title": str, "terms": [{"term": str, "plain": str}]}`
+5. **`DAILY_GLOSSARY`**（收敛新刊可选 0–1 次，标题推荐「关键词白话速查」）：`{"title": str, "terms": [{"term": str, "plain": str}]}`
 6. **`DAILY_LAYER_BADGE`**：`{"tone": "deep"|"pro", "label": str}`
 7. **`DAILY_TRUST_BAR`**（收敛新刊可选 0–1 次）：`{"title": str, "items": [str × 3], "note": str}`（全篇严禁出现内部文件名或工程词）
 8. **`DAILY_CHART_TIMELINE`**：`{"title": str, "subtitle": str, "note": str, "y_min": num, "y_max": num, "y_ticks"?: [num], "unit_prefix"?: str, "unit_suffix"?: str, "ref_lines": [{"val": num, "label": str, "color": str, "align": "start"|"end", "x"?: num, "dy": num}], "highlight_zones": [{"start_idx": int, "end_idx": int, "label": str, "fill": str, "text_color": str}], "points": [{"time": str, "val": num, "val_label": str, "desc": str, "color": str, "label_pos": "above"|"below", "dx"?: num, "dy"?: num, "anchor"?: str, "highlight"?: bool}]}`
@@ -87,15 +87,16 @@
 
 ---
 
-## 四、一体化 6+1 红队核验、自动化安全与编译质检强制工作流
+## 四、一体化 10+1 红队核验、自动化安全与纯网页质检强制工作流
 
-1. **严禁越权、编造、防卡壳与三层受控自进化边界（与仓库根规则 `../../AGENTS.md` 及 `../AGENTS.md` 严格对齐）**：所有外部实盘与新闻调研在每日 `07:30` / `18:00` 一体化班次中通过 **一体化 6+1（共享 6 路并行 + 1 路统一红队）** `research` 子代理完成（仅独立单跑黄金轨时回退 5+1）；主代理禁止运行未授权 `date`/`ls`/`curl` 等外部抓取命令；**无人值守定时任务全程严禁调用 `edit_file`（一律使用 `write_file` 全量写盘防权限拦截）**；**正常发刊编译阶段（Step 1–4）严禁修改任何 `.py` 脚本与规则文件**，且严禁与权益轨并发运行 Chrome 无头编译（必须先 Step 3 黄金后 Step 4 权益）；仅在双轨门禁全绿后的 **Step 5 统一 RSI 闭环**中允许对确凿确定性 Bug 执行受控 Tier B 最小补丁（单次 ≤1 处、≤40 行，只加固门禁或修 Bug、严禁删禁词或放宽误差，且改后必过 `--check` + 重编 + `--strict` + PDF 视觉复核，任一步失败立即回滚并转提案）；所有临时目录仅通过 `tempfile.mkdtemp()` 建于系统临时目录并由 `finally` 彻底清理。
+1. **严禁越权、编造、防卡壳与三层受控自进化边界（与仓库根规则 `../../AGENTS.md` 及 `../AGENTS.md` 严格对齐）**：所有外部实盘与新闻调研在每日 `07:30` / `18:00` 一体化班次中通过 **一体化 10+1（共享 10 路并行 + 1 路统一红队）** `research` 子代理完成（仅独立单跑黄金轨时回退 5+1）；主代理禁止运行未授权 `date`/`ls`/`curl` 等外部抓取命令；**无人值守定时任务全程严禁调用 `edit_file`（一律使用 `write_file` 全量写盘防权限拦截）**；**正常发刊阶段（Step 1–4）严禁修改任何 `.py` 脚本与规则文件**；仅在双轨门禁全绿后的 **Step 5 统一 RSI 闭环**中允许对确凿确定性 Bug 执行受控 Tier B 最小补丁（单次 ≤1 处、≤40 行，只加固门禁或修 Bug、严禁删禁词或放宽误差，且改后必过 `--strict` + 静态站构建严检 + 单元测试，任一步失败立即回滚并转提案）。
 2. **标准发刊闭环（Step 3 黄金 SSOT 优先，绝对路径裸命令，无 `cd &&` 前缀）**：
    1) 启动先读 `market_calendar.json` 查明休市叠加模式与北美冬/夏令时换算，并按**惰性主报告加载**仅读轻量级 `master_snapshot.json` 核验 5 大触发条件（命中时才全量读取主报告 MD）；随后更新日报数据源 `<REPO_ROOT>/gold/data_snapshot.json`（标准无日期键 `cross_ratios`、`etf_cn`、结构化 `data_caveats`、跨项目 SSOT 裁决字段 `tier_code`/`new_buy_allowed`、四关完整证据、`rmb_channels` 与 `trust_assets`，供 Step 4 权益轨零延迟只读校验）；仅当触发主报告 5 大更新条件时，同步更新 `master_snapshot.json`、`MASTER_BASELINE` 与主报告正文；
-   2) 撰写本刊收敛主刊 Markdown（5–6 页，重大日 7–8 页；同场修订加 `_r2` 防覆写），将全部【新增/更新/修正/删除】与口径消歧沉淀至 `daily/CHANGELOG.md`（最新置顶）与 `daily/AUDIT_LOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`），并同步在公开记分卡 `daily/SCORECARD.md` 回验到期预判与追加新追踪项（零内部工程/RSI 词汇、历史记录零篡改）；
-      - 新刊预检前，三个账本须同时登记本刊（`GOLD_EDITION_CHANGELOG` / `GOLD_EDITION_SCORECARD` / `GOLD_EDITION_REVIEW`）。记录格式见黄金技能的[快照与审阅台账契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)。预测情景须事前划定互斥区间与未覆盖时的处理方式。来源仍未披露的结论留待验，按事先锁定的原口径结算。
-   3) **编译前秒检（`--precheck --strict`）**：先运行 `python3 <REPO_ROOT>/gold/lint_readability.py --precheck --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`（跳过 Gate 6 PDF/DOCX/手机端 HTML，秒拦组件错键、图 2 左标签超宽、三档禁词、全篇内部词泄露、加粗密度、裸数字反引号、外置日历与记分卡异常），确认 0 错 0 警后再编译；
-   4) 运行 `python3 <REPO_ROOT>/gold/build_daily.py <REPO_ROOT>/gold/daily/<本刊文件名>.md`（支持 `CHROME_BIN` 与 1 次重试，自动生成精排 PDF、原生 OOXML DOCX、`.artifacts.json` 凭据与手机端响应式单文件 `daily/latest_gold.html`；满足主报告触发条件时运行 `python3 <REPO_ROOT>/gold/build_report.py`），并通过 `read_file` 抽检 PDF 关键页确认视觉零瑕疵；
-   5) 强制运行 `python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`（若同步更新了主报告，一并传入 `<REPO_ROOT>/gold/黄金跨世纪周期与2026-2030终审研究报告.md`），必须 **7 道门禁（含 `.artifacts.json` 凭据校验、`market_calendar.json`、`daily/SCORECARD.md`、`daily/latest_gold.html` 与 RSI 180/200 行校验）0 错误 0 警告（退出码 0）** 方可交棒 Step 4 权益轨或单轨交付！
-   6) **Step 5 统一 RSI 复盘与优化闭环**：一体化班次待 Step 4 三市权益亦通过 `lint_equity.py --strict` 后，由 1 路独立只读盲审子代理联合按 6 维量表（满分 30）复盘双轨本刊与回验上期预判，自动更新 `daily/rsi_metrics.json` 与 `daily/RSI_PLAYBOOK.md`（软限 ≤180 行 / 硬上限 200 行），按 Tier A/B/C 分级谨慎落地改进并复验 `--strict` 全绿；
-   7) **双轨全绿后单次发布网站**：联合班次按根契约登记进入 `publish` 阶段，运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`。用同一 token 验证本期 Pages 和滚动 Release 后结束。本地预演单独运行 `publish_site.py --dry-run`，不附班次 token。
+   2) 撰写本刊收敛主刊 Markdown（落实小白友好三层结构 + 3 张 640px 矢量图；同场修订加 `_r2` 防覆写），将全部【新增/更新/修正/删除】与口径消歧沉淀至 `daily/CHANGELOG.md`（最新置顶）与 `daily/AUDIT_LOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`），并同步在公开记分卡 `daily/SCORECARD.md` 回验到期预判与追加新追踪项（零内部工程/RSI 词汇、历史记录零篡改）；
+      - 新刊严检前，三个账本须同时登记本刊（`GOLD_EDITION_CHANGELOG` / `GOLD_EDITION_SCORECARD` / `GOLD_EDITION_REVIEW`）。记录格式见黄金技能的[快照与审阅台账契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)。预测情景须事前划定互斥区间与未覆盖时的处理方式。来源仍未披露的结论留待验，按事先锁定的原口径结算。
+   3) **强制运行纯网页 6 门禁严格验收（退出码必须为 `0`，0 errors、0 warnings）**：
+      - `python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`
+      - 若同步更新了主报告，一并传入 `<REPO_ROOT>/gold/黄金跨世纪周期与2026-2030终审研究报告.md`；
+      - 一次性覆盖 **Gate 0–5**（组件 Schema、图 2 标签宽、三档词表、全篇内部词泄露、感叹号、加粗密度、裸数字反引号、部分过关话术、双快照算术与四关复算、`market_calendar.json`、`SCORECARD.md` 与 RSI 180/200 行校验），全绿后即交棒 Step 4 权益轨；
+   4) **Step 5 统一 RSI 复盘与优化闭环**：一体化班次待 Step 4 三市权益与三大扩展库亦通过 `lint_equity.py --strict` 后，由 1 路独立只读盲审子代理联合按 6 维量表（满分 30，第 4 维聚焦**纯网页视觉清晰度、SVG 零碰撞与小白 3 分钟可读性**）复盘双轨本刊与回验上期预判，自动更新 `daily/rsi_metrics.json` 与 `daily/RSI_PLAYBOOK.md`（软限 ≤180 行 / 硬上限 200 行），按 Tier A/B/C 分级谨慎落地改进并复验 `--strict` 全绿；
+   5) **双轨全绿后单次纯网页发布**：联合班次按根契约登记进入 `publish` 阶段，运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`（构建静态门户并通过 S1–S6 严检后推送），再用同一 token 执行 `edition_run.py complete <token>` 验证 GitHub Pages 部署成功后结束。本地预演单独运行 `publish_site.py --dry-run`，不附班次 token。

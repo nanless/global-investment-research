@@ -14,7 +14,7 @@
 | **🥇 黄金跨市门控与总盘子** | **四红灯防守（黄金 1/4 关 · 新仓 0%）**<br>股 33% + 转债 4% + 债现 54% + 存量金 9% = 100%（三池 45/20/35 加权） | 11/26 上金所现货补涨 +1.12% 收 765.82 元（四大行条 783.07 元），欧盘薄量震于 3,573 美元（沿用 11/25 纽约收 3,589、实际利率 2.73% 差 1 基点）；布油 94.50、沪铜破 9 万收 89,300、在岸人民币 6.6600<br>跨市熔断 3+1 阀：恐慌指数连 2 日 > 30 ｜ 日元 3 日急升 > 3% ｜ 10 年美债 > 5.25% ｜ 港银总结余 < 400 亿（三地科技总仓 ≤ 20%） | **黄金四关仅过一关，继续红灯停，严禁新买或补仓黄金及金矿股**（空仓预算暂泊现金/短债待黄灯解锁）；严守 5 万美元购汇与 6 万美元遗产税红线 |
 
 ### 常用核心入口（纯网页直读 · 源稿索引）
-- **在线网页门户**：[全渠道首页总览](https://nanless.github.io/global-investment-research/) · [8 大多元渠道](https://nanless.github.io/global-investment-research/channels.html) · [106 只 ETF 雷达](https://nanless.github.io/global-investment-research/etfs.html) · [231 股 7 维筛选器](https://nanless.github.io/global-investment-research/screener.html)
+- **在线网页门户**：[全渠道首页总览](https://nanless.github.io/global-investment-research/) · [12 大多元渠道](https://nanless.github.io/global-investment-research/channels.html) · [166 只 ETF 雷达](https://nanless.github.io/global-investment-research/etfs.html) · [231 股 7 维筛选器](https://nanless.github.io/global-investment-research/screener.html)
 - **全景常青手册源稿（7 维大盘 × 231 只全板块龙头）**：
   - [A 股全景手册（76 股）](../a_share_market_report_latest.md) · [港股全景手册（75 股）](../hk_stock_market_report_latest.md) · [美股全景手册（80 股）](../us_stock_market_report_latest.md)
 - **长期追踪账本**：[观点演进记录（CHANGELOG）](CHANGELOG.md) · [关键判断记分卡（SCORECARD）](SCORECARD.md)
@@ -47,4 +47,4 @@
 - **大盘总开关（红黄绿四灯）**：🛡️ 红灯防守期（守底座不追高） → 🟡 黄灯试探期（小步加底仓/筑债盾） → 🟢 绿灯主攻期（风浪过关、解封硬科技） → 🚀 顺风加码期（突破趋势线满配）。
 - **选股四色锁仓**：🟢 当下底座（现在可分批买）｜🔵 🔒未来主攻（好公司先加自选，等回调锚点或 12/21 后再买）｜🟡 分歧观察（太热或等大事落地）｜🔴 高危回避（泡沫、大解禁、伪防御或高债雷，坚决绕开）。
 
-> *历史建档说明：早期 2026-11-23 旧体例与已退役的 2026-11-24 午刊已归档至 `daily/archive/2026-11/`；现已全面升级为 A 股（76 股）× 港股（75 股）× 美股（80 股，合计 231 只）× 8 大个人多元合规渠道 × 106 只全球重点 ETF 协同体系，采用纯网页直读交付，自 2026-11-26 晚刊起工作日 07:30 / 18:00 黄金与三市均发布完整收敛主刊（休市单边切守望刊），零延迟同步黄金门控。*
+> *历史建档说明：早期 2026-11-23 旧体例与已退役的 2026-11-24 午刊已归档至 `daily/archive/2026-11/`；现已全面升级为 A 股（76 股）× 港股（75 股）× 美股（80 股，合计 231 只）× 12 大个人多元合规渠道 × 166 只全球重点 ETF 协同体系，采用纯网页直读交付，自 2026-11-26 晚刊起工作日 07:30 / 18:00 黄金与三市均发布完整收敛主刊（休市单边切守望刊），零延迟同步黄金门控。*

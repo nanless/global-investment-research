@@ -26,10 +26,6 @@
         "首编命令行 Linter 0 错 0 警，但首轮 PDF 视觉抽检触发 1 次返工重编（visual_retries=1）：美股轻刊第 2 页末溢出 1 行至第 3 页、A 股图 2 将热点板块通信误标黄色“逆势抄底!”",
         "独立盲审（21/30）后顺手修复读者版晚刊 2 处事实笔误与排版瑕疵：拆清 RSP（0.20%）/VTV（0.03%）费率、黑五半日市修正为北京 11/28 02:00 收、修正“超 3,496 股”与科创板“200 股起步”措辞、补齐裸英文缩写中文前置并将 11/24 两融挂账顺延至 11/25 18:00 晚刊"
       ],
-      "pdf_pages": {
-        "a_share": 5,
-        "us_stock": 2
-      },
       "flagship_updated": {
         "a_share": false,
         "us_stock": false
@@ -96,10 +92,6 @@
         "首次 PDF 逐页目检发现 CHART_U4（图 3）第 2、4 张阶段卡片各 1 条 bullet 贴边轻微溢框（visual_retries=1），已缩短并复检修净",
         "独立盲审（24/30）后热修复读者版 3 处瑕疵：美股“明晚 21:30”→“今晚 21:30”、“戴尔盘前先砸”→“戴尔正盘先砸”、统一美元单位（美股及 SCORECARD 清除“元”混写）、缩短 CHART_U4 第 3 张卡片偏紧条目及 CHANGELOG 单段至 <=130 字"
       ],
-      "pdf_pages": {
-        "a_share": 3,
-        "us_stock": 5
-      },
       "flagship_updated": {
         "a_share": false,
         "us_stock": false
@@ -168,11 +160,6 @@
         "9 路一手源调研 + 系统红队法证在既有 lint_equity.py 0 错 0 警假绿灯下揪出 27 项硬伤与 15 项事实纠偏：含 A4 SVG 绕过黄金红灯锁、U7 NEM 标绿打架、小米净利误作股价跌幅、A/H 同股 PE 3 倍违背物理、汇丰建行误入恒科扩容、美元配比加总 102%、VIX 30 vs 35 冲突、hkma_agg_bal_hkd_b 10 倍单位 Bug、lint_equity.py brent_close_usd 幽灵键失效、退市股 00011 及 513260/513010 QDII 误标",
         "全量完成 11 份规则/Skill/参考/模板去重与三市 21 图 135 股架构同步，并升级 4 份 sidecar.json（股研 07:55/18:25 25 分钟错峰 + 阶段 2B 发前 5+1 红队 + 黄金锁定 brent_settle_usd/cfets_cny_fixing 跨项目契约）"
       ],
-      "pdf_pages": {
-        "a_share": 3,
-        "hk_stock": 3,
-        "us_stock": 5
-      },
       "flagship_updated": {
         "a_share": true,
         "hk_stock": true,
@@ -238,11 +225,6 @@
         "预检 --precheck --strict 零硬错误一次通过跨项目 Gate C1–C3，仅拦下 1 处数字反引号与 11 条 >210 字列表项，拆分收短后一次通过 build_daily.py 与全量 lint_equity.py --strict（0 错 0 警）",
         "采纳独立盲审微修：补全港股晚刊 L20 “H 股 20% 税”漏字，清除 INDEX.md 2 处裸英文缩写（DR007/VIX）并收短 CHANGELOG 港股条目至 <=130 字"
       ],
-      "pdf_pages": {
-        "a_share": 5,
-        "hk_stock": 5,
-        "us_stock": 2
-      },
       "flagship_updated": {
         "a_share": false,
         "hk_stock": false,
@@ -304,11 +286,6 @@
         "初稿预检拦下美股“收红/翻红”色系混用、footer_note 触碰 Gate C2 正则与 2 条 >210 字列表（lint_retries=1）；初编 PDF 抽检发现港股轻刊第 4 页溢出 7 行与图 H2 第 5 柱占位“年内 +0.0%”（visual_retries=1），收短正文并启用第 4 元素自定义标签“较夜期再补涨 +56 点”后收敛至 3p/3p/5p",
         "独立盲审（24/30）揪出美股早刊 L37 道指算术矛盾与 L136/L164 图 U4 4.85% 边界矛盾，修正并串行重编通过 lint_equity.py --strict（0 errors, 0 warnings）及 PDF 目检"
       ],
-      "pdf_pages": {
-        "a_share": 3,
-        "hk_stock": 3,
-        "us_stock": 5
-      },
       "flagship_updated": {
         "a_share": false,
         "hk_stock": false,
@@ -420,11 +397,6 @@
         "首轮预检拦下 1 处港股红筹税措辞触发 _HK_REDCHIP_28_RE、7 条 >210 字列表项及美股粗体密度 15.0%（lint_retries=1），修正后一次通过 --precheck --strict；首次 PDF 目检收敛港股 p5 2 行溢页至 4 页、美股 p3 5 行溢页至 2 页并修正 A 股图 A6 标题“14 行业→15 行业”（visual_retries=1）",
         "独立盲审（25/30）揪出 A 股第三节表内左列代码 551500/028272/159985/159992 缺右列释义与裸 3Y/10Y（A3）、美股 L39 198 字长段与裸 2Y/5Y/7Y/20Y/10Y 及 L17 裸代码（A4）与港股第 1 页一句话结论 2 字孤行，全量修正并重编 5p/4p/2p（visual_retries=2）通过 lint_equity.py --strict（0 errors, 0 warnings）与全量 PDF 目检"
       ],
-      "pdf_pages": {
-        "a_share": 5,
-        "hk_stock": 4,
-        "us_stock": 2
-      },
       "flagship_updated": {
         "a_share": false,
         "hk_stock": false,
@@ -444,7 +416,7 @@
         {
           "claim": "11/26 07:30 追踪：【A/港收盘双主刊实盘封账 & SCORECARD 2 项结案】封账 A/港 11/26 官收/两融/CFETS/央行/中金所/HIBOR/南向并结案 SCORECARD",
           "outcome": "partial",
-          "evidence": "全量封账 A 股 11/26 官收（沪深 300 3,900.55）、主力转正 +36.27 亿、11/25 两融 21,504.16 亿（-213.61 亿）、CFETS 6.6736、央行 5,715 亿、中金所前 20 席位（48,415 / +626）与 6 只纳指基再停牌并客观结案 SCORECARD 2 项；封账港股 11/26 官收 22,226.88、南向 -213.51 亿、沽空 19.23%、隔夜 HIBOR 3.84% 与美团前瞻；但中金所官结贴水、000922/123080/HSAHP/HSHDYI 与老铺收盘因未披露或源冲突暂挂账次晨"
+          "evidence": "全量封账 A 股 11/26 官收（沪深 300 3,900.55）、主力转正 +36.27 亿、11/25 两融 21,504.16 亿（-213.61 亿）、CFETS 6.7096、央行 5,715 亿、中金所前 20 席位（48,415 / +626）与 6 只纳指基再停牌并客观结案 SCORECARD 2 项；封账港股 11/26 官收 22,226.88、南向 -213.51 亿、沽空 19.23%、隔夜 HIBOR 3.84% 与美团前瞻；但中金所官结贴水、000922/123080/HSAHP/HSHDYI 与老铺收盘因未披露或源冲突暂挂账次晨"
         },
         {
           "claim": "11/26 07:30 追踪：【美股切模式 2 休市守望简报（edition_type=\"holiday_watch\"）】交付升级版休市守望刊，清零 11/25 盘后、加密官流、Cboe CSV 与 FRED OAS",
@@ -498,13 +470,9 @@
             }
           },
           {
-            "description": "老铺黄金 06181.HK 11/26 多源收盘价冲突；另当前仓库已维护并全量刷新 equity/state/multi_asset_channels.json，而 etf_universe.json 与 deep_dossiers.json 尚未初始化建库",
-            "status": "disclosed_caveat",
-            "evidence": {
-              "source": "https://www.hkex.com.hk/",
-              "due_edition": "2026-11-27_0730",
-              "disposition": "老铺黄金暂沿用已核 11/25 官收 265.40 港元并警示明日 11/27 除净 21.05 港元；重点 ETF 雷达与 16 只焦点股 7 维深度拆解已完整内嵌三市日报并与 multi_asset_channels.json 同步落盘，相关透明说明已写入 data_caveats 并将向用户如实汇报"
-            }
+            "description": "老铺黄金 06181.HK 11/26 多源收盘价冲突；此前盲审提及 equity/state/etf_universe.json 与 equity/state/deep_dossiers.json 尚未初始化建库",
+            "status": "resolved",
+            "evidence": "equity/state/etf_universe.json（三市重点 ETF 矩阵）与 equity/state/deep_dossiers.json（全池 231 只龙头 7 维深度档案）均已全面建库、完成去模板化升级并与 2026-11-26_1800 及 equity/state/multi_asset_channels.json 同步对齐；老铺黄金 06181.HK 11/26 多源分歧暂沿用 11/25 官收 265.40 港元并警示 11/27 除净 21.05 港元，已透明写入 market_state.json data_caveats 待 2026-11-27_0730 核销"
           }
         ]
       },

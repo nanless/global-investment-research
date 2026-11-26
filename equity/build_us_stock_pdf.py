@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Build the US Equity Cross-Cycle Handbook PDF — Plain-Language Magazine Edition.
-Features:
-  - 7 novice-friendly Vector SVG charts (U1-U7 full nested JSON override support, dynamic spx_200d /
-    spx_high / us10y / stock_pool_count, CCC ~18% & 12/12 13:00 CST fixes, unified-scale U6 bars,
-    collision-free U7 19-group quadrant with dynamic US10Y parity line)
-  - Automatic sequential chart numbering ({{CHART_NUM}}) so daily & flagship never skip numbers
-  - Shared pdf_common engine (SkPDF emoji guard, embedded pre-render redline linter, atomic _latest sync)
+Pure-web Vector SVG chart renderer for the US Equity Cross-Cycle Handbook & Dailies.
+Exports svg_chart_u1..u7(meta_override) consumed by scripts/build_site.py and equity/build_daily.py.
 """
 
 from __future__ import annotations
@@ -19,26 +14,15 @@ from pathlib import Path
 
 from pdf_common import (
     BASE_DIR,
-    DAILY_DIR,
-    atomic_copy,
-    build_theme_css,
     clean_svg_text,
-    freeze_equity_inputs,
     norm_chart_title as _norm_chart_title,
-    render_cover_banner,
-    render_docx_atomic,
-    render_md_body,
-    render_pdf_atomic,
-    resolve_chrome_bin,
-    run_lint_gate,
+    sanitize_hex_color,
+    sanitize_svg_anchor,
     svg_shape,
-    write_equity_receipt,
 )
 
 OUT_DIR = BASE_DIR
 META_PATH = OUT_DIR / "report_meta_us_stock.json"
-HTML_PDF_PATH = OUT_DIR / "us_stock_print.tmp.html"
-TMP_PDF_PATH = OUT_DIR / "us_stock_print.tmp.pdf"
 
 DEFAULT_U_SECTORS = [
     {"name": "科技 (XLK)", "pct": 8.97, "dd": -19.9, "camp": "hot"},
@@ -166,9 +150,9 @@ def load_meta(meta_override: dict | None = None) -> dict:
     return {}
 
 
-def resolve_flagship_paths(meta: dict) -> tuple[Path, Path]:
+def resolve_flagship_md(meta: dict) -> Path:
     slug = str(meta.get("period_slug", "2026_11")).strip() or "2026_11"
-    return OUT_DIR / f"us_stock_market_report_{slug}.md", OUT_DIR / f"us_stock_market_report_{slug}.pdf"
+    return OUT_DIR / f"us_stock_market_report_{slug}.md"
 
 
 def svg_chart_u1_crises_and_mas(meta_override: dict | None = None) -> str:
@@ -221,7 +205,13 @@ def svg_chart_u1_crises_and_mas(meta_override: dict | None = None) -> str:
     levels = u1_nest.get("levels") or default_levels
     right = ""
     for i, item in enumerate(levels[:6]):
-        lbl, pt, col, bg, note = item[0], int(item[1]), item[2], item[3], item[4]
+        lbl, pt, col, bg, note = (
+            item[0],
+            int(item[1]),
+            sanitize_hex_color(item[2], "#334155"),
+            sanitize_hex_color(item[3], "#f8fafc"),
+            item[4],
+        )
         y = 46 + i * 35.5
         is_hi = pt in (spx_200d, spx_now, 6845)
         right += f'<rect x="448" y="{y}" width="388" height="29" fill="{bg}" stroke="{col}" stroke-width="{"1.3" if is_hi else "0.7"}" rx="4"/>'
@@ -439,7 +429,7 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
 
     title_u4 = _norm_chart_title(
         u4_nest.get("title") or cl.get("u4_title")
-        or f"{horizon}核弹事件扎堆，12 月 21 日后才是大举买科技股的好时机"
+        or f"{horizon}重磅事件密集，12 月 21 日后才是分批增配科技股的更佳窗口"
     )
     sub_u4 = html_mod.escape(clean_svg_text(str(
         u4_nest.get("sub") or cl.get("u4_sub")
@@ -466,16 +456,16 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
     for idx, c in enumerate(cards[:4]):
         cx, cw, arrow_col = card_specs[idx]
         hdr = html_mod.escape(clean_svg_text(str(c.get("header", ""))))
-        col = str(c.get("color", "#ea580c"))
-        bg = str(c.get("bg", "#fff7ed"))
-        bd = str(c.get("border", col))
+        col = sanitize_hex_color(c.get("color"), "#ea580c")
+        bg = sanitize_hex_color(c.get("bg"), "#fff7ed")
+        bd = sanitize_hex_color(c.get("border"), col)
         cards_svg += f'<rect x="{cx}" y="34" width="{cw}" height="102" fill="{bg}" stroke="{bd}" stroke-width="1.4" rx="5"/>'
         cards_svg += f'<rect x="{cx}" y="34" width="{cw}" height="22" fill="{col}" rx="4"/>'
         cards_svg += f'<text x="{cx + cw/2}" y="49" text-anchor="middle" font-size="9.2" fill="#ffffff" font-weight="700">{hdr}</text>'
         ys = [72, 87, 102, 120]
         for j, it in enumerate(c.get("items", [])[:4]):
             if isinstance(it, (list, tuple)):
-                txt, tc, bold = str(it[0]), str(it[1]), bool(it[2])
+                txt, tc, bold = str(it[0]), sanitize_hex_color(it[1], "#1e293b"), bool(it[2])
             else:
                 txt, tc, bold = str(it), "#1e293b", False
             fw = "700" if bold else "500"
@@ -517,20 +507,21 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
     spx_now = int(round(float(cl.get("spx", 7201))))
     spx_lbl = html_mod.escape(clean_svg_text(str(cl.get("as_of_short", f"11/24官收 {spx_now:,}"))))
     banks = u5_nest.get("banks") or DEFAULT_U5_BANKS
+    spx_denom = max(1.0, float(spx_now))
     mean_all = int(round(sum(int(t[1]) for t in banks) / max(1, len(banks))))
     b2027 = [t for t in banks if "2027" in str(t[0])] or banks[2:]
     mean_2027 = int(round(sum(int(t[1]) for t in b2027) / max(1, len(b2027))))
-    up_2027 = ((mean_2027 - spx_now) / float(spx_now)) * 100.0
-    lo_up = ((int(banks[0][1]) - spx_now) / float(spx_now)) * 100.0
-    hi_up = ((int(banks[-1][1]) - spx_now) / float(spx_now)) * 100.0
+    up_2027 = ((mean_2027 - spx_now) / spx_denom) * 100.0
+    lo_up = ((int(banks[0][1]) - spx_now) / spx_denom) * 100.0
+    hi_up = ((int(banks[-1][1]) - spx_now) / spx_denom) * 100.0
 
     svg_h = max(288, 68 + len(banks) * 24)
     grid_y2 = svg_h - 26
     axis_y = svg_h - 10
 
     def x_p(val: float) -> float:
-        clamped = max(6900, min(9150, val))
-        return round(260 + ((clamped - 6900) / 2300.0) * 518, 1)
+        clamped = max(6900.0, min(9150.0, float(val)))
+        return round(260.0 + ((clamped - 6900.0) / 2250.0) * 498.0, 1)
 
     grid = ""
     for val in [7000, 7500, 8000, 8500, 9000]:
@@ -540,13 +531,15 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
 
     x_spx = x_p(spx_now)
     x_avg = x_p(mean_2027)
+    x_spx_lbl = round(max(264.0, min(755.0, x_spx + 5.0)), 1)
+    x_avg_lbl = round(max(400.0, min(695.0, x_avg)), 1)
 
     rows = ""
     for i, item in enumerate(banks):
-        name, tgt, col = str(item[0]), int(item[1]), str(item[2])
+        name, tgt, col = str(item[0]), int(item[1]), sanitize_hex_color(item[2], "#0072B2")
         y = 46 + i * 24.0
         xt = x_p(tgt)
-        up = ((tgt - spx_now) / float(spx_now)) * 100.0
+        up = ((tgt - spx_now) / spx_denom) * 100.0
         rows += f'<text x="252" y="{y+9.5}" text-anchor="end" font-size="9.0" fill="#1e293b" font-weight="600">{html_mod.escape(clean_svg_text(name))}</text>'
         rows += f'<line x1="{x_spx}" y1="{y+5.5}" x2="{xt}" y2="{y+5.5}" stroke="{col}" stroke-width="5.2" opacity="0.22" stroke-linecap="round"/>'
         rows += f'<circle cx="{xt}" cy="{y+5.5}" r="4.6" fill="{col}"/>'
@@ -577,9 +570,9 @@ def svg_chart_u5_wall_street_forensic(meta_override: dict | None = None) -> str:
         <rect x="0" y="0" width="850" height="{svg_h}" fill="#ffffff" rx="6"/>
         {grid}
         <line x1="{x_spx}" y1="30" x2="{x_spx}" y2="{grid_y2}" stroke="#D55E00" stroke-width="1.6" stroke-dasharray="5,3"/>
-        <text x="{x_spx+5}" y="23" text-anchor="start" font-size="9.0" fill="#D55E00" font-weight="700">{spx_lbl}</text>
+        <text x="{x_spx_lbl}" y="23" text-anchor="start" font-size="9.0" fill="#D55E00" font-weight="700">{spx_lbl}</text>
         <line x1="{x_avg}" y1="30" x2="{x_avg}" y2="{grid_y2}" stroke="#009E73" stroke-width="1.4" stroke-dasharray="4,3"/>
-        <text x="{x_avg}" y="23" text-anchor="middle" font-size="9.0" fill="#047857" font-weight="700">{len(b2027)} 家 2027年底均值 {mean_2027:,} ({up_2027:+.1f}%) · {len(banks)} 家总均值 {mean_all:,}</text>
+        <text x="{x_avg_lbl}" y="23" text-anchor="middle" font-size="9.0" fill="#047857" font-weight="700">{len(b2027)} 家 2027年底均值 {mean_2027:,} ({up_2027:+.1f}%) · {len(banks)} 家总均值 {mean_all:,}</text>
         {rows}
       </svg>
       <div class="chart-takeaway"><span class="vtag vt-tip">要</span><strong>一句话看懂这张图：</strong>{takeaway_u5}</div>
@@ -725,8 +718,10 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
 
     dots = ""
     for item in pts:
-        nm, x, y, sh, col, dx, dy, anc = item
-        dots += svg_shape(str(sh), float(x), float(y), str(col))
+        nm, x, y, sh, col_raw, dx, dy, anc_raw = item
+        col = sanitize_hex_color(col_raw, "#334155")
+        anc = sanitize_svg_anchor(anc_raw, "start")
+        dots += svg_shape(str(sh), float(x), float(y), col)
         dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="9.0" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
 
     return f'''
@@ -763,77 +758,23 @@ def svg_chart_u7_stock_quadrant(meta_override: dict | None = None) -> str:
 
 
 def main() -> None:
-    DAILY_DIR.mkdir(parents=True, exist_ok=True)
-    args = sys.argv[1:]
-    if "--check" in args:
-        chrome = resolve_chrome_bin()
-        assert Path(chrome).exists(), f"Chrome missing: {chrome}"
-        import bs4  # noqa: F401
-        from PIL import Image  # noqa: F401
+    if "--check" in sys.argv[1:]:
         meta = load_meta()
-        md_path, _ = resolve_flagship_paths(meta)
+        md_path = resolve_flagship_md(meta)
         assert md_path.exists(), f"Missing {md_path}"
-        print(f"US-Stock builder check OK: {md_path.name} (Chrome + bs4 + Pillow ready)")
+        for fn in (
+            svg_chart_u1_crises_and_mas,
+            svg_chart_u2_storm_timeline,
+            svg_chart_u3_credit_split,
+            svg_chart_u4_clock,
+            svg_chart_u5_wall_street_forensic,
+            svg_chart_u6_sector_heatmap,
+            svg_chart_u7_stock_quadrant,
+        ):
+            assert "<svg" in fn(meta)
+        print(f"US-Stock pure-web SVG check OK: {md_path.name} (7 vector charts ready)")
         return
-    no_lint = "--no-lint" in args
-    no_docx = "--no-docx" in args
-    meta = load_meta()
-    md_path, pdf_path = resolve_flagship_paths(meta)
-    docx_path = pdf_path.with_suffix(".docx")
-    frozen = freeze_equity_inputs(md_path, Path(__file__), META_PATH) if not no_docx else None
-    if frozen is not None:
-        meta = load_meta()
-        if resolve_flagship_paths(meta)[0] != md_path:
-            raise ValueError("Flagship period changed while preparing compilation")
-    report_md = md_path.read_text(encoding="utf-8")
-    print(f"Loaded US-Stock MD ({len(report_md)} chars): {md_path}")
-    run_lint_gate(report_md, str(md_path), is_flagship=True, meta=meta, no_lint=no_lint)
-
-    cover_html, doc_title, page_footer, footer_note = render_cover_banner(
-        meta, "美国股市跨周期全景手册", "美股全景研究手册", "美国股市跨周期全景研究手册", meta_label="阅读说明"
-    )
-    charts = {
-        "<!-- CHART_U1 -->": svg_chart_u1_crises_and_mas(meta),
-        "<!-- CHART_U2 -->": svg_chart_u2_storm_timeline(meta),
-        "<!-- CHART_U3 -->": svg_chart_u3_credit_split(meta),
-        "<!-- CHART_U4 -->": svg_chart_u4_clock(meta),
-        "<!-- CHART_U5 -->": svg_chart_u5_wall_street_forensic(meta),
-        "<!-- CHART_U6 -->": svg_chart_u6_sector_heatmap(meta),
-        "<!-- CHART_U7 -->": svg_chart_u7_stock_quadrant(meta),
-    }
-    _, body_pdf = render_md_body(report_md, charts, is_flagship=True)
-    css_final = build_theme_css("us_stock", page_footer, is_flagship=True, compact_us=True)
-    full_pdf_html = (
-        f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
-        f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{html_mod.escape(doc_title)}</title><style>{css_final}</style></head>"
-        f'<body>{cover_html}{body_pdf}<div class="footer-note">{html_mod.escape(footer_note)}</div></body></html>'
-    )
-    render_pdf_atomic(full_pdf_html, pdf_path, HTML_PDF_PATH, TMP_PDF_PATH)
-    print(f"Wrote PDF ({pdf_path.stat().st_size:,} bytes): {pdf_path}")
-
-    if no_docx:
-        receipt_path = md_path.with_suffix(".artifacts.json")
-        if receipt_path.exists():
-            receipt_path.unlink()
-            print(f"Removed stale artifact receipt: {receipt_path.name}")
-        print("[WARN] --no-docx skips syncing *_latest.* to prevent PDF/DOCX divergence.")
-        return
-
-    render_docx_atomic(full_pdf_html, docx_path, market="us_stock", footer_title=page_footer)
-    write_equity_receipt(frozen, pdf_path, docx_path)
-    print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
-
-    latest_md = OUT_DIR / "us_stock_market_report_latest.md"
-    latest_pdf = OUT_DIR / "us_stock_market_report_latest.pdf"
-    latest_docx = OUT_DIR / "us_stock_market_report_latest.docx"
-    atomic_copy(md_path, latest_md)
-    atomic_copy(pdf_path, latest_pdf)
-    if docx_path.exists():
-        atomic_copy(docx_path, latest_docx)
-        print(f"Synced: {latest_md}, {latest_pdf} & {latest_docx}")
-    else:
-        print(f"Synced: {latest_md} & {latest_pdf}")
+    print("Pure-web mode: build_us_stock_pdf.py exports SVG charts U1–U7 for scripts/build_site.py.")
 
 
 if __name__ == "__main__":

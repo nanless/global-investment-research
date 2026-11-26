@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Automated 7-Gate Readability, Mathematical Accuracy, PDF & Native OOXML Integrity Linter (V2.2).
+Automated Web-Only Readability, Mathematical Accuracy & SSOT Integrity Linter (Gates 0–5).
 Supports dedicated master_snapshot.json via <!-- MASTER_BASELINE {...} --> and daily data_snapshot.json.
 
 Usage:
   python3 lint_readability.py <file1.md> [file2.md ...] [--precheck] [--strict]
-  --precheck  Skip Gate 6 (PDF/DOCX artifact verification) for fast pre-compile Gate 0–5 checks.
+  --precheck  Accepted for backwards compatibility (web-only mode always runs Gates 0–5).
   --strict    Fail with exit code 1 on any warning in addition to errors.
 """
 
@@ -19,8 +19,6 @@ import re
 import statistics
 import sys
 import unicodedata
-import xml.etree.ElementTree as ET
-import zipfile
 from collections import Counter
 from datetime import date, datetime
 from decimal import Decimal
@@ -44,14 +42,14 @@ MARKET_CALENDAR_PATH = BASE_DIR / "market_calendar.json"
 SCORECARD_PATH = BASE_DIR / "daily" / "SCORECARD.md"
 AUDIT_LOG_PATH = DAILY_DIR / "AUDIT_LOG.md"
 CHANGELOG_PATH = DAILY_DIR / "CHANGELOG.md"
-LATEST_MOBILE_HTML_PATH = BASE_DIR / "daily" / "latest_gold.html"
 RSI_PLAYBOOK_PATH = BASE_DIR / "daily" / "RSI_PLAYBOOK.md"
 RSI_METRICS_PATH = BASE_DIR / "daily" / "rsi_metrics.json"
 SCORECARD_BANNED_RE = re.compile(
     r"(?:Subagent|子代理|\bRSI\b|Meta-RSI|Recursive\s+Self-Improvement|"
-    r"\bTier\s*[ABC](?:\b|/[ABC])|\bV[267]\.\d+\b|"
+    r"\bTier\s*[ABC](?:\b|/[ABC])|\bV[2567]\.\d+\b|"
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"master_snapshot\.json|data_snapshot\.json|market_state\.json|permissions\.json|"
+    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|unified-edition\.prompt\.md|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
@@ -63,15 +61,29 @@ SCORECARD_BANNED_RE = re.compile(
 )
 _INTERNAL_FILENAME_LEAK_RE = re.compile(
     r"(?:master_snapshot\.json|data_snapshot\.json|market_state\.json|"
+    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"audit_ledger\.md|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
     r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_-]*\.py(?![A-Za-z0-9_])|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|"
-    r"(?<![A-Za-z0-9_])V[267]\.\d+(?![A-Za-z0-9_])|"
+    r"(?<![A-Za-z0-9_])V[2567]\.\d+(?![A-Za-z0-9_])|"
     r"(?<![A-Za-z0-9_])Subagents?(?![A-Za-z0-9_])|红队|法证)",
     flags=re.IGNORECASE,
 )
+_DEPRECATED_BINARY_LINK_RE = re.compile(
+    r"(?:\[[^\]]+\]\((?!https?://)[^)\s]+\.(?:pdf|docx)(?:#[^)\s]*)?\)"
+    r"|/releases/download/"
+    r"|\{md,pdf,docx\}"
+    r"|(?:daily/|archive/|\.\.?/)[^\s`\"'()<>]+\.(?:pdf|docx))",
+    flags=re.IGNORECASE,
+)
+_CAVEAT_ALLOWED_CATEGORIES = frozenset({
+    "holiday_thin", "provisional_close", "delayed_official", "source_conflict",
+    "partial_data", "single_source", "publication_exception", "other",
+})
+_CAVEAT_ALLOWED_SEVERITIES = frozenset({"info", "warn", "critical"})
+_RSI_ALLOWED_FINDING_STATUSES = frozenset({"resolved", "deferred_data", "disclosed_caveat"})
 RSI_REQUIRED_SCORE_KEYS = (
     "data_freshness_and_zero_hallucination",
     "prior_forecast_calibration",
@@ -148,8 +160,8 @@ _BARE_NUM_BACKTICK_RE = re.compile(
 PERMANENT_FACT_GUARDS = [
     ("912 元/克", "表 6.1 汇率算错旧值（6.30×$4,500 实为 911 元/克）"),
     ("30% + 40% + 30%", "A 类建仓比例旧冲突口径（全系统统一 30% + 45% + 25%）"),
-    ("7 天后免赎回费", "场外 C 类错误赎回费（工银/华安/博时 C 均满 30 天才免赎回费）"),
-    ("7天后免赎回费", "场外 C 类错误赎回费（工银/华安/博时 C 均满 30 天才免赎回费）"),
+    ("7 天后免赎回费", "场外 C 类错误赎回费（工银 008143 须满 30 天才免赎回费，不可笼统写 7 天后免赎回费）"),
+    ("7天后免赎回费", "场外 C 类错误赎回费（工银 008143 须满 30 天才免赎回费，不可笼统写 7 天后免赎回费）"),
     ("去年三季度财报赚的是 4,280", "年份硬伤（应为今年三季度 / 2026 年三季度）"),
 ]
 
@@ -184,6 +196,19 @@ EDITION_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})(?:_r([1-9]\d*))?")
 TIER_LABELS = ("红灯", "黄灯", "绿灯", "满格")
 GATE_COUNT_RE = re.compile(r"(?<!\d)([0-4])\s*[/／]\s*4(?!\d)")
 RED_LIGHT_CONFLICT_RE = re.compile(r"🟢|🟡|(?<!红)绿灯|黄灯|满格|允许新买|(?:新仓|新买|试仓)\s*[1-9]\d*(?:\.\d+)?\s*%")
+_TIER0_PROSE_BUY_RE = re.compile(
+    r"允许新买"
+    r"|(?:新仓|新买|试仓)\s*[1-9]\d*(?:\.\d+)?\s*%"
+    r"|红灯期(?:(?!暂不|暂停|停止|严禁|禁止|不可|切忌|勿).){0,12}(?:开(?:半额|全额|自动)?(?:定投|扣款)|启(?:动)?(?:定投|扣款)|买入|新买|加仓|抄底|建仓|定投(?!预算|资金|额度|计划|暂存))"
+    r"|(?:立即|马上|今日|今天|现在|当下|直接|建议|宜|可以|可先?)\s*(?:买入|买进|新买|加仓|抄底|低吸|建仓|试买|定投)\s*[0-9一二两三半成%]*\s*(?:现货)?(?:黄金|金仓|金矿|黄金\s*ETF|518660|518880|518850|159934|159937|517520|159562|008142|008143|02840|3081|IGLN|GLD|IAUM|GLDM)",
+    flags=re.IGNORECASE,
+)
+_TIER0_PROSE_GUARD_RE = re.compile(
+    r"(?:暂不|严禁|禁止|切忌|勿|停止|先别|不能|不宜|不要|绝非|并非|不是|不|拒绝|不允许|不急于|无须|无需|停止|暂停|取消)"
+    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|直接|盲目|提前|在红灯期)*[\s“‘「\"*_]*$"
+    r"|(?:静?等|待|须等|需等|等到|四(?:关|项)(?:条件)?(?:全部|全)?(?:通过|过关|齐备|亮起?)|转(?:亮为?)?黄(?:灯)?|亮黄|黄/绿灯|绿灯|解锁).{0,26}(?:后|再|才)?[\s“‘「\"*_]*$"
+    r"|(?:平滑换至|平换进|换仓至|切换至)[\s“‘「\"*_]*$"
+)
 _PARTIAL_ENTRY_PASS = r"(?:通过|满足|过)\s*(?:[0-3]\s*/\s*4(?!\d)\s*关?|[零一二两三0-3]\s*(?:道?关|项(?:条件)?))"
 _ENTRY_ACTION = r"(?:转(?:为)?黄(?:灯)?|亮黄灯|开(?:新)?仓|建仓|试仓|新买(?:入)?|试买|买入|动用首批)"
 PARTIAL_ENTRY_CLAIM_RE = re.compile(
@@ -494,254 +519,44 @@ def validate_snapshot_file(
                 if abs(ratios[key] - expected) > tolerance:
                     errors.append(f"[Gate 5 跨资产比值偏差] {label}: {key} 应约为 {expected:.3f}")
     _check_institutional_snapshot(snap, label, errors)
+    if is_daily and "data_caveats" in snap:
+        _validate_data_caveats(snap.get("data_caveats"), label, errors)
     return snap
 
 
-def _has_matching_artifact_receipt(md_path: Path, *, is_master: bool) -> bool:
-    root = BASE_DIR.parent
-    assets = {ext: md_path.with_suffix(f".{ext}") for ext in ("pdf", "docx")}
-    if any(not asset.is_file() or asset.is_symlink() for asset in assets.values()):
-        return False
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-    inputs = ["gold/build_daily.py", "gold/docx_embed.py"]
-    if (BASE_DIR / "chart_input.py").is_file():
-        inputs.append("gold/chart_input.py")
-    if is_master:
-        inputs.extend(("gold/build_report.py", "gold/master_snapshot.json"))
-    try:
-        from scripts import artifact_receipt
-
-        artifact_receipt.verify_receipt(
-            md_path, repository=root, tree=root,
-            inputs=inputs,
-            outputs={ext: artifact_receipt.sha256_file(asset) for ext, asset in assets.items()},
-        )
-    except (ImportError, OSError, ValueError):
-        return False
-    return True
-
-
-def check_pdf_and_docx_artifacts(
-    md_path: Path,
-    raw_md: str,
-    errors: list[str],
-    warnings: list[str],
-    *,
-    is_current_daily: bool = False,
-    is_master: bool = False,
-) -> None:
-    """Gate 6: Verify both PDF & Native OOXML DOCX freshness, headers, ECMA-376 order, rels, and embedded PNGs."""
-    pdf_path = md_path.with_suffix(".pdf")
-    docx_path = md_path.with_suffix(".docx")
-    md_mtime = md_path.stat().st_mtime
-    pdf_older = pdf_path.is_file() and pdf_path.stat().st_mtime < md_mtime - 2.0
-    docx_older = docx_path.is_file() and docx_path.stat().st_mtime < md_mtime - 2.0
-    mob_older = (
-        is_current_daily and LATEST_MOBILE_HTML_PATH.is_file()
-        and LATEST_MOBILE_HTML_PATH.stat().st_mtime < md_mtime - 2.0
-    )
-    receipt_verified = (pdf_older or docx_older or mob_older) and _has_matching_artifact_receipt(md_path, is_master=is_master)
-
-    expected_charts = 0
-    for m in re.finditer(r"<!--\s*(DAILY_CHART_(?:TIMELINE|SWITCH|CROSS)|CHART_1_AND_2|CHART_\d+)\b", raw_md):
-        tok = m.group(1)
-        expected_charts += 2 if tok == "CHART_1_AND_2" else 1
-
-    # PDF checks
-    if not pdf_path.exists():
-        if expected_charts > 0:
-            warnings.append(f"[Gate 6 PDF 未生成] 未检测到同名 {pdf_path.name}，请先运行编译脚本")
-    else:
-        pdf_stat = pdf_path.stat()
-        if pdf_stat.st_size < 10240:
-            errors.append(f"[Gate 6 PDF 异常过小] {pdf_path.name} 仅 {pdf_stat.st_size} 字节")
-        else:
-            with open(pdf_path, "rb") as fp:
-                if fp.read(5) != b"%PDF-":
-                    errors.append(f"[Gate 6 PDF 文件头损坏] {pdf_path.name} 非合法 PDF 文件")
-        if pdf_older and not receipt_verified:
-            warnings.append(f"[Gate 6 PDF 陈旧] {pdf_path.name} 修改时间早于 {md_path.name}，请重新编译")
-
-    # Mobile responsive HTML check for daily reports
-    is_daily_report = (
-        md_path.resolve().parent == DAILY_DIR.resolve()
-        and re.match(r"^\d{4}-\d{2}-\d{2}_", md_path.name) is not None
-    )
-    if is_daily_report:
-        if not LATEST_MOBILE_HTML_PATH.exists():
-            errors.append(
-                f"[Gate 6 手机端 HTML 缺失] 未检测到 daily/{LATEST_MOBILE_HTML_PATH.name}，请运行 build_daily.py 重新编译"
-            )
-        else:
-            mob_size = LATEST_MOBILE_HTML_PATH.stat().st_size
-            if mob_size < 5120:
-                errors.append(
-                    f"[Gate 6 手机端 HTML 异常过小] daily/{LATEST_MOBILE_HTML_PATH.name} 仅 {mob_size} 字节（要求 ≥5KB）"
-                )
-            else:
-                mob_text = LATEST_MOBILE_HTML_PATH.read_text(encoding="utf-8", errors="replace")
-                if '<meta name="viewport"' not in mob_text:
-                    errors.append(
-                        f"[Gate 6 手机端 HTML 缺视口声明] daily/{LATEST_MOBILE_HTML_PATH.name} 缺少 <meta name=\"viewport\""
-                    )
-
-                if is_current_daily:
-                    title_md = re.search(r"(?m)^#\s+(.+)$", raw_md)
-                    title_html = re.search(r"<title>([^<]+)</title>", mob_text)
-                    if (
-                        not title_md or not title_html
-                        or title_md.group(1).strip() != html.unescape(title_html.group(1)).strip()
-                        or (mob_older and not receipt_verified)
-                    ):
-                        errors.append("[Gate 6 手机端 HTML 错刊] 最新手机端页面标题或修改时间与当前日报不一致")
-
-    if not docx_path.exists():
-        if expected_charts > 0:
-            warnings.append(f"[Gate 6 DOCX 未生成] 未检测到同名 {docx_path.name}，请先运行编译脚本")
+def _validate_data_caveats(caveats: object, label: str, errors: list[str]) -> None:
+    """Validate structured data_caveats array and ensure zero internal engineering leaks."""
+    if not isinstance(caveats, list):
+        errors.append(f"[Gate 5 信息缺口结构错] {label}: data_caveats 须为数组")
         return
-
-    if docx_older and not receipt_verified:
-        warnings.append(f"[Gate 6 DOCX 陈旧] {docx_path.name} 修改时间早于 {md_path.name}，请重新编译")
-
-    try:
-        with zipfile.ZipFile(docx_path, "r") as zf:
-            names = set(zf.namelist())
-            required_parts = [
-                "[Content_Types].xml",
-                "_rels/.rels",
-                "word/document.xml",
-                "word/_rels/document.xml.rels",
-                "word/styles.xml",
-                "word/settings.xml",
-                "word/footer1.xml",
-            ]
-            for rp in required_parts:
-                if rp not in names:
-                    errors.append(f"[Gate 6 DOCX 缺核心部件] {docx_path.name} 缺少 {rp}")
-                    return
-
-            xml_roots = {}
-            for name in names:
-                if name.endswith((".xml", ".rels")):
-                    try:
-                        xml_roots[name] = ET.fromstring(zf.read(name))
-                    except ET.ParseError as exc:
-                        errors.append(f"[Gate 6 DOCX 非法 XML] {docx_path.name}:{name} 解析失败: {exc}")
-                        return
-
-            doc_str = zf.read("word/document.xml").decode("utf-8")
-            ct_root = xml_roots["[Content_Types].xml"]
-            doc_root = xml_roots["word/document.xml"]
-            rels_root = xml_roots["word/_rels/document.xml.rels"]
-            ftr_root = xml_roots["word/footer1.xml"]
-
-            w_ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-            r_ns = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
-            wp_ns = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
-            a_ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
-            pic_ns = "{http://schemas.openxmlformats.org/drawingml/2006/picture}"
-
-            # 1. Native tables exist (never flattened by textutil!)
-            tbls = doc_root.findall(f".//{w_ns}tbl")
-            if not tbls:
-                errors.append(f"[Gate 6 DOCX 表格丢失] {docx_path.name} 中 <w:tbl> 数量为 0（疑似误用 textutil 退化）！")
-
-            # 2. Zero invalid Word 2003 <w:sz-cs>
-            if "<w:sz-cs" in doc_str or "<w:sz-cs" in zf.read("word/styles.xml").decode("utf-8"):
-                errors.append(f"[Gate 6 DOCX 非法标签] {docx_path.name} 含有不合规的 <w:sz-cs> 标签")
-
-            # 3. Zero leaked chart markers
-            if "___DOCX_CHART_" in doc_str:
-                errors.append(f"[Gate 6 DOCX 占位泄露] {docx_path.name} 残留未替换的 ___DOCX_CHART_ 占位符")
-
-            # 4. <w:sectPr> strictly LAST child of <w:body>
-            body = doc_root.find(f"{w_ns}body")
-            if body is None or len(body) == 0 or body[-1].tag != f"{w_ns}sectPr":
-                errors.append(f"[Gate 6 DOCX 结构错位] {docx_path.name} 的 <w:sectPr> 不是 <w:body> 最后一个子元素")
-
-            # 5. [Content_Types].xml: ALL <Default> before ALL <Override>, and all Override PartNames exist
-            seen_override = False
-            for child in ct_root:
-                tag_local = child.tag.split("}")[-1]
-                if tag_local == "Override":
-                    seen_override = True
-                    pn = child.attrib.get("PartName", "").lstrip("/")
-                    if pn and pn not in names:
-                        errors.append(f"[Gate 6 Content_Types 悬空覆盖] {docx_path.name} 声明了不存在的 /{pn}")
-                elif tag_local == "Default" and seen_override:
-                    errors.append(f"[Gate 6 Content_Types 顺序错] {docx_path.name} 中 <Default> 出现在 <Override> 之后")
-                    break
-
-            # 6. ECMA-376 child ordering: tblBorders before tblLayout; positive tblGrid <= 9638; footer pBdr before jc
-            for t_idx, tbl in enumerate(tbls):
-                tblpr = tbl.find(f"{w_ns}tblPr")
-                if tblpr is not None:
-                    tags = [c.tag.split("}")[-1] for c in tblpr]
-                    if "tblBorders" in tags and "tblLayout" in tags and tags.index("tblBorders") > tags.index("tblLayout"):
-                        errors.append(f"[Gate 6 OOXML 序错] {docx_path.name} 第 {t_idx+1} 表 tblBorders 出现在 tblLayout 之后")
-                        break
-                tgrid = tbl.find(f"{w_ns}tblGrid")
-                if tgrid is not None:
-                    col_ws = [int(gc.attrib.get(f"{w_ns}w", "0")) for gc in tgrid.findall(f"{w_ns}gridCol")]
-                    if any(w <= 0 for w in col_ws) or sum(col_ws) > 9638:
-                        errors.append(f"[Gate 6 DOCX 表宽越界] {docx_path.name} 第 {t_idx+1} 表 tblGrid 异常: {col_ws}")
-                        break
-
-            for ppr in ftr_root.findall(f".//{w_ns}pPr"):
-                ftags = [c.tag.split("}")[-1] for c in ppr]
-                if "pBdr" in ftags and "jc" in ftags and ftags.index("pBdr") > ftags.index("jc"):
-                    errors.append(f"[Gate 6 页脚 OOXML 序错] {docx_path.name}:footer1.xml 中 <w:pBdr> 出现在 <w:jc> 之后")
-                    break
-
-            for ppr in doc_root.findall(f".//{w_ns}pPr"):
-                ptags = [c.tag.split("}")[-1] for c in ppr]
-                if "keepNext" in ptags and "pageBreakBefore" in ptags and ptags.index("keepNext") > ptags.index("pageBreakBefore"):
-                    errors.append(f"[Gate 6 段落 OOXML 序错] {docx_path.name} 存在 pageBreakBefore 出现在 keepNext 之前")
-                    break
-
-            # 7. Unique wp:docPr/@id AND pic:cNvPr/@id
-            docpr_ids = [el.attrib.get("id") for el in doc_root.findall(f".//{wp_ns}docPr")]
-            if len(docpr_ids) != len(set(docpr_ids)):
-                errors.append(f"[Gate 6 DOCX ID 冲突] {docx_path.name} 存在重复的 wp:docPr/@id: {docpr_ids}")
-            cnvpr_ids = [el.attrib.get("id") for el in doc_root.findall(f".//{pic_ns}cNvPr")]
-            if len(cnvpr_ids) != len(set(cnvpr_ids)):
-                errors.append(f"[Gate 6 DOCX pic ID 冲突] {docx_path.name} 存在重复的 pic:cNvPr/@id: {cnvpr_ids}")
-
-            # 8. Validate ALL r:id relationships (hyperlinks, footerReference, blips) + PNG magic header
-            rel_map = {el.attrib.get("Id"): el.attrib.get("Target") for el in rels_root}
-            for hl in doc_root.findall(f".//{w_ns}hyperlink"):
-                rid = hl.attrib.get(f"{r_ns}id")
-                if rid and rid not in rel_map:
-                    errors.append(f"[Gate 6 DOCX 超链接断链] {docx_path.name} hyperlink 引用无效 rId={rid}")
-            for fr in doc_root.findall(f".//{w_ns}footerReference"):
-                rid = fr.attrib.get(f"{r_ns}id")
-                if rid and rid not in rel_map:
-                    errors.append(f"[Gate 6 DOCX 页脚断链] {docx_path.name} footerReference 引用无效 rId={rid}")
-
-            blips = doc_root.findall(f".//{a_ns}blip")
-            valid_imgs = 0
-            for b in blips:
-                rid = b.attrib.get(f"{r_ns}embed")
-                if not rid or rid not in rel_map:
-                    errors.append(f"[Gate 6 DOCX 断链图片] {docx_path.name} 存在无效图片引用 rId={rid}")
-                    continue
-                target_path = f"word/{rel_map[rid]}"
-                if target_path not in names:
-                    errors.append(f"[Gate 6 DOCX 缺图文件] {docx_path.name} 缺失 {target_path}")
-                    continue
-                img_bytes = zf.read(target_path)
-                if len(img_bytes) < 2048 or not img_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-                    errors.append(f"[Gate 6 DOCX 图损/空白] {docx_path.name}:{target_path} 非有效 PNG 或体积不足 2KB")
-                    continue
-                valid_imgs += 1
-
-            if expected_charts > 0 and valid_imgs < expected_charts:
+    req_fields = ("id", "market", "category", "severity", "item", "detail", "impact", "next_review")
+    seen_ids: set[str] = set()
+    for idx, entry in enumerate(caveats):
+        if not isinstance(entry, dict):
+            errors.append(f"[Gate 5 信息缺口结构错] {label}: data_caveats[{idx}] 须为对象")
+            continue
+        for fk in req_fields:
+            val = entry.get(fk)
+            if not isinstance(val, str) or not val.strip():
+                errors.append(f"[Gate 5 信息缺口缺项] {label}: data_caveats[{idx}] 缺少非空字段 {fk}")
+        cid = str(entry.get("id", "")).strip()
+        if cid:
+            if cid in seen_ids:
+                errors.append(f"[Gate 5 信息缺口重复] {label}: data_caveats id '{cid}' 重复")
+            seen_ids.add(cid)
+        cat = str(entry.get("category", "")).strip()
+        if cat and cat not in _CAVEAT_ALLOWED_CATEGORIES:
+            errors.append(f"[Gate 5 信息缺口枚举错] {label}: data_caveats[{idx}].category={cat!r} 非法")
+        sev = str(entry.get("severity", "")).strip()
+        if sev and sev not in _CAVEAT_ALLOWED_SEVERITIES:
+            errors.append(f"[Gate 5 信息缺口枚举错] {label}: data_caveats[{idx}].severity={sev!r} 非法")
+        for text_f in ("item", "detail", "impact"):
+            txt = str(entry.get(text_f, ""))
+            leaks = _INTERNAL_FILENAME_LEAK_RE.findall(txt) + SCORECARD_BANNED_RE.findall(txt)
+            if leaks:
                 errors.append(
-                    f"[Gate 6 DOCX 丢图] Markdown 含 {expected_charts} 张图表，但 {docx_path.name} 仅有效内嵌 {valid_imgs} 张"
+                    f"[Gate 5 信息缺口内部词泄露] {label}: data_caveats[{idx}].{text_f} 含禁止内部词: {sorted(set(leaks))}"
                 )
-    except Exception as exc:
-        errors.append(f"[Gate 6 DOCX 校验异常] 无法解析 {docx_path.name}: {exc}")
 
 
 def _find_banned_layer01_tokens(text: str, *, is_converged: bool = False) -> list[str]:
@@ -958,6 +773,39 @@ def _check_daily_verdict(directives: dict[str, list[dict]], snap: dict, errors: 
             errors.append(f"[Gate 5 {source}口径冲突] 须显示 {expected_label} 与 {passed}/4")
         elif tier == "Tier 0" and RED_LIGHT_CONFLICT_RE.search(value):
             errors.append(f"[Gate 5 {source}动作冲突] 黄金处于红灯，不得标注开新仓")
+    _check_tier0_widget_prose(directives, snap, errors)
+
+
+def _scan_tier0_prose(source: str, text: str, errors: list[str]) -> None:
+    plain = unicodedata.normalize("NFKC", html.unescape(re.sub(r"<[^>]+>", "", str(text))))
+    for clause in re.split(r"[。！？；\n]", plain):
+        for m in _TIER0_PROSE_BUY_RE.finditer(clause):
+            prefix = clause[:m.start()]
+            tail_seg = re.split(r"[，,、：:→]", prefix)[-1]
+            if _TIER0_PROSE_GUARD_RE.search(prefix) or _TIER0_PROSE_GUARD_RE.search(tail_seg):
+                continue
+            errors.append(f"[Gate 5 {source}动作冲突] 黄金处于红灯停，严禁出现新买/定投开仓指令：{m.group(0)}")
+
+
+def _check_tier0_widget_prose(directives: dict[str, list[dict]], snap: dict, errors: list[str]) -> None:
+    """Extend Tier 0 red-light mutex checks to DAILY_VERDICT headline/bullets and DAILY_PERSONA actions."""
+    if snap.get("tier_code") != "Tier 0" and snap.get("new_buy_allowed") is not False:
+        return
+    verdict = next(iter(directives.get("DAILY_VERDICT", [])), {})
+    if isinstance(verdict, dict):
+        if isinstance(verdict.get("headline"), str):
+            _scan_tier0_prose("DAILY_VERDICT.headline", verdict["headline"], errors)
+        for idx, bullet in enumerate(verdict.get("bullets") or [], 1):
+            if isinstance(bullet, str):
+                _scan_tier0_prose(f"DAILY_VERDICT.bullets[{idx}]", bullet, errors)
+    for persona in directives.get("DAILY_PERSONA", []):
+        for cidx, card in enumerate(persona.get("cards") or [], 1):
+            if not isinstance(card, dict):
+                continue
+            grp = str(card.get("group", "")).strip().upper()
+            for aidx, act in enumerate(card.get("actions") or [], 1):
+                if isinstance(act, str):
+                    _scan_tier0_prose(f"DAILY_PERSONA.cards[{cidx}:{grp}].actions[{aidx}]", act, errors)
 
 
 def _check_partial_entry_claims(visible: str, widgets: list[tuple[str, str]], errors: list[str]) -> None:
@@ -1096,6 +944,8 @@ def check_file(
             errors.append("[Gate 5 日报快照错刊] 文件名、DAILY_META 与 data_snapshot 的 edition_id/as_of_short 须一致")
         else:
             _check_daily_verdict(directives, daily_snap, errors)
+    elif is_master and master_snap:
+        _check_tier0_widget_prose(directives, master_snap, errors)
 
     full_combined = full_vis + "\n" + "\n".join(t for _, t in all_widget_texts)
 
@@ -1116,12 +966,17 @@ def check_file(
                 f"[Gate 1 术语/自嗨逃逸 · 说教口号] 全文及组件严禁出现居高临下口号: {', '.join(slogan_hits)}"
             )
 
-    # Full-document internal filename, version & engineering term leak check (ALL layers for >= 2026-11-26_0730)
+    # Full-document internal filename, version, binary dead-link & engineering term leak check (>= 2026-11-26_0730)
     if not is_master and filename_key is not None and filename_key >= INTERNAL_LEAK_CUTOVER:
         internal_leaks = _INTERNAL_FILENAME_LEAK_RE.findall(full_combined)
         if internal_leaks:
             errors.append(
                 f"[Gate 1 内部工程词/文件名泄露] 全文严禁出现内部文件名、版本号或工程术语: {', '.join(sorted(set(internal_leaks)))}"
+            )
+        bin_leaks = _DEPRECATED_BINARY_LINK_RE.findall(full_combined)
+        if bin_leaks:
+            errors.append(
+                f"[Gate 1 已弃用二进制死链] 纯网页日报严禁包含 .pdf/.docx 或 Releases 离线下载链接: {', '.join(sorted(set(bin_leaks))[:5])}"
             )
 
     # Raw HTML leakage in visible Markdown AND widget JSON payloads
@@ -1274,6 +1129,28 @@ def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
                     errors.append(f"[RSI 总分冲突] run '{rid}' total_score={r.get('total_score')} != 6 维之和 {score_sum}")
                 if r.get("max_score") != 30:
                     warnings.append(f"[RSI 满分口径] run '{rid}' max_score={r.get('max_score')}（应为 30）")
+
+        latest_run = runs[-1]
+        if isinstance(latest_run, dict):
+            latest_id = str(latest_run.get("run_id", "")).strip() or "latest"
+            closure = latest_run.get("review_closure")
+            if isinstance(closure, dict):
+                if closure.get("reviewer_completed") is False:
+                    errors.append(f"[RSI 盲审未完成] 最新班次 '{latest_id}' review_closure.reviewer_completed=false")
+                findings = closure.get("findings")
+                if findings is not None:
+                    if not isinstance(findings, list):
+                        errors.append(f"[RSI 盲审结构错] 最新班次 '{latest_id}' review_closure.findings 须为数组")
+                    else:
+                        for fidx, item in enumerate(findings):
+                            if not isinstance(item, dict):
+                                errors.append(f"[RSI 盲审项错] 最新班次 '{latest_id}' findings[{fidx}] 须为对象")
+                                continue
+                            st = str(item.get("status", "")).strip()
+                            if st == "open" or st not in _RSI_ALLOWED_FINDING_STATUSES:
+                                errors.append(
+                                    f"[RSI 盲审未闭环] 最新班次 '{latest_id}' findings[{fidx}] 状态为 {st!r}（严禁 open，须为 resolved/deferred_data/disclosed_caveat）"
+                                )
     else:
         errors.append("[RSI 账本缺失] 未找到 daily/rsi_metrics.json")
 
@@ -1353,6 +1230,19 @@ def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None
         if leaked:
             errors.append(
                 f"[公开记分卡内部词泄露] daily/SCORECARD.md 含禁止内部工程/RSI 词: {', '.join(sorted(set(leaked)))}"
+            )
+
+    if CHANGELOG_PATH.exists():
+        cl_text = _strip_comments_keep_lines(CHANGELOG_PATH.read_text(encoding="utf-8"))
+        cl_leaked = SCORECARD_BANNED_RE.findall(cl_text) + _INTERNAL_FILENAME_LEAK_RE.findall(cl_text)
+        if cl_leaked:
+            errors.append(
+                f"[演化日志内部词泄露] daily/CHANGELOG.md 含禁止内部工程词/文件名: {', '.join(sorted(set(cl_leaked)))}"
+            )
+        cl_bin = _DEPRECATED_BINARY_LINK_RE.findall(cl_text)
+        if cl_bin:
+            errors.append(
+                f"[演化日志二进制死链] daily/CHANGELOG.md 含已弃用 PDF/DOCX 残留: {', '.join(sorted(set(cl_bin))[:5])}"
             )
 
 

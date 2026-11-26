@@ -16,6 +16,7 @@ NEW_YORK = ZoneInfo("America/New_York")
 LAST_LEGACY_EDITION = ("2026-11-25", "1800", 2)
 EDITION_SLOTS = ("0730", "1800")
 ENTRY_GATE_IDS = ("real_yield", "rate_spread", "vix", "ny_close")
+MAX_EDITION_EARLY = timedelta(minutes=5)
 MAX_EDITION_LAG = timedelta(hours=6)
 MAX_VIX_QUOTE_AGE = timedelta(minutes=30)
 MAX_PENDING_DAILY_CHECK_AGE = timedelta(hours=4)
@@ -69,9 +70,11 @@ def check_edition_time(edition: tuple[str, str, int], as_of: datetime, errors: l
     if slot not in EDITION_SLOTS or revision < 1:
         errors.append("[Gate 5 班次非法] 新刊仅支持 07:30 与 18:00 班次")
         return False
+    if as_of.tzinfo is not None:
+        as_of = as_of.astimezone(BEIJING).replace(tzinfo=None)
     scheduled = datetime.strptime(f"{day} {slot}", "%Y-%m-%d %H%M")
-    if not timedelta(0) <= as_of - scheduled <= MAX_EDITION_LAG:
-        errors.append("[Gate 5 班次截点错] 北京时间 as_of_short 须在所标班次开始至其后六小时内")
+    if not -MAX_EDITION_EARLY <= as_of - scheduled <= MAX_EDITION_LAG:
+        errors.append("[Gate 5 班次截点错] 北京时间 as_of_short 须在所标班次前五分钟至其后六小时内")
         return False
     return True
 
@@ -205,7 +208,14 @@ def _parse_bjt_timestamp(value: object) -> datetime | None:
 
 
 def _has_holiday_daily_row(
-    day: date, eligible: datetime, cutoff: datetime, checks: dict, errors: list[str], *, has_windows: bool = False,
+    day: date,
+    eligible: datetime,
+    cutoff: datetime,
+    checks: dict,
+    errors: list[str],
+    *,
+    has_windows: bool = False,
+    recorded_dates: set[str] | None = None,
 ) -> bool:
     check = checks.get(day.isoformat())
     if not isinstance(check, dict):
@@ -230,6 +240,8 @@ def _has_holiday_daily_row(
         return False
     if status == "pending" and cutoff - checked > MAX_PENDING_DAILY_CHECK_AGE:
         errors.append(f"[Gate 5 VIX 节日待披露需重查] {day} 本次截点前四小时内须重新查看官方 CSV")
+    if status == "provisional_close" and cutoff.date() - day > timedelta(days=3):
+        errors.append(f"[Gate 5 VIX 暂定收盘超期] {day} 须以 Cboe 官方 CSV 终值核销")
     if status == "provisional_close" and cutoff.date() > day and cutoff - checked > MAX_EDITION_LAG:
         errors.append(f"[Gate 5 VIX 待复核需重查] {day} 次日班次须在本班窗口内重新核查官方 CSV")
     if status == "no_row_confirmed":
@@ -243,6 +255,7 @@ def _has_holiday_daily_row(
             source == VIX_DAILY_SOURCE
             and next_pub is not None
             and day < next_pub <= cutoff.date()
+            and (recorded_dates is None or next_pub.isoformat() in recorded_dates)
         )
         if not (has_cboe_confirm or has_csv_proof):
             errors.append(
@@ -279,7 +292,15 @@ def _has_ordinary_daily_row(day: date, close_dt: datetime, cutoff: datetime, che
     return status != "pending"
 
 
-def _vix_completed_days(cutoff: datetime, first: date, exceptions: dict, checks: dict, errors: list[str]) -> list[str]:
+def _vix_completed_days(
+    cutoff: datetime,
+    first: date,
+    exceptions: dict,
+    checks: dict,
+    errors: list[str],
+    *,
+    recorded_dates: set[str] | None = None,
+) -> list[str]:
     days = []
     day = cutoff.date()
     while day >= first and len(days) < 10:
@@ -291,7 +312,9 @@ def _vix_completed_days(cutoff: datetime, first: date, exceptions: dict, checks:
         if session.daily_row_check_after is not None:
             eligible = datetime.combine(day, session.daily_row_check_after, NEW_YORK)
             if eligible <= cutoff and _has_holiday_daily_row(
-                day, eligible, cutoff, checks, errors, has_windows=bool(session.windows),
+                day, eligible, cutoff, checks, errors,
+                has_windows=bool(session.windows),
+                recorded_dates=recorded_dates,
             ):
                 days.append(day.isoformat())
         day -= BASE_DAY
@@ -306,8 +329,8 @@ def check_vix_period(snap: dict, as_of: datetime, observed_at: datetime | None, 
     if not isinstance(checks, dict):
         errors.append("[Gate 5 VIX 节日日线证据错] vix_daily_row_checks 须为日期键对象")
         return False
-    expected = _vix_completed_days(cutoff, first, exceptions, checks, errors)
     dates = [row["date"] for row in snap["vix_10d_session_closes"]]
+    expected = _vix_completed_days(cutoff, first, exceptions, checks, errors, recorded_dates=set(dates))
     if len(expected) != 10 or dates != expected:
         errors.append(f"[Gate 5 VIX 完整交易日不符] 截点前最近十个 Cboe 完整交易日应为 {', '.join(expected)}")
     if snap.get("vix_daily_source") != VIX_DAILY_SOURCE:
@@ -322,7 +345,7 @@ def check_vix_period(snap: dict, as_of: datetime, observed_at: datetime | None, 
         windows = _vix_session(cutoff.date(), exceptions).windows
         if (
             observed.date() != cutoff.date() or not timedelta(0) <= as_of - observed_at <= MAX_VIX_QUOTE_AGE
-            or not any(start <= observed.time() <= cutoff.time() < end for start, end in windows)
+            or not any(start <= observed.time() <= cutoff.time() <= end for start, end in windows)
         ):
             errors.append("[Gate 5 VIX 盘口过时] 观测与截点须在同一现货指数发布窗口，间隔至多 30 分钟")
     return len(errors) == initial_errors

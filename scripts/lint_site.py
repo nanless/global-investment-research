@@ -49,6 +49,7 @@ REQUIRED_NONEMPTY_FILES: tuple[str, ...] = (
     "channels.html",
     "etfs.html",
     "screener.html",
+    "guide.html",
     "scorecard.html",
     "archive.html",
     "reports/gold.html",
@@ -72,13 +73,17 @@ TEXT_SCAN_SUFFIXES = {".html", ".htm", ".css", ".js", ".mjs", ".json", ".svg"}
 # ---------------------------------------------------------------------------
 # Gate S2 configuration
 # ---------------------------------------------------------------------------
+# Only explicitly safe external URI schemes are permitted; dangerous schemes fail Gate S2.
 EXTERNAL_SCHEMES = (
     "http://",
     "https://",
-    "//",
     "mailto:",
     "tel:",
+)
+
+FORBIDDEN_URI_SCHEMES = (
     "javascript:",
+    "vbscript:",
     "data:",
     "blob:",
     "about:",
@@ -91,12 +96,32 @@ LINK_ATTR_BY_TAG: dict[str, str] = {
     "img": "src",
 }
 
-# Web-only publishing: forbid PDF/Word download links and deprecated latest-reports Release links.
+# Web-only publishing: forbid deprecated latest-reports Release links (any scheme)
+# and non-HTTP(S) PDF/Word binary links (external official PDF citations remain allowed).
+FORBIDDEN_RELEASE_LINK_RE = re.compile(
+    r"/releases/(?:download|tag)/latest-reports\b",
+    re.IGNORECASE,
+)
 FORBIDDEN_BINARY_LINK_RE = re.compile(
-    r"(?:/releases/(?:download|tag)/latest-reports\b|\.(?:pdf|docx)(?:[?#]|$))",
+    r"\.(?:pdf|docx)(?:[?#]|$)",
     re.IGNORECASE,
 )
 MULTI_ASSET_CHANNELS_PATH = REPO_ROOT / "equity" / "state" / "multi_asset_channels.json"
+ETF_UNIVERSE_PATH = REPO_ROOT / "equity" / "state" / "etf_universe.json"
+REQUIRED_MULTI_ASSET_CHANNELS: tuple[str, ...] = (
+    "reverse_repo",
+    "large_cds",
+    "fx_deposits_wm",
+    "bonds",
+    "funds_wm",
+    "savings_insurance",
+    "tax_advantaged_accounts",
+    "qdii_mrf",
+    "convertible_bonds",
+    "c_reits",
+    "commodity_etfs",
+    "private_funds_trust",
+)
 
 # HTML5 void elements that never have a closing tag.
 VOID_ELEMENTS = frozenset(
@@ -188,7 +213,7 @@ S3_RAW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "API secret key (sk-...)",
-        re.compile(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9]{20,}"),
+        re.compile(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}"),
     ),
     (
         "unresolved chart placeholder (<!-- CHART_)",
@@ -226,10 +251,17 @@ S3_RAW_MD_SEP_RE = re.compile(
 # Unrendered Markdown bold (**...**) and stray backticks (`) in visible prose outside <code>/<pre>.
 S3_RAW_MD_BOLD_RE = re.compile(r"\*\*[^\s*\n][^*\n]{0,160}\*\*")
 S3_STRAY_BACKTICK_RE = re.compile(r"`")
-# Internal engineering filenames/tooling that must never leak onto public web pages.
+# Literal JS rendering corruption tokens in visible HTML or embedded payloads.
+S3_JS_RENDER_LEAK_RE = re.compile(
+    r"(?<![A-Za-z0-9_])NaN(?![A-Za-z0-9_])|\[object\s+Object\]",
+)
+# Internal engineering/data filenames and tooling identifiers that must never leak onto public web pages.
 S3_INTERNAL_ENG_LEAK_RE = re.compile(
-    r"(?<![A-Za-z0-9_/-])(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
-    r"master_snapshot\.json|permissions\.json|unified-edition\.prompt\.md|"
+    r"(?<![A-Za-z0-9_-])(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
+    r"data_snapshot\.json|master_snapshot\.json|market_state\.json|market_calendar\.json|"
+    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|"
+    r"report_meta_[A-Za-z0-9_*]+\.json|edition-runs\.sqlite3|"
+    r"permissions\.json|unified-edition\.prompt\.md|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
@@ -249,6 +281,13 @@ FLAGSHIP_MIN_CHARTS: dict[str, int] = {
     "reports/hk-stock.html": 7,
     "reports/us-stock.html": 7,
 }
+
+# Cutover from which all-4-main (>=2 SVG) and upgraded holiday_watch (>=1 SVG) apply.
+ALL_MAIN_CUTOVER: tuple[str, int, int] = ("2026-11-26", 1800, 1)
+DAILY_DATED_RE = re.compile(
+    r"^daily/(gold|a-share|hk-stock|us-stock)-(\d{4}-\d{2}-\d{2})-(\d{4})(?:-r(\d+))?\.html$"
+)
+EDITION_KEY_RE = re.compile(r"(\d{4}-\d{2}-\d{2})[_-](\d{4})(?:[_-]r(\d+))?")
 
 DAILY_GOLD_LATEST_PAGE = "daily/gold-latest.html"
 DAILY_EQUITY_LATEST_PAGES: tuple[tuple[str, str], ...] = (
@@ -288,26 +327,69 @@ CSS_CLASS_RE = re.compile(r"\.([A-Za-z_-][A-Za-z0-9_-]*)")
 # ---------------------------------------------------------------------------
 # Gate S6 configuration (Live SSOT & Gold Tier 0 mutex)
 # ---------------------------------------------------------------------------
+GOLD_ETF_CODES: frozenset[str] = frozenset(
+    {
+        "518660",
+        "518880",
+        "518850",
+        "159934",
+        "159937",
+        "518800",
+        "517520",
+        "159562",
+        "02840",
+        "02840.HK",
+        "09840",
+        "03081",
+        "03081.HK",
+        "GLD",
+        "IAU",
+        "IAUM",
+        "GLDM",
+        "IGLN",
+        "GDX",
+        "GDXJ",
+        "SGOL",
+        "BAR",
+        "SGLN",
+    }
+)
+GOLD_ETF_FORBIDDEN_ROLES: tuple[str, ...] = (
+    "底座",
+    "买入",
+    "推荐",
+    "加仓",
+    "定投",
+    "配置",
+    "建仓",
+)
+_GOLD_TARGET_RE_FRAG = (
+    r"(?:黄金(?:股|ETF|ETC|基金|积存金|金条)?|金仓|金矿股?|"
+    r"(?<![A-Za-z0-9])(?:518660|518880|518850|159934|159937|518800|517520|159562|"
+    r"02840(?:\.HK)?|03081(?:\.HK)?|01929(?:\.HK)?|06181(?:\.HK)?|"
+    r"GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ|NEM|FCX)(?![A-Za-z0-9]))"
+)
 GOLD_ACTIVE_BUY_RE = re.compile(
-    r"(?:趁急跌.{0,12}(?:补齐|买|低吸).{0,8}黄金|"
-    r"(?:小批|分批|立刻|马上|立即|同步|今[日早晚]).{0,8}(?:补齐|补足|买入|买进|加仓|加配|建仓|抄底).{0,8}(?:[0-9一二两三半成%]*\s*)?(?:黄金|金仓|黄金ETF)|"
-    r"(?:补齐|补足|加配|逢低买|抄底)\s*[0-9一二两三半成%]*\s*(?:黄金|金仓)|"
-    r"(?:立即|马上|现在|建议|可以|开启|启动).{0,6}(?:买入|买进|建仓|加仓|配置|抄底).{0,6}(?:黄金|金仓|黄金ETF)|"
-    r"\b(?:buy\s+gold|add\s+gold|accumulate\s+gold|buy\s+now[^\n]{0,20}gold)\b)",
+    rf"(?:趁急跌.{{0,12}}(?:补齐|买|低吸|定投|建仓).{{0,8}}{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:小批|分批|立刻|马上|立即|同步|今[日早晚]).{{0,8}}(?:补齐|补足|买入|买进|加仓|加配|建仓|配置|定投|抄底).{{0,8}}(?:[0-9一二两三半成%]*\s*)?{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:补齐|补足)\s*[0-9一二两三半成%]*\s*(?:黄金|金仓)|"
+    rf"(?:加配|逢低买|抄底|定投|建仓)\s*[0-9一二两三半成%]*\s*{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:立即|马上|现在|建议|可以|开启|启动).{{0,6}}(?:买入|买进|建仓|加仓|配置|定投|抄底).{{0,6}}{_GOLD_TARGET_RE_FRAG}|"
+    r"\b(?:buy\s+gold|add\s+gold|accumulate\s+gold|dca\s+into\s+gold|buy\s+now[^\n]{0,20}gold)\b)",
     re.IGNORECASE,
 )
 GOLD_CTA_BUY_RE = re.compile(
-    r"(?:(?:立即|马上|一键|去|开始)?(?:买入|买进|加仓|建仓|抄底|配置)\s*黄金|"
+    rf"(?:(?:立即|马上|一键|去|开始)?(?:买入|买进|加仓|建仓|抄底|配置|定投)\s*{_GOLD_TARGET_RE_FRAG}|"
     r"(?:立即|马上|去)买金|"
-    r"\b(?:buy\s+gold|accumulate\s+gold)\b)",
+    r"\b(?:buy\s+gold|accumulate\s+gold|dca\s+into\s+gold)\b)",
     re.IGNORECASE,
 )
 GOLD_DEFER_GUARD_RE = re.compile(
-    r"(?:暂不|严禁|禁止|切忌|勿|停止|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|不)"
+    r"(?:暂不|严禁|禁止|切忌|勿|停止|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|暂停|无需|不)"
     r"(?:现在|今天|今日|当下|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|进行|尝试|建议|允许|任何|新增|直接|冲动)*"
-    r"\s*(?:补|买|加|建|抄|配置|低吸|开启|启动)"
+    r"\s*(?:补|买|加|建|抄|配置|定投|低吸|开启|启动)"
     r"|(?:待|等).{0,18}(?:黄灯|绿灯|解锁)|(?:黄灯|绿灯|解锁|过四关|全部过关)(?:亮起|确认)?后|"
-    r"\b(?:do\s+not|never|should\s+not|must\s+not|hold\s+off)\s+(?:buy|add|accumulat)",
+    r"\b(?:do\s+not|never|should\s+not|must\s+not|hold\s+off|pause)\s+(?:buy|add|accumulat|dca)",
     re.IGNORECASE,
 )
 GOLD_TIER0_LOCK_INDICATORS_RE = re.compile(
@@ -315,7 +397,14 @@ GOLD_TIER0_LOCK_INDICATORS_RE = re.compile(
     re.IGNORECASE,
 )
 SCREENER_RAW_MARKUP_RE = re.compile(r"<br\b|\*\*|`", re.IGNORECASE)
-GOLD_STOCK_RE = re.compile(r"黄金|金矿|金饰|金业|招金|紫金矿业|\b(?:GLD|GDX|NEM|IAU|PAXG|XAUT)\b", re.IGNORECASE)
+GOLD_STOCK_RE = re.compile(
+    r"黄金|金矿|金饰|金业|招金|紫金矿业|紫金黄金|山东黄金|中金黄金|赤峰黄金|山金国际|老铺黄金|周大福|纽蒙特|"
+    r"(?<![A-Za-z0-9])(?:518660|518880|518850|159934|159937|518800|517520|159562|"
+    r"02840(?:\.HK)?|03081(?:\.HK)?|09840(?:\.HK)?|01929(?:\.HK)?|06181(?:\.HK)?|"
+    r"02899(?:\.HK)?|601899|600547|600489|"
+    r"GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ|NEM|FCX|PAXG|XAUT)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
 SCREENER_VALID_COLORS = frozenset({"g", "b", "y", "r"})
 SCREENER_REQUIRED_FIELDS: tuple[str, ...] = (
     "market",
@@ -326,6 +415,15 @@ SCREENER_REQUIRED_FIELDS: tuple[str, ...] = (
     "valuation",
     "color",
     "summary",
+)
+DOSSIER_DIMENSIONS: tuple[str, ...] = (
+    "moat",
+    "financials",
+    "valuation_anchor",
+    "shareholder_flow",
+    "catalysts",
+    "bear_case",
+    "action_etf",
 )
 
 
@@ -404,8 +502,11 @@ class ParsedHtml:
     has_nav: bool = False
     edition_attr: str = ""
     stock_row_count: int = 0
+    tbody_row_count: int = 0
+    etf_tbody_row_count: int = 0
     screener_json_raw: str | None = None
     etf_json_raw: str | None = None
+    ch_etf_json_raw: str | None = None
     inline_styles: list[str] = field(default_factory=list)
     visible_text: str = ""
     prose_text: str = ""
@@ -512,8 +613,8 @@ class SiteHtmlParser(HTMLParser):
     def __init__(self, rel_path: str, abs_path: Path, raw_text: str) -> None:
         super().__init__(convert_charrefs=True)
         self.doc = ParsedHtml(rel_path=rel_path, abs_path=abs_path, raw_text=raw_text)
-        # Stack of (tag, classes_set, inline_style)
-        self._stack: list[tuple[str, set[str], str]] = []
+        # Stack of (tag, classes_set, inline_style, elem_id)
+        self._stack: list[tuple[str, set[str], str, str]] = []
         self._svg_stack: list[SvgInfo] = []
         self._in_title = False
         self._title_chunks: list[str] = []
@@ -523,6 +624,8 @@ class SiteHtmlParser(HTMLParser):
         self._screener_json_chunks: list[str] = []
         self._in_etf_json = False
         self._etf_json_chunks: list[str] = []
+        self._in_ch_etf_json = False
+        self._ch_etf_json_chunks: list[str] = []
         self._skip_text_depth = 0  # script / style / template
         self._code_depth = 0  # code / pre / kbd / samp
         self._vis_chunks: list[str] = []
@@ -553,6 +656,15 @@ class SiteHtmlParser(HTMLParser):
         # Track explicit stock ticker rows/cards for Gate S6 fidelity check.
         if "data-ticker" in attr_map or (t == "tr" and "data-market" in attr_map):
             self.doc.stock_row_count += 1
+        if t == "tr":
+            for st_tag, _, _, st_id in reversed(self._stack):
+                if st_tag == "tbody":
+                    self.doc.tbody_row_count += 1
+                    if st_id == "etf-tbody":
+                        self.doc.etf_tbody_row_count += 1
+                    break
+                if st_tag == "table":
+                    break
 
         # Collect element IDs & secondary JS/tab anchors (Gate S2).
         elem_id = attr_map.get("id", "").strip()
@@ -595,12 +707,12 @@ class SiteHtmlParser(HTMLParser):
 
         # Gate S5 table wrapper check.
         if t == "table":
-            in_art_main = any(st_tag in ("article", "main") for st_tag, _, _ in self._stack)
+            in_art_main = any(st_tag in ("article", "main") for st_tag, _, _, _ in self._stack)
             anc_classes: set[str] = set()
             has_inline_scroll = bool(
                 style_raw and INLINE_OVERFLOW_SCROLL_RE.search(style_raw)
             )
-            for _, st_cls, st_style in self._stack:
+            for _, st_cls, st_style, _ in self._stack:
                 anc_classes.update(st_cls)
                 if st_style and INLINE_OVERFLOW_SCROLL_RE.search(st_style):
                     has_inline_scroll = True
@@ -625,7 +737,7 @@ class SiteHtmlParser(HTMLParser):
             width_px = _parse_px_number(attr_map.get("width"))
             in_chart_box = any(
                 any(CHART_CONTAINER_CLASS_RE.search(c) for c in st_cls)
-                for _, st_cls, _ in self._stack
+                for _, st_cls, _, _ in self._stack
             ) or any(CHART_CONTAINER_CLASS_RE.search(c) for c in classes)
             svg_info = SvgInfo(
                 lineno=lineno,
@@ -651,7 +763,7 @@ class SiteHtmlParser(HTMLParser):
             return
 
         # Push onto ancestor stack for non-void elements.
-        self._stack.append((t, classes, style_raw))
+        self._stack.append((t, classes, style_raw, elem_id))
 
         if t == "title":
             self.doc.has_title = True
@@ -676,6 +788,13 @@ class SiteHtmlParser(HTMLParser):
             ):
                 self._in_etf_json = True
                 self._etf_json_chunks = []
+            elif (
+                t == "script"
+                and elem_id == "ch-etf-data"
+                and attr_map.get("type", "").strip().lower() == "application/json"
+            ):
+                self._in_ch_etf_json = True
+                self._ch_etf_json_chunks = []
         elif t in ("code", "pre", "kbd", "samp"):
             self._code_depth += 1
         elif t in ("button", "a"):
@@ -716,6 +835,11 @@ class SiteHtmlParser(HTMLParser):
             self.doc.etf_json_raw = "".join(self._etf_json_chunks)
             self._etf_json_chunks = []
 
+        if t == "script" and self._in_ch_etf_json:
+            self._in_ch_etf_json = False
+            self.doc.ch_etf_json_raw = "".join(self._ch_etf_json_chunks)
+            self._ch_etf_json_chunks = []
+
         if t in ("script", "style", "template") and self._skip_text_depth > 0:
             self._skip_text_depth -= 1
 
@@ -753,6 +877,8 @@ class SiteHtmlParser(HTMLParser):
             self._screener_json_chunks.append(data)
         if self._in_etf_json:
             self._etf_json_chunks.append(data)
+        if self._in_ch_etf_json:
+            self._ch_etf_json_chunks.append(data)
         if self._svg_stack and data.strip():
             self._svg_stack[-1].has_content = True
         if self._skip_text_depth == 0:
@@ -905,18 +1031,40 @@ def run_gate_s2(
                     )
                 continue
 
-            # Web-only portal check: forbid PDF/Word links and deprecated Release download URLs.
-            if FORBIDDEN_BINARY_LINK_RE.search(raw_ref) and not raw_ref.startswith(("http://", "https://")) or "/releases/download/latest-reports" in raw_ref.lower() or "/releases/tag/latest-reports" in raw_ref.lower():
+            lower_ref = raw_ref.lower()
+            scheme_norm = re.sub(r"[\x00-\x20]+", "", raw_ref).lower()
+            is_http = lower_ref.startswith(("http://", "https://"))
+
+            # Web-only portal check: forbid Release download links (any scheme)
+            # and non-HTTP(S) PDF/Word links (external official PDF citations remain allowed).
+            if FORBIDDEN_RELEASE_LINK_RE.search(raw_ref) or (
+                not is_http and FORBIDDEN_BINARY_LINK_RE.search(raw_ref)
+            ):
                 errors.append(
                     f"[S2] {rel_path}:{link.lineno}: forbidden PDF/Word or Release download link in web-only portal: {raw_ref!r}"
                 )
 
-            lower_ref = raw_ref.lower()
-            if lower_ref.startswith(EXTERNAL_SCHEMES):
-                continue
-            if lower_ref.startswith("file:"):
+            # Detect double-escaped '&amp;amp;' in link attributes (decoded by HTMLParser to literal '&amp;').
+            if "&amp;" in lower_ref:
+                errors.append(
+                    f"[S2] {rel_path}:{link.lineno}: double-escaped '&amp;amp;' in <{link.tag} {link.attr}>: {raw_ref!r}"
+                )
+
+            if scheme_norm.startswith("file:"):
                 errors.append(
                     f"[S2] {rel_path}:{link.lineno}: forbidden local file:// reference in <{link.tag} {link.attr}>: {raw_ref}"
+                )
+                continue
+            if scheme_norm.startswith(FORBIDDEN_URI_SCHEMES):
+                errors.append(
+                    f"[S2] {rel_path}:{link.lineno}: forbidden URI scheme in <{link.tag} {link.attr}>: {raw_ref!r}"
+                )
+                continue
+            if lower_ref.startswith(EXTERNAL_SCHEMES):
+                continue
+            if raw_ref.startswith("//"):
+                errors.append(
+                    f"[S2] {rel_path}:{link.lineno}: disallowed protocol-relative URL in <{link.tag} {link.attr}>: {raw_ref!r}"
                 )
                 continue
 
@@ -925,6 +1073,11 @@ def run_gate_s2(
                 continue
 
             parsed = urllib.parse.urlsplit(raw_ref)
+            if parsed.scheme:
+                errors.append(
+                    f"[S2] {rel_path}:{link.lineno}: unsupported URI scheme '{parsed.scheme}:' in <{link.tag} {link.attr}>: {raw_ref!r}"
+                )
+                continue
             path_part = urllib.parse.unquote(parsed.path)
             raw_frag = parsed.fragment
             unquoted_frag = urllib.parse.unquote(raw_frag)
@@ -986,14 +1139,83 @@ def run_gate_s2(
                                 )
 
 
+def _iter_json_strings(obj: object, prefix: str = "") -> Iterable[tuple[str, str]]:
+    """Yield (field_path, string_value) pairs from nested JSON lists/objects."""
+    if isinstance(obj, str):
+        yield prefix, obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            sub = f"{prefix}.{k}" if prefix else str(k)
+            yield from _iter_json_strings(v, sub)
+    elif isinstance(obj, list):
+        for idx, v in enumerate(obj):
+            yield from _iter_json_strings(v, f"{prefix}[{idx}]")
+
+
+def _scan_embedded_json_payload(
+    rel_path: str,
+    json_id: str,
+    raw_json: str,
+    errors: list[str],
+    *,
+    check_eng: bool = True,
+    check_gold_tier0: bool = False,
+    gate_tag: str = "S3",
+) -> None:
+    """Scan string leaves in #screener-data / #etf-data / #ch-etf-data for engineering leaks, NaN/[object Object], and Gold Tier 0 buy directives."""
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return  # Invalid JSON is explicitly reported by Gate S6.
+
+    eng_hits = 0
+    js_hits = 0
+    gold_hits = 0
+    for field_path, val in _iter_json_strings(payload):
+        if check_eng and eng_hits < 5:
+            m_eng = S3_INTERNAL_ENG_LEAK_RE.search(val)
+            if m_eng:
+                snippet = " ".join(val[max(0, m_eng.start() - 16) : min(len(val), m_eng.end() + 16)].split())
+                errors.append(
+                    f"[S3] {rel_path}: #{json_id} ({field_path}) leaked internal engineering filename/identifier -> {snippet!r}"
+                )
+                eng_hits += 1
+        if check_eng and js_hits < 5:
+            m_js = S3_JS_RENDER_LEAK_RE.search(val)
+            if m_js:
+                snippet = " ".join(val[max(0, m_js.start() - 16) : min(len(val), m_js.end() + 16)].split())
+                errors.append(
+                    f"[S3] {rel_path}: #{json_id} ({field_path}) leaked literal NaN/[object Object] -> {snippet!r}"
+                )
+                js_hits += 1
+        if check_gold_tier0 and gold_hits < 5:
+            for raw_seg in re.split(r"[\n。！？；，,]+", val):
+                seg = " ".join(raw_seg.split())
+                if not seg:
+                    continue
+                for m_g in GOLD_ACTIVE_BUY_RE.finditer(seg):
+                    if not _gold_action_is_guarded(seg, m_g):
+                        win = seg[max(0, m_g.start() - 36) : min(len(seg), m_g.end() + 36)]
+                        errors.append(
+                            f"[{gate_tag}] {rel_path}: Gold Tier 0 mutex violation — unguarded buy-gold directive "
+                            f"in #{json_id} ({field_path}): {win!r}"
+                        )
+                        gold_hits += 1
+                        break
+                if gold_hits >= 5:
+                    break
+
+
 def run_gate_s3(
     site_dir: Path,
     all_files: list[Path],
     parsed_htmls: dict[str, ParsedHtml],
     errors: list[str],
     warnings: list[str],
+    *,
+    gold_new_buy_blocked: bool = False,
 ) -> None:
-    """Gate S3: Zero PII, local paths, secrets, unresolved directives, or raw Markdown separators."""
+    """Gate S3: Zero PII, local paths, secrets, unresolved directives, raw Markdown, NaN/[object Object], or JSON payload leaks."""
     for p in all_files:
         if p.suffix.lower() not in TEXT_SCAN_SUFFIXES:
             continue
@@ -1045,6 +1267,15 @@ def run_gate_s3(
                 f"[S3] {rel_path}: stray backtick (`) outside <code>/<pre> in visible prose -> {snippet!r}"
             )
 
+        m_js = S3_JS_RENDER_LEAK_RE.search(doc.visible_text)
+        if m_js:
+            snippet = " ".join(
+                doc.visible_text[max(0, m_js.start() - 16) : min(len(doc.visible_text), m_js.end() + 16)].split()
+            )
+            errors.append(
+                f"[S3] {rel_path}: leaked literal NaN/[object Object] in visible HTML -> {snippet!r}"
+            )
+
         m_eng = S3_INTERNAL_ENG_LEAK_RE.search(doc.visible_text)
         if m_eng:
             snippet = " ".join(
@@ -1054,14 +1285,51 @@ def run_gate_s3(
                 f"[S3] {rel_path}: leaked internal engineering filename/identifier -> {snippet!r}"
             )
 
+        if doc.screener_json_raw is not None:
+            _scan_embedded_json_payload(
+                rel_path,
+                "screener-data",
+                doc.screener_json_raw,
+                errors,
+                check_eng=True,
+                check_gold_tier0=gold_new_buy_blocked,
+                gate_tag="S3",
+            )
+        if doc.etf_json_raw is not None:
+            _scan_embedded_json_payload(
+                rel_path,
+                "etf-data",
+                doc.etf_json_raw,
+                errors,
+                check_eng=True,
+                check_gold_tier0=gold_new_buy_blocked,
+                gate_tag="S3",
+            )
+        if doc.ch_etf_json_raw is not None:
+            _scan_embedded_json_payload(
+                rel_path,
+                "ch-etf-data",
+                doc.ch_etf_json_raw,
+                errors,
+                check_eng=True,
+                check_gold_tier0=gold_new_buy_blocked,
+                gate_tag="S3",
+            )
 
-def _daily_is_light(market_key: str, doc: ParsedHtml, market_state: dict | None) -> bool:
-    """Determine whether an equity daily page is a light / holiday_watch edition (0 charts allowed).
-    Checks explicit <body data-edition="..."> first, then DAILY_META_JSON.edition_type in source .md."""
-    if doc.edition_attr in ("light", "holiday_watch"):
-        return True
-    if doc.edition_attr == "main":
-        return False
+
+def _edition_key_from_text(text: str | None) -> tuple[str, int, int] | None:
+    if not text or not isinstance(text, str):
+        return None
+    m = EDITION_KEY_RE.search(text)
+    if not m:
+        return None
+    return m.group(1), int(m.group(2)), int(m.group(3) or 1)
+
+
+def _daily_edition_type(market_key: str, doc: ParsedHtml, market_state: dict | None) -> str:
+    """Determine the edition_type ('main', 'holiday_watch', or 'light') for an equity daily page."""
+    if doc.edition_attr in ("main", "light", "holiday_watch"):
+        return doc.edition_attr
 
     if market_state and isinstance(market_state.get("markets"), dict):
         latest_rel = market_state["markets"].get(market_key, {}).get("latest_daily")
@@ -1078,13 +1346,31 @@ def _daily_is_light(market_key: str, doc: ParsedHtml, market_state: dict | None)
                     if m_meta:
                         meta_obj = json.loads(m_meta.group(1))
                         ed = str(meta_obj.get("edition_type", "")).strip().lower()
-                        if ed in ("light", "holiday_watch"):
-                            return True
-                        if ed == "main":
-                            return False
+                        if ed in ("main", "light", "holiday_watch"):
+                            return ed
                 except (OSError, json.JSONDecodeError):
                     pass
-    return False
+    return "main"
+
+
+def _daily_is_light(market_key: str, doc: ParsedHtml, market_state: dict | None) -> bool:
+    """Backward-compatible helper indicating whether an equity daily page is light/holiday_watch."""
+    return _daily_edition_type(market_key, doc, market_state) in ("light", "holiday_watch")
+
+
+def _min_daily_charts(
+    edition_type: str, edition_key: tuple[str, int, int] | None, *, is_gold: bool = False
+) -> int:
+    """Return required SVG chart floor aligned with AGENTS.md (pre-cutover legacy archives stay compatible)."""
+    if edition_key is not None and edition_key < ALL_MAIN_CUTOVER:
+        if is_gold:
+            return 1
+        return 0 if edition_type in ("light", "holiday_watch") else 1
+    if edition_type == "holiday_watch":
+        return 1
+    if edition_type == "light":
+        return 1 if is_gold else 0
+    return 2
 
 
 def run_gate_s4(
@@ -1092,6 +1378,8 @@ def run_gate_s4(
     market_state: dict | None,
     errors: list[str],
     warnings: list[str],
+    *,
+    gold_snap: dict | None = None,
 ) -> None:
     """Gate S4: Vector SVG chart counts on flagship/daily pages and zero empty <svg> elements."""
     # Check for empty <svg> elements across ALL HTML pages.
@@ -1114,25 +1402,57 @@ def run_gate_s4(
                 f"(required >= {min_charts})"
             )
 
-    # Gold daily latest ALWAYS requires >= 1 data chart.
+    # Gold daily latest: >= 2 charts post-cutover (main) or >= 1 (holiday_watch / pre-cutover).
     gold_doc = parsed_htmls.get(DAILY_GOLD_LATEST_PAGE)
     if gold_doc is not None:
+        gold_key = _edition_key_from_text(str((gold_snap or {}).get("edition_id") or ""))
+        gold_ed = gold_doc.edition_attr or "main"
+        min_gold = _min_daily_charts(gold_ed, gold_key, is_gold=True)
         chart_count = sum(1 for s in gold_doc.svgs if s.is_data_chart)
-        if chart_count < 1:
+        if chart_count < min_gold:
             errors.append(
-                f"[S4] {DAILY_GOLD_LATEST_PAGE}: found 0 data <svg> charts (required >= 1)"
+                f"[S4] {DAILY_GOLD_LATEST_PAGE}: found only {chart_count} data <svg> chart(s) "
+                f"(required >= {min_gold}; edition={gold_ed})"
             )
 
-    # All 3 equity daily latest pages: light / holiday_watch allow 0 charts; main editions require >= 1.
+    # All 3 equity daily latest pages: post-cutover main >= 2, holiday_watch >= 1; legacy archives compatible.
+    markets_map = market_state.get("markets") if isinstance(market_state, dict) else None
     for market_key, rel_path in DAILY_EQUITY_LATEST_PAGES:
         doc = parsed_htmls.get(rel_path)
         if doc is None:
             continue
+        latest_rel = (
+            markets_map.get(market_key, {}).get("latest_daily")
+            if isinstance(markets_map, dict) and isinstance(markets_map.get(market_key), dict)
+            else None
+        )
+        eq_key = _edition_key_from_text(latest_rel) or _edition_key_from_text(
+            str((market_state or {}).get("edition_id") or "")
+        )
+        ed_type = _daily_edition_type(market_key, doc, market_state)
+        min_req = _min_daily_charts(ed_type, eq_key, is_gold=False)
         chart_count = sum(1 for s in doc.svgs if s.is_data_chart)
-        if chart_count < 1 and not _daily_is_light(market_key, doc, market_state):
+        if chart_count < min_req:
             errors.append(
-                f"[S4] {rel_path}: main edition has 0 data <svg> charts (required >= 1; "
-                f"edition={doc.edition_attr or 'unspecified'})"
+                f"[S4] {rel_path}: {ed_type} edition has only {chart_count} data <svg> chart(s) "
+                f"(required >= {min_req}; edition={doc.edition_attr or ed_type})"
+            )
+
+    # Dated daily copies: enforce post-cutover floors (>= 2 main / >= 1 holiday_watch) while preserving legacy archives.
+    for rel_path, doc in sorted(parsed_htmls.items()):
+        m_dated = DAILY_DATED_RE.fullmatch(rel_path)
+        if not m_dated:
+            continue
+        mkt_slug, date_s, hhmm_s, rev_s = m_dated.groups()
+        dated_key = (date_s, int(hhmm_s), int(rev_s or 1))
+        is_gold = mkt_slug == "gold"
+        ed_type = doc.edition_attr or "main"
+        min_req = _min_daily_charts(ed_type, dated_key, is_gold=is_gold)
+        chart_count = sum(1 for s in doc.svgs if s.is_data_chart)
+        if chart_count < min_req:
+            errors.append(
+                f"[S4] {rel_path}: {ed_type} edition has only {chart_count} data <svg> chart(s) "
+                f"(required >= {min_req})"
             )
 
 
@@ -1228,6 +1548,32 @@ def _load_json_if_present(
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         errors.append(f"[S6] Failed to parse {label} ({path.name}): {exc}")
         return None
+
+
+def _load_required_json(
+    path: Path, label: str, errors: list[str]
+) -> dict | None:
+    if not path.is_file():
+        errors.append(f"[S6] Missing required SSOT file: {label}")
+        return None
+    return _load_json_if_present(path, label, errors)
+
+
+def _is_gold_new_buy_blocked(gold_snap: dict | None, market_state: dict | None) -> bool:
+    """Resolve authoritative Gold Tier 0 lock status from gold/data_snapshot.json (fallback to mirror if absent)."""
+    if isinstance(gold_snap, dict) and ("new_buy_allowed" in gold_snap or "tier_code" in gold_snap):
+        return (
+            gold_snap.get("new_buy_allowed") is False
+            or str(gold_snap.get("tier_code", "")).strip() == "Tier 0"
+        )
+    if isinstance(market_state, dict) and isinstance(market_state.get("markets"), dict):
+        gold_mirror = market_state["markets"].get("gold_mirror_readonly")
+        if isinstance(gold_mirror, dict) and (
+            gold_mirror.get("new_buy_allowed") is False
+            or str(gold_mirror.get("tier_code", "")).strip() == "Tier 0"
+        ):
+            return True
+    return False
 
 
 def _check_gold_tier0_mutex(doc: ParsedHtml, errors: list[str]) -> None:
@@ -1379,8 +1725,13 @@ def _validate_screener_json(
                 bad_entries += 1
                 break
         dossier = entry.get("dossier")
-        if isinstance(dossier, dict):
-            for dk in ("moat", "financials", "valuation_anchor", "shareholder_flow", "catalysts", "bear_case", "action_etf"):
+        if not isinstance(dossier, dict):
+            errors.append(
+                f"[S6] screener.html: #screener-data[{idx}] ({entry.get('code', '?')}) missing required 7-dim 'dossier' object"
+            )
+            bad_entries += 1
+        else:
+            for dk in DOSSIER_DIMENSIONS:
                 dv = dossier.get(dk)
                 if not isinstance(dv, str) or not dv.strip():
                     errors.append(
@@ -1459,14 +1810,22 @@ def run_gate_s6(
     market_state: dict | None,
     errors: list[str],
     warnings: list[str],
+    *,
+    already_checked_json_gold: bool = False,
 ) -> None:
-    """Gate S6: Live SSOT fidelity on index.html, screener.html JSON schema, and authoritative Gold Tier 0 mutex."""
+    """Gate S6: Live SSOT fidelity on index.html, screener.html JSON schema, channels/ETFs, and Gold Tier 0 mutex."""
     index_doc = parsed_htmls.get("index.html")
+    channels_doc = parsed_htmls.get("channels.html")
     screener_doc = parsed_htmls.get("screener.html")
 
+    # Never silently skip when required core SSOT JSONs are absent.
+    if gold_snap is None and not any("gold/data_snapshot.json" in e for e in errors):
+        errors.append("[S6] Missing required SSOT data: gold/data_snapshot.json")
+    if market_state is None and not any("equity/state/market_state.json" in e for e in errors):
+        errors.append("[S6] Missing required SSOT data: equity/state/market_state.json")
+
     # 1. Live Gold SSOT metrics & authoritative Tier 0 mutex from gold/data_snapshot.json.
-    gold_new_buy_blocked = False
-    gold_auth_resolved = False
+    gold_new_buy_blocked = _is_gold_new_buy_blocked(gold_snap, market_state)
     if gold_snap is not None:
         if index_doc is not None:
             spot_val = gold_snap.get("spot_gold_ny_close_usd")
@@ -1498,27 +1857,13 @@ def run_gate_s6(
                         f"[S6] index.html: missing live SGE Au(T+D) reading ({autd_vals})"
                     )
 
-        if "new_buy_allowed" in gold_snap or "tier_code" in gold_snap:
-            gold_auth_resolved = True
-            gold_new_buy_blocked = (
-                gold_snap.get("new_buy_allowed") is False
-                or str(gold_snap.get("tier_code", "")).strip() == "Tier 0"
-            )
-
     # 2. Live A / HK / US benchmark indices, cockpit risk radar SSOT & screener JSON fidelity.
     if market_state is not None:
         markets = market_state.get("markets")
         linkages = market_state.get("cross_market_linkages", {})
-        if isinstance(markets, dict):
-            # Fallback to gold_mirror_readonly ONLY if authoritative gold/data_snapshot.json was absent.
-            if not gold_auth_resolved:
-                gold_mirror = markets.get("gold_mirror_readonly")
-                if isinstance(gold_mirror, dict) and (
-                    gold_mirror.get("new_buy_allowed") is False
-                    or str(gold_mirror.get("tier_code", "")).strip() == "Tier 0"
-                ):
-                    gold_new_buy_blocked = True
-
+        if not isinstance(markets, dict):
+            errors.append("[S6] equity/state/market_state.json: missing or invalid 'markets' object")
+        else:
             if index_doc is not None:
                 # A-Share benchmark (CSI 300 primary).
                 a_mkt = markets.get("a_share", {})
@@ -1627,6 +1972,21 @@ def run_gate_s6(
                     f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) < 100 minimum floor"
                 )
 
+    # 3. ETF universe SSOT fidelity: tbody static rows == #etf-data == etf_universe.json len(etfs) >= 140.
+    etf_universe_obj = _load_required_json(
+        ETF_UNIVERSE_PATH, "equity/state/etf_universe.json", errors
+    )
+    ssot_etf_count: int | None = None
+    if isinstance(etf_universe_obj, dict):
+        ssot_etfs = etf_universe_obj.get("etfs")
+        if not isinstance(ssot_etfs, list) or len(ssot_etfs) < 140:
+            errors.append(
+                f"[S6] equity/state/etf_universe.json: 'etfs' must be a list with >= 140 entries "
+                f"(got {len(ssot_etfs) if isinstance(ssot_etfs, list) else type(ssot_etfs).__name__})"
+            )
+        else:
+            ssot_etf_count = len(ssot_etfs)
+
     etfs_doc = parsed_htmls.get("etfs.html")
     if etfs_doc is not None:
         if etfs_doc.etf_json_raw is None:
@@ -1637,13 +1997,28 @@ def run_gate_s6(
             except json.JSONDecodeError as exc:
                 errors.append(f"[S6] etfs.html: invalid JSON in #etf-data: {exc}")
                 etf_payload = None
-            if not isinstance(etf_payload, list) or len(etf_payload) < 75:
+            if not isinstance(etf_payload, list) or len(etf_payload) < 140:
                 errors.append(
-                    f"[S6] etfs.html: #etf-data must contain >= 75 ETFs (got {len(etf_payload) if isinstance(etf_payload, list) else 'non-list'})"
+                    f"[S6] etfs.html: #etf-data must contain >= 140 ETFs "
+                    f"(got {len(etf_payload) if isinstance(etf_payload, list) else 'non-list'})"
                 )
             else:
+                etf_tbody_rows = (
+                    etfs_doc.etf_tbody_row_count
+                    if "etf-tbody" in etfs_doc.ids
+                    else etfs_doc.tbody_row_count
+                )
+                if etf_tbody_rows != len(etf_payload):
+                    errors.append(
+                        f"[S6] etfs.html: static <tbody> row count ({etf_tbody_rows}) "
+                        f"!= #etf-data length ({len(etf_payload)})"
+                    )
+                if ssot_etf_count is not None and len(etf_payload) != ssot_etf_count:
+                    errors.append(
+                        f"[S6] etfs.html: #etf-data length ({len(etf_payload)}) "
+                        f"!= etf_universe.json len(etfs) ({ssot_etf_count})"
+                    )
                 seen_etfs: set[str] = set()
-                gold_etf_codes = {"518660", "518880", "517520", "02840", "IAUM", "GLDM", "IGLN"}
                 for idx, it in enumerate(etf_payload):
                     if not isinstance(it, dict):
                         errors.append(f"[S6] etfs.html: #etf-data[{idx}] must be an object")
@@ -1652,54 +2027,147 @@ def run_gate_s6(
                     if not cd or cd in seen_etfs:
                         errors.append(f"[S6] etfs.html: missing or duplicate ETF code {cd!r}")
                     seen_etfs.add(cd)
-                    if gold_new_buy_blocked and (it.get("gold_locked") or cd.upper() in gold_etf_codes):
+                    cd_upper = cd.upper()
+                    cd_base = cd_upper.split(".", 1)[0]
+                    is_gold_etf = (
+                        bool(it.get("gold_locked"))
+                        or cd_upper in GOLD_ETF_CODES
+                        or cd_base in GOLD_ETF_CODES
+                        or bool(GOLD_STOCK_RE.search(f"{it.get('name', '')} {cd_upper}"))
+                    )
+                    if gold_new_buy_blocked and is_gold_etf:
                         role = str(it.get("action_role", ""))
-                        if not it.get("gold_locked") or any(bad in role for bad in ("底座", "买入", "推荐", "加仓")):
+                        if not it.get("gold_locked") or any(bad in role for bad in GOLD_ETF_FORBIDDEN_ROLES):
                             errors.append(f"[S6] etfs.html: Gold Tier 0 mutex violation on ETF {cd} (role={role!r})")
                     for k, v in it.items():
                         if isinstance(v, str) and SCREENER_RAW_MARKUP_RE.search(v):
                             errors.append(f"[S6] etfs.html: ETF {cd} field '{k}' contains raw markup")
                             break
 
-    # Verify all 8 personal multi-asset channels have separate overview cards on index.html AND dedicated detail pages.
-    channels_obj = _load_json_if_present(
+    # 4. Personal multi-asset channels SSOT (>= 12 standard MECE channels): verify index.html, channels.html, AND each channels/<id>.html.
+    channels_obj = _load_required_json(
         MULTI_ASSET_CHANNELS_PATH, "equity/state/multi_asset_channels.json", errors
     )
-    if index_doc is not None and isinstance(channels_obj, dict):
+    if isinstance(channels_obj, dict):
         ch_items = channels_obj.get("channels")
-        if isinstance(ch_items, list) and ch_items:
-            index_hrefs = {lk.value for lk in index_doc.links if lk.tag == "a"}
-            for ch in ch_items:
+        if not isinstance(ch_items, list) or len(ch_items) < len(REQUIRED_MULTI_ASSET_CHANNELS):
+            errors.append(
+                f"[S6] equity/state/multi_asset_channels.json: 'channels' must be a list with >= {len(REQUIRED_MULTI_ASSET_CHANNELS)} items "
+                f"(got {len(ch_items) if isinstance(ch_items, list) else type(ch_items).__name__})"
+            )
+        else:
+            index_hrefs = {lk.value for lk in index_doc.links if lk.tag == "a"} if index_doc is not None else set()
+            channels_hrefs = {lk.value for lk in channels_doc.links if lk.tag == "a"} if channels_doc is not None else set()
+            seen_ch_ids: set[str] = set()
+            for idx, ch in enumerate(ch_items):
                 if not isinstance(ch, dict):
+                    errors.append(f"[S6] multi_asset_channels.json: channels[{idx}] must be an object")
                     continue
                 ch_id = str(ch.get("id", "")).strip()
                 ch_name = str(ch.get("name", "")).strip()
+                if not ch_id or not ch_name:
+                    errors.append(f"[S6] multi_asset_channels.json: channels[{idx}] missing non-empty id/name")
+                    continue
+                if ch_id in seen_ch_ids:
+                    errors.append(f"[S6] multi_asset_channels.json: duplicate channel id {ch_id!r}")
+                seen_ch_ids.add(ch_id)
+
+                prods = [p for p in (ch.get("products") or []) if isinstance(p, dict)]
+                rules = [r.strip() for r in (ch.get("rules_and_redlines") or []) if isinstance(r, str) and r.strip()]
+                if not prods:
+                    errors.append(f"[S6] multi_asset_channels.json: channel {ch_id!r} missing non-empty products")
+                if not rules:
+                    errors.append(f"[S6] multi_asset_channels.json: channel {ch_id!r} missing non-empty rules_and_redlines")
+
                 detail_rel = f"channels/{ch_id}.html"
-                if ch_id and f"ch-{ch_id}" not in index_doc.ids:
-                    errors.append(
-                        f"[S6] index.html: missing channel overview card #ch-{ch_id} ({ch_name})"
-                    )
-                if ch_id and detail_rel not in index_hrefs:
-                    errors.append(
-                        f"[S6] index.html: missing link to separate channel detail page {detail_rel}"
-                    )
-                if ch_id and detail_rel not in parsed_htmls:
+                if index_doc is not None:
+                    if f"ch-{ch_id}" not in index_doc.ids:
+                        errors.append(
+                            f"[S6] index.html: missing channel overview card #ch-{ch_id} ({ch_name})"
+                        )
+                    if detail_rel not in index_hrefs:
+                        errors.append(
+                            f"[S6] index.html: missing link to separate channel detail page {detail_rel}"
+                        )
+                    if ch_name not in index_doc.visible_text:
+                        errors.append(
+                            f"[S6] index.html: missing channel title {ch_name!r} in homepage visible text"
+                        )
+
+                if channels_doc is not None:
+                    if f"ch-{ch_id}" not in channels_doc.ids:
+                        errors.append(
+                            f"[S6] channels.html: missing channel overview card #ch-{ch_id} ({ch_name})"
+                        )
+                    if detail_rel not in channels_hrefs:
+                        errors.append(
+                            f"[S6] channels.html: missing link to channel detail page {detail_rel}"
+                        )
+                    if ch_name not in channels_doc.visible_text:
+                        errors.append(
+                            f"[S6] channels.html: missing channel title {ch_name!r} in visible text"
+                        )
+
+                detail_doc = parsed_htmls.get(detail_rel)
+                if detail_doc is None:
                     errors.append(
                         f"[S6] Missing dedicated channel detail page: {detail_rel}"
                     )
-                if ch_name and ch_name not in index_doc.visible_text:
-                    errors.append(
-                        f"[S6] index.html: missing channel title {ch_name!r} in homepage visible text"
-                    )
+                else:
+                    detail_norm = " ".join(detail_doc.visible_text.split())
+                    if ch_name not in detail_doc.visible_text and " ".join(ch_name.split()) not in detail_norm:
+                        errors.append(
+                            f"[S6] {detail_rel}: missing channel name {ch_name!r} in visible text"
+                        )
+                    if prods:
+                        has_prod = any(
+                            (" ".join(str(p.get("name", "")).split()) and " ".join(str(p.get("name", "")).split()) in detail_norm)
+                            or (" ".join(str(p.get("code", "")).split()) and " ".join(str(p.get("code", "")).split()) in detail_norm)
+                            for p in prods
+                        )
+                        if not has_prod or not detail_doc.tables:
+                            errors.append(
+                                f"[S6] {detail_rel}: missing substantial product table/entries for channel {ch_id!r}"
+                            )
+                    if rules:
+                        has_rule = any(
+                            " ".join(r.split())[:12] in detail_norm for r in rules if " ".join(r.split())
+                        )
+                        if not has_rule:
+                            errors.append(
+                                f"[S6] {detail_rel}: missing substantial rules/redlines content for channel {ch_id!r}"
+                            )
+            missing_ch_ids = [cid for cid in REQUIRED_MULTI_ASSET_CHANNELS if cid not in seen_ch_ids]
+            if missing_ch_ids:
+                errors.append(
+                    f"[S6] equity/state/multi_asset_channels.json: missing required standard channel IDs: {missing_ch_ids}"
+                )
 
-    # A dated archive preserves its original decisions. Check live pages and this edition's dated copies.
+    # 5. A dated archive preserves its original decisions. Check live pages (incl. guide.html) and this edition's dated copies.
     if gold_new_buy_blocked:
         edition_slug = str((gold_snap or {}).get("edition_id", "")).replace("_", "-")
+        live_root_pages = {"index.html", "channels.html", "etfs.html", "screener.html", "scorecard.html", "guide.html"}
         for path, doc in parsed_htmls.items():
-            if (path in {"index.html", "channels.html", "etfs.html", "screener.html", "scorecard.html"}
+            if (path in live_root_pages
                     or path.startswith(("reports/", "channels/")) or path.endswith("-latest.html")
                     or (edition_slug and path.startswith("daily/") and path.endswith(f"-{edition_slug}.html"))):
                 _check_gold_tier0_mutex(doc, errors)
+                if not already_checked_json_gold:
+                    if doc.screener_json_raw is not None:
+                        _scan_embedded_json_payload(
+                            path, "screener-data", doc.screener_json_raw, errors,
+                            check_eng=False, check_gold_tier0=True, gate_tag="S6",
+                        )
+                    if doc.etf_json_raw is not None:
+                        _scan_embedded_json_payload(
+                            path, "etf-data", doc.etf_json_raw, errors,
+                            check_eng=False, check_gold_tier0=True, gate_tag="S6",
+                        )
+                    if doc.ch_etf_json_raw is not None:
+                        _scan_embedded_json_payload(
+                            path, "ch-etf-data", doc.ch_etf_json_raw, errors,
+                            check_eng=False, check_gold_tier0=True, gate_tag="S6",
+                        )
 
 
 # ---------------------------------------------------------------------------
@@ -1737,9 +2205,10 @@ def main(argv: list[str] | None = None) -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Pre-load SSOT JSONs (optional if absent; error if corrupt).
-    gold_snap = _load_json_if_present(GOLD_SNAPSHOT_PATH, "gold/data_snapshot.json", errors)
-    market_state = _load_json_if_present(MARKET_STATE_PATH, "equity/state/market_state.json", errors)
+    # Pre-load required SSOT JSONs (missing or corrupt files fail Gate S6 cleanly).
+    gold_snap = _load_required_json(GOLD_SNAPSHOT_PATH, "gold/data_snapshot.json", errors)
+    market_state = _load_required_json(MARKET_STATE_PATH, "equity/state/market_state.json", errors)
+    gold_new_buy_blocked = _is_gold_new_buy_blocked(gold_snap, market_state)
 
     # Gate S1: Completeness & non-empty output (also parses all HTML files once).
     parsed_htmls, all_files = run_gate_s1(site_dir, errors, warnings)
@@ -1748,17 +2217,23 @@ def main(argv: list[str] | None = None) -> int:
         # Gate S2: Internal links, assets & anchors.
         run_gate_s2(site_dir, parsed_htmls, errors, warnings)
 
-        # Gate S3: Zero PII, local paths, secrets & unresolved directives.
-        run_gate_s3(site_dir, all_files, parsed_htmls, errors, warnings)
+        # Gate S3: Zero PII, local paths, secrets, unresolved directives & JSON payload leaks.
+        run_gate_s3(
+            site_dir, all_files, parsed_htmls, errors, warnings,
+            gold_new_buy_blocked=gold_new_buy_blocked,
+        )
 
         # Gate S4: Vector SVG chart integrity.
-        run_gate_s4(parsed_htmls, market_state, errors, warnings)
+        run_gate_s4(parsed_htmls, market_state, errors, warnings, gold_snap=gold_snap)
 
         # Gate S5: Desktop + mobile responsive hygiene.
         run_gate_s5(site_dir, all_files, parsed_htmls, errors, warnings)
 
         # Gate S6: Live SSOT & full-market stock screener fidelity (全市场龙头股筛选) + Gold Tier 0 mutex.
-        run_gate_s6(parsed_htmls, gold_snap, market_state, errors, warnings)
+        run_gate_s6(
+            parsed_htmls, gold_snap, market_state, errors, warnings,
+            already_checked_json_gold=True,
+        )
 
     mode = "STRICT" if strict else "STANDARD"
     print(

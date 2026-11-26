@@ -1,49 +1,40 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Build magazine-grade, beginner-friendly PDF & Native OOXML DOCX from a daily gold research Markdown report (V2.2):
-  - Dark-slate cover banner + 6 plain-Chinese KPI cards (DAILY_META) with zero orphan characters
-  - 7 beginner visual primitives (DAILY_VERDICT, DAILY_SIGNAL_NOISE, DAILY_PERSONA, DAILY_GLOSSARY,
+Pure-web HTML & vector SVG rendering engine for daily gold research Markdown reports:
+  - Dark-slate cover banner + plain-Chinese KPI cards (DAILY_META)
+  - Visual primitives (DAILY_VERDICT, DAILY_SIGNAL_NOISE, DAILY_PERSONA, DAILY_GLOSSARY,
     DAILY_LAYER_BADGE, DAILY_TRUST_BAR, and 3 big-font 640px vector SVGs)
-  - Shared smart table renderer (alignment preserved, auto col-nowrap guard, tabular-nums, atomic unit protection,
-    crisp vector status pills, escaped pipe support, compact table keep-together)
-  - Shared Markdown-to-HTML parser (nested lists, h4+, blank quote lines, ol start, typo-safe directive checks)
-  - Native ECMA-376 OOXML DOCX output (real <w:tbl>, cross-platform cards, PIL auto-cropped 2x Retina PNG charts,
-    ZERO macOS textutil dependency!)
-
-Usage:
-  python3 build_daily.py                    # builds latest daily/YYYY-MM-DD_*.md (by filename descending)
-  python3 build_daily.py /path/to/daily.md  # builds specific daily markdown file
-  python3 build_daily.py --check            # self-check environment
+  - Shared smart table renderer (alignment preserved, auto col-nowrap guard, tabular-nums,
+    atomic unit protection, crisp vector status pills, escaped pipe support)
+  - Shared Markdown-to-HTML parser used by scripts/build_site.py and gold/build_report.py
 """
 
 from __future__ import annotations
 
-import argparse
-import glob
 import html
 import json
-import os
 import re
-import shutil
-import subprocess
-import sys
-import tempfile
 from math import fsum
 from pathlib import Path
 
 from chart_input import normalize_chart
-from docx_embed import (
-    build_native_docx,
-    is_complete_pdf,
-    render_chart_to_png,
-    resolve_chrome_bin,
-    run_chrome_to_output,
-)
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
-CHROME_BIN = resolve_chrome_bin()
+
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+_VALID_SVG_ANCHORS = frozenset({"start", "middle", "end"})
+
+
+def sanitize_hex_color(val: object, default: str = "#b45309") -> str:
+    s = str(val or "").strip()
+    return s if _HEX_COLOR_RE.match(s) else default
+
+
+def _sanitize_svg_anchor(val: object, default: str = "middle") -> str:
+    s = str(val or "").strip().lower()
+    return s if s in _VALID_SVG_ANCHORS else default
 
 # Strip bitmap emojis, variation selectors, ZWJ, keycap combiner & XML 1.0 control chars while keeping vector ✓/✕
 EMOJI_STRIP_RE = re.compile(
@@ -496,6 +487,25 @@ def _boxes_overlap_area(
     return ox * oy if (ox > 0.0 and oy > 0.0) else 0.0
 
 
+def _clamp_label_x(
+    tx: float, txt: str, font_size: float, anchor: str = "middle",
+    min_x: float = 56.0, max_x: float = 634.0,
+) -> float:
+    plain = EMOJI_STRIP_RE.sub("", str(txt)).strip()
+    text_w = round(max(_vis_len(plain) * font_size * 1.08, font_size * 1.6), 1)
+    pad_x = 4.0
+    if anchor == "start":
+        lo, hi = min_x + pad_x, max_x - text_w - pad_x
+    elif anchor == "end":
+        lo, hi = min_x + text_w + pad_x, max_x - pad_x
+    else:
+        half_w = (text_w + 2.0 * pad_x) / 2.0
+        lo, hi = min_x + half_w, max_x - half_w
+    if lo <= hi:
+        tx = max(lo, min(hi, tx))
+    return round(tx, 1)
+
+
 def render_chart_timeline(cfg: dict) -> str:
     cfg = normalize_chart("DAILY_CHART_TIMELINE", cfg)
     title = esc(cfg.get("title", "金价走势核心结论"))
@@ -522,7 +532,8 @@ def render_chart_timeline(cfg: dict) -> str:
     vb_w, vb_h = 640, 284
 
     def y_w(val: float) -> float:
-        return round(210.0 - ((val - y_min) / span) * 162.0, 1)
+        raw_y = 210.0 - ((val - y_min) / span) * 162.0
+        return round(max(26.0, min(216.0, raw_y)), 1)
 
     n = len(pts)
     if n == 1:
@@ -539,11 +550,13 @@ def render_chart_timeline(cfg: dict) -> str:
         x0 = max(56.0, xs[i0] - 22.0)
         x1 = min(626.0, xs[i1] + 22.0)
         cx = round((x0 + x1) / 2.0, 1)
+        z_fill = sanitize_hex_color(z.get("fill"), "#f1f5f9")
+        z_txt = sanitize_hex_color(z.get("text_color"), "#334155")
         zone_svg += (
             f'<rect x="{x0}" y="24" width="{round(max(x1-x0, 4.0),1)}" height="190" '
-            f'fill="{esc(z.get("fill", "#f1f5f9"))}" opacity="0.72" rx="4"/>'
+            f'fill="{z_fill}" opacity="0.72" rx="4"/>'
             f'<text x="{cx}" y="38" text-anchor="middle" font-size="10.6" '
-            f'fill="{esc(z.get("text_color", "#334155"))}" font-weight="700">{svg_esc(z.get("label", ""))}</text>'
+            f'fill="{z_txt}" font-weight="700">{svg_esc(z.get("label", ""))}</text>'
         )
 
     grid_svg = ""
@@ -558,12 +571,15 @@ def render_chart_timeline(cfg: dict) -> str:
     ref_labels_svg = ""
     for rl in ref_lines:
         ry = y_w(rl["val"])
-        col = esc(rl.get("color", "#b45309"))
-        anchor = esc(rl.get("align", "end"))
-        rx = float(rl.get("x", 622 if anchor == "end" else 62))
+        col = sanitize_hex_color(rl.get("color"), "#b45309")
+        anchor = _sanitize_svg_anchor(rl.get("align"), "end")
+        raw_ref_lbl = str(rl.get("label", ""))
+        rx = _clamp_label_x(
+            float(rl.get("x", 622 if anchor == "end" else 62)),
+            raw_ref_lbl, 10.6, anchor,
+        )
         dy = float(rl.get("dy", -6))
         ref_lines_svg += f'<line x1="56" y1="{ry}" x2="626" y2="{ry}" stroke="{col}" stroke-width="1.5" stroke-dasharray="6,4"/>'
-        raw_ref_lbl = str(rl.get("label", ""))
         if raw_ref_lbl.strip():
             base_ry = round(max(34.0, min(212.0, ry + dy)), 1)
             ref_cands = [
@@ -600,15 +616,15 @@ def render_chart_timeline(cfg: dict) -> str:
     for i, p in enumerate(pts):
         x = xs[i]
         y = y_w(vals[i])
-        col = esc(p.get("color", "#b45309" if p.get("highlight") else "#1e3a5f"))
+        col = sanitize_hex_color(p.get("color"), "#b45309" if p.get("highlight") else "#1e3a5f")
         pos = p.get("label_pos") or ("above" if (y > 72 and i % 2 == 0) else "below")
         dx = float(p.get("dx", 0.0))
         dy_extra = float(p.get("dy", 0.0))
-        anc = esc(p.get("anchor", "middle"))
+        anc = _sanitize_svg_anchor(p.get("anchor"), "middle")
         y_default = round(max(34.0, min(212.0, (y - 11.0 if pos == "above" else y + 17.5) + dy_extra)), 1)
         y_alt = round(max(34.0, min(212.0, (y + 17.5 if pos == "above" else y - 11.0) + dy_extra)), 1)
-        x_lbl = round(max(66.0, min(614.0, x + dx)), 1)
         val_txt = p.get("val_label") or _fmt_axis_val(vals[i], span, unit_prefix, unit_suffix)
+        x_lbl = _clamp_label_x(max(66.0, min(614.0, x + dx)), val_txt, 11.0, anc)
         r = "5.0" if p.get("highlight") else "4.2"
         dots_svg += f'<circle cx="{x}" cy="{y}" r="{r}" fill="{col}" stroke="#ffffff" stroke-width="1.5"/>'
 
@@ -678,7 +694,7 @@ def render_chart_switch(cfg: dict) -> str:
 
     # Dynamic traffic light dot color (explicit override -> Red checked BEFORE Amber so "距黄灯差3关" stays Red!)
     if cfg.get("status_color"):
-        dot_col = esc(cfg["status_color"])
+        dot_col = sanitize_hex_color(cfg.get("status_color"), "#dc2626")
     elif "红灯" in status_line:
         dot_col = "#dc2626"
     elif "绿灯" in status_line or "满格" in status_line:
@@ -701,7 +717,7 @@ def render_chart_switch(cfg: dict) -> str:
         pct = g["pct"]
         lbl = svg_esc(g.get("label", ""))
         val_txt = svg_esc(g.get("value_text", ""))
-        bar_col = esc(g.get("color", "#b45309"))
+        bar_col = sanitize_hex_color(g.get("color"), "#b45309")
         bx = 16
         bw = 608
         fill_w = round(bw * pct / 100.0, 1)
@@ -845,17 +861,17 @@ def render_chart_cross(cfg: dict) -> str:
         if abs(pct) < 1e-6:
             w = 2.5
             bx = round(x_zero - 1.2, 1)
-            col = esc(it.get("color", "#64748b"))
+            col = sanitize_hex_color(it.get("color"), "#64748b")
             tx = round(x_zero + 7.0, 1)
         elif pct > 0:
             w = max(4.0, round(eff_abs * px_per_pct, 1))
             bx = x_zero
-            col = esc(it.get("color", "#b91c1c" if is_gold else "#c2410c"))
+            col = sanitize_hex_color(it.get("color"), "#b91c1c" if is_gold else "#c2410c")
             tx = round(bx + w + 7.0, 1)
         else:
             w = max(4.0, round(eff_abs * px_per_pct, 1))
             bx = round(x_zero - w, 1)
-            col = esc(it.get("color", "#0f766e"))
+            col = sanitize_hex_color(it.get("color"), "#0f766e")
             tx = round(x_zero + 7.0, 1)
         bg = "#fffbeb" if is_gold else ("#f8fafc" if i % 2 == 0 else "#ffffff")
         op = "0.96" if is_gold else "0.78"
@@ -1226,309 +1242,8 @@ def md_to_html(
     return parse_markdown_to_html(md_text, docx_mode=docx_mode, break_layer3=break_layer3)
 
 
-# ==============================================================================
-# MAGAZINE-GRADE PDF CSS (FT / Economist / Morningstar / W3C CLREQ Standard)
-# ==============================================================================
-
-PDF_CSS = """
-@page {
-  size: A4 portrait;
-  margin: 14mm 14.5mm 14.5mm 14.5mm;
-  @top-left {
-    content: "__FOOTER_TITLE__";
-    font-family: "PingFang SC", sans-serif;
-    font-size: 7.2pt;
-    color: #94a3b8;
-    border-bottom: 0.5pt solid #e2e8f0;
-    padding-bottom: 3px;
-    margin-bottom: 6px;
-  }
-  @top-right {
-    content: "多源核验 · 理性配置";
-    font-family: "PingFang SC", sans-serif;
-    font-size: 7.2pt;
-    color: #94a3b8;
-    border-bottom: 0.5pt solid #e2e8f0;
-    padding-bottom: 3px;
-    margin-bottom: 6px;
-  }
-  @bottom-left {
-    content: "仅供参考 · 严守家庭资产 10%–15% 上限";
-    font-family: "PingFang SC", sans-serif;
-    font-size: 7.2pt;
-    color: #94a3b8;
-  }
-  @bottom-right {
-    content: "第 " counter(page) " / " counter(pages) " 页";
-    font-family: "PingFang SC", sans-serif;
-    font-size: 7.5pt;
-    font-weight: 600;
-    color: #64748b;
-  }
-}
-@page :first {
-  @top-left { content: none; border: none; }
-  @top-right { content: none; border: none; }
-}
-* { box-sizing: border-box; }
-body {
-  font-family: "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
-  color: #1f2937;
-  font-size: 9.75pt;
-  line-height: 1.61;
-  margin: 0;
-  padding: 0;
-  background: #ffffff;
-}
-
-.dot { display: inline-block; width: 7.5px; height: 7.5px; border-radius: 50%; vertical-align: 0.5px; margin-right: 4px; }
-.dot-red { background: #ef4444; box-shadow: 0 0 0 1.5px rgba(239,68,68,0.28); }
-.dot-amber { background: #f59e0b; box-shadow: 0 0 0 1.5px rgba(245,158,11,0.28); }
-.dot-green { background: #22c55e; box-shadow: 0 0 0 1.5px rgba(34,197,94,0.28); }
-.dot-slate { background: #cbd5e1; box-shadow: 0 0 0 1.5px rgba(203,213,225,0.35); }
-.dot-diamond {
-  width: 7px;
-  height: 7px;
-  border-radius: 1.2px;
-  transform: rotate(45deg);
-  background: #f59e0b;
-  box-shadow: 0 0 0 1.2px rgba(245,158,11,0.35);
-  margin-right: 5px;
-  vertical-align: 0.5px;
-}
-.verdict-badge .dot-diamond, .cover-banner .dot-diamond {
-  background: #fde68a;
-  box-shadow: 0 0 0 1.2px rgba(253,230,138,0.40);
-}
-
-.cover-banner {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 65%, #334155 100%);
-  color: #ffffff;
-  padding: 16px 19px 15px 19px;
-  border-radius: 10px;
-  border-bottom: 4px solid __ACCENT__;
-  margin-bottom: 12px;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-.cover-tag {
-  display: inline-block;
-  background: __ACCENT__;
-  color: #ffffff;
-  font-size: 7.6pt;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  padding: 2.5px 9px;
-  border-radius: 4px;
-  margin-bottom: 6px;
-}
-.cover-title { font-size: 15.8pt; font-weight: 800; line-height: 1.30; letter-spacing: -0.2px; margin: 0 0 6px 0; color: #f8fafc; text-wrap: balance; }
-.cover-meta { font-size: 8.2pt; color: #cbd5e1; line-height: 1.48; margin-bottom: 9px; }
-.cover-banner strong { color: #f8fafc; }
-.kpi-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6.5px; margin-top: 5px; }
-.kpi-strip.cols-4 { grid-template-columns: repeat(4, 1fr); }
-.kpi-card { background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.16); border-radius: 6px; padding: 7px 8.5px; overflow: hidden; }
-.kpi-label { font-size: 7.5pt; color: #cbd5e1; }
-.kpi-val { font-size: 10.3pt; font-weight: 700; color: #fbbf24; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kpi-sub { font-size: 7.4pt; color: #e2e8f0; margin-top: 2px; line-height: 1.32; letter-spacing: -0.1px; font-variant-numeric: tabular-nums; }
-
-.verdict-card { border-radius: 0 8px 8px 0; padding: 10px 13px; margin: 9px 0 11px 0; break-inside: avoid; page-break-inside: avoid; }
-.verdict-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; gap: 8px; }
-.verdict-badge { color: #ffffff; font-size: 8.1pt; font-weight: 700; padding: 2.5px 9px; border-radius: 4px; }
-.verdict-light { font-size: 8.9pt; font-weight: 700; color: #0f172a; }
-.verdict-headline { font-size: 10.6pt; font-weight: 800; line-height: 1.45; margin-bottom: 4px; }
-.verdict-list { margin: 3.5px 0 5px 0; padding-left: 18px; font-size: 9.25pt; line-height: 1.58; }
-.verdict-risk { font-size: 8.7pt; color: #7f1d1d; background: rgba(254,226,226,0.62); padding: 5px 9px; border-radius: 5px; margin-top: 4px; }
-
-.sn-box { margin: 9px 0 12px 0; }
-.sn-title { font-size: 9.9pt; font-weight: 800; color: #0f172a; margin-bottom: 4.5px; break-after: avoid; page-break-after: avoid; }
-.sn-grid { display: grid; grid-template-columns: minmax(0, 46fr) minmax(0, 54fr); gap: 10px; align-items: stretch; font-size: 8.75pt; line-height: 1.50; }
-.sn-col { border-radius: 6px; overflow: hidden; border: 1px solid #cbd5e1; }
-.sn-col-sig { background: #f0fdf4; border-color: #bbf7d0; }
-.sn-col-noi { background: #f8fafc; border-color: #cbd5e1; }
-.sn-col-head { padding: 6px 8.5px; font-weight: 700; color: #ffffff; break-after: avoid; page-break-after: avoid; }
-.sn-col-sig .sn-col-head { background: #0f3d2e; }
-.sn-col-noi .sn-col-head { background: #475569; }
-.sn-col-body { padding: 6.5px 8.5px; }
-.sn-table { width: 100%; border-collapse: collapse; font-size: 8.75pt; line-height: 1.50; }
-.sn-table thead { display: table-header-group; }
-.sn-table th { padding: 6px 8.5px; text-align: left; font-weight: 700; border: none; }
-.sn-table td { padding: 6.5px 8.5px; vertical-align: top; border-bottom: 1.5px solid #cbd5e1; }
-.sn-ul { margin: 0; padding-left: 15px; }
-.sn-ul li { margin-bottom: 3.5px; break-inside: avoid; page-break-inside: avoid; }
-
-.persona-wrap { margin: 8px 0 10px 0; }
-.persona-lead { break-inside: avoid; page-break-inside: avoid; }
-.persona-title { font-size: 10.0pt; font-weight: 800; color: #0f172a; margin-bottom: 4.5px; break-after: avoid; page-break-after: avoid; }
-.persona-card { border-radius: 0 7px 7px 0; padding: 6.5px 10.5px; margin-bottom: 5px; break-inside: avoid; page-break-inside: avoid; }
-.persona-head { font-size: 9.45pt; font-weight: 800; color: #0f172a; margin-bottom: 1.5px; }
-.grp-badge { display: inline-block; color: #ffffff; font-size: 7.7pt; font-weight: 800; padding: 0.5px 5.5px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
-.persona-sub { font-size: 8.25pt; color: #475569; margin-bottom: 3px; }
-.persona-ul { margin: 2px 0 3px 0; padding-left: 17px; font-size: 8.7pt; line-height: 1.46; }
-.persona-ul li { margin-bottom: 1.5px; }
-.persona-avoid { font-size: 8.15pt; color: #991b1b; background: rgba(254,226,226,0.52); padding: 3px 7.5px; border-radius: 4px; margin-top: 2.5px; line-height: 1.42; }
-
-.glossary-box { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #d97706; border-radius: 0 7px 7px 0; padding: 8px 11px; margin: 9px 0 11px 0; break-inside: avoid; page-break-inside: avoid; }
-.glossary-title { font-size: 9.3pt; font-weight: 800; color: #92400e; margin-bottom: 4.5px; break-after: avoid; page-break-after: avoid; }
-.gloss-pill { display: inline-block; background: #d97706; color: #ffffff; font-size: 7.5pt; font-weight: 700; padding: 1px 6px; border-radius: 3px; margin-right: 4px; vertical-align: 1px; }
-.glossary-table { width: 100%; border-collapse: collapse; font-size: 8.55pt; line-height: 1.48; }
-.glossary-table td { padding: 3.5px 6px; border-bottom: 1px dashed #fcd34d; vertical-align: top; color: #374151; }
-.glossary-table td:first-child strong { color: #78350f; }
-.glossary-table tr:last-child td { border-bottom: none; }
-
-.layer-badge-pro, .layer-badge-deep {
-  background: transparent;
-  border: none;
-  border-bottom: 1px dashed #cbd5e1;
-  padding: 2px 0 5px 0;
-  margin: -3px 0 9px 0;
-  font-size: 8.45pt;
-  font-weight: 600;
-  color: #475569;
-  border-radius: 0;
-  break-after: avoid;
-  page-break-after: avoid;
-}
-.lb-pill-deep { display: inline-block; background: #1d4ed8; color: #ffffff; font-size: 7.4pt; font-weight: 700; padding: 1px 6px; border-radius: 3px; margin-right: 5px; }
-.lb-pill-pro { display: inline-block; background: #475569; color: #ffffff; font-size: 7.4pt; font-weight: 700; padding: 1px 6px; border-radius: 3px; margin-right: 5px; }
-
-.trust-box { background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #475569; border-radius: 0 8px 8px 0; padding: 7.5px 11px; margin: 9px 0 7px 0; break-inside: avoid; page-break-inside: avoid; }
-.trust-title { font-size: 9.15pt; font-weight: 800; color: #0f172a; margin-bottom: 3.5px; break-after: avoid; page-break-after: avoid; }
-.trust-ul { margin: 2.5px 0 3.5px 0; padding-left: 17px; font-size: 8.55pt; color: #334155; line-height: 1.48; }
-.trust-note { font-size: 7.9pt; color: #64748b; }
-
-.vol-header {
-  background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
-  border-left: 5px solid #1d4ed8;
-  color: #1e3a8a;
-  font-size: 12.6pt;
-  font-weight: 800;
-  padding: 7.5px 12px;
-  margin: 13px 0 9px 0;
-  border-radius: 0 6px 6px 0;
-  break-after: avoid;
-  page-break-after: avoid;
-}
-.volume-break { page-break-before: always; break-before: page; }
-h2 { font-size: 11.4pt; font-weight: 800; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 3px; margin: 13px 0 7px 0; break-after: avoid; page-break-after: avoid; }
-h3 { font-size: 10.1pt; font-weight: 700; color: #1e40af; margin: 9.5px 0 4.5px 0; break-after: avoid; page-break-after: avoid; }
-h4 { font-size: 9.6pt; font-weight: 700; color: #334155; margin: 8px 0 3.5px 0; break-after: avoid; page-break-after: avoid; }
-p { margin: 5px 0 8px 0; text-align: justify; text-justify: inter-ideograph; orphans: 3; widows: 3; text-wrap: pretty; line-break: strict; }
-ul { margin: 3.5px 0 8px 0; padding-left: 19px; }
-ol { margin: 3.5px 0 8px 0; padding-left: 24px; }
-.sub-ul { margin: 2.5px 0 4px 0; padding-left: 17px; list-style-type: disc; }
-li { margin-bottom: 3.2px; orphans: 3; widows: 3; text-wrap: pretty; line-break: strict; }
-strong { color: #0f172a; font-weight: 700; }
-th strong { color: #ffffff !important; }
-th em { color: #e2e8f0; }
-a { color: #1d4ed8; text-decoration: none; }
-.inline-code { font-family: "SF Mono", "Menlo", monospace; font-size: 8.7pt; color: #1e3a8a; font-weight: 600; }
-.code-block { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7.5px 10px; font-family: "SF Mono", "Menlo", monospace; font-size: 8.4pt; white-space: pre-wrap; word-break: break-word; break-inside: avoid; }
-.callout {
-  background: #f0f9ff;
-  border-left: 4px solid #0284c7;
-  border-radius: 0 6px 6px 0;
-  padding: 8px 12px;
-  margin: 8px 0 10px 0;
-  font-size: 9.3pt;
-  line-height: 1.60;
-  color: #0c4a6e;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-.callout strong { color: #0369a1; }
-
-/* Clean 3-Line Magazine Tables with Auto col-nowrap, Tabular Numerals & Status Pills */
-.table-wrap { margin: 8px 0 11px 0; }
-.table-wrap.table-keep { break-inside: avoid; page-break-inside: avoid; }
-table.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 8.55pt;
-  line-height: 1.45;
-  border-top: 2px solid #0f172a;
-  border-bottom: 2px solid #0f172a;
-  font-variant-numeric: tabular-nums;
-}
-table.data-table thead { display: table-header-group; }
-table.data-table tr { break-inside: avoid; page-break-inside: avoid; }
-table.data-table th {
-  background: #1e293b;
-  color: #f8fafc;
-  font-weight: 700;
-  font-size: 8.1pt;
-  line-height: 1.34;
-  text-align: left;
-  padding: 5.5px 6.5px;
-  border: none;
-  border-top: 2.5px solid __ACCENT__;
-  text-wrap: balance;
-}
-table.data-table td {
-  padding: 4.8px 6.5px;
-  border: none;
-  border-bottom: 0.75px solid #e2e8f0;
-  vertical-align: top;
-  text-wrap: pretty;
-}
-table.data-table tbody tr:nth-child(even) { background: #f8fafc; }
-table.data-table th.col-nowrap, table.data-table td.col-nowrap { white-space: nowrap; width: 1%; }
-table.data-table th.col-first-min, table.data-table td.col-first-min { min-width: 15%; }
-table.data-table th.col-num, table.data-table td.col-num { font-variant-numeric: tabular-nums; }
-table.data-table th.ta-c, table.data-table td.ta-c { text-align: center; }
-table.data-table th.ta-r, table.data-table td.ta-r { text-align: right; }
-.nw { white-space: nowrap; }
-.st-pill {
-  display: inline-block;
-  white-space: nowrap;
-  font-size: 7.85pt;
-  font-weight: 700;
-  padding: 1.5px 7px;
-  border-radius: 10px;
-  line-height: 1.30;
-}
-.st-fail { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-.st-pass { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
-.st-warn { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-
-.chart-box {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-top: 2.5px solid #1e3a8a;
-  border-radius: 8px;
-  padding: 9px 11px 7.5px 11px;
-  margin: 9.5px 0 11px 0;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-.chart-title { font-size: 10.2pt; font-weight: 800; color: #0f172a; line-height: 1.35; margin-bottom: 2px; text-align: left; }
-.chart-sub { font-size: 8.15pt; color: #64748b; margin-bottom: 4.5px; text-align: left; }
-.chart-note { font-size: 7.9pt; color: #64748b; line-height: 1.44; margin-top: 4.5px; }
-.footer-note { margin-top: 8px; padding-top: 5.5px; border-top: 1px solid #cbd5e1; font-size: 7.75pt; color: #64748b; text-align: center; line-height: 1.42; }
-"""
-
-
-_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
-
-
-def sanitize_hex_color(val: str, default: str = "#b45309") -> str:
-    s = str(val or "").strip()
-    return s if _HEX_COLOR_RE.match(s) else default
-
-
-def sanitize_css_string(val: str) -> str:
-    return re.sub(r'["\\\r\n]', "", str(val or "")).strip()
-
-
-def count_pdf_pages(pdf_path: Path) -> int:
-    try:
-        raw = pdf_path.read_bytes()
-        return len(re.findall(rb"/Type\s*/Page\b(?!s)", raw))
-    except Exception:
-        return 0
-
-
 def build_cover_html(title: str, meta: dict, accent: str = "#b45309") -> str:
+    safe_accent = sanitize_hex_color(accent, "#b45309")
     tag = esc(meta.get("tag", "每日黄金深度研报 · 北京时间 07:30 & 18:00 双刊"))
     ts = esc(meta.get("timestamp", ""))
     summary = _protect_atomic_units(esc(meta.get("summary", "")))
@@ -1556,480 +1271,10 @@ def build_cover_html(title: str, meta: dict, accent: str = "#b45309") -> str:
         kpi_html = f'<div class="{strip_cls}">{"".join(cards)}</div>'
 
     return f'''
-    <div class="cover-banner" style="border-bottom:4px solid {accent};">
+    <div class="cover-banner" style="border-bottom:4px solid {safe_accent};">
       <div class="cover-tag">{tag}</div>
       <div class="cover-title">{md_inline(title)}</div>
       {meta_html}
       {kpi_html}
     </div>
     '''
-
-
-GOLD_MOBILE_CSS = """
-html { scroll-behavior: smooth; }
-[id^="sec-"], #top { scroll-margin-top: 56px; }
-.mob-nav, .svg-hint { display: none; }
-.svg-scroll svg { display: block; width: 100%; height: auto; }
-@media screen {
-  html { background: #f1f5f9; }
-  body {
-    max-width: 820px;
-    margin: 16px auto;
-    padding: 18px 22px 28px 22px;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
-    font-size: 15.5px;
-    line-height: 1.72;
-  }
-  .mob-nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    background: rgba(255, 255, 255, 0.94);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    padding: 9px 12px;
-    margin: -18px -22px 16px -22px;
-    border-bottom: 1px solid #e2e8f0;
-    border-radius: 12px 12px 0 0;
-    white-space: nowrap;
-  }
-  .mob-nav a {
-    display: inline-block;
-    font-size: 12.5px;
-    font-weight: 700;
-    color: #334155;
-    background: #f1f5f9;
-    border: 1px solid #e2e8f0;
-    padding: 4px 11px;
-    border-radius: 999px;
-    text-decoration: none;
-    flex: 0 0 auto;
-  }
-  .mob-nav a.nav-accent {
-    background: __ACCENT__;
-    color: #ffffff;
-    border-color: __ACCENT__;
-  }
-  .cover-tag { font-size: 12px; padding: 3px 10px; }
-  .cover-title { font-size: 21px; }
-  .cover-meta, .kpi-label, .kpi-sub { font-size: 13px; }
-  .kpi-val { font-size: 16px; }
-  .verdict-badge { font-size: 12.5px; }
-  .verdict-light { font-size: 14px; }
-  .verdict-headline { font-size: 16.5px; }
-  .verdict-list { font-size: 14.5px; }
-  .verdict-risk { font-size: 13.5px; }
-  .sn-title, .persona-title { font-size: 16px; }
-  .sn-grid, .sn-table { font-size: 14px; }
-  .persona-head { font-size: 15.5px; }
-  .persona-sub, .persona-avoid { font-size: 13.5px; }
-  .persona-ul { font-size: 14.5px; line-height: 1.62; }
-  .glossary-title, .trust-title { font-size: 15px; }
-  .glossary-table, .trust-ul { font-size: 14px; }
-  .trust-note, .chart-note, .footer-note { font-size: 12.5px; }
-  .layer-badge-deep, .layer-badge-pro { font-size: 13.5px; }
-  .vol-header { font-size: 19px; padding: 9px 14px; margin: 20px 0 10px 0; }
-  h2 { font-size: 17.5px; margin: 18px 0 8px 0; }
-  h3 { font-size: 16px; margin: 14px 0 6px 0; }
-  h4 { font-size: 15px; }
-  p { text-align: left; }
-  .callout { font-size: 14.5px; padding: 11px 14px; }
-  .table-wrap, .sn-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table.data-table { font-size: 13.5px; }
-  table.data-table th { font-size: 13px; padding: 7px 8px; }
-  table.data-table td { padding: 7px 8px; }
-  .st-pill { font-size: 12px; }
-  .chart-title { font-size: 16px; }
-  .chart-sub { font-size: 13.5px; }
-  .inline-code { font-size: 13.5px; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
-}
-@media screen and (max-width: 680px) {
-  body {
-    margin: 0;
-    border-radius: 0;
-    box-shadow: none;
-    padding: 12px calc(12px + env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
-    font-size: 15.5px;
-  }
-  .mob-nav {
-    margin: -12px calc(-12px - env(safe-area-inset-right, 0px)) 12px calc(-12px - env(safe-area-inset-left, 0px));
-    padding-left: calc(10px + env(safe-area-inset-left, 0px));
-    padding-right: calc(10px + env(safe-area-inset-right, 0px));
-    border-radius: 0;
-  }
-  .cover-banner { padding: 14px 14px 13px 14px; }
-  .cover-title { font-size: 19px; }
-  .kpi-strip, .kpi-strip.cols-4 { grid-template-columns: repeat(2, 1fr); gap: 7px; }
-  .kpi-val { font-size: 14.5px; white-space: normal; overflow: visible; text-overflow: clip; }
-  .verdict-top { flex-direction: column; align-items: flex-start; gap: 5px; }
-  .sn-grid { grid-template-columns: 1fr; gap: 8px; }
-  .svg-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
-  .svg-scroll svg { min-width: 640px; width: 640px; max-width: none; height: auto; }
-  .svg-hint {
-    display: block;
-    text-align: center;
-    font-size: 11.5px;
-    color: #64748b;
-    margin-top: 4px;
-    letter-spacing: 0.3px;
-  }
-  table.data-table, table.sn-table { min-width: 520px; font-size: 13.5px; }
-}
-@media screen and (max-width: 440px) {
-  .kpi-strip { grid-template-columns: 1fr; }
-}
-@media (prefers-color-scheme: dark) {
-  html { background: #020617; }
-  body { background: #0f172a; color: #e2e8f0; box-shadow: none; }
-  .mob-nav { background: rgba(15, 23, 42, 0.94); border-bottom-color: #334155; }
-  .mob-nav a { background: #1e293b; color: #e2e8f0; border-color: #334155; }
-  .mob-nav a.nav-accent { background: __ACCENT__; color: #ffffff; border-color: __ACCENT__; }
-  .verdict-card { background: #1e293b !important; color: #e2e8f0; }
-  .verdict-light { color: #f8fafc; }
-  .verdict-headline { color: #fcd34d !important; }
-  .verdict-risk { color: #fecaca; background: rgba(153, 27, 27, 0.38); }
-  .sn-title, .persona-title, .trust-title { color: #f8fafc; }
-  .sn-col-sig { background: #102a22; border-color: #166534; color: #e2e8f0; }
-  .sn-col-noi { background: #172033; border-color: #334155; color: #e2e8f0; }
-  .sn-table td { background: #172033 !important; color: #e2e8f0; border-bottom-color: #334155; }
-  .persona-card { background: #1e293b !important; color: #e2e8f0; }
-  .persona-head { color: #f8fafc; }
-  .persona-sub { color: #cbd5e1; }
-  .persona-avoid { color: #fecaca; background: rgba(153, 27, 27, 0.38); }
-  .glossary-box { background: #292012; border-color: #78350f; }
-  .glossary-title { color: #fcd34d; }
-  .glossary-table td { color: #e2e8f0; border-bottom-color: #78350f; }
-  .glossary-table td:first-child strong { color: #fde68a; }
-  .layer-badge-deep, .layer-badge-pro { color: #cbd5e1; border-bottom-color: #334155; }
-  .trust-box { background: #1e293b; border-color: #334155; }
-  .trust-ul { color: #cbd5e1; }
-  .trust-note, .chart-sub, .chart-note, .footer-note, .svg-hint { color: #94a3b8; }
-  .vol-header { background: #1e293b; color: #f8fafc; border-left-color: #60a5fa; }
-  h2 { color: #f8fafc; border-bottom-color: #334155; }
-  h3 { color: #93c5fd; }
-  h4 { color: #e2e8f0; }
-  strong { color: #f8fafc; }
-  a { color: #38bdf8; }
-  .inline-code { background: #1e293b; color: #93c5fd; }
-  .code-block { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-  .callout { background: #0c2a3e; color: #bae6fd; border-left-color: #38bdf8; }
-  .callout strong { color: #7dd3fc; }
-  table.data-table { border-top-color: #64748b; border-bottom-color: #64748b; }
-  table.data-table th { background: #1e293b; color: #f8fafc; }
-  table.data-table td { border-bottom-color: #334155; color: #e2e8f0; }
-  table.data-table tbody tr:nth-child(even) { background: #172033; }
-  .st-fail { background: rgba(153, 27, 27, 0.35); color: #fecaca; border-color: #991b1b; }
-  .st-pass { background: rgba(22, 101, 52, 0.35); color: #bbf7d0; border-color: #166534; }
-  .st-warn { background: rgba(146, 64, 14, 0.35); color: #fde68a; border-color: #92400e; }
-  .chart-box { background: #1e293b; border-color: #334155; border-top-color: #60a5fa; }
-  .chart-title { color: #f8fafc; }
-  .svg-scroll { background: #ffffff; border-radius: 6px; padding: 4px; }
-}
-@media print {
-  .mob-nav, .svg-hint { display: none !important; }
-}
-"""
-
-
-_DAILY_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_.*?(?:_r(\d+))?\.md$")
-
-
-def _daily_sort_key(p: Path) -> tuple[str, int, int, str]:
-    """Deterministic sort key (date, int(hhmm), int(rev or 1), name) so _r10 sorts after _r2."""
-    m = _DAILY_FILENAME_RE.match(p.name)
-    if m:
-        return (m.group(1), int(m.group(2)), int(m.group(3) or 1), p.name)
-    return ("0000-00-00", 0, 0, p.name)
-
-
-def _is_latest_daily(md_path: Path) -> bool:
-    files = sorted(
-        (Path(p).resolve() for p in glob.glob(str(DAILY_DIR / "????-??-??_*.md"))),
-        key=_daily_sort_key,
-    )
-    if not files:
-        return True
-    return md_path.resolve() == files[-1]
-
-
-def build_gold_mobile_html(html_doc: str, meta: dict, out_path: Path | str) -> Path:
-    """Build responsive single-file mobile HTML (sticky nav, viewport-fit=cover, SVG scroll, dark mode) atomically."""
-    accent = sanitize_hex_color((meta or {}).get("accent", "#b45309"))
-    mob = html_doc
-
-    # 1. Inject mobile viewport meta with safe-area support
-    if '<meta name="viewport"' not in mob:
-        mob = mob.replace(
-            '<meta charset="utf-8">',
-            '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
-            1,
-        )
-
-    # 2. Append mobile responsive & dark-mode CSS before </style>
-    rendered_mob_css = GOLD_MOBILE_CSS.replace("__ACCENT__", accent)
-    if "</style>" in mob:
-        mob = mob.replace("</style>", f"\n{rendered_mob_css}\n</style>", 1)
-    else:
-        mob = mob.replace("</head>", f"<style>{rendered_mob_css}</style></head>", 1)
-
-    # 3. Convert local workspace file:// links to relative links for portable viewing
-    root_uri = f"file://{BASE_DIR}"
-    mob = mob.replace(f"{root_uri}/daily/", "./").replace(f"{root_uri}/", "../")
-
-    # 4. Inject stable section anchors for sticky quick-jump navigation
-    mob = mob.replace('<div class="cover-banner"', '<div id="top" class="cover-banner"', 1)
-
-    has_verdict = False
-    if '<div class="verdict-card"' in mob:
-        mob = mob.replace('<div class="verdict-card"', '<div id="sec-verdict" class="verdict-card"', 1)
-        has_verdict = True
-
-    has_wallet = False
-    m_wallet = re.search(r"<h2>((?:(?!</h2>).)*(?:钱包账|10\s*万)(?:(?!</h2>).)*)</h2>", mob)
-    if m_wallet:
-        mob = mob[:m_wallet.start()] + f'<h2 id="sec-wallet">{m_wallet.group(1)}</h2>' + mob[m_wallet.end():]
-        has_wallet = True
-
-    has_persona = False
-    m_persona = re.search(r"<h2>((?:(?!</h2>).)*对号入座(?:(?!</h2>).)*)</h2>", mob)
-    if m_persona:
-        mob = mob[:m_persona.start()] + f'<h2 id="sec-persona">{m_persona.group(1)}</h2>' + mob[m_persona.end():]
-        has_persona = True
-    elif '<div class="persona-wrap">' in mob:
-        mob = mob.replace('<div class="persona-wrap">', '<div id="sec-persona" class="persona-wrap">', 1)
-        has_persona = True
-
-    has_deep = False
-    m_deep = re.search(r'<h1 class="vol-header">((?:(?!</h1>).)*第二部分(?:(?!</h1>).)*)</h1>', mob)
-    if m_deep:
-        mob = mob[:m_deep.start()] + f'<h1 id="sec-deep" class="vol-header">{m_deep.group(1)}</h1>' + mob[m_deep.end():]
-        has_deep = True
-    elif '<div class="layer-badge-deep">' in mob:
-        mob = mob.replace('<div class="layer-badge-deep">', '<div id="sec-deep" class="layer-badge-deep">', 1)
-        has_deep = True
-
-    has_pro = False
-    m_pro = re.search(r'<h1 class="vol-header">((?:(?!</h1>).)*(?:第三部分|进阶)(?:(?!</h1>).)*)</h1>', mob)
-    if m_pro:
-        mob = mob[:m_pro.start()] + f'<h1 id="sec-pro" class="vol-header">{m_pro.group(1)}</h1>' + mob[m_pro.end():]
-        has_pro = True
-    elif '<div class="layer-badge-pro">' in mob:
-        mob = mob.replace('<div class="layer-badge-pro">', '<div id="sec-pro" class="layer-badge-pro">', 1)
-        has_pro = True
-
-    # 5. Wrap 640px vector SVGs inside .svg-scroll & wrap .sn-table inside .sn-scroll for smooth phone swiping
-    mob = re.sub(
-        r'(?<!<div class="svg-scroll">)(<svg\b[^>]*>.*?</svg>)',
-        r'<div class="svg-scroll">\1</div><div class="svg-hint">← 图表可左右滑动清晰查看 →</div>',
-        mob,
-        flags=re.DOTALL,
-    )
-    mob = re.sub(
-        r'(<table class="sn-table">.*?</table>)',
-        r'<div class="sn-scroll">\1</div>',
-        mob,
-        flags=re.DOTALL,
-    )
-
-    # 6. Prepend sticky navigation bar
-    nav_links: list[str] = []
-    if has_verdict:
-        nav_links.append('<a href="#sec-verdict" class="nav-accent">首屏结论</a>')
-    if has_wallet:
-        nav_links.append('<a href="#sec-wallet">10万钱包账</a>')
-    if has_persona:
-        nav_links.append('<a href="#sec-persona">四类读者</a>')
-    if has_deep:
-        nav_links.append('<a href="#sec-deep">深度专题与图表</a>')
-    if has_pro:
-        nav_links.append('<a href="#sec-pro">进阶复核</a>')
-    nav_links.append('<a href="#top">↑ 顶部</a>')
-    nav_bar = '<nav class="mob-nav" aria-label="快捷导航">' + "".join(nav_links) + "</nav>"
-    mob = mob.replace("<body>", f"<body>\n{nav_bar}", 1)
-
-    # 7. Atomic write (.tmp + os.replace)
-    out_p = Path(out_path)
-    out_p.parent.mkdir(parents=True, exist_ok=True)
-    tmp_p = out_p.with_name(out_p.name + ".tmp")
-    try:
-        tmp_p.write_text(mob, encoding="utf-8")
-        os.replace(tmp_p, out_p)
-    finally:
-        tmp_p.unlink(missing_ok=True)
-    return out_p
-
-
-def build_one(md_path: Path):
-    root = str(BASE_DIR.parent)
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    from scripts.artifact_receipt import freeze_inputs, write_receipt
-
-    frozen = None
-    if md_path.resolve().is_relative_to(BASE_DIR.parent):
-        frozen = freeze_inputs(md_path, inputs=(BASE_DIR / "build_daily.py", BASE_DIR / "docx_embed.py", BASE_DIR / "chart_input.py"))
-    text = md_path.read_text(encoding="utf-8")
-    title, meta, body_pdf, _ = md_to_html(text, docx_mode=False, break_layer3=False)
-    _, _, body_docx, docx_charts = md_to_html(text, docx_mode=True, break_layer3=False)
-
-    pdf_path = md_path.with_suffix(".pdf")
-    docx_path = md_path.with_suffix(".docx")
-
-    accent = sanitize_hex_color(meta.get("accent", "#b45309"))
-    footer_title = sanitize_css_string(meta.get("footer_title", "每日黄金深度研报（07:30 & 18:00 双刊）"))
-    rendered_pdf_css = (
-        PDF_CSS
-        .replace("__ACCENT__", accent)
-        .replace("__FOOTER_TITLE__", footer_title)
-    )
-
-    ts = esc(meta.get("timestamp", ""))
-    tag = esc(meta.get("tag", "每日黄金深度研报"))
-    footer_note = (
-        f'<div class="footer-note">'
-        f'本刊（{tag}{(" · " + ts) if ts else ""}）数据均经多源官方数据库核验；投资有风险，请按家庭总资产 10%–15% 合理配置，严禁借钱或高杠杆操作。'
-        f'</div>'
-    )
-
-    cover_html = build_cover_html(title, meta, accent=accent)
-    pdf_html = f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>{esc(title)}</title><style>{rendered_pdf_css}</style></head>
-<body>
-{cover_html}
-{body_pdf}
-{footer_note}
-</body></html>"""
-
-    docx_full_html = f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>{esc(title)}</title></head>
-<body>
-{cover_html}
-{body_docx}
-{footer_note}
-</body></html>"""
-
-    # All temporary directories isolated inside system /tmp (zero workspace pollution!)
-    work_tmp = Path(tempfile.mkdtemp(prefix="gold_daily_build_"))
-    chrome_profile = work_tmp / "chrome_profile"
-    png_dir = work_tmp / "pngs"
-    chrome_profile.mkdir()
-    png_dir.mkdir()
-    tmp_pdf_html = work_tmp / "daily_print.html"
-    tmp_pdf_html.write_text(pdf_html, encoding="utf-8")
-    tmp_pdf_out = md_path.with_suffix(".pdf.tmp")
-
-    chrome_bin = os.environ.get("CHROME_BIN", "").strip() or CHROME_BIN
-    try:
-        # 1. Render PDF (2-attempt retry with fresh profile dir, timeout=120, atomic temp write & non-empty assertion)
-        last_err: Exception | None = None
-        for attempt in range(1, 3):
-            attempt_profile = work_tmp / f"chrome_pdf_profile_{attempt}"
-            shutil.rmtree(attempt_profile, ignore_errors=True)
-            attempt_profile.mkdir(parents=True, exist_ok=True)
-            tmp_pdf_out.unlink(missing_ok=True)
-            stderr_log = attempt_profile / "chrome_stderr.log"
-            try:
-                rc, stderr_txt = run_chrome_to_output(
-                    [
-                        chrome_bin,
-                        "--headless",
-                        "--disable-gpu",
-                        "--disable-extensions",
-                        "--disable-background-networking",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                        f"--user-data-dir={attempt_profile}",
-                        "--no-pdf-header-footer",
-                        f"--print-to-pdf={tmp_pdf_out}",
-                        tmp_pdf_html.as_uri(),
-                    ],
-                    tmp_pdf_out,
-                    lambda p: is_complete_pdf(p, 10_000),
-                    timeout=120,
-                    stderr_log=stderr_log,
-                )
-                if not is_complete_pdf(tmp_pdf_out, 10_000):
-                    raise RuntimeError(
-                        f"Chrome headless PDF print failed for {md_path.name} "
-                        f"(attempt {attempt}/2, rc={rc}): {stderr_txt[:400]}"
-                    )
-                if rc != 0:
-                    print(
-                        f"  [CHROME WARN] Chrome exited rc={rc} on teardown after writing "
-                        f"complete PDF ({tmp_pdf_out.stat().st_size:,}B); accepting.",
-                        file=sys.stderr,
-                    )
-                last_err = None
-                break
-            except (subprocess.TimeoutExpired, RuntimeError) as exc:
-                last_err = exc
-                if attempt == 2:
-                    if isinstance(exc, subprocess.TimeoutExpired):
-                        raise RuntimeError(
-                            f"Chrome headless PDF print timed out after 120s for {md_path.name} (attempt 2/2)"
-                        ) from exc
-                    raise
-        if last_err is not None:
-            raise last_err
-        tmp_pdf_out.replace(pdf_path)
-
-        # 2. Rasterize every SVG chart to PIL-cropped 2x Retina PNG
-        embed_specs: list[tuple[str, Path]] = []
-        for idx, (marker, chart_html) in enumerate(docx_charts):
-            png_out = png_dir / f"chart_{idx + 1}.png"
-            render_chart_to_png(chart_html, png_out, png_dir, chrome_profile, idx)
-            embed_specs.append((marker, png_out))
-
-        # 3. Build 100% native OOXML DOCX (real tables, cross-platform cards, Retina PNGs)
-        build_native_docx(docx_full_html, docx_path, embed_specs, footer_title=footer_title)
-    finally:
-        tmp_pdf_out.unlink(missing_ok=True)
-        shutil.rmtree(work_tmp, ignore_errors=True)
-
-    pages = count_pdf_pages(pdf_path)
-    print(f"Built daily PDF:  {pdf_path} ({pages} pages)")
-    print(f"Built daily DOCX: {docx_path} (native OOXML + {len(docx_charts)} PIL-cropped Retina PNG charts)")
-
-    if _is_latest_daily(md_path):
-        mobile_out = build_gold_mobile_html(pdf_html, meta, DAILY_DIR / "latest_gold.html")
-        print(f"Built mobile HTML: {mobile_out} ({mobile_out.stat().st_size:,} bytes)")
-    if frozen is not None:
-        write_receipt(frozen, pdf_path, docx_path)
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Build daily gold research PDF & Native OOXML DOCX (V2.2).")
-    parser.add_argument("md_file", nargs="?", help="Path to target daily Markdown file (defaults to latest by filename).")
-    parser.add_argument("--check", action="store_true", help="Self-check Chrome, BeautifulSoup, PIL, and daily/ dir.")
-    args = parser.parse_args()
-
-    if args.check:
-        chrome_bin = os.environ.get("CHROME_BIN", "").strip() or resolve_chrome_bin()
-        if not (Path(chrome_bin).exists() or shutil.which(chrome_bin)):
-            raise SystemExit(f"ERROR: Chrome binary missing at {chrome_bin}")
-        import bs4  # noqa: F401
-        from PIL import Image  # noqa: F401
-        DAILY_DIR.mkdir(parents=True, exist_ok=True)
-        print("OK: build_daily.py V2.2 native OOXML & PDF environment verified.")
-        return
-    if args.md_file:
-        target = Path(args.md_file)
-    else:
-        files = sorted(
-            (Path(p) for p in glob.glob(str(DAILY_DIR / "????-??-??_*.md"))),
-            key=_daily_sort_key,
-        )
-        if not files:
-            raise SystemExit("No daily YYYY-MM-DD_*.md files found in daily/")
-        target = files[-1]
-    if not target.exists():
-        raise SystemExit(f"ERROR: Target Markdown file not found: {target}")
-    build_one(target)
-
-
-if __name__ == "__main__":
-    main()

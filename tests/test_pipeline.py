@@ -903,21 +903,49 @@ class OperationalRegressionTest(unittest.TestCase):
 
     def test_multi_asset_channels_etfs_and_dossiers_render_cleanly(self):
         repo = Path(build_site.__file__).resolve().parent.parent
+        ms_data = json.loads((repo / "equity" / "state" / "market_state.json").read_text("utf-8"))
         ch_data = json.loads((repo / "equity" / "state" / "multi_asset_channels.json").read_text("utf-8"))
         etf_data = json.loads((repo / "equity" / "state" / "etf_universe.json").read_text("utf-8"))
         dos_data = json.loads((repo / "equity" / "state" / "deep_dossiers.json").read_text("utf-8"))
 
-        ch_html = build_site.build_channels_page(ch_data)
-        self.assertEqual(len(ch_data["channels"]), 8)
+        ch_html = build_site.build_channels_page(ch_data, etf_data=etf_data, eq_state=ms_data)
+        self.assertGreaterEqual(len(ch_data["channels"]), 12)
+        core_channel_ids = {
+            "reverse_repo",
+            "large_cds",
+            "fx_deposits_wm",
+            "bonds",
+            "funds_wm",
+            "savings_insurance",
+            "tax_advantaged_accounts",
+            "qdii_mrf",
+            "convertible_bonds",
+            "c_reits",
+            "commodity_etfs",
+            "private_funds_trust",
+        }
+        actual_channel_ids = {ch["id"] for ch in ch_data["channels"]}
+        self.assertTrue(
+            core_channel_ids.issubset(actual_channel_ids),
+            f"Missing core multi-asset channels: {core_channel_ids - actual_channel_ids}",
+        )
+        self.assertIn(f"{len(ch_data['channels'])} 大合规", ch_html)
         self.assertIn("channels/bonds.html", ch_html)
         self.assertIn("data-channel-cat", ch_html)
 
-        # Homepage (cockpit) renders concise separate overview cards for ALL 8 channels + 5 ETF groups + ZERO PDF/Word links
+        pool_counts = {
+            "a-share": int(ms_data["markets"]["a_share"]["stock_pool_count"]),
+            "hk-stock": int(ms_data["markets"]["hk_stock"]["stock_pool_count"]),
+            "us-stock": int(ms_data["markets"]["us_stock"]["stock_pool_count"]),
+        }
+        expected_pool = sum(pool_counts.values())
+
+        # Homepage (cockpit) renders concise separate overview cards for ALL channels + 5 ETF groups + ZERO PDF/Word links
         cockpit_html = build_site.build_cockpit_page(
             {"as_of_short": "2026-11-26 18:30", "tier_code": "Tier 0", "new_buy_allowed": False},
             {"as_of_cst": "2026-11-26T18:30:00+08:00"},
             {},
-            {"a-share": 76, "hk-stock": 75, "us-stock": 80},
+            pool_counts,
             channels_data=ch_data,
             etf_data=etf_data,
         )
@@ -933,27 +961,344 @@ class OperationalRegressionTest(unittest.TestCase):
         for forbidden in ("PDF ↗", "Word ↗", "latest-reports", "离线下载中心"):
             self.assertNotIn(forbidden, cockpit_html)
 
-        etf_html = build_site.build_etfs_page(etf_data)
-        self.assertGreaterEqual(len(etf_data["etfs"]), 75)
+        etf_html = build_site.build_etfs_page(etf_data, channel_count=len(ch_data["channels"]))
+        self.assertGreaterEqual(len(etf_data["etfs"]), 140)
+        self.assertEqual(len(etf_data["etfs"]), etf_data["total_etfs"])
         self.assertIn('id="etf-data"', etf_html)
         self.assertIn("红灯暂停新买", etf_html)
 
-        # Graceful empty fallback
-        self.assertIn("8 大合规", build_site.build_channels_page(None))
+        # Graceful empty fallback without hardcoded channel count
+        empty_ch_html = build_site.build_channels_page(None)
+        self.assertIn("合规多元投资渠道", empty_ch_html)
+        self.assertIn('class="channels-hero"', empty_ch_html)
+        self.assertIn('class="channel-list"', empty_ch_html)
         self.assertIn('id="etf-data"', build_site.build_etfs_page(None))
 
-        # 7-dimension dossier merge covers all 231 pool stocks
+        # 7-dimension dossier merge dynamically aligns with market_state.json total pool & zero-template invariant
         sample = [
             {"market": "a-share", "code": "601398", "name": "工商银行"},
             {"market": "hk-stock", "code": "00005.HK", "name": "汇丰控股"},
             {"market": "us-stock", "code": "NVDA", "name": "英伟达"},
         ]
         merged = build_site.merge_stock_dossiers(sample, dos_data)
-        self.assertEqual(dos_data["total_stocks"], 231)
+        self.assertEqual(dos_data["total_stocks"], expected_pool)
+        self.assertEqual(dos_data.get("standard_deep_count"), 0)
+        self.assertEqual(dos_data.get("core_deep_count"), len(dos_data["dossiers"]))
+        self.assertEqual(len(dos_data["dossiers"]), expected_pool)
         for st in merged:
             self.assertIn("dossier", st)
             for k in ("moat", "financials", "valuation_anchor", "shareholder_flow", "catalysts", "bear_case", "action_etf"):
                 self.assertTrue(st["dossier"][k].strip())
+
+    def test_gate_s2_blocks_dangerous_schemes_double_escape_and_binary_links(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            site_dir = Path(temporary)
+            (site_dir / "valid.html").write_text("<html><body>ok</body></html>", encoding="utf-8")
+            html_body = (
+                "<!doctype html><html><body>"
+                '<a href="javascript:alert(1)">js</a>'
+                '<a href="java\tscript:void(0)">js-obf</a>'
+                '<a href="data:text/html,hi">data</a>'
+                '<a href="https://example.com/q?a=1&amp;amp;b=2">double-esc</a>'
+                '<a href="reports/a_share.pdf">local-pdf</a>'
+                '<a href="daily/gold.docx">local-docx</a>'
+                '<a href="https://github.com/org/repo/releases/download/latest-reports/a.pdf">release</a>'
+                '<a href="https://www.cboe.com/official/VIX_Whitepaper.pdf">ext-pdf-ok</a>'
+                '<a href="https://example.com/q?a=1&amp;b=2">single-esc-ok</a>'
+                '<a href="valid.html">ok</a>'
+                "</body></html>"
+            )
+            index_path = site_dir / "index.html"
+            index_path.write_text(html_body, encoding="utf-8")
+            doc = lint_site.parse_html_file("index.html", index_path.resolve(), html_body)
+            valid_doc = lint_site.parse_html_file("valid.html", (site_dir / "valid.html").resolve(), "<html><body>ok</body></html>")
+
+            errors, warnings = [], []
+            lint_site.run_gate_s2(site_dir, {"index.html": doc, "valid.html": valid_doc}, errors, warnings)
+            self.assertEqual(warnings, [])
+            self.assertTrue(any("forbidden URI scheme" in e and "javascript:alert(1)" in e for e in errors), errors)
+            self.assertTrue(any("forbidden URI scheme" in e and "void(0)" in e for e in errors), errors)
+            self.assertTrue(any("forbidden URI scheme" in e and "data:text/html" in e for e in errors), errors)
+            self.assertTrue(any("double-escaped '&amp;amp;'" in e for e in errors), errors)
+            self.assertTrue(any("forbidden PDF/Word or Release download link" in e and "a_share.pdf" in e for e in errors), errors)
+            self.assertTrue(any("forbidden PDF/Word or Release download link" in e and "gold.docx" in e for e in errors), errors)
+            self.assertTrue(any("forbidden PDF/Word or Release download link" in e and "latest-reports" in e for e in errors), errors)
+            # Legitimate external official PDF citation and single-escaped query string remain allowed
+            self.assertFalse(any("VIX_Whitepaper.pdf" in e for e in errors), errors)
+            self.assertFalse(any("a=1&b=2" in e for e in errors), errors)
+
+    def test_rewrite_href_sanitizes_schemes_sentinels_and_avoids_double_escape(self):
+        for bad_scheme in (
+            "javascript:alert(1)",
+            "  Java\tScript:void(0) ",
+            "data:text/html,<script>alert(1)</script>",
+            "vbscript:msgbox(1)",
+            "blob:https://example.com/1234",
+        ):
+            with self.subTest(bad_scheme=bad_scheme):
+                self.assertEqual(build_site._rewrite_href(bad_scheme, "", {}, "gold"), "#")
+
+        self.assertEqual(
+            build_site._rewrite_href("https://gir-local.invalid/unknown.html", "", {}, "gold"),
+            "archive.html",
+        )
+        self.assertEqual(
+            build_site._rewrite_href("https://gir-local.invalid/unknown.html", "../", {}, "gold"),
+            "../archive.html",
+        )
+        self.assertEqual(
+            build_site._rewrite_href("https://gir-local.invalid/etfs.html#market=a-share", "", {}, "gold"),
+            "etfs.html#market=a-share",
+        )
+        self.assertEqual(
+            build_site._rewrite_href("https://example.com/redirect?next=gir-local.invalid/foo", "", {}, "gold"),
+            "#",
+        )
+        self.assertEqual(
+            build_site._rewrite_href("https://example.com/q?a=1&amp;b=2", "", {}, "gold"),
+            "https://example.com/q?a=1&b=2",
+        )
+
+        # End-to-end sanitize_and_extract_toc must emit single-escaped &amp; (zero &amp;amp;) and block bad schemes/sentinels
+        raw_html = (
+            '<p><a href="https://example.com/q?a=1&amp;b=2">ok</a> '
+            '<a href="javascript:alert(1)">js</a> '
+            '<a href="data:text/html,x">data</a> '
+            '<a href="https://gir-local.invalid/stale_file.md">rel</a></p>'
+        )
+        cleaned, _, _ = build_site.sanitize_and_extract_toc(
+            raw_html, base_prefix="", slug_map={}, ctx_market="gold", extract_toc=False,
+        )
+        self.assertIn('href="https://example.com/q?a=1&amp;b=2"', cleaned)
+        self.assertNotIn("&amp;amp;", cleaned)
+        self.assertNotIn("javascript:", cleaned)
+        self.assertNotIn("data:text/html", cleaned)
+        self.assertNotIn("gir-local.invalid", cleaned)
+
+    def test_gate_s3_blocks_embedded_json_leaks_and_gold_tier0_buy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            site_dir = Path(temporary)
+            screener_payload = [
+                {
+                    "market": "a-share",
+                    "code": "601899",
+                    "name": "紫金矿业",
+                    "summary": "核对 deep_dossiers.json 与 lint_equity.py 基线",
+                    "valuation": "NaN / [object Object]",
+                    "dossier": {"action_etf": "建议立即买入黄金 ETF 518880"},
+                }
+            ]
+            etf_payload = [
+                {
+                    "code": "518660",
+                    "name": "黄金ETF",
+                    "thesis_deep": "同步 etf_universe.json 规则",
+                    "action_role": "逢低买 518660 黄金",
+                }
+            ]
+            scr_html = (
+                '<!doctype html><html><body>'
+                f'<script id="screener-data" type="application/json">{json.dumps(screener_payload, ensure_ascii=False)}</script>'
+                '</body></html>'
+            )
+            etf_html = (
+                '<!doctype html><html><body>'
+                f'<script id="etf-data" type="application/json">{json.dumps(etf_payload, ensure_ascii=False)}</script>'
+                '</body></html>'
+            )
+            scr_path = site_dir / "screener.html"
+            etf_path = site_dir / "etfs.html"
+            scr_path.write_text(scr_html, encoding="utf-8")
+            etf_path.write_text(etf_html, encoding="utf-8")
+            parsed = {
+                "screener.html": lint_site.parse_html_file("screener.html", scr_path.resolve(), scr_html),
+                "etfs.html": lint_site.parse_html_file("etfs.html", etf_path.resolve(), etf_html),
+            }
+            errors, warnings = [], []
+            lint_site.run_gate_s3(
+                site_dir, [scr_path, etf_path], parsed, errors, warnings, gold_new_buy_blocked=True,
+            )
+            self.assertTrue(any("#screener-data" in e and "internal engineering filename" in e for e in errors), errors)
+            self.assertTrue(any("#screener-data" in e and "NaN/[object Object]" in e for e in errors), errors)
+            self.assertTrue(any("#screener-data" in e and "Gold Tier 0 mutex violation" in e for e in errors), errors)
+            self.assertTrue(any("#etf-data" in e and "internal engineering filename" in e for e in errors), errors)
+            self.assertTrue(any("#etf-data" in e and "Gold Tier 0 mutex violation" in e for e in errors), errors)
+
+            # Clean payloads with guarded red-light wording must pass Gate S3 cleanly
+            clean_scr = (
+                '<!doctype html><html><body>'
+                '<script id="screener-data" type="application/json">'
+                '[{"code":"601899","summary":"红灯停期间暂不新买黄金，等待四关齐备"}]'
+                '</script></body></html>'
+            )
+            clean_etf = (
+                '<!doctype html><html><body>'
+                '<script id="etf-data" type="application/json">'
+                '[{"code":"518660","action_role":"红灯暂停新买（严禁定投黄金）"}]'
+                '</script></body></html>'
+            )
+            scr_path.write_text(clean_scr, encoding="utf-8")
+            etf_path.write_text(clean_etf, encoding="utf-8")
+            clean_parsed = {
+                "screener.html": lint_site.parse_html_file("screener.html", scr_path.resolve(), clean_scr),
+                "etfs.html": lint_site.parse_html_file("etfs.html", etf_path.resolve(), clean_etf),
+            }
+            clean_errors, clean_warnings = [], []
+            lint_site.run_gate_s3(
+                site_dir, [scr_path, etf_path], clean_parsed, clean_errors, clean_warnings, gold_new_buy_blocked=True,
+            )
+            self.assertEqual(clean_errors, [])
+            self.assertEqual(clean_warnings, [])
+
+    def test_build_guide_page_renders_clean_beginner_guide_respecting_gold_lock(self):
+        gold_snap = {"tier_code": "Tier 0", "new_buy_allowed": False}
+        ch_data = {"channels": [{"id": "bonds", "name": "债券与债券 ETF"}] * 12}
+        etf_data = {"etfs": [{"code": "511360"}] * 165}
+
+        guide_html = build_site.build_guide_page(gold_snap, {}, ch_data, etf_data, total_pool=231)
+        self.assertIn("新手 3 分钟入门指南", guide_html)
+        self.assertIn("高频金融关键词", guide_html)
+        self.assertIn("12 大个人多元渠道", guide_html)
+        self.assertIn("165 只重点 ETF", guide_html)
+        self.assertIn('id="sec-guide-glossary"', guide_html)
+        self.assertIn('id="guide-term-grid"', guide_html)
+
+        # Zero condescending banned slogans or internal engineering leaks
+        for banned in ("小白词典", "直接抄", "蠢事", "保命铁律", "PDF ↗", "Word ↗"):
+            self.assertNotIn(banned, guide_html)
+        self.assertIsNone(lint_site.S3_INTERNAL_ENG_LEAK_RE.search(guide_html))
+
+        # Zero Gold Tier 0 buy-gold directive violations
+        wrapped = f"<!doctype html><html><body>{guide_html}</body></html>"
+        doc = lint_site.parse_html_file("guide.html", Path("guide.html"), wrapped)
+        tier0_errors: list[str] = []
+        lint_site._check_gold_tier0_mutex(doc, tier0_errors)
+        self.assertEqual(tier0_errors, [])
+
+        # Graceful fallback when SSOT inputs are None
+        fallback_html = build_site.build_guide_page(None, None, None, None)
+        self.assertIn("新手 3 分钟入门指南", fallback_html)
+        self.assertIn("个人多元合规渠道", fallback_html)
+
+    def test_install_sidecars_blocks_shell_chaining_injection(self):
+        py_bin = "/usr/bin/python3"
+        grants = [f"{py_bin} /repo/scripts/publish_site.py"]
+
+        # Clean inline and fenced commands pass
+        clean_prompt = (
+            f"Run `{py_bin} /repo/scripts/publish_site.py --dry-run`\n"
+            f"```bash\n{py_bin} /repo/scripts/publish_site.py --check-manuscripts\n```\n"
+        )
+        install_sidecars._audit_prompt_commands(clean_prompt, py_bin, grants, "fixture.template.json")
+
+        # Shell chaining & command substitution tokens must be blocked in both inline & fenced forms
+        injections = (
+            f"`{py_bin} /repo/scripts/publish_site.py; rm -rf /`",
+            f"`{py_bin} /repo/scripts/publish_site.py && id`",
+            f"`{py_bin} /repo/scripts/publish_site.py || echo pwn`",
+            f"`{py_bin} /repo/scripts/publish_site.py | cat`",
+            f"`{py_bin} /repo/scripts/publish_site.py $(whoami)`",
+            f"```bash\n{py_bin} /repo/scripts/publish_site.py; uname -a\n```",
+            f"```bash\n{py_bin} /repo/scripts/publish_site.py && whoami\n```",
+            f"```bash\n{py_bin} /repo/scripts/publish_site.py | head\n```",
+            f"```bash\n{py_bin} /repo/scripts/publish_site.py $(id)\n```",
+            f"```bash\n{py_bin} /repo/scripts/publish_site.py `id`\n```",
+        )
+        for payload in injections:
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "forbidden shell metacharacters"):
+                    install_sidecars._audit_prompt_commands(payload, py_bin, grants, "fixture.template.json")
+
+        # Command grants themselves containing shell chaining must also be rejected
+        for bad_grant in (f"{py_bin} /repo/scripts/a.py; id", f"{py_bin} /repo/scripts/a.py && id"):
+            with self.subTest(bad_grant=bad_grant):
+                with self.assertRaisesRegex(ValueError, "command grant contains forbidden shell metacharacters"):
+                    install_sidecars._audit_prompt_commands("no commands", py_bin, [bad_grant], "fixture.template.json")
+
+    def test_gate_s1_requires_guide_html(self):
+        self.assertIn("guide.html", lint_site.REQUIRED_NONEMPTY_FILES)
+        with tempfile.TemporaryDirectory() as temporary:
+            site_dir = Path(temporary)
+            (site_dir / ".nojekyll").write_text("", encoding="utf-8")
+            filler = "<!doctype html><html><head><title>Fixture</title></head><body>" + ("x" * 3200) + "</body></html>"
+            for rel in lint_site.REQUIRED_NONEMPTY_FILES:
+                if rel == "guide.html":
+                    continue
+                target = site_dir / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if rel == "manifest.json":
+                    target.write_text('{"edition": "fixture"}', encoding="utf-8")
+                elif rel.endswith(".html"):
+                    target.write_text(filler, encoding="utf-8")
+                else:
+                    target.write_text("fixture", encoding="utf-8")
+
+            errors, warnings = [], []
+            lint_site.run_gate_s1(site_dir, errors, warnings)
+            self.assertEqual(warnings, [])
+            self.assertTrue(
+                any("Missing required core artifact: guide.html" in e for e in errors),
+                errors,
+            )
+
+            (site_dir / "guide.html").write_text(filler, encoding="utf-8")
+            ok_errors, ok_warnings = [], []
+            lint_site.run_gate_s1(site_dir, ok_errors, ok_warnings)
+            self.assertEqual(ok_errors, [])
+            self.assertEqual(ok_warnings, [])
+
+    def test_gate_s3_scans_channel_ch_etf_data_payload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            site_dir = Path(temporary)
+            ch_dir = site_dir / "channels"
+            ch_dir.mkdir(parents=True)
+            bad_payload = [
+                {
+                    "code": "518880",
+                    "name": "黄金ETF",
+                    "thesis_deep": "同步 etf_universe.json 基线并避免 NaN",
+                    "action_role": "建议立即买入黄金 ETF 518880",
+                }
+            ]
+            bad_html = (
+                "<!doctype html><html><body>"
+                f'<script id="ch-etf-data" type="application/json">{json.dumps(bad_payload, ensure_ascii=False)}</script>'
+                "</body></html>"
+            )
+            ch_path = ch_dir / "commodity_etfs.html"
+            ch_path.write_text(bad_html, encoding="utf-8")
+            parsed = {
+                "channels/commodity_etfs.html": lint_site.parse_html_file(
+                    "channels/commodity_etfs.html", ch_path.resolve(), bad_html
+                ),
+            }
+            self.assertIsNotNone(parsed["channels/commodity_etfs.html"].ch_etf_json_raw)
+            errors, warnings = [], []
+            lint_site.run_gate_s3(
+                site_dir, [ch_path], parsed, errors, warnings, gold_new_buy_blocked=True,
+            )
+            self.assertTrue(any("#ch-etf-data" in e and "internal engineering filename" in e for e in errors), errors)
+            self.assertTrue(any("#ch-etf-data" in e and "NaN/[object Object]" in e for e in errors), errors)
+            self.assertTrue(any("#ch-etf-data" in e and "Gold Tier 0 mutex violation" in e for e in errors), errors)
+
+            clean_html = (
+                "<!doctype html><html><body>"
+                '<script id="ch-etf-data" type="application/json">'
+                '[{"code":"518880","name":"黄金ETF","thesis_deep":"黄金红灯期严禁新买黄金，保持观望","action_role":"红灯暂停新买"}]'
+                "</script></body></html>"
+            )
+            ch_path.write_text(clean_html, encoding="utf-8")
+            clean_parsed = {
+                "channels/commodity_etfs.html": lint_site.parse_html_file(
+                    "channels/commodity_etfs.html", ch_path.resolve(), clean_html
+                ),
+            }
+            clean_errors, clean_warnings = [], []
+            lint_site.run_gate_s3(
+                site_dir, [ch_path], clean_parsed, clean_errors, clean_warnings, gold_new_buy_blocked=True,
+            )
+            self.assertEqual(clean_errors, [])
+            self.assertEqual(clean_warnings, [])
 
 
 if __name__ == "__main__":

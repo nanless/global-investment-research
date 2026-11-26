@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,7 +17,6 @@ permissions:
 concurrency:
   group: "pages"
   cancel-in-progress: false
-  queue: max
 
 jobs:
   build:
@@ -33,6 +35,9 @@ jobs:
       - name: Run zero-dependency pipeline & workflow tests
         run: python3 -m unittest discover -s tests
 
+      - name: Validate automation sidecar templates (dry-run)
+        run: python3 scripts/install_sidecars.py --dry-run
+
       - name: Strict lint gold and equity manuscripts
         run: python3 scripts/publish_site.py --check-manuscripts
 
@@ -43,9 +48,11 @@ jobs:
         run: python3 scripts/lint_site.py _site --strict
 
       - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v6
 
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: _site
@@ -53,7 +60,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -65,9 +72,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          main_sha=""
+          for attempt in 1 2 3; do
+            if main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha) && [ -n "$main_sha" ]; then
+              break
+            fi
+            echo "::warning::Failed to fetch main HEAD SHA (attempt $attempt/3); retrying..."
+            main_sha=""
+            sleep $((attempt * 2))
+          done
+          if [ -z "$main_sha" ]; then
+            echo "::error::Unable to verify main HEAD SHA after 3 attempts (empty response)."
+            exit 1
+          fi
           if [ "$main_sha" != "$GITHUB_SHA" ]; then
-            echo "::error::A newer main commit superseded this deployment."
+            echo "::error::A newer main commit ($main_sha) superseded this deployment ($GITHUB_SHA)."
             exit 1
           fi
       - name: Deploy to GitHub Pages

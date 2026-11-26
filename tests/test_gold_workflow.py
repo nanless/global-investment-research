@@ -163,8 +163,18 @@ class GoldWorkflowTests(unittest.TestCase):
         self.audit = self.path / "AUDIT_LOG.md"
         self.changes = self.path / "CHANGELOG.md"
         self.scorecard = self.path / "SCORECARD.md"
-        paths = patch.multiple(lint, DAILY_SNAPSHOT_PATH=self.snapshot_path, MARKET_CALENDAR_PATH=self.calendar_path,
-                               AUDIT_LOG_PATH=self.audit, CHANGELOG_PATH=self.changes, SCORECARD_PATH=self.scorecard)
+        self.rsi_playbook = self.path / "RSI_PLAYBOOK.md"
+        self.rsi_metrics = self.path / "rsi_metrics.json"
+        paths = patch.multiple(
+            lint,
+            DAILY_SNAPSHOT_PATH=self.snapshot_path,
+            MARKET_CALENDAR_PATH=self.calendar_path,
+            AUDIT_LOG_PATH=self.audit,
+            CHANGELOG_PATH=self.changes,
+            SCORECARD_PATH=self.scorecard,
+            RSI_PLAYBOOK_PATH=self.rsi_playbook,
+            RSI_METRICS_PATH=self.rsi_metrics,
+        )
         paths.start()
         self.addCleanup(paths.stop)
 
@@ -434,7 +444,7 @@ class GoldWorkflowTests(unittest.TestCase):
         snap = _fixture()
         master = _read_json(GOLD / "master_snapshot.json")
         legacy = _read_json(GOLD / "data_snapshot.json")
-        self.assertEqual(lint.check_file(ARCHIVED_REPORT, legacy, master, precheck=True), ([], []))
+        self.assertEqual(lint.check_file(ARCHIVED_REPORT, legacy, master), ([], []))
 
         raw = _sanitize_for_converged(_modify_directive(
             ARCHIVED_REPORT.read_text(), "DAILY_META",
@@ -448,7 +458,7 @@ class GoldWorkflowTests(unittest.TestCase):
         raw = _modify_directive(raw, "DAILY_CHART_SWITCH", chart_ids)
         report = self.path / f"{EDITION}_晚报_黄金深度研报.md"
         report.write_text(raw)
-        errors, _ = lint.check_file(report, snap, master, precheck=True)
+        errors, _ = lint.check_file(report, snap, master)
         self.assertTrue(any("核验台账缺失" in e for e in errors))
         self.assertEqual(sum("刊期台账缺失" in e for e in errors), 2)
         self.changes.write_text(f"<!-- GOLD_EDITION_CHANGELOG {EDITION} -->")
@@ -461,7 +471,7 @@ class GoldWorkflowTests(unittest.TestCase):
             "forecast_review": {"status": "none_due", "note": "本期无到期预测。", "sources": []},
         }
         self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(review) + " -->")
-        self.assertEqual(lint.check_file(report, snap, master, precheck=True), ([], []))
+        self.assertEqual(lint.check_file(report, snap, master), ([], []))
 
         wallet_claim = "**假设右侧信号转黄（通过 3/4 关）**：届时仅允许动用首批 30% 预算（即 3 万元），分拆为 2–3 笔挂单。"
         body_with_claim = f"{raw}\n\n{wallet_claim}\n"
@@ -476,7 +486,7 @@ class GoldWorkflowTests(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 report.write_text(manuscript)
-                errors, warnings = lint.check_file(report, snap, master, precheck=True)
+                errors, warnings = lint.check_file(report, snap, master)
                 self.assertEqual(warnings, [])
                 self.assertEqual(len(errors), 1)
                 self.assertIn(f"[Gate 5 四关开仓阈值冲突] {source}", errors[0])
@@ -488,24 +498,24 @@ class GoldWorkflowTests(unittest.TestCase):
             "不是转黄（通过 3/4 关）就可买入，须满足全部四关。",
         )
         report.write_text(raw + "\n\n" + "\n\n".join(allowed))
-        self.assertEqual(lint.check_file(report, snap, master, precheck=True), ([], []))
+        self.assertEqual(lint.check_file(report, snap, master), ([], []))
 
         report.write_text(body_with_claim)
         later_snap = dict(snap, edition_id="2026-11-27_0730")
-        errors, warnings = lint.check_file(report, later_snap, master, precheck=True)
+        errors, warnings = lint.check_file(report, later_snap, master)
         self.assertEqual(warnings, [])
         self.assertEqual(len(errors), 1)
         self.assertIn("四关开仓阈值冲突", errors[0])
 
         legacy_report = self.path / ARCHIVED_REPORT.name
         legacy_report.write_text(f"{ARCHIVED_REPORT.read_text()}\n\n{wallet_claim}\n")
-        self.assertEqual(lint.check_file(legacy_report, legacy, master, precheck=True), ([], []))
+        self.assertEqual(lint.check_file(legacy_report, legacy, master), ([], []))
 
         report.write_text(raw)
         bad = deepcopy(review)
         bad["forecast_review"]["status"] = "settled"
         self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(bad) + " -->")
-        errors, _ = lint.check_file(report, snap, master, precheck=True)
+        errors, _ = lint.check_file(report, snap, master)
         self.assertTrue(any("预判验真缺项" in e for e in errors))
 
     def test_converged_edition_rules_and_part3_internal_leak_guard(self):
@@ -541,20 +551,263 @@ class GoldWorkflowTests(unittest.TestCase):
 
         report = self.path / f"{EDITION}_晚报_黄金深度研报.md"
         report.write_text(raw)
-        self.assertEqual(lint.check_file(report, snap, master, precheck=True), ([], []))
+        self.assertEqual(lint.check_file(report, snap, master), ([], []))
 
         for leak_token in ("master_snapshot.json", "V7.2"):
             with self.subTest(part3_leak=leak_token):
                 report.write_text(f"{raw}\n\n附录核对说明：引用 {leak_token} 基线。\n")
-                errors, _ = lint.check_file(report, snap, master, precheck=True)
+                errors, _ = lint.check_file(report, snap, master)
                 self.assertTrue(any("内部工程词/文件名泄露" in e for e in errors), errors)
 
         for banned_l01 in ("stop-through", "小白词典", "蠢事"):
             with self.subTest(l01_banned=banned_l01):
                 injected = l01_heading.sub(rf"\1\n\n本段含禁词 {banned_l01}。\n", raw, count=1)
                 report.write_text(injected)
-                errors, _ = lint.check_file(report, snap, master, precheck=True)
+                errors, _ = lint.check_file(report, snap, master)
                 self.assertTrue(any("术语/自嗨逃逸" in e for e in errors), errors)
+
+    def test_holiday_half_day_provisional_close_expires_after_three_days(self):
+        # 2026-11-27 is a registered holiday half-day (early_close) in _calendar_fixture().
+        # Within 3 days (cutoff 2026-11-30 18:00 BJT == 2026-11-30 05:00 EST): provisional_close passes.
+        within = _fixture()
+        within.update(
+            edition_id="2026-11-30_1800",
+            as_of_short="2026-11-30 18:00",
+            as_of_bjt="2026年11月30日（周一）18:00",
+            cfets_fixing_date="2026-11-30",
+            spot_gold_ny_close_date="2026-11-27",
+            tier1_gate4_threshold_date="2026-11-26",
+            tier1_gate4_target_date="2026-11-27",
+            vix_close=29.80,
+            vix_10d_window_end="2026-11-27",
+        )
+        within["vix_10d_session_closes"] = within["vix_10d_session_closes"][1:] + [
+            {"date": "2026-11-27", "close": 29.80},
+        ]
+        within["vix_daily_row_checks"] = {
+            "2026-11-26": {
+                "status": "no_row_confirmed",
+                "checked_at": "2026-11-30 17:50",
+                "source": rules.VIX_DAILY_SOURCE,
+                "next_published_date": "2026-11-27",
+                "note": "官方 CSV 后续交易日已跳至 11/27，自证感恩节 11/26 无日线。",
+            },
+            "2026-11-27": {
+                "status": "provisional_close",
+                "checked_at": "2026-11-30 17:50",
+                "source": "https://www.cboe.com/tradable_products/vix/",
+                "note": "黑五半日市 3 日内核销窗口内，暂采官网读数。",
+            },
+        }
+        self.assertEqual(self._validate(within, validated_on=date(2026, 11, 30)), [])
+
+        # Exceeding 3 days (cutoff 2026-12-01 18:00 BJT == 2026-12-01 05:00 EST -> 4 days > 3 days): MUST fail.
+        expired = deepcopy(within)
+        expired.update(
+            edition_id="2026-12-01_1800",
+            as_of_short="2026-12-01 18:00",
+            as_of_bjt="2026年12月1日（周二）18:00",
+            cfets_fixing_date="2026-12-01",
+            spot_gold_ny_close_date="2026-11-30",
+            tier1_gate4_threshold_date="2026-11-27",
+            tier1_gate4_target_date="2026-11-30",
+            vix_close=29.10,
+            vix_10d_window_end="2026-11-30",
+        )
+        expired["vix_10d_session_closes"] = expired["vix_10d_session_closes"][1:] + [
+            {"date": "2026-11-30", "close": 29.10},
+        ]
+        expired["vix_daily_row_checks"]["2026-11-27"]["checked_at"] = "2026-12-01 17:50"
+        errors = self._validate(expired, validated_on=date(2026, 12, 1))
+        self.assertTrue(any("暂定收盘超期" in e and "2026-11-27" in e for e in errors), errors)
+
+    def test_tier0_red_light_blocks_verdict_headline_and_persona_actions(self):
+        snap = _fixture()
+        master = _read_json(GOLD / "master_snapshot.json")
+        self.changes.write_text(f"<!-- GOLD_EDITION_CHANGELOG {EDITION} -->", encoding="utf-8")
+        self.scorecard.write_text(f"<!-- GOLD_EDITION_SCORECARD {EDITION} -->", encoding="utf-8")
+        review = {
+            "edition_id": EDITION,
+            "as_of_short": AS_OF,
+            "note": "四关已核验。",
+            "sources": {gate_id: ["https://example.com/fixture"] for gate_id in rules.ENTRY_GATE_IDS},
+            "forecast_review": {"status": "none_due", "note": "本期无到期预测。", "sources": []},
+        }
+        self.audit.write_text("<!-- GOLD_EDITION_REVIEW " + json.dumps(review) + " -->", encoding="utf-8")
+
+        raw = _sanitize_for_converged(_modify_directive(
+            ARCHIVED_REPORT.read_text(), "DAILY_META",
+            lambda meta: meta.update(edition_id=EDITION, as_of_short=AS_OF, timestamp=AS_OF),
+        ))
+
+        def chart_ids(chart):
+            for check, gate_id in zip(chart["checks"], rules.ENTRY_GATE_IDS):
+                check["id"] = gate_id
+
+        raw = _modify_directive(raw, "DAILY_CHART_SWITCH", chart_ids)
+        report = self.path / f"{EDITION}_晚报_黄金深度研报.md"
+        report.write_text(raw, encoding="utf-8")
+        self.assertEqual(lint.check_file(report, snap, master), ([], []))
+
+        cases = (
+            (
+                "DAILY_VERDICT",
+                lambda cfg: cfg.update(headline="今日红灯期建议立即买入黄金 518660"),
+                "[Gate 5 DAILY_VERDICT.headline动作冲突]",
+            ),
+            (
+                "DAILY_VERDICT",
+                lambda cfg: cfg["bullets"].append("现在可直接定投 518880 黄金"),
+                "DAILY_VERDICT.bullets[",
+            ),
+            (
+                "DAILY_PERSONA",
+                lambda cfg: cfg["cards"][0]["actions"].append("红灯期开启半额自动定投"),
+                "DAILY_PERSONA.cards[1:",
+            ),
+            (
+                "DAILY_PERSONA",
+                lambda cfg: cfg["cards"][1]["actions"].append("建议直接买入黄金 008142"),
+                "DAILY_PERSONA.cards[2:",
+            ),
+        )
+        for directive, mutate, expected_err in cases:
+            with self.subTest(directive=directive, expected_err=expected_err):
+                mutated = _modify_directive(raw, directive, mutate)
+                report.write_text(mutated, encoding="utf-8")
+                errors, _ = lint.check_file(report, snap, master)
+                self.assertTrue(any(expected_err in e and "动作冲突" in e for e in errors), errors)
+
+        # Guarded red-light text in DAILY_VERDICT.headline & DAILY_PERSONA.cards[].actions remains allowed
+        guarded = _modify_directive(
+            raw, "DAILY_VERDICT",
+            lambda cfg: cfg.update(headline="红灯期严禁买入黄金 518660，等四关全部通过后再定投"),
+        )
+        guarded = _modify_directive(
+            guarded, "DAILY_PERSONA",
+            lambda cfg: cfg["cards"][0]["actions"].append("暂不定投 518880，待转黄灯确认后再分批建仓"),
+        )
+        report.write_text(guarded, encoding="utf-8")
+        self.assertEqual(lint.check_file(report, snap, master), ([], []))
+
+    def test_gold_rsi_open_finding_and_changelog_internal_leak_blocked(self):
+        # 1. RSI open finding & reviewer_completed=False blocked; disclosed_caveat passes
+        self.rsi_playbook.write_text(
+            "# 黄金复盘规则\n\n- Tier B 可自动沉淀经验。\n- Tier C 核心门禁规则只读。\n",
+            encoding="utf-8",
+        )
+        scores = dict.fromkeys(lint.RSI_REQUIRED_SCORE_KEYS, 5)
+        base_run = {
+            "run_id": EDITION,
+            "scores": scores,
+            "total_score": 30,
+            "max_score": 30,
+        }
+
+        self.rsi_metrics.write_text(json.dumps({
+            "runs": [{
+                **base_run,
+                "review_closure": {
+                    "reviewer_completed": True,
+                    "findings": [{"description": "口径未核销", "status": "open"}],
+                },
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+        errs, warns = [], []
+        lint.check_rsi_artifacts(errs, warns)
+        self.assertTrue(any("[RSI 盲审未闭环]" in e for e in errs), errs)
+
+        self.rsi_metrics.write_text(json.dumps({
+            "runs": [{
+                **base_run,
+                "review_closure": {"reviewer_completed": False, "findings": []},
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+        errs, warns = [], []
+        lint.check_rsi_artifacts(errs, warns)
+        self.assertTrue(any("[RSI 盲审未完成]" in e for e in errs), errs)
+
+        self.rsi_metrics.write_text(json.dumps({
+            "runs": [{
+                **base_run,
+                "review_closure": {
+                    "reviewer_completed": True,
+                    "findings": [{"description": "官方延迟已透明披露", "status": "disclosed_caveat"}],
+                },
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+        errs, warns = [], []
+        lint.check_rsi_artifacts(errs, warns)
+        self.assertEqual(errs, [])
+        self.assertEqual(warns, [])
+
+        # 2. CHANGELOG.md internal engineering leak & deprecated PDF link blocked
+        clean_scorecard = (
+            "# 黄金深度研报公开记分卡\n\n"
+            "本页面向所有读者公开追踪历史预判命中情况、关键宏观阈值验证与客观复盘记录，"
+            "所有结论均以公开一手官方数据为准，不夸大、不隐瞒、不事后改口，持续以透明统计口径接受检验。"
+            "每期更新都会按既定时间节点核对现货收盘、实际利率、美元指数、波动率与跨资产联动指标，"
+            "确保历史判断与实盘结果一一对应、全程可追溯，并定期汇总已到期预判的命中率、偏离原因与方法论改进，"
+            "帮助普通投资者清晰看到哪些判断兑现、哪些风险提前发出预警，以及后续仓位纪律应当如何执行。\n"
+        )
+        self.scorecard.write_text(clean_scorecard, encoding="utf-8")
+        self.changes.write_text(
+            f"# 演化日志\n\n<!-- GOLD_EDITION_CHANGELOG {EDITION} -->\n\n- 2026-11-26：同步纯网页版面与四关数据。\n",
+            encoding="utf-8",
+        )
+        errs, warns = [], []
+        lint.check_calendar_and_scorecard(errs, warns)
+        self.assertEqual(errs, [])
+        self.assertEqual(warns, [])
+
+        self.changes.write_text(
+            f"# 演化日志\n\n<!-- GOLD_EDITION_CHANGELOG {EDITION} -->\n\n"
+            "- 更新 data_snapshot.json 与 lint_readability.py，由红队完成 V7.2 验收。\n",
+            encoding="utf-8",
+        )
+        errs, warns = [], []
+        lint.check_calendar_and_scorecard(errs, warns)
+        self.assertTrue(any("[演化日志内部词泄露]" in e for e in errs), errs)
+
+        self.changes.write_text(
+            f"# 演化日志\n\n<!-- GOLD_EDITION_CHANGELOG {EDITION} -->\n\n"
+            "- 附件下载：[最新日报](2026-11-26_1800_晚报_黄金深度研报.pdf)\n",
+            encoding="utf-8",
+        )
+        errs, warns = [], []
+        lint.check_calendar_and_scorecard(errs, warns)
+        self.assertTrue(any("[演化日志二进制死链]" in e for e in errs), errs)
+
+    def test_data_caveats_allows_single_source_and_publication_exception(self):
+        snap = _fixture()
+        snap["data_caveats"] = [
+            {
+                "id": "gold_single_src_demo",
+                "market": "gold",
+                "category": "single_source",
+                "severity": "info",
+                "item": "伦敦午盘定盘单一官源采录",
+                "detail": "因休市前交叉数据源尚未刷新，暂以交易所官方单源读数披露。",
+                "impact": "不影响四关硬门槛与红灯结论。",
+                "next_review": "2026-11-27_0730",
+            },
+            {
+                "id": "gold_pub_exc_demo",
+                "market": "gold",
+                "category": "publication_exception",
+                "severity": "warn",
+                "item": "感恩节休市特别版次说明",
+                "detail": "纽约常规盘休市期间保留前一日官收基线并在下一交易班次核销。",
+                "impact": "仅影响盘口时效，红灯新买锁保持不变。",
+                "next_review": "2026-11-27_1800",
+            },
+        ]
+        self.assertEqual(self._validate(snap), [])
+
+        bad = deepcopy(snap)
+        bad["data_caveats"][0]["category"] = "unknown_category"
+        errors = self._validate(bad)
+        self.assertTrue(any("信息缺口枚举错" in e and "unknown_category" in e for e in errors), errors)
 
 
 if __name__ == "__main__":

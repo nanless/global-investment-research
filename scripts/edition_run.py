@@ -9,6 +9,7 @@ from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 import fcntl
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -24,15 +25,40 @@ BEIJING = timezone(timedelta(hours=8))
 EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
 PHASES = ("research", "gold", "equity", "publish")
 GOLD_HISTORY_LEDGERS = ("gold/daily/AUDIT_LOG.md", "gold/daily/CHANGELOG.md")
+EXTENDED_EQUITY_STATE_FILES = (
+    "equity/state/multi_asset_channels.json",
+    "equity/state/etf_universe.json",
+    "equity/state/deep_dossiers.json",
+)
 LAST_EDITION_WITHOUT_REVIEW = ("2026-11-25", 1800, 2)
 LAST_EDITION_WITHOUT_REVIEW_CLOSURE = ("2026-11-25", 1800, 3)
 SHA_RE = re.compile(r"[a-f0-9]{40}")
 REPOSITORY_RE = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
 DEPLOY_JOB = "Deploy to GitHub Pages"
+_STRIPPED_ENV_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GH_REPO",
+    "GIT_TERMINAL_PROMPT",
+)
 
 
 class DeploymentPending(ValueError):
     """The push is recorded, but Pages has not reported a deployment yet."""
+
+
+def _clean_env() -> dict[str, str]:
+    """Return a sanitized subprocess environment isolated from inherited Git/GitHub overrides."""
+    env = os.environ.copy()
+    for key in _STRIPPED_ENV_VARS:
+        env.pop(key, None)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GH_PROMPT_DISABLED"] = "1"
+    return env
 
 
 def utc_now() -> str:
@@ -51,7 +77,20 @@ def edition_id(value: str) -> str:
 
 
 def git_value(*args: str) -> str:
-    return subprocess.check_output(["git", *args], cwd=ROOT, text=True, timeout=15).strip()
+    return subprocess.check_output(
+        ["git", *args], cwd=ROOT, env=_clean_env(), text=True, timeout=15
+    ).strip()
+
+
+def _git_object_exists(spec: str) -> bool:
+    result = subprocess.run(
+        ["git", "cat-file", "-e", spec],
+        cwd=ROOT,
+        env=_clean_env(),
+        capture_output=True,
+        timeout=15,
+    )
+    return result.returncode == 0
 
 
 def git_directory() -> Path:
@@ -110,7 +149,7 @@ def scheduled_edition(slot: str) -> str:
     now = datetime.now(BEIJING)
     hhmm = now.strftime("%H%M")
     if slot == "0730":
-        in_window = "0725" <= hhmm < "1330"
+        in_window = "0725" <= hhmm <= "1330"
     elif slot == "1800":
         in_window = "1755" <= hhmm <= "2359"
     else:
@@ -120,66 +159,85 @@ def scheduled_edition(slot: str) -> str:
     return f"{now.date().isoformat()}_{slot}"
 
 
+def _reap_stale_unpushed_run(
+    runs: sqlite3.Connection, next_edition: str, max_idle_hours: float = 2.0,
+) -> str | None:
+    """Internal helper assuming _idle_publish_lock() and BEGIN IMMEDIATE are already held."""
+    if runs.execute(
+        "SELECT 1 FROM runs WHERE edition = ? AND status = 'complete'", (next_edition,),
+    ).fetchone():
+        return None
+    active = runs.execute(
+        "SELECT token, edition, phase, updated FROM runs WHERE status = 'running'"
+    ).fetchone()
+    if active is None or active["edition"] == next_edition:
+        return None
+    active_key = _edition_key(active["edition"])
+    next_key = _edition_key(next_edition)
+    if active_key is None or next_key is None or active_key >= next_key:
+        return None
+    token = active["token"]
+    push_started = (
+        _publication(runs, token) is not None
+        or push_intent_path(git_directory(), token).exists()
+    )
+    if push_started:
+        return None
+    try:
+        raw_updated = str(active["updated"]).replace("Z", "+00:00")
+        updated_dt = datetime.fromisoformat(raw_updated)
+        if updated_dt.tzinfo is None:
+            updated_dt = updated_dt.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+    now_dt = datetime.fromisoformat(utc_now().replace("Z", "+00:00"))
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc)
+    if now_dt - updated_dt <= timedelta(hours=max_idle_hours):
+        return None
+    outcome = f"Auto-reaped stale unpushed lock (>{max_idle_hours:g}h inactive) before {next_edition}"
+    runs.execute(
+        "UPDATE runs SET status = 'failed', updated = ?, outcome = ? WHERE token = ? AND status = 'running'",
+        (utc_now(), outcome, token),
+    )
+    print(
+        f"[NOTICE] Auto-reaped stale unpushed run {active['edition']} "
+        f"({active['phase']}, attempt {token[:12]}, last update {active['updated']}) "
+        f"before {next_edition}.",
+        file=sys.stderr,
+    )
+    return active["edition"]
+
+
 def reap_stale_unpushed_run(
     runs: sqlite3.Connection, next_edition: str, max_idle_hours: float = 2.0,
 ) -> str | None:
     """Reap an orphaned unpushed running lock from an older edition after prolonged inactivity."""
     with _idle_publish_lock(), runs:
         runs.execute("BEGIN IMMEDIATE")
-        if runs.execute(
-            "SELECT 1 FROM runs WHERE edition = ? AND status = 'complete'", (next_edition,),
-        ).fetchone():
-            return None
-        active = runs.execute(
-            "SELECT token, edition, phase, updated FROM runs WHERE status = 'running'"
-        ).fetchone()
-        if active is None or active["edition"] == next_edition:
-            return None
-        active_key = _edition_key(active["edition"])
-        next_key = _edition_key(next_edition)
-        if active_key is None or next_key is None or active_key >= next_key:
-            return None
-        token = active["token"]
-        push_started = (
-            _publication(runs, token) is not None
-            or push_intent_path(git_directory(), token).exists()
-        )
-        if push_started:
-            return None
-        try:
-            raw_updated = str(active["updated"]).replace("Z", "+00:00")
-            updated_dt = datetime.fromisoformat(raw_updated)
-            if updated_dt.tzinfo is None:
-                updated_dt = updated_dt.replace(tzinfo=timezone.utc)
-        except (TypeError, ValueError):
-            return None
-        now_dt = datetime.fromisoformat(utc_now().replace("Z", "+00:00"))
-        if now_dt.tzinfo is None:
-            now_dt = now_dt.replace(tzinfo=timezone.utc)
-        if now_dt - updated_dt <= timedelta(hours=max_idle_hours):
-            return None
-        outcome = f"Auto-reaped stale unpushed lock (>{max_idle_hours:g}h inactive) before {next_edition}"
-        runs.execute(
-            "UPDATE runs SET status = 'failed', updated = ?, outcome = ? WHERE token = ? AND status = 'running'",
-            (utc_now(), outcome, token),
-        )
-        print(
-            f"[NOTICE] Auto-reaped stale unpushed run {active['edition']} "
-            f"({active['phase']}, attempt {token[:12]}, last update {active['updated']}) "
-            f"before {next_edition}.",
-            file=sys.stderr,
-        )
-        return active["edition"]
+        return _reap_stale_unpushed_run(runs, next_edition, max_idle_hours=max_idle_hours)
 
 
-def begin(runs: sqlite3.Connection, edition: str, source: str = "manual") -> str:
+def begin(
+    runs: sqlite3.Connection,
+    edition: str,
+    source: str = "manual",
+    *,
+    reap_stale: bool = False,
+    max_idle_hours: float = 2.0,
+) -> str:
     with _idle_publish_lock(), runs:
-        return _begin(runs, edition, source)
+        base_sha = git_value("rev-parse", "HEAD")
+        runs.execute("BEGIN IMMEDIATE")
+        if reap_stale:
+            _reap_stale_unpushed_run(runs, edition, max_idle_hours=max_idle_hours)
+        return _begin(runs, edition, source, base_sha=base_sha)
 
 
-def _begin(runs: sqlite3.Connection, edition: str, source: str) -> str:
-    base_sha = git_value("rev-parse", "HEAD")
-    runs.execute("BEGIN IMMEDIATE")
+def _begin(runs: sqlite3.Connection, edition: str, source: str, *, base_sha: str | None = None) -> str:
+    if base_sha is None:
+        base_sha = git_value("rev-parse", "HEAD")
+        runs.execute("BEGIN IMMEDIATE")
     active = runs.execute("SELECT edition, phase, token, updated FROM runs WHERE status = 'running'").fetchone()
     if active is not None:
         receipt = _publication(runs, active["token"])
@@ -206,10 +264,34 @@ def _begin(runs: sqlite3.Connection, edition: str, source: str) -> str:
 
 
 def _check_edition_document(edition: str, file: str, sha: str | None = None) -> None:
-    contents = git_value("show", f"{sha}:{file}") if sha else (ROOT / file).read_text(encoding="utf-8")
+    if sha:
+        try:
+            contents = git_value("show", f"{sha}:{file}")
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(f"{file} is missing in commit {sha} for edition {edition}.") from exc
+    else:
+        path = ROOT / file
+        if not path.is_file():
+            raise ValueError(f"{file} is missing for edition {edition}.")
+        contents = path.read_text(encoding="utf-8")
     document = json.loads(contents)
     if not isinstance(document, dict) or document.get("edition_id") != edition:
         raise ValueError(f"{file} does not belong to edition {edition}.")
+
+
+def _check_extended_equity_documents(
+    edition: str, *, sha: str | None = None, base_sha: str | None = None
+) -> None:
+    """Verify multi_asset_channels, etf_universe & deep_dossiers edition_id sync whenever tracked/present."""
+    for file in EXTENDED_EQUITY_STATE_FILES:
+        if sha is not None:
+            present = _git_object_exists(f"{sha}:{file}") or (
+                base_sha is not None and _git_object_exists(f"{base_sha}:{file}")
+            )
+        else:
+            present = (ROOT / file).exists() or _git_object_exists(f"HEAD:{file}")
+        if present:
+            _check_edition_document(edition, file, sha)
 
 
 def _edition_key(value: object) -> tuple[str, int, int] | None:
@@ -319,6 +401,7 @@ def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
         _check_edition_document(row["edition"], "gold/data_snapshot.json")
     if phase == "publish":
         _check_edition_document(row["edition"], "equity/state/market_state.json")
+        _check_extended_equity_documents(row["edition"])
         check_edition_reviews(row["edition"], root=ROOT)
     runs.execute("UPDATE runs SET phase = ?, updated = ? WHERE token = ?", (phase, utc_now(), token))
     return phase
@@ -352,7 +435,8 @@ def publication_commit(token: str) -> str | None:
 
 def _ledger_lines(sha: str, path: str) -> list[bytes]:
     result = subprocess.run(
-        ["git", "cat-file", "blob", f"{sha}:{path}"], cwd=ROOT, capture_output=True, timeout=15,
+        ["git", "cat-file", "blob", f"{sha}:{path}"],
+        cwd=ROOT, env=_clean_env(), capture_output=True, timeout=15,
     )
     if result.returncode:
         raise ValueError(f"Cannot verify the Gold ledger {path} in commit {sha}.")
@@ -414,7 +498,7 @@ def _archived_ledger_paths(sha: str, path: str) -> list[str]:
     prefix = f"{ledger.stem}_"
     result = subprocess.run(
         ["git", "ls-tree", "-r", "--name-only", sha, "--", archive_dir],
-        cwd=ROOT, capture_output=True, text=True, timeout=15,
+        cwd=ROOT, env=_clean_env(), capture_output=True, text=True, timeout=15,
     )
     if result.returncode:
         return []
@@ -455,6 +539,7 @@ def _check_publication_candidate(runs: sqlite3.Connection, token: str, sha: str,
         raise ValueError("This commit existed before the run. Start a new attempt for an unrecorded legacy run.")
     _check_edition_document(row["edition"], "gold/data_snapshot.json", sha)
     _check_edition_document(row["edition"], "equity/state/market_state.json", sha)
+    _check_extended_equity_documents(row["edition"], sha=sha, base_sha=attempt["base_sha"])
     check_edition_reviews(row["edition"], sha=sha)
     _check_gold_ledger_history(attempt["base_sha"], sha)
     receipt = _publication(runs, token)
@@ -482,7 +567,21 @@ def _gh_json(*args: str):
     )
     if gh is None:
         raise ValueError("GitHub CLI is required to verify Pages deployment.")
-    return json.loads(subprocess.check_output([gh, *args], cwd=ROOT, text=True, timeout=30))
+    return json.loads(
+        subprocess.check_output([gh, *args], cwd=ROOT, env=_clean_env(), text=True, timeout=30)
+    )
+
+
+def _remote_main_head_sha(repository: str) -> str | None:
+    """Best-effort lookup of remote origin/main HEAD SHA via GitHub API."""
+    try:
+        ref = _gh_json("api", f"repos/{repository}/git/ref/heads/main")
+        head = ref.get("object", {}).get("sha") if isinstance(ref, dict) else None
+        if isinstance(head, str) and SHA_RE.fullmatch(head):
+            return head
+    except (subprocess.SubprocessError, ValueError, OSError, KeyError, TypeError, StopIteration):
+        return None
+    return None
 
 
 def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
@@ -525,6 +624,13 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
                 failed_url = run["url"]
 
         if completed and not has_pending and transient_err is None and failed_url is not None:
+            current_main = _remote_main_head_sha(repository)
+            if current_main is not None and current_main != sha:
+                raise ValueError(
+                    f"Pages deploy job did not succeed for {sha} ({failed_url}), and remote origin/main has "
+                    f"already moved ahead to {current_main}. Run `edition_run.py close-superseded` instead of "
+                    "rerunning the obsolete workflow."
+                )
             raise ValueError(
                 f"Pages deploy job did not succeed for {sha}: {failed_url}. Rerun the workflow, then complete."
             )
@@ -680,9 +786,7 @@ def main() -> int:
                     edition = scheduled_edition(args.scheduled)
                     if reconcile_previous_deployment(runs):
                         runs.commit()
-                    if reap_stale_unpushed_run(runs, edition):
-                        runs.commit()
-                    token = begin(runs, edition, f"antigravity-{args.scheduled}")
+                    token = begin(runs, edition, f"antigravity-{args.scheduled}", reap_stale=True)
                     print(json.dumps({"edition_id": edition, "token": token}))
                 else:
                     print(begin(runs, args.edition))

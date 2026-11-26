@@ -1,42 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Build magazine-grade plain-language PDF, pure-Python ECMA-376 native DOCX, & responsive 3-market mobile HTML
-from daily A-Share / HK-Stock / US-Stock Markdown reports.
+"""Pure-web daily metadata extractor and SVG chart loader for A-Share / HK-Stock / US-Stock dailies.
 
-Features:
-  - Shared pdf_common engine (SkPDF emoji guard, 3-market themes, embedded pre-render redline linter)
-  - Pure-Python native ECMA-376 OOXML .docx (replaces macOS textutil completely; zero table/border stripping)
-  - Self-contained SVG chart rendering via DAILY_META_JSON (A1-A7, H1-H7, U1-U7)
-  - Default mode builds only the reports required by the active edition plan
-  - Outputs responsive 3-market mobile HTML (daily/latest_{a_share,hk_stock,us_stock}.html) alongside A4 PDF & DOCX
-  - Delegates workspace/RSI/ledger hygiene audit cleanly to lint_equity.check_workspace_state() (single source)
+Used by scripts/build_site.py and equity/lint_equity.py to parse DAILY_META_JSON and render
+self-contained vector SVG charts (A1–A7, H1–H7, U1–U7) with zero PDF/DOCX/Chrome dependencies.
 """
 
 from __future__ import annotations
 
-import glob
-import html as html_mod
 import json
 import re
 import sys
 from pathlib import Path
 
-from lint_equity import check_daily_contract, check_workspace_state, load_current_edition_plan, parse_daily_sort_key
-from pdf_common import (
-    BASE_DIR,
-    CHROME_BIN,
-    DAILY_DIR,
-    build_theme_css,
-    clean_plain_text,
-    freeze_equity_inputs,
-    render_cover_banner,
-    render_docx_atomic,
-    render_md_body,
-    render_pdf_atomic,
-    run_lint_gate,
-    write_equity_receipt,
-)
+from pdf_common import BASE_DIR, DAILY_DIR
 
 ALL_MARKETS = ("a_share", "hk_stock", "us_stock")
 
@@ -105,161 +82,23 @@ def detect_market(md_path: Path) -> str:
     raise ValueError(f"Cannot detect market (a_share / hk_stock / us_stock) from filename: {md_path.name}")
 
 
-def build_one(
-    md_path: Path,
-    *,
-    export_docx: bool = True,
-    no_lint: bool = False,
-    write_mobile_latest: bool = False,
-) -> None:
-    market = detect_market(md_path)
-    frozen = freeze_equity_inputs(md_path, Path(__file__), BASE_DIR / f"build_{market}_pdf.py") if export_docx else None
-    raw_text = md_path.read_text(encoding="utf-8")
-    meta, md_body = extract_daily_meta(raw_text, md_path)
-    if not no_lint:
-        errors = check_daily_contract(md_path, meta, md_body)
-        if errors:
-            raise ValueError("\n".join(errors))
-    run_lint_gate(raw_text, str(md_path), is_flagship=False, meta=meta, no_lint=no_lint)
-
-    defaults = {
-        "a_share": ("A股每日投研简报", "A 股每日投研简报", "A 股每日投研简报（07:30 早刊 & 18:00 晚刊）"),
-        "hk_stock": ("港股每日投研简报", "港股每日投研简报", "港股每日投研简报（07:30 早刊 & 18:00 晚刊）"),
-        "us_stock": ("美股每日投研简报", "美股每日投研简报", "美股每日投研简报（07:30 早刊 & 18:00 晚刊）"),
-    }
-    default_title, default_tag, default_footer = defaults[market]
-
-    charts = load_optional_charts(market, meta_override=meta)
-    title, body = render_md_body(
-        md_body, charts, default_title=default_title, is_flagship=False, enable_kanban_wrap=True
-    )
-    cover_html, doc_title, page_footer, footer_note = render_cover_banner(
-        meta, title, default_tag, default_footer, meta_label="阅读提示"
-    )
-    pdf_path = md_path.with_suffix(".pdf")
-    docx_path = md_path.with_suffix(".docx")
-    tmp_html = md_path.with_suffix(".tmp.html")
-    tmp_pdf = md_path.with_suffix(".tmp.pdf")
-    footer_div = f'<div class="footer-note">{html_mod.escape(footer_note)}</div>' if footer_note else ""
-    full_html = (
-        f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
-        f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{html_mod.escape(clean_plain_text(doc_title))}</title>"
-        f"<style>{build_theme_css(market, page_footer, is_flagship=False)}</style></head>"
-        f"<body>{cover_html}{body}{footer_div}</body></html>"
-    )
-    mobile_path = (DAILY_DIR / f"latest_{market}.html") if write_mobile_latest else None
-    edition_type = str((meta or {}).get("edition_type", "")).strip()
-    render_pdf_atomic(
-        full_html,
-        pdf_path,
-        tmp_html,
-        tmp_pdf,
-        mobile_html_path=mobile_path,
-        mobile_market=market,
-        min_pdf_bytes=25_000 if edition_type in ("light", "holiday_watch") else 50_000,
-    )
-    print(f"Built daily PDF ({pdf_path.stat().st_size:,} bytes): {pdf_path}")
-    if mobile_path is not None:
-        print(f"Synced mobile HTML ({mobile_path.stat().st_size:,} bytes): {mobile_path}")
-
-    if export_docx:
-        render_docx_atomic(full_html, docx_path, market=market, footer_title=page_footer)
-        write_equity_receipt(frozen, pdf_path, docx_path)
-        print(f"Built native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
-
-
-def run_workspace_check(*, fail_on_error: bool = True) -> int:
-    assert Path(CHROME_BIN).exists(), "Chrome missing"
-    import bs4  # noqa: F401
-    from PIL import Image  # noqa: F401
-    DAILY_DIR.mkdir(parents=True, exist_ok=True)
-    errs, warns = check_workspace_state(precheck=False)
-    for e in errs:
-        print(f"[CHECK FAIL] {e}")
-    for w in warns:
-        print(f"[CHECK WARN] {w}")
-    print(f"Hygiene check completed ({len(errs)} hard error(s), {len(warns)} warning(s)).")
-    if fail_on_error and errs:
-        raise SystemExit(f"Workspace hygiene check failed ({len(errs)} hard error(s)).")
-    return len(errs)
-
-
 def main() -> None:
-    args = sys.argv[1:]
-    if "--check" in args:
-        run_workspace_check(fail_on_error=True)
+    DAILY_DIR.mkdir(parents=True, exist_ok=True)
+    if "--check" in sys.argv[1:]:
+        if str(BASE_DIR) not in sys.path:
+            sys.path.insert(0, str(BASE_DIR))
+        from lint_equity import check_workspace_state
+
+        errs, warns = check_workspace_state(precheck=False)
+        for e in errs:
+            print(f"[CHECK FAIL] {e}")
+        for w in warns:
+            print(f"[CHECK WARN] {w}")
+        print(f"Pure-web equity daily check completed ({len(errs)} hard error(s), {len(warns)} warning(s)).")
+        if errs:
+            raise SystemExit(1)
         return
-
-    export_docx = "--no-docx" not in args
-    build_all = "--all" in args
-    force_legacy = "--force-legacy" in args
-    no_lint = "--no-lint" in args
-    positional = [a for a in args if not a.startswith("-")]
-
-    market_files: dict[str, list[Path]] = {}
-    for mk in ALL_MARKETS:
-        market_files[mk] = sorted(
-            (Path(p).resolve() for p in glob.glob(str(DAILY_DIR / f"????-??-??_*_{mk}*.md"))),
-            key=parse_daily_sort_key,
-        )
-    latest_set = {files[-1].resolve() for files in market_files.values() if files}
-
-    try:
-        plan = load_current_edition_plan() if not positional and not build_all else None
-    except (OSError, ValueError) as exc:
-        raise SystemExit(f"Cannot build equity edition: {exc}") from exc
-    targets: list[Path] = []
-    if positional:
-        targets = [Path(p).resolve() for p in positional]
-    elif build_all:
-        candidates = sorted(
-            (Path(p).resolve() for p in glob.glob(str(DAILY_DIR / "????-??-??_*.md"))),
-            key=parse_daily_sort_key,
-        )
-        for c in candidates:
-            if not force_legacy and "DAILY_META_JSON" not in c.read_text(encoding="utf-8"):
-                print(f"Skipping legacy snapshot (no DAILY_META_JSON): {c.name}")
-                continue
-            targets.append(c)
-    elif plan is not None:
-        targets = [
-            (BASE_DIR / item["required_file"]).resolve()
-            for item in plan["markets"].values() if item["action"] == "publish"
-        ]
-        missing = [target.name for target in targets if not target.is_file()]
-        if missing:
-            raise SystemExit(f"Missing required reports for {plan['edition_id']}: {', '.join(missing)}")
-        if not targets:
-            print(f"{plan['edition_id']}: all markets reuse the previous issue.")
-            return
-    else:
-        latest_dates = {parse_daily_sort_key(f)[0] for f in latest_set}
-        all_candidates = sorted(
-            {f.resolve() for files in market_files.values() for f in files},
-            key=parse_daily_sort_key,
-        )
-        for c in all_candidates:
-            if c in latest_set:
-                targets.append(c)
-            elif parse_daily_sort_key(c)[0] in latest_dates and "DAILY_META_JSON" in c.read_text(encoding="utf-8"):
-                pdf_p = c.with_suffix(".pdf")
-                docx_p = c.with_suffix(".docx")
-                if not pdf_p.exists() or c.stat().st_mtime > pdf_p.stat().st_mtime or (export_docx and not docx_p.exists()):
-                    targets.append(c)
-
-    if not targets:
-        raise SystemExit("No daily YYYY-MM-DD_*_{a_share,hk_stock,us_stock}.md files found in daily/")
-
-    for t in targets:
-        build_one(
-            t,
-            export_docx=export_docx,
-            no_lint=no_lint,
-            write_mobile_latest=(t.resolve() in latest_set),
-        )
-
-    run_workspace_check(fail_on_error=not no_lint)
+    print("Pure-web mode: equity/build_daily.py provides SVG chart loaders and metadata parsers; use scripts/build_site.py to build the static portal.")
 
 
 if __name__ == "__main__":

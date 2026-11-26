@@ -227,7 +227,7 @@
     },
     "ai_tech_factor_cap": {
       "combined_household_cap_pct": 20,
-      "supply_chain_stress": "HBM/DRAM通胀延至2027（CoreWeave 5年CDS稳居1,314bp、NVDA官收-3.91%至$149.30、ORCL跌-5.13%至$103.88、MU跌-4.53%、AVGO跌-6.07%、DELL收$297.06）"
+      "supply_chain_stress": "HBM/DRAM通胀延至2027（CoreWeave 5年CDS稳居1,314bp、NVDA官收-3.91%至$149.30、ORCL跌-5.13%至$103.88、MU跌-4.53%、AVGO收$300.86/-0.07%、DELL收$297.06）"
     },
     "crisis_correlation_brake": {
       "vix_close": 28.29,
@@ -307,7 +307,15 @@
     {"date_cst": "2027-02-08", "end_date_cst": "2027-02-09", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2026/cc_SEHK_CT_077_2026.pdf", "note": "香港证券市场农历新年休市，02/10 复市"},
     {"date_cst": "2027-02-15", "type": "partial_holiday", "markets_affected": ["us_stock"], "gold_event_id": "us_presidents_day_cn_reopen_2027", "mode": "mode_2_watch_brief", "note": "美国总统日全天休市 + 同日 A 股春节后首个交易日复市"},
     {"date_cst": "2027-03-14", "type": "dst_transition", "markets_affected": ["us_stock"], "mode": "timezone_shift_edt", "note": "美国进入夏令时（EDT = UTC-4，北京 +12h；03/15 起美股 21:30 开 / 04:00 收 / 08:00 盘后终盘）"},
-    {"date_cst": "2027-03-26", "type": "partial_holiday", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "us_good_friday_2027", "mode": "mode_2_watch_brief", "note": "耶稣受难日港/美全天休市，A 股正常"}
+    {"date_cst": "2027-03-26", "type": "partial_holiday", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "us_good_friday_2027", "mode": "mode_2_watch_brief", "note": "耶稣受难日港/美全天休市，A 股正常"},
+    {"date_cst": "2027-03-29", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "note": "复活节星期一香港全天休市（A 股、美股正常开市）"},
+    {"date_cst": "2027-04-05", "type": "partial_holiday", "markets_affected": ["a_share", "hk_stock"], "gold_event_id": "cn_hk_qingming_2027", "mode": "mode_2_watch_brief", "note": "中国内地与香港清明节全天休市（美股正常开市）"},
+    {"date_cst": "2027-05-01", "end_date_cst": "2027-05-05", "type": "long_holiday_start", "markets_affected": ["a_share"], "gold_event_id": "cn_labor_day_2027", "mode": "mode_2_watch_brief", "note": "中国内地劳动节假期（05/01–05/05 休市，含 05/03 周一至 05/05 周三工作日休市，05/06 周四复市；以国务院及交易所最终通知复核）"},
+    {"date_cst": "2027-05-03", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "note": "劳动节调休/香港劳动节补假全天休市（05/01 逢周六，香港 05/03 补假以港交所 2027 正式交易日历复核；A 股同步处五一假期，美股正常开市）"},
+    {"date_cst": "2027-05-13", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "note": "香港佛诞日全天休市（A 股、美股正常开市）"},
+    {"date_cst": "2027-05-31", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2027-05-31_1800", "2027-06-01_0730"], "gold_event_id": "us_memorial_day_2027", "mode": "mode_2_watch_brief", "note": "美国阵亡将士纪念日（Memorial Day）全天休市（A 股、港股正常开市；美股 05/31 18:00 与 06/01 07:30 切守望刊）"},
+    {"date_cst": "2027-06-09", "type": "partial_holiday", "markets_affected": ["a_share", "hk_stock"], "mode": "mode_2_watch_brief", "note": "中国内地与香港端午节全天休市（美股正常开市；以官方及交易所 2027 正式通知复核）"},
+    {"date_cst": "2027-06-18", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2027-06-18_1800", "2027-06-19_0730"], "gold_event_id": "us_juneteenth_2027", "mode": "mode_2_watch_brief", "note": "美国六月节补休（Juneteenth Observed，因 06/19 逢周六提前至周五）全天休市（A 股、港股正常开市；美股 06/18 18:00 切守望刊、周六 06/19 07:30 沿用旧稿）"}
   ],
   "data_caveats": [
     {

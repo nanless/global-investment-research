@@ -1,28 +1,28 @@
 # 全球大类资产与跨周期投研门户 · Global Investment Research
 
 > **纯网页在线阅读门户（GitHub Pages）**：[https://nanless.github.io/global-investment-research/](https://nanless.github.io/global-investment-research/)  
-> （本站采用**纯网页静态门户直读**，首页完整呈现四大核心市场 + 8 大个人多元投资渠道最新明细 + 106 只全球 ETF 雷达；不生成或分发 PDF / Word 离线附件。）
+> （本站采用**纯网页静态门户唯一交付**，不生成或分发离线二进制文档附件。首页清晰呈现 **4 大核心市场红绿灯**、小白 **「今日行动红绿灯 + 钱怎么分四笔」** 导览、**全部 12 大个人多元合规投资渠道简洁概览卡**【点击直达独立详情页 `channels/<id>.html`】、**5 大 ETF 通道概览卡**【跳转预筛选 `etfs.html`】、**《新手 3 分钟指南》（`guide.html`）** 与 **站内术语白话浮窗**。）
 
-面向懂一点基础财经的进阶普通投资者的机构级、明快人话跨市场投研出版仓库。统一覆盖：
+面向普通家庭与进阶投资者的**「小白 3 分钟看懂 × 机构级 7 维硬核证据」**跨市场投研出版仓库。统一覆盖：
 - **黄金**（1971–2030 全景主报告 + 每日早晚收敛主刊，跨轨单一事实源 SSOT）；
-- **中国 A 股 × 中国香港股市 × 美国股市**（7 维大盘框架 × **231 只全板块核心龙头 7 维机构级深度档案**：A 股 76 / 港股 75 / 美股 80 + **106 只三市与全球重点 ETF 雷达** + 每日三市早晚完整收敛主刊）；
-- **中国大陆 8 大个人多元合规投资渠道**（债券与万亿债券 ETF、公募基金与银行理财、国债逆回购、场内外 QDII 与香港北向互认基金 MRF、银行大额存单、可转债、公募 REITs、非黄金大宗商品 ETF），**全部 8 大渠道最新数据、代表标的、税费与避坑红线直接详列于网站首页与 `channels.html`**。
+- **中国 A 股 × 中国香港股市 × 美国股市**（7 维大盘框架 × **231 只全行业核心龙头 7 维机构级深度档案（零模板化）**：A 股 76 / 港股 75 / 美股 80 + **140+ 只跨 6 大交易通道重点 ETF 雷达** + 每日三市早晚完整收敛主刊）；
+- **中国大陆 12 大个人多元合规投资渠道 MECE 全景**（活钱与现金管理 / 人民币银行存款全家桶 / 境内个人外币存款与外币理财 / 债券与债券 ETF / 公募基金与银行理财及投顾 / 储蓄型商业保险 / 个人养老金与税优账户 / 场内外 QDII 与香港互认及理财通 / 可转债 / 公募 REITs 与不动产租金对比 / 非黄金大宗商品与白银铂钯渠道 / 合规私募与标品信托 300 万专享），另配横向 **「全市场打新工具箱」** 与 **「双层风控警示墙」**。
 
-通过黄金快照实现跨项目红绿灯联防与零冲突质检，并在门户首页、多元渠道页（`channels.html`）、ETF 雷达页（`etfs.html`）、231 股 7 维深研筛选器（`screener.html`）与日报页通过结构化 **`data_caveats`** 自动披露未发布、暂定收盘或存在分歧的数据项及其对裁决的影响。
+通过黄金快照实现跨项目红绿灯联防与零冲突质检，并在门户首页、12 大独立渠道详情页（`channels/<id>.html`）、全渠道总览（`channels.html`）、ETF 雷达（`etfs.html`）、231 股 7 维深研筛选器（`screener.html`）、《新手 3 分钟指南》（`guide.html`）与日报页通过结构化 **`data_caveats`** 自动披露未发布、暂定收盘或存在分歧的数据项及其对裁决的影响。
 
-An institutional-grade, plain-language, **web-only** multi-asset investment research monorepo unifying **Gold**, **Global Equities** (**China A-Share 76 × Hong Kong 75 × US Stocks 80 — 231-stock** 7-dimension deep dossiers + **106 ETF Radar** + All-4-Main daily editions), and **8 China Personal Multi-Asset Channels** (featured in full detail directly on the portal homepage and `channels.html`), synchronized via an **8+1** research workflow, cross-project Gold SSOT consistency gate, structured `data_caveats` transparency, and zero-dependency GitHub Pages publishing.
+An institutional-grade, beginner-friendly, **web-only** multi-asset investment research monorepo unifying **Gold**, **Global Equities** (**China A-Share 76 × Hong Kong 75 × US Stocks 80 — 231-stock** zero-template 7-dimension deep dossiers + **140+ ETF Radar across 6 trading channels** + All-4-Main daily editions), and **12 MECE China Personal Multi-Asset Channels** (with dedicated `channels/<id>.html` pages, a 3-minute beginner guide `guide.html`, and inline plain-language glossary tooltips), synchronized via a **10+1** research & red-team workflow, cross-project Gold SSOT consistency gate, structured `data_caveats` transparency, and zero-dependency GitHub Pages publishing.
 
 ---
 
 ## 更新节拍 · Publication Schedule (CST / UTC+8)
 
-黄金、全球三市权益、重点 ETF 与 8 大个人多元渠道采用 **每日 2 场一体化单会话流水线**（共享 **8 路并发深度调研 + 1 路统一红队** → 黄金 SSOT 先行落盘严检 → 三地权益、多元渠道、ETF 矩阵与 7 维个股深研只读接力 → 统一 RSI 盲审 + 单次 `scripts/publish_site.py` 构建并推送至 GitHub Pages）。工作日早/晚班次全面执行 **四市全主刊（All-4-Main）+ 8+1 深研 + 纯网页发布**，定时运行窗与跨轨截点容差统一为 **6 小时**：
+黄金、全球三市权益、140+ 重点 ETF 与 12 大个人多元渠道采用 **每日 2 场一体化单会话流水线**（共享 **10 路并发深度调研 + 1 路统一红队** → 黄金 SSOT 先行落盘严检 → 三地权益、三大扩展数据库强制同期刷新与严检 → 统一 RSI 盲审 + 单次 `scripts/publish_site.py` 构建并推送至 GitHub Pages）。工作日早/晚班次全面执行 **四市全主刊（All-4-Main）+ 10+1 深研 + 纯网页发布**，定时运行窗与跨轨截点容差统一为 **6 小时**：
 
-| 北京时间（CST） | 班次 / Schedule | 单会话串行产出 / Editions（纯网页 All-4-Main + 8+1 深研） |
+| 北京时间（CST） | 班次 / Schedule | 单会话串行产出 / Editions（纯网页 All-4-Main + 10+1 深研） |
 | :--- | :--- | :--- |
-| **07:30** | **一体化早报** (`daily-global-investment-research`) | **Step 3 黄金早报**（刷新 `gold/data_snapshot.json` SSOT 与 `data_caveats` 并严检） → **Step 4 三地权益全主刊 + 多元渠道/ETF/7 维个股深研**（A/港/美三市均发收敛主刊含 ≥2 张矢量图，同步刷新首页 8 大多元渠道与重点 ETF 雷达及焦点股 7 维档案；休市/半日市受影响市场切 `holiday_watch` 含 ≥1 图） → **Step 5 统一 RSI 与单次纯网页发布** |
-| **18:00** | **一体化晚报** (`daily-global-investment-research-evening`) | **Step 3 黄金晚报**（刷新 `gold/data_snapshot.json` 与 `data_caveats` 并严检） → **Step 4 三地权益全主刊 + 多元渠道/ETF/7 维个股深研**（封账两融、中金所席位、南向资金、美股盘后终盘及 8 大多元渠道日终利率/溢价/退市红线，刷新首页全渠道详表、重点 ETF 与焦点股 7 维档案） → **Step 5 统一 RSI 与单次纯网页发布** |
-| **周六 / 周日** | **周末专项 / 复盘** | 周六 07:30 黄金周末专项主刊 + 美股周五复盘主刊（美股半日市发 `holiday_watch` 含 ≥1 图，全休沿用旧稿）；周六晚与周日三市默认沿用旧稿，周日刷新 `SCORECARD.md` 公开记分卡、轮换精修 231 股池 7 维深度档案及周度校准 8 大多元渠道与 106 只重点 ETF |
+| **07:30** | **一体化早报** (`daily-global-investment-research`) | **Step 3 黄金早报**（刷新 `gold/data_snapshot.json` SSOT 与 `data_caveats` 并严检） → **Step 4 三地权益全主刊 + 三大深研库同期刷新**（A/港/美均发收敛主刊含 ≥2 张矢量图，聚焦隔夜外盘/汇率/美债、美股与爱尔兰 ETF 官收、QDII 溢价停牌、外币存款理财、盘前逆回购/打新/转债日历与当班 4–6 只焦点股 7 维深研；休市/半日市切 `holiday_watch` 含 ≥1 图） → **Step 5 统一 RSI 与单次纯网页发布** |
+| **18:00** | **一体化晚报** (`daily-global-investment-research-evening`) | **Step 3 黄金晚报**（刷新 `gold/data_snapshot.json` 与 `data_caveats` 并严检） → **Step 4 三地权益全主刊 + 三大深研库同期刷新**（封账 A/港日终官收、两融、中金所席位、南向资金、16:30 汇率与美股今早盘后终盘，刷新债券/逆回购/可转债/REITs/非金商品/QDII 日终溢价与停牌及当班 4–6 只焦点股 7 维深研） → **Step 5 统一 RSI 与单次纯网页发布** |
+| **周六 / 周日** | **周末专项 / 周度校准** | 周六 07:30 黄金周末专项主刊 + 美股周五复盘主刊（美股半日市发 `holiday_watch` 含 ≥1 图，全休沿用旧稿）；周六晚与周日三市默认沿用旧稿，**周日推进全量周度校准**：刷新 12 大渠道中低频制度/利率项、复核 140+ ETF 费率与规模、轮换精修 231 股池中 **6–10 只核心龙头 7 维深度档案**并更新公开记分卡 `SCORECARD.md` |
 
 ---
 
@@ -30,10 +30,10 @@ An institutional-grade, plain-language, **web-only** multi-asset investment rese
 
 ```text
 global-investment-research/
-├── AGENTS.md                       # 仓库顶层统一编排宪章（07:30/18:00 纯网页 8+1 架构与跨轨硬约束）
-├── .agents/skills/                 # 统一工作区三 Skill（黄金出版 + 权益出版与编辑审校）
+├── AGENTS.md                       # 仓库顶层统一编排宪章（纯网页 10+1 架构、12 大渠道与跨轨硬约束）
+├── .agents/skills/                 # 统一工作区三 Skill（黄金出版 + 权益出版 + 权益编辑审校）
 ├── automations/                    # 定时自动化共享提示词、授权清单与脱敏模板（零个人路径）
-│   ├── unified-edition.prompt.md   # 早晚双班共用纯网页 8+1 流水线与盲审闭环提示词
+│   ├── unified-edition.prompt.md   # 早晚双班共用纯网页 10+1 流水线、分层刷新矩阵与盲审闭环提示词
 │   ├── permissions.json            # 统一无通配符命令与读写授权白名单
 │   └── sidecars/                   # 脱敏版 07:30/18:00 一体化定时任务模板
 ├── gold/                           # 黄金深度研报体系（跨项目 SSOT 写入源）
@@ -42,32 +42,32 @@ global-investment-research/
 │   ├── master_snapshot.json        # 全景主报告独立锁定基线
 │   ├── market_calendar.json        # 60+ 天跨市场休市与冬/夏令时日历
 │   └── daily/                      # 每日早晚报、公开记分卡 SCORECARD、CHANGELOG 与 AUDIT_LOG
-├── equity/                         # 全球三市权益、ETF 雷达与 8 大多元渠道研报体系
+├── equity/                         # 全球三市权益、140+ ETF 雷达与 12 大多元渠道研报体系
 │   ├── {a_share,hk_stock,us_stock}_market_report_{YYYY_MM,latest}.md
 │   ├── report_meta_{a_share,hk_stock,us_stock}.json
 │   ├── state/
 │   │   ├── market_state.json       # 三市灯号、政策雷达、跨市熔断阀、data_caveats 与黄金只读镜像
-│   │   ├── multi_asset_channels.json # 8 大个人多元合规渠道实盘利率、规则红线与追踪流程 SSOT（直出首页）
-│   │   ├── etf_universe.json       # 106 只三市与全球/跨境/固收/商品重点 ETF 深度矩阵 SSOT
-│   │   └── deep_dossiers.json      # 全部 231 只龙头 7 维机构级深度研究档案 SSOT
-│   ├── edition_plan.py / lint_equity.py / pdf_common.py / build_* SVG 矢量图表模块
+│   │   ├── multi_asset_channels.json # 12 大个人多元合规渠道 + 打新工具箱 + 双层风控墙 SSOT
+│   │   ├── etf_universe.json       # 140+ 只跨 6 大通道重点 ETF 深度矩阵 SSOT
+│   │   └── deep_dossiers.json      # 全部 231 只龙头零模板化 7 维机构级深度研究档案 SSOT
+│   ├── edition_plan.py / lint_equity.py（及 21 张矢量 SVG 图表模块）
 │   └── daily/                      # 三市每日早晚报、总看板 INDEX、SCORECARD 与 CHANGELOG
 ├── scripts/                        # 零第三方依赖静态门户构建、严格门禁、班次锁与纯网页发布引擎
-│   ├── build_site.py               # 生成双端响应式门户（首页全渠道详览/多元渠道/ETF雷达/231股7维/记分卡/档案）
-│   ├── lint_site.py                # 静态站点 6 道法证与安全严格校验（S1–S6，严禁 PDF/Word 链接）
+│   ├── build_site.py               # 生成双端响应式门户（首页导览/12 独立渠道页/ETF 雷达/231 股 7 维/新手指南/记分卡/档案）
+│   ├── lint_site.py                # 静态站点 6 道法证与安全严格校验（S1–S6，严禁离线附件链接）
 │   ├── publish_site.py             # 预检 -> 构建严检 -> 单提交推送 -> GitHub Pages 自动部署
 │   ├── edition_run.py / install_sidecars.py
-│   └── web_assets/                 # 站点样式与交互脚本（含 7 维个股弹窗与 ETF 详情弹窗）
+│   └── web_assets/                 # 站点样式与交互脚本（含术语白话浮窗、7 维个股与 ETF 详情弹窗）
 ├── tests/                          # 零依赖编排、出版、门户、黄金与权益全链路单元测试套件
 └── .github/workflows/
-    └── deploy-pages.yml            # 零外部依赖回归测试与源稿预检后构建并部署至 GitHub Pages
+    └── deploy-pages.yml            # PR 与 main 回归测试、模板干跑、源稿预检、站建严检；仅 main 部署 Pages
 ```
 
 ---
 
 ## 本地构建、质检与发布 · Local Build, Lint & Publish
 
-> 零第三方依赖（仅需 Python 3.9+ 标准库即可直接测试、严检、构建与发布，无需 `pip install` 或 Chrome）。
+> 零第三方依赖（仅需 Python 3.9+ 标准库即可直接测试、严检、构建与发布，无需 `pip install` 或外部浏览器二进制）。
 
 ### 1. 研报质量门禁（Report Linters）
 ```bash
@@ -80,11 +80,12 @@ python3 gold/lint_readability.py \
   gold/daily/2026-11-26_1800_晚报_黄金深度研报.md \
   --strict
 
-# 权益全量源稿 + SVG 图表 + 三大深研库 + 跨项目黄金 SSOT 门禁
+# 权益全量源稿 + 21 张 SVG 图表 + 三大深研库 + 跨项目黄金 SSOT 门禁
 python3 equity/lint_equity.py --strict
 
-# 统一源稿检查与单元测试
+# 统一源稿检查、模板干跑校验与单元测试
 python3 scripts/publish_site.py --check-manuscripts
+python3 scripts/install_sidecars.py --dry-run
 python3 -m unittest discover -s tests
 ```
 

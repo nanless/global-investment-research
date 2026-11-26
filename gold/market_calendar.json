@@ -257,8 +257,8 @@
       "id": "china_spring_festival_2027",
       "date": "2027-02-05",
       "end_date": "2027-02-14",
-      "markets": ["CN_A_SHARE", "CN_SHFE_SGE", "CN_ONSHORE_FX"],
-      "event": "中国春节假期（A 股、上金所 SGE、上期所 SHFE 与在岸人民币连休 10 天）",
+      "markets": ["CN_A_SHARE", "CN_SHFE_SGE", "CN_ONSHORE_FX", "HK_EQUITY"],
+      "event": "中国春节假期（A 股、上金所 SGE、上期所 SHFE 与在岸人民币连休 10 天；港股 02/05 半日、02/06–02/09 休市）",
       "overlay_mode": "B",
       "affected_editions": ["2027-02-05_0730", "2027-02-14_1800"],
       "trading_hours_bjt": {
@@ -328,6 +328,20 @@
       "gold_impact_note": "切入 A 类外盘休市模式，美债与现货纽约终盘沿用 03/25 周四官收并明标时点，严防外盘缺席下国内孤立波动被误判为全球趋势。"
     },
     {
+      "id": "easter_monday_2027",
+      "date": "2027-03-29",
+      "end_date": "2027-03-29",
+      "markets": ["HK_EQUITY", "UK_LSE_LBMA"],
+      "event": "复活节星期一（香港 HKEX 与英国 LSE/LBMA 全天休市，美股与中国内地正常交易）",
+      "overlay_mode": "C",
+      "affected_editions": ["2027-03-29_0730", "2027-03-29_1800"],
+      "trading_hours_bjt": {
+        "hkex_uk_lse_lbma": "全天休市（无港股/港股通交易，无 LBMA 伦敦金银定盘）",
+        "us_cn": "正常开市（英国已于 03/28 切入夏令时，美盘已于 03/14 切入夏令时）"
+      },
+      "gold_impact_note": "切入 C 类局部休市模式：明标港股与伦敦定盘休市，聚焦中国内地 SGE/SHFE 实盘与纽约 COMEX/现货交易。"
+    },
+    {
       "id": "cn_hk_qingming_2027",
       "date": "2027-04-05",
       "end_date": "2027-04-05",
@@ -356,18 +370,75 @@
       "gold_impact_note": "切入 B 类内地休市模式：内盘现货、沪金与国内黄金 ETF 净值沿用 04/30 收盘并明标休市，聚焦 COMEX 与国际现货金动向，并逐日测算 05/06 复市补涨/补跌敞口。"
     },
     {
+      "id": "uk_early_may_bank_holiday_2027",
+      "date": "2027-05-03",
+      "end_date": "2027-05-03",
+      "markets": ["UK_LSE_LBMA"],
+      "event": "英国五月初银行假日（英国 LSE/LBMA 全天休市，无伦敦金银定盘）",
+      "overlay_mode": "C",
+      "affected_editions": ["2027-05-03_1800"],
+      "trading_hours_bjt": {
+        "uk_lse_lbma": "全天休市（无 LBMA 上/下午定盘）",
+        "us_hk": "正常交易（中国内地同期处于劳动节假期）"
+      },
+      "gold_impact_note": "叠加中国劳动节 B 类与伦敦 C 类休市：当日无国内内盘亦无伦敦定盘，全面锚定 COMEX 与纽约现货盘口。"
+    },
+    {
+      "id": "hk_buddha_birthday_2027",
+      "date": "2027-05-13",
+      "end_date": "2027-05-13",
+      "markets": ["HK_EQUITY"],
+      "event": "香港佛诞日（香港 HKEX 与港股通全天休市，中国内地与欧美正常交易）",
+      "overlay_mode": "C",
+      "affected_editions": ["2027-05-13_0730", "2027-05-13_1800"],
+      "trading_hours_bjt": {
+        "hkex": "全天休市（港股与南向港股通休市，沿用 05/12 官收）",
+        "cn_us_uk": "正常交易"
+      },
+      "gold_impact_note": "C 类单边局部休市：仅港股及港股黄金股（周大福/老铺/紫金 H 等）明标休市，不影响中国内地与欧美核心贵金属盘口。"
+    },
+    {
       "id": "us_memorial_day_2027",
       "date": "2027-05-31",
       "end_date": "2027-05-31",
       "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
-      "event": "美国阵亡将士纪念日全天休市（美股/美债休市，CME 金属提前停盘）",
+      "event": "美国阵亡将士纪念日全天休市（美股/美债休市，CME 金属提前停盘，同日叠加英国春季银行假日）",
       "overlay_mode": "A",
       "affected_editions": ["2027-05-31_1800", "2027-06-01_0730"],
       "trading_hours_bjt": {
         "us_equity_bond": "全天休市",
-        "cme_metals_electronic": "次日 02:30 BJT 提前停盘（夏令时 13:30 CDT），无常规美债官收与纽约 05:00 终盘"
+        "cme_metals_electronic": "次日 02:30 BJT 提前停盘（夏令时 13:30 CDT），无常规美债官收与纽约 05:00 终盘",
+        "uk_lse_lbma": "同日适逢英国春季银行假日全天休市（无 LBMA 伦敦定盘）"
       },
-      "gold_impact_note": "切入 A 类美盘休市模式：美债与纽约现货终盘沿用 05/28 周五官收并明标时点，严防薄量插针，重点跟踪国内 SGE/SHFE 与伦敦盘实况。"
+      "gold_impact_note": "切入 A 类美盘休市模式且欧美双休（伦敦同步银行假日无定盘）：美债、纽约现货与伦敦定盘沿用 05/28 周五官收并明标时点，严防薄量插针，重点跟踪国内 SGE/SHFE 实盘。"
+    },
+    {
+      "id": "uk_spring_bank_holiday_2027",
+      "date": "2027-05-31",
+      "end_date": "2027-05-31",
+      "markets": ["UK_LSE_LBMA"],
+      "event": "英国春季银行假日（英国 LSE/LBMA 全天休市，无伦敦金银定盘）",
+      "overlay_mode": "C",
+      "affected_editions": ["2027-05-31_1800"],
+      "trading_hours_bjt": {
+        "uk_lse_lbma": "全天休市（无 LBMA 上/下午定盘）",
+        "cn_hk": "正常交易（同日美国阵亡将士纪念日全天休市）"
+      },
+      "gold_impact_note": "与美国阵亡将士纪念日重叠导致英美主流盘口同步缺席，严防电子盘极薄流动性异常跳点。"
+    },
+    {
+      "id": "cn_hk_dragon_boat_2027",
+      "date": "2027-06-09",
+      "end_date": "2027-06-09",
+      "markets": ["CN_A_SHARE", "CN_SHFE_SGE", "HK_EQUITY"],
+      "event": "端午节法定休市（中国内地 A 股/SGE/SHFE 与香港 HKEX 全天休市，欧美正常交易）",
+      "overlay_mode": "B",
+      "affected_editions": ["2027-06-09_0730", "2027-06-09_1800"],
+      "trading_hours_bjt": {
+        "cn_a_share_sge_shfe_hkex": "全天休市（06/08 晚无国内夜盘，沿用 06/08 官方收盘价）",
+        "us_uk_comex_lbma": "正常交易（夏令时 COMEX 官结 01:30 BJT / 纽约现货 05:00 BJT）"
+      },
+      "gold_impact_note": "切入 B 类内地休市模式：国内 SGE/SHFE、A 股与港股全部明标休市、严禁编造内盘新价，全面聚焦 COMEX、LBMA 定盘、离岸人民币与海外 ETF 实盘。"
     },
     {
       "id": "us_juneteenth_2027",

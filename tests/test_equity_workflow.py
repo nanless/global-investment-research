@@ -1,15 +1,12 @@
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
-from zipfile import ZipFile
-
-from scripts import artifact_receipt
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -520,6 +517,394 @@ class EquityWorkflowTests(unittest.TestCase):
         last_y_m = re.search(r'<text[^>]*y="([0-9.]+)"[^>]*>华尔街大行11（2027年底）</text>', u5_html)
         self.assertIsNotNone(last_y_m, u5_html)
         self.assertLess(float(last_y_m.group(1)), svg_h)
+
+    def _install_clean_ssot_dbs(self):
+        """Populate matching flagship Appendix 2 tables plus valid 3 SSOT databases in temp workspace."""
+        equity = self.root / "equity"
+        edition = self.state["edition_id"]
+        a_codes = [f"6000{i:02d}" for i in range(1, 12)] + ["601899"]
+        hk_codes = [f"000{i:02d}" for i in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16)]
+        us_codes = [f"STK{chr(ord('A') + i)}" for i in range(12)]
+        market_specs = (
+            ("a_share", "a-share", [(c, c) for c in a_codes]),
+            ("hk_stock", "hk-stock", [(c, f"{c}.HK") for c in hk_codes]),
+            ("us_stock", "us-stock", [(c, c) for c in us_codes]),
+        )
+        dossiers = {}
+        for mkt, prefix, pairs in market_specs:
+            rows = ["| 赛道 | 标的 | 估值 |", "| --- | --- | --- |"]
+            for idx, (disp_code, key_code) in enumerate(pairs, 1):
+                rows.append(f"| 行业{idx} | 标的{idx} `{disp_code}` | 10.0x |")
+                dkey = f"{prefix}:{key_code}"
+                dossiers[dkey] = {
+                    "moat": f"{dkey} 护城河与商业壁垒说明",
+                    "financials": f"{dkey} 现金流与净资产收益率稳健",
+                    "valuation_anchor": f"{dkey} 历史估值分位与安全锚区间",
+                    "shareholder_flow": f"{dkey} 分红回购与机构资金流向",
+                    "catalysts": f"{dkey} 下季财报与资本开支观察催化第 {idx} 项",
+                    "bear_case": f"{dkey} 行业景气下行与竞争加剧风险第 {idx} 项",
+                    "action_etf": (
+                        "红灯观察锁，严禁列为当下底座，等待信号确认"
+                        if key_code == "601899"
+                        else f"{dkey} 结合安全锚分批观察并配低费率行业 ETF"
+                    ),
+                }
+            (equity / f"{mkt}_market_report_2026_11.md").write_text(
+                "# 权益手册\n\n覆盖期铜。\n\n## 附表二\n\n" + "\n".join(rows) + "\n",
+                encoding="utf-8",
+            )
+            meta_path = equity / f"report_meta_{mkt}.json"
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["chart_live"]["stock_pool_count"] = len(pairs)
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+            self.state["markets"][mkt]["stock_pool_count"] = len(pairs)
+
+        self.state["data_caveats"] = []
+        self.save()
+
+        req_channels = (
+            ("bonds", "债券与债券 ETF"),
+            ("funds_wm", "公募基金与银行理财"),
+            ("reverse_repo", "活钱与国债逆回购"),
+            ("qdii_mrf", "场内外 QDII 与香港互认"),
+            ("large_cds", "人民币银行存款全家桶"),
+            ("convertible_bonds", "可转债"),
+            ("c_reits", "公募 REITs"),
+            ("commodity_etfs", "非黄金大宗商品渠道"),
+        )
+        ma = {
+            "edition_id": edition,
+            "channels": [
+                {
+                    "id": cid,
+                    "name": cname,
+                    "key_metrics": [{"label": "参考收益", "value": "2.0%–3.0%"}],
+                    "products": [
+                        {
+                            "code": f"CH{idx:03d}",
+                            "name": f"{cname}代表产品",
+                            "metric": "规模稳定",
+                            "fee": "0.15%/年",
+                            "note": "费率透明，按用钱期限匹配",
+                        }
+                    ],
+                    "rules_and_redlines": [f"{cname}合规持有与流动性管理规则"],
+                }
+                for idx, (cid, cname) in enumerate(req_channels, 1)
+            ],
+            "allocation_templates": [
+                {
+                    "id": "steady_core",
+                    "name": "稳健防御模板",
+                    "slices": [
+                        {"channel": "活钱现金", "weight": "40%", "vehicles": "逆回购与短融"},
+                        {"channel": "纯债底仓", "weight": "60%", "vehicles": "国债与短债基"},
+                    ],
+                }
+            ],
+        }
+        etfs = [
+            {
+                "code": f"510{idx:03d}",
+                "name": f"宽基示例ETF{idx:03d}",
+                "market": "a-share" if idx < 50 else "us-stock",
+                "channel": "境内场内" if idx < 50 else "离岸美股",
+                "fee_total_pct": "0.15%",
+                "premium_status": "normal",
+                "thesis_deep": f"追踪核心指数样本 {idx}",
+                "risk_boundary": "注意股市波动与仓位控制",
+                "action_role": "核心宽基观察",
+            }
+            for idx in range(100)
+        ]
+        eu = {
+            "edition_id": edition,
+            "total_etfs": 100,
+            "counts_by_market": {"a-share": 50, "us-stock": 50},
+            "counts_by_channel": {"境内场内": 50, "离岸美股": 50},
+            "etfs": etfs,
+        }
+        dd = {
+            "edition_id": edition,
+            "total_stocks": len(dossiers),
+            "dossiers": dossiers,
+        }
+        (equity / "state/multi_asset_channels.json").write_text(json.dumps(ma, ensure_ascii=False), encoding="utf-8")
+        (equity / "state/etf_universe.json").write_text(json.dumps(eu, ensure_ascii=False), encoding="utf-8")
+        (equity / "state/deep_dossiers.json").write_text(json.dumps(dd, ensure_ascii=False), encoding="utf-8")
+        return ma, eu, dd
+
+    def test_one_directional_edition_time_window_rejects_too_early(self):
+        self.advance("2026-11-29_1800")
+        self.gold["cfets_fixing_date"] = "2026-11-29"
+        self.state["cross_market_linkages"]["rates_fx_chain"]["cfets_fixing_date"] = "2026-11-29"
+
+        # 12:00 noon masquerading as 18:00 evening (6 hours too early) must be rejected
+        for stamp, iso, should_pass in (
+            ("2026-11-29 12:00", "2026-11-29T12:00:00+08:00", False),
+            ("2026-11-29 17:54", "2026-11-29T17:54:00+08:00", False),
+            ("2026-11-29 17:55", "2026-11-29T17:55:00+08:00", True),
+            ("2026-11-30 00:00", "2026-11-30T00:00:00+08:00", True),
+            ("2026-11-30 00:01", "2026-11-30T00:01:00+08:00", False),
+        ):
+            with self.subTest(stamp=stamp):
+                self.gold["as_of_short"] = stamp
+                self.state["as_of_cst"] = iso
+                self.state["markets"]["gold_mirror_readonly"]["as_of_short"] = stamp
+                self.save()
+                result = self.lint("--precheck", "--strict")
+                if should_pass:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("班次前 5 分钟至班次后 6 小时内", result.stdout)
+
+        # Daily report chart_live.as_of_full also enforces the [-5m, +6h] one-directional window
+        self.advance("2026-11-26_1800")
+        a_daily = self.issue("a_share", "main")
+        self.issue("hk_stock", "main")
+        self.issue("us_stock", "holiday_watch")
+        meta, body = extract_daily_meta(a_daily.read_text(encoding="utf-8"), a_daily)
+        meta["chart_live"]["as_of_full"] = "2026-11-26 12:00 北京时间"
+        a_daily.write_text(
+            f"{body}\n\n<!-- DAILY_META_JSON {json.dumps(meta, ensure_ascii=False)} -->\n",
+            encoding="utf-8",
+        )
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("chart_live.as_of_full 须在班次前 5 分钟至班次后 6 小时内", result.stdout)
+
+    def test_gold_tier0_expanded_mutex_across_prose_and_ssot_dbs(self):
+        # 1. Expanded prose regex checks (定投黄金 / 逢低配置 518850 / 吸纳 159934)
+        for bad_line in (
+            "建议定投黄金 ETF 分散风险",
+            "可逢低配置 518850 黄金",
+            "分批吸纳 159934 做底仓",
+        ):
+            self.assertTrue(_scan_text_for_gold_buy("report", bad_line), bad_line)
+        for guarded_line in (
+            "黄金红灯停期间暂不定投黄金 ETF",
+            "等黄灯确认后再配置 518850",
+            "严禁吸纳 159934",
+        ):
+            self.assertFalse(_scan_text_for_gold_buy("report", guarded_line), guarded_line)
+
+        # 2. End-to-end Gate C2 under Gold Tier 0 across etf_universe / multi_asset_channels / deep_dossiers
+        self.advance("2026-11-29_1800")
+        self.gold.update(tier_code="Tier 0", new_buy_allowed=False, tier1_passed=1)
+        self.state["markets"]["gold_mirror_readonly"].update(
+            tier_code="Tier 0", new_buy_allowed=False, gates_passed="1/4",
+        )
+        ma_base, eu_base, dd_base = self._install_clean_ssot_dbs()
+        state_dir = self.root / "equity/state"
+
+        baseline = self.lint("--precheck", "--strict")
+        self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+        # (a) 159934 without gold_locked=True and forbidden action_role
+        eu_bad = deepcopy(eu_base)
+        eu_bad["etfs"][0].update(code="159934", name="易方达黄金ETF", action_role="逢低配置")
+        (state_dir / "etf_universe.json").write_text(json.dumps(eu_bad, ensure_ascii=False), encoding="utf-8")
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("Gate C2 跨项目硬冲突 (etf_universe.json:159934)", res.stdout)
+        (state_dir / "etf_universe.json").write_text(json.dumps(eu_base, ensure_ascii=False), encoding="utf-8")
+
+        # (b) multi_asset_channels.json prose directive ("逢低配置 518850")
+        ma_bad_prose = deepcopy(ma_base)
+        ma_bad_prose["channels"][0]["rules_and_redlines"].append("当前可逢低配置 518850 对冲波动")
+        (state_dir / "multi_asset_channels.json").write_text(json.dumps(ma_bad_prose, ensure_ascii=False), encoding="utf-8")
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("Gate C2 跨项目硬冲突", res.stdout)
+
+        # (c) multi_asset_channels.json gold product missing explicit red-light lock note
+        ma_bad_prod = deepcopy(ma_base)
+        ma_bad_prod["channels"][-1]["products"].append({
+            "code": "518880", "name": "华安黄金ETF", "metric": "流动充裕", "fee": "0.60%/年", "note": "场内主流商品标的",
+        })
+        (state_dir / "multi_asset_channels.json").write_text(json.dumps(ma_bad_prod, ensure_ascii=False), encoding="utf-8")
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("Gate C2 跨项目硬冲突 (multi_asset_channels.json:518880)", res.stdout)
+        (state_dir / "multi_asset_channels.json").write_text(json.dumps(ma_base, ensure_ascii=False), encoding="utf-8")
+
+        # (d) deep_dossiers.json gold stock marked as green base (当下底座)
+        dd_bad_base = deepcopy(dd_base)
+        dd_bad_base["dossiers"]["a-share:601899"]["action_etf"] = "🟢 当下底座，核心长期持有"
+        (state_dir / "deep_dossiers.json").write_text(json.dumps(dd_bad_base, ensure_ascii=False), encoding="utf-8")
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("Gate C2 跨项目硬冲突 (deep_dossiers.json:a-share:601899.action_etf)", res.stdout)
+
+        # (e) deep_dossiers.json unguarded buy-gold directive in stock dossier
+        dd_bad_buy = deepcopy(dd_base)
+        dd_bad_buy["dossiers"]["a-share:600001"]["action_etf"] = "建议同步定投黄金 ETF 518850"
+        (state_dir / "deep_dossiers.json").write_text(json.dumps(dd_bad_buy, ensure_ascii=False), encoding="utf-8")
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("Gate C2 跨项目硬冲突 (deep_dossiers.json:a-share:600001.action_etf:L1)", res.stdout)
+
+    def test_ssot_databases_deep_validation(self):
+        self.advance("2026-11-29_1800")
+        ma_base, eu_base, dd_base = self._install_clean_ssot_dbs()
+        state_dir = self.root / "equity/state"
+
+        baseline = self.lint("--precheck", "--strict")
+        self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+        def write_all(ma=ma_base, eu=eu_base, dd=dd_base):
+            (state_dir / "multi_asset_channels.json").write_text(json.dumps(ma, ensure_ascii=False), encoding="utf-8")
+            (state_dir / "etf_universe.json").write_text(json.dumps(eu, ensure_ascii=False), encoding="utf-8")
+            (state_dir / "deep_dossiers.json").write_text(json.dumps(dd, ensure_ascii=False), encoding="utf-8")
+
+        # 1. Duplicate channel ID
+        ma_dup = deepcopy(ma_base)
+        ma_dup["channels"].append(deepcopy(ma_base["channels"][0]))
+        write_all(ma=ma_dup)
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("存在重复渠道 id: bonds", res.stdout)
+
+        # 2. allocation_templates weights != 100%
+        ma_wt = deepcopy(ma_base)
+        ma_wt["allocation_templates"][0]["slices"][1]["weight"] = "40%"
+        write_all(ma=ma_wt)
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("精确权重之和=80.00% ≠ 100%", res.stdout)
+
+        # 3. Unwarned recommendation of suspended 968118 (both product & prose); warned mention passes
+        ma_968_prod = deepcopy(ma_base)
+        ma_968_prod["channels"][3]["products"][0].update(code="968118", name="摩根太平洋科技", note="业绩优秀优先考虑")
+        write_all(ma=ma_968_prod)
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("未带暂停/退市/避坑警示直接推荐受限代码 '968118'", res.stdout)
+
+        ma_968_prose = deepcopy(ma_base)
+        ma_968_prose["channels"][3]["rules_and_redlines"].append("内地投资者可关注 968118 互认基金")
+        write_all(ma=ma_968_prose)
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("未带暂停/退市/避坑警示提及受限代码 968118", res.stdout)
+
+        ma_968_warned = deepcopy(ma_base)
+        ma_968_warned["channels"][3]["rules_and_redlines"].append("968118 已暂停申购，切忌盲目跟风误配")
+        write_all(ma=ma_968_warned)
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+        # 4. etf_universe.json summary counter mismatches
+        for label, mutate, expected_msg in (
+            ("total_etfs", lambda u: u.update(total_etfs=99), "total_etfs (99) ≠ len(etfs) (100)"),
+            ("counts_by_market", lambda u: u["counts_by_market"].update({"a-share": 49}), "counts_by_market"),
+            ("counts_by_channel", lambda u: u["counts_by_channel"].update({"离岸美股": 49}), "counts_by_channel"),
+        ):
+            with self.subTest(etf_counter=label):
+                eu_bad = deepcopy(eu_base)
+                mutate(eu_bad)
+                write_all(eu=eu_bad)
+                res = self.lint("--precheck", "--strict")
+                self.assertEqual(res.returncode, 1, res.stdout)
+                self.assertIn(expected_msg, res.stdout)
+
+        # 5. Cross-stock template copy-paste (>10 identical catalysts blocked; ==10 allowed)
+        a_keys = [k for k in dd_base["dossiers"] if k.startswith("a-share:")]
+        dd_copy_ok = deepcopy(dd_base)
+        for k in a_keys[:10]:
+            dd_copy_ok["dossiers"][k]["catalysts"] = "完全相同的行业季度催化模板文案"
+        write_all(dd=dd_copy_ok)
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+        dd_copy_bad = deepcopy(dd_copy_ok)
+        dd_copy_bad["dossiers"][a_keys[10]]["catalysts"] = "完全相同的行业季度催化模板文案"
+        write_all(dd=dd_copy_bad)
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("完全复制粘贴相同 catalysts 模板（上限 10 只）", res.stdout)
+
+        # 6. edition_id drift on each of the 3 SSOT files
+        for db_name, kwargs in (
+            ("multi_asset_channels.json", {"ma": {**ma_base, "edition_id": "2026-11-26_0730"}}),
+            ("etf_universe.json", {"eu": {**eu_base, "edition_id": "2026-11-26_0730"}}),
+            ("deep_dossiers.json", {"dd": {**dd_base, "edition_id": "2026-11-26_0730"}}),
+        ):
+            with self.subTest(edition_drift=db_name):
+                write_all(**kwargs)
+                res = self.lint("--precheck", "--strict")
+                self.assertEqual(res.returncode, 1, res.stdout)
+                self.assertIn(f"{db_name} edition_id", res.stdout)
+                self.assertIn("≠ market_state.json", res.stdout)
+
+    def test_rsi_open_finding_and_daily_deprecated_pdf_link_blocked(self):
+        # 1. RSI status == "open" blocked in both review_closure.findings & top-level findings
+        dims = list("abcdef")
+        base_run = {
+            "run_id": "2026-11-26_1800",
+            "scores": dict.fromkeys(dims, 5),
+            "total_score": 30,
+            "max_score": 30,
+        }
+        for payload, should_fail in (
+            ({**base_run, "review_closure": {"reviewer_completed": True, "findings": [{"description": "待修", "status": "open"}]}}, True),
+            ({**base_run, "findings": [{"description": "顶层未闭环", "status": "open"}]}, True),
+            ({**base_run, "review_closure": {"reviewer_completed": True, "findings": [{"description": "已披露", "status": "disclosed_caveat"}]}}, False),
+            ({**base_run, "review_closure": {"reviewer_completed": True, "findings": [{"description": "已解决", "status": "resolved"}]}}, False),
+            ({**base_run, "review_closure": {"reviewer_completed": True, "findings": [{"description": "待官源", "status": "deferred_data"}]}}, False),
+        ):
+            with self.subTest(rsi_payload=payload):
+                errs = _check_rsi_metrics({"score_dimensions": dims, "runs": [payload]})
+                self.assertEqual(bool(errs), should_fail, errs)
+
+        self.advance("2026-11-26_1800")
+        a_daily = self.issue("a_share", "main")
+        self.issue("hk_stock", "main")
+        self.issue("us_stock", "holiday_watch")
+
+        rsi_path = self.root / "equity/state/rsi_metrics.json"
+        rsi_path.write_text(json.dumps({
+            "score_dimensions": dims,
+            "runs": [{
+                **base_run,
+                "review_closure": {
+                    "reviewer_completed": True,
+                    "findings": [{"description": "图表口径未闭环", "status": "open"}],
+                },
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("存在未闭环 finding (status=open)", res.stdout)
+
+        # Close RSI finding cleanly, then test deprecated .pdf dead link inside equity daily .md
+        rsi_path.write_text(json.dumps({
+            "score_dimensions": dims,
+            "runs": [{
+                **base_run,
+                "review_closure": {
+                    "reviewer_completed": True,
+                    "findings": [{"description": "图表口径已披露", "status": "disclosed_caveat"}],
+                },
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+        original_md = a_daily.read_text(encoding="utf-8")
+        a_daily.write_text(
+            original_md.replace("覆盖期铜。", "覆盖期铜。参考 [下载PDF](2026-11-26_1800_a_share.pdf)。"),
+            encoding="utf-8",
+        )
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("纯网页版严禁保留已弃用的 PDF/Word 或离线附件链接", res.stdout)
+
+        # External official HTTPS PDF citation remains allowed
+        a_daily.write_text(
+            original_md.replace("覆盖期铜。", "覆盖期铜。参考 [交易所公告](https://www.sse.com.cn/notice.pdf)。"),
+            encoding="utf-8",
+        )
+        res = self.lint("--precheck", "--strict")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
 
 if __name__ == "__main__":

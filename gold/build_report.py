@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Build the complete Gold Deep-Dive Research Report (1971–2030) — V7.2 Zero-Barrier, Deep-Truth Edition
+Pure-web HTML & vector SVG rendering engine for the Gold Cross-Century Research Report (1971–2030).
 Reads:
   - master_snapshot.json (dedicated Master Report snapshot locked via <!-- MASTER_BASELINE {...} -->)
   - 黄金跨世纪周期与2026-2030终审研究报告.md
-Generates:
-  1. 黄金跨世纪周期与2026-2030终审研究报告.pdf  (Chrome Headless, 7 sequential zero-collision 640px vector SVGs)
-  2. 黄金跨世纪周期与2026-2030终审研究报告.docx (Native ECMA-376 OOXML + 7 PIL-cropped 2x Retina PNG charts)
+Provides cover HTML, body HTML, and 7 sequential 640px vector SVGs for scripts/build_site.py.
 
 Usage:
-  python3 build_report.py                        # build PDF + Native DOCX using MASTER_BASELINE lock
-  python3 build_report.py --check                # self-check environment, MASTER_BASELINE & snapshot
+  python3 build_report.py --check                        # verify MASTER_BASELINE & master_snapshot.json
   python3 build_report.py --check --snapshot <file.json> # check an alternate snapshot
 """
 
@@ -19,40 +16,28 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import shutil
 import statistics
-import subprocess
-import sys
-import tempfile
 from pathlib import Path
 
 from build_daily import (
     HALO,
-    PDF_CSS,
-    count_pdf_pages,
     esc,
     parse_markdown_to_html,
-    resolve_chrome_bin,
-    sanitize_css_string,
+    sanitize_hex_color,
     svg_esc,
 )
-from docx_embed import build_native_docx, is_complete_pdf, render_chart_to_png, run_chrome_to_output
 
 OUT_DIR = Path(__file__).resolve().parent
 BASE_NAME = "黄金跨世纪周期与2026-2030终审研究报告"
 MD_PATH = OUT_DIR / f"{BASE_NAME}.md"
 DEFAULT_MASTER_SNAPSHOT = OUT_DIR / "master_snapshot.json"
-PDF_PATH = OUT_DIR / f"{BASE_NAME}.pdf"
-DOCX_PATH = OUT_DIR / f"{BASE_NAME}.docx"
-CHROME_BIN = resolve_chrome_bin()
 
 MASTER_BASELINE_RE = re.compile(r"<!--\s*MASTER_BASELINE\s*(\{.*?\})\s*-->", re.DOTALL)
 
-# Runtime state populated inside main() — zero import-time filesystem I/O
+# Runtime state populated by caller — zero import-time filesystem I/O
 SNAP: dict = {}
-REPORT_VERSION = "V7.2 零门槛·真深度普通人终审定版"
+REPORT_VERSION = "黄金跨世纪周期全景配置指南"
 REPORT_TIMESTAMP = "2026年11月24日（周二）16:30"
 REPORT_SHORT_DATE = "2026-11-24 16:30"
 
@@ -499,12 +484,16 @@ def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
     for idx, c in enumerate(cal_cards[:4]):
         cx, cy = coords[idx]
         sw = "1.6" if idx == 3 else "1.3"
+        c_bg = sanitize_hex_color(c.get("bg"), "#f8fafc")
+        c_brd = sanitize_hex_color(c.get("brd"), "#cbd5e1")
+        c_hdr = sanitize_hex_color(c.get("hdr"), "#334155")
+        c_txt = sanitize_hex_color(c.get("txt"), "#1f2937")
         cal_svg += (
-            f'<rect x="{cx}" y="{cy}" width="298" height="66" fill="{esc(c.get("bg","#f8fafc"))}" stroke="{esc(c.get("brd","#cbd5e1"))}" stroke-width="{sw}" rx="6"/>'
-            f'<path d="{_top_round_path(cx, cy, 298, 22, 6)}" fill="{esc(c.get("hdr","#334155"))}"/>'
+            f'<rect x="{cx}" y="{cy}" width="298" height="66" fill="{c_bg}" stroke="{c_brd}" stroke-width="{sw}" rx="6"/>'
+            f'<path d="{_top_round_path(cx, cy, 298, 22, 6)}" fill="{c_hdr}"/>'
             f'<text x="{cx+10}" y="{cy+15}" font-size="10.8" fill="#ffffff" font-weight="700">{svg_esc(c.get("title",""))}</text>'
-            f'<text x="{cx+10}" y="{cy+38}" font-size="10.5" fill="{esc(c.get("txt","#1f2937"))}" font-weight="{"700" if idx==3 else "400"}">{svg_esc(c.get("line1",""))}</text>'
-            f'<text x="{cx+10}" y="{cy+55}" font-size="10.5" fill="{esc(c.get("txt","#1f2937"))}">{svg_esc(c.get("line2",""))}</text>'
+            f'<text x="{cx+10}" y="{cy+38}" font-size="10.5" fill="{c_txt}" font-weight="{"700" if idx==3 else "400"}">{svg_esc(c.get("line1",""))}</text>'
+            f'<text x="{cx+10}" y="{cy+55}" font-size="10.5" fill="{c_txt}">{svg_esc(c.get("line2",""))}</text>'
         )
 
     default_gates = [
@@ -891,175 +880,18 @@ def build_cover_html() -> str:
 
 
 def main():
-    global SNAP, REPORT_VERSION, REPORT_TIMESTAMP, REPORT_SHORT_DATE
-
-    parser = argparse.ArgumentParser(description="Build Master Gold Research Report PDF & Native OOXML DOCX (V7.2).")
-    parser.add_argument("--check", action="store_true", help="Self-check environment, MASTER_BASELINE lock & snapshot.")
+    parser = argparse.ArgumentParser(description="Verify Gold Master Report baseline & snapshot (web-only renderer).")
+    parser.add_argument("--check", action="store_true", help="Self-check MASTER_BASELINE lock & snapshot.")
     parser.add_argument("--snapshot", type=Path, default=None, help="Explicitly override snapshot JSON path.")
     parser.add_argument("--allow-drift", action="store_true", help="Bypass MASTER_BASELINE timestamp match check.")
     args = parser.parse_args()
-    if not args.check and (args.snapshot is not None or args.allow_drift):
-        parser.error("--snapshot and --allow-drift are limited to --check")
-
-    if args.check:
-        chrome_bin = os.environ.get("CHROME_BIN", "").strip() or resolve_chrome_bin()
-        if not (Path(chrome_bin).exists() or shutil.which(chrome_bin)):
-            raise SystemExit(f"ERROR: Chrome binary missing at {chrome_bin}")
-        if not MD_PATH.exists():
-            raise SystemExit(f"ERROR: Master MD missing: {MD_PATH}")
-        import bs4  # noqa: F401
-        from PIL import Image  # noqa: F401
-        md_txt = MD_PATH.read_text(encoding="utf-8")
-        snap_chk, snap_path = load_master_snapshot(md_txt, args.snapshot, allow_drift=args.allow_drift)
-        print(
-            f"OK: build_report.py V7.2 verified ({snap_path.name}, as_of={snap_chk.get('as_of_short')}, "
-            f"version={snap_chk.get('master_version')})."
-        )
-        return
-
-    root = str(OUT_DIR.parent)
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    from scripts.artifact_receipt import freeze_inputs, write_receipt
-
-    frozen = freeze_inputs(
-        MD_PATH,
-        inputs=(
-            DEFAULT_MASTER_SNAPSHOT, OUT_DIR / "build_report.py", OUT_DIR / "build_daily.py",
-            OUT_DIR / "docx_embed.py", OUT_DIR / "chart_input.py",
-        ),
+    if not MD_PATH.exists():
+        raise SystemExit(f"ERROR: Master MD missing: {MD_PATH}")
+    md_txt = MD_PATH.read_text(encoding="utf-8")
+    snap_chk, snap_path = load_master_snapshot(md_txt, args.snapshot, allow_drift=args.allow_drift)
+    print(
+        f"OK: build_report.py verified ({snap_path.name}, as_of={snap_chk.get('as_of_short')}, web-only renderer ready)."
     )
-    report_md = MD_PATH.read_text(encoding="utf-8")
-    SNAP, snap_path = load_master_snapshot(report_md)
-    REPORT_VERSION = str(SNAP.get("master_version", "V7.2 零门槛·真深度普通人终审定版"))
-    REPORT_TIMESTAMP = str(SNAP.get("as_of_bjt", "2026年11月24日（周二）16:30"))
-    REPORT_SHORT_DATE = str(SNAP.get("as_of_short", "2026-11-24 16:30"))
-    print(f"Loaded MD ({len(report_md)} chars) + {snap_path.name} (as_of={REPORT_SHORT_DATE})")
-
-    body_pdf, _ = convert_md_to_html_body(report_md, docx_mode=False)
-    body_docx, docx_charts = convert_md_to_html_body(report_md, docx_mode=True)
-
-    footer_title = sanitize_css_string(f"黄金跨世纪周期与普通人全景配置指南（{REPORT_SHORT_DATE}）")
-    rendered_css = (
-        PDF_CSS
-        .replace("__ACCENT__", "#b45309")
-        .replace("__FOOTER_TITLE__", footer_title)
-    )
-    footer_note = (
-        f'<div class="footer-note">'
-        f'本报告（黄金跨世纪周期全景指南 · 数据基线 {esc(REPORT_TIMESTAMP)}）数据均经多源官方数据库核验；投资有风险，请按家庭总资产 10%–15% 合理配置，严禁借钱或加杠杆炒金。'
-        f'</div>'
-    )
-
-    cover_html = build_cover_html()
-    full_pdf_html = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>{BASE_NAME}</title>
-<style>{rendered_css}</style>
-</head>
-<body>
-{cover_html}
-{body_pdf}
-{footer_note}
-</body>
-</html>"""
-
-    docx_full_html = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>{BASE_NAME}</title>
-</head>
-<body>
-{cover_html}
-{body_docx}
-{footer_note}
-</body>
-</html>"""
-
-    work_tmp = Path(tempfile.mkdtemp(prefix="gold_report_build_"))
-    chrome_profile = work_tmp / "chrome_profile"
-    png_dir = work_tmp / "pngs"
-    chrome_profile.mkdir()
-    png_dir.mkdir()
-    tmp_pdf_html = work_tmp / "report_print.html"
-    tmp_pdf_html.write_text(full_pdf_html, encoding="utf-8")
-    tmp_pdf_out = PDF_PATH.with_suffix(".pdf.tmp")
-
-    chrome_bin = os.environ.get("CHROME_BIN", "").strip() or CHROME_BIN
-    try:
-        # 1. Build PDF (2-attempt retry with fresh profile, timeout=120, atomic write & size check)
-        last_err: Exception | None = None
-        for attempt in range(1, 3):
-            attempt_profile = work_tmp / f"chrome_pdf_profile_{attempt}"
-            shutil.rmtree(attempt_profile, ignore_errors=True)
-            attempt_profile.mkdir(parents=True, exist_ok=True)
-            tmp_pdf_out.unlink(missing_ok=True)
-            stderr_log = attempt_profile / "chrome_stderr.log"
-            try:
-                rc, stderr_txt = run_chrome_to_output(
-                    [
-                        chrome_bin,
-                        "--headless",
-                        "--disable-gpu",
-                        "--disable-extensions",
-                        "--disable-background-networking",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                        f"--user-data-dir={attempt_profile}",
-                        "--no-pdf-header-footer",
-                        f"--print-to-pdf={tmp_pdf_out}",
-                        tmp_pdf_html.as_uri(),
-                    ],
-                    tmp_pdf_out,
-                    lambda p: is_complete_pdf(p, 10_000),
-                    timeout=120,
-                    stderr_log=stderr_log,
-                )
-                if not is_complete_pdf(tmp_pdf_out, 10_000):
-                    raise RuntimeError(
-                        f"Chrome headless PDF print failed for {BASE_NAME} "
-                        f"(attempt {attempt}/2, rc={rc}): {stderr_txt[:400]}"
-                    )
-                if rc != 0:
-                    print(
-                        f"  [CHROME WARN] Chrome exited rc={rc} on teardown after writing "
-                        f"complete PDF ({tmp_pdf_out.stat().st_size:,}B); accepting.",
-                        file=sys.stderr,
-                    )
-                last_err = None
-                break
-            except (subprocess.TimeoutExpired, RuntimeError) as exc:
-                last_err = exc
-                if attempt == 2:
-                    if isinstance(exc, subprocess.TimeoutExpired):
-                        raise RuntimeError(
-                            f"Chrome headless PDF print timed out after 120s for {BASE_NAME} (attempt 2/2)"
-                        ) from exc
-                    raise
-        if last_err is not None:
-            raise last_err
-        tmp_pdf_out.replace(PDF_PATH)
-        pages = count_pdf_pages(PDF_PATH)
-        print(f"Wrote PDF:  {PDF_PATH} ({pages} pages)")
-
-        # 2. Rasterize all SVG charts to PIL-cropped 2x Retina PNGs
-        embed_specs: list[tuple[str, Path]] = []
-        for idx, (marker, chart_html) in enumerate(docx_charts):
-            png_out = png_dir / f"chart_{idx + 1}.png"
-            render_chart_to_png(chart_html, png_out, png_dir, chrome_profile, idx)
-            embed_specs.append((marker, png_out))
-
-        # 3. Build 100% Native OOXML DOCX (real tables, cross-platform cards, Retina PNG charts)
-        build_native_docx(docx_full_html, DOCX_PATH, embed_specs, footer_title=footer_title)
-        print(f"Wrote DOCX: {DOCX_PATH} (native OOXML + {len(docx_charts)} PIL-cropped Retina PNG charts)")
-    finally:
-        tmp_pdf_out.unlink(missing_ok=True)
-        shutil.rmtree(work_tmp, ignore_errors=True)
-
-    write_receipt(frozen, PDF_PATH, DOCX_PATH)
 
 
 if __name__ == "__main__":

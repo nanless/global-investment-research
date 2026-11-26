@@ -25,9 +25,16 @@ else:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SITE_DIR = REPO_ROOT / "_site"
+AUTOMATED_STAGE_PATHS = ("gold", "equity")
 CANONICAL_STAGE_PATHS = (
     "AGENTS.md", ".agents", "automations", "gold", "equity",
     "scripts", "tests", "README.md", ".gitignore", ".github",
+)
+FORBIDDEN_STAGE_SUFFIXES = (".pdf", ".docx", ".artifacts.json")
+EXTENDED_EQUITY_STATE_FILES = (
+    "equity/state/multi_asset_channels.json",
+    "equity/state/etf_universe.json",
+    "equity/state/deep_dossiers.json",
 )
 GOLD_MASTER = "黄金跨世纪周期与2026-2030终审研究报告"
 CST = timezone(timedelta(hours=8))
@@ -37,6 +44,14 @@ _TRANSIENT_NET_RE = re.compile(
     r"HTTP 50[0234]|timeout|timed out|connection reset|TLS|EOF|Could not resolve",
     re.IGNORECASE,
 )
+_NON_FAST_FORWARD_RE = re.compile(
+    r"non-fast-forward|fetch first|tip of your current branch is behind|remote contains work that you do not have",
+    re.IGNORECASE,
+)
+
+
+class _NonFastForwardError(RuntimeError):
+    """Deterministic remote non-fast-forward rejection where the commit never landed."""
 
 
 def _clean_env() -> dict[str, str]:
@@ -66,7 +81,7 @@ def _clean_env() -> dict[str, str]:
 
 
 def _run(
-    cmd: list[str], env: dict[str, str], *, cwd: Path | None = None, timeout: int = 120
+    cmd: list[str], env: dict[str, str], *, cwd: Path | None = None, timeout: int = 240
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd, cwd=cwd or REPO_ROOT, env=env, text=True,
@@ -85,6 +100,10 @@ def _is_transient_error(exc: BaseException) -> bool:
     return isinstance(exc, subprocess.TimeoutExpired) or (
         isinstance(exc, RuntimeError) and bool(_TRANSIENT_NET_RE.search(str(exc)))
     )
+
+
+def _is_non_fast_forward_error(exc: BaseException) -> bool:
+    return isinstance(exc, RuntimeError) and bool(_NON_FAST_FORWARD_RE.search(str(exc)))
 
 
 def _retry_transient(fn: Callable[[], _T], *, label: str, attempts: int = 3) -> _T:
@@ -128,11 +147,33 @@ def _check_manuscripts(root: Path, env: dict[str, str], expected_edition: str | 
     gold = json.loads((root / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
     if isinstance(gold, dict) and isinstance(gold.get("edition_id"), str):
         edition_run.check_edition_reviews(gold["edition_id"], root=root)
+
+    market_state_path = root / "equity" / "state" / "market_state.json"
+    if not market_state_path.is_file():
+        raise RuntimeError("Missing required equity state file: equity/state/market_state.json")
+    equity = json.loads(market_state_path.read_text(encoding="utf-8"))
+    equity_edition = equity.get("edition_id") if isinstance(equity, dict) else None
+    if not isinstance(equity_edition, str) or not equity_edition.strip():
+        raise RuntimeError("equity/state/market_state.json must contain a non-empty edition_id.")
+
+    for rel in EXTENDED_EQUITY_STATE_FILES:
+        state_path = root / rel
+        if not state_path.is_file():
+            raise RuntimeError(f"Missing required extended equity state file: {rel}")
+        try:
+            state_obj = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Invalid JSON in {rel}: {exc}") from exc
+        if not isinstance(state_obj, dict) or state_obj.get("edition_id") != equity_edition:
+            got = state_obj.get("edition_id") if isinstance(state_obj, dict) else None
+            raise RuntimeError(
+                f"{rel} edition_id ({got!r}) must match equity/state/market_state.json ({equity_edition!r})."
+            )
+
     if expected_edition is not None:
         match = GOLD_DAILY_RE.fullmatch(gold_daily.name)
         assert match is not None
         named_edition = f"{match[1]}_{match[2]}" + (f"_r{match[3]}" if match[3] else "")
-        equity = json.loads((root / "equity" / "state" / "market_state.json").read_text(encoding="utf-8"))
         if named_edition != expected_edition or any(
             not isinstance(item, dict) or item.get("edition_id") != expected_edition for item in (gold, equity)
         ):
@@ -162,31 +203,95 @@ def _checkout_revision(revision: str, env: dict[str, str]) -> Iterator[Path]:
         yield source
 
 
-def _scoped(path: str) -> bool:
-    return any(path == key or path.startswith(f"{key}/") for key in CANONICAL_STAGE_PATHS)
+def _scoped(path: str, scope: tuple[str, ...] = CANONICAL_STAGE_PATHS) -> bool:
+    return any(path == key or path.startswith(f"{key}/") for key in scope)
 
 
-def _publication_tree(env: dict[str, str], index: Path) -> tuple[str, bool]:
-    staged = _git(env, "diff", "--cached", "--name-only", "-z", "--no-renames").split("\0")
-    outside = [path for path in staged if path and not _scoped(path)]
+def _is_forbidden_stage_path(path: str) -> bool:
+    low = path.lower()
+    return any(low.endswith(suffix) for suffix in FORBIDDEN_STAGE_SUFFIXES)
+
+
+def _check_tree_no_forbidden_files(env: dict[str, str], tree: str) -> None:
+    files = _git(env, "ls-tree", "-r", "--name-only", "-z", tree).split("\0")
+    forbidden = [p for p in files if p and _is_forbidden_stage_path(p)]
+    if forbidden:
+        sample = ", ".join(forbidden[:10])
+        raise RuntimeError(
+            f"Forbidden binary/receipt file(s) cannot enter web-only publication commit: {sample}"
+        )
+
+
+def _normalize_explicit_stage_paths(
+    raw_paths: list[str], scope: tuple[str, ...]
+) -> list[str]:
+    normalized: list[str] = []
+    repo_resolved = REPO_ROOT.resolve()
+    for raw in raw_paths:
+        raw_s = raw.strip()
+        if not raw_s:
+            continue
+        candidate = (repo_resolved / raw_s).resolve()
+        if not candidate.is_relative_to(repo_resolved):
+            raise RuntimeError(f"Explicit --stage path escapes repository root: {raw_s!r}")
+        rel = candidate.relative_to(repo_resolved).as_posix()
+        if rel in ("", "."):
+            raise RuntimeError("Explicit --stage must specify in-scope paths rather than repository root.")
+        if _is_forbidden_stage_path(rel):
+            raise RuntimeError(f"Forbidden binary/receipt file cannot be staged: {rel}")
+        if not _scoped(rel, scope):
+            raise RuntimeError(f"Explicit --stage path is outside publication scope: {rel}")
+        normalized.append(rel)
+    if not normalized:
+        raise RuntimeError("Explicit --stage requires at least one valid in-scope path.")
+    return normalized
+
+
+def _publication_tree(
+    env: dict[str, str],
+    index: Path,
+    *,
+    automated: bool = False,
+    explicit_stage: list[str] | None = None,
+) -> tuple[str, bool]:
+    scope = AUTOMATED_STAGE_PATHS if automated else CANONICAL_STAGE_PATHS
+    staged = [p for p in _git(env, "diff", "--cached", "--name-only", "-z", "--no-renames").split("\0") if p]
+    if explicit_stage and staged:
+        raise RuntimeError("Clear existing staged changes before using explicit --stage.")
+    outside = [path for path in staged if not _scoped(path, scope)]
     if outside:
         raise RuntimeError(f"Already staged outside the publication scope: {', '.join(outside)}")
-    if any(staged):
+    if staged:
         # An explicit index is the user's selection. Preserve unstaged changes.
         print("[git] Using existing in-scope staged changes.")
-        return _git(env, "write-tree").strip(), False
+        tree = _git(env, "write-tree").strip()
+        _check_tree_no_forbidden_files(env, tree)
+        return tree, False
 
-    tracked = _git(env, "ls-files", "-z", "--", *CANONICAL_STAGE_PATHS).split("\0")
-    paths = [
-        key for key in CANONICAL_STAGE_PATHS
-        if (REPO_ROOT / key).exists() or any(path == key or path.startswith(f"{key}/") for path in tracked)
-    ]
-    if not paths:
-        raise RuntimeError("No publication source paths found in this checkout.")
+    if explicit_stage:
+        targets = _normalize_explicit_stage_paths(explicit_stage, scope)
+        tracked = _git(env, "ls-files", "-z", "--", *targets).split("\0")
+        paths = [
+            key for key in targets
+            if (REPO_ROOT / key).exists() or any(path == key or path.startswith(f"{key}/") for path in tracked)
+        ]
+        if not paths:
+            raise RuntimeError(f"None of the explicit --stage paths exist or are tracked: {', '.join(targets)}")
+    else:
+        tracked = _git(env, "ls-files", "-z", "--", *scope).split("\0")
+        paths = [
+            key for key in scope
+            if (REPO_ROOT / key).exists() or any(path == key or path.startswith(f"{key}/") for path in tracked)
+        ]
+        if not paths:
+            raise RuntimeError("No publication source paths found in this checkout.")
+
     temporary = dict(env, GIT_INDEX_FILE=str(index))
     _git(temporary, "read-tree", "HEAD")
     _git(temporary, "add", "-A", "--", *paths)
-    return _git(temporary, "write-tree").strip(), True
+    tree = _git(temporary, "write-tree").strip()
+    _check_tree_no_forbidden_files(env, tree)
+    return tree, True
 
 
 def _latest_daily(folder: Path, pattern: re.Pattern[str]) -> Path:
@@ -219,11 +324,20 @@ def _git_dir(env: dict[str, str], *, common: bool = False) -> Path:
 
 
 def _remote_repository(url: str) -> str:
-    pattern = r"(?:(?:https://|ssh://(?:git@)?|git@)github\.com[/:])([\w.-]+/[\w.-]+?)(?:\.git)?/?"
-    match = re.fullmatch(pattern, url, flags=re.ASCII)
-    if not match:
-        raise RuntimeError("Publication requires an origin URL that identifies a github.com repository.")
-    return match[1]
+    raw = url.strip()
+    patterns = (
+        # Standard or credentialed HTTPS URL on github.com
+        r"(?i:https://)(?:[^/@\s]+@)?(?i:github\.com)/([\w.-]+/[\w.-]+?)(?:\.git)?/?",
+        # ssh:// URL with github.com or custom GitHub SSH host alias (e.g. ssh://git@github-work/owner/repo.git)
+        r"(?i:ssh://)(?:[\w.-]+@)?(?i:github\.com|[\w.-]*github[\w.-]*)(?::\d+)?/([\w.-]+/[\w.-]+?)(?:\.git)?/?",
+        # SCP-style SSH with github.com or custom SSH host alias (e.g. git@github-work:owner/repo.git)
+        r"(?:[\w.-]+@)?(?i:github\.com|[\w.-]*github[\w.-]*):([\w.-]+/[\w.-]+?)(?:\.git)?/?",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, raw, flags=re.ASCII)
+        if match:
+            return match[1]
+    raise RuntimeError("Publication requires an origin URL that identifies a github.com repository.")
 
 
 def _validate_revision(
@@ -248,6 +362,19 @@ def _require_remote_main(env: dict[str, str], sha: str) -> None:
         raise RuntimeError(f"Remote main no longer points to publication commit {sha}; preserve the newer version.")
 
 
+def _is_commit_on_remote_main(env: dict[str, str], commit: str) -> bool:
+    """Return True if commit is already an ancestor of origin/main after fetching."""
+    fetch = _run(["git", "fetch", "origin", "main"], env, timeout=60)
+    _checked(fetch, "git fetch origin main")
+    anc = _run(["git", "merge-base", "--is-ancestor", commit, "FETCH_HEAD"], env, timeout=30)
+    if anc.returncode == 0:
+        return True
+    if anc.returncode == 1:
+        return False
+    detail = (anc.stderr or anc.stdout).strip()
+    raise RuntimeError(f"git merge-base failed ({anc.returncode}): {detail}")
+
+
 def _push_verified_commit(env: dict[str, str], commit: str, *, already_pushed: bool = False) -> None:
     if already_pushed or _remote_main(env) == commit:
         _require_remote_main(env, commit)
@@ -260,6 +387,8 @@ def _push_verified_commit(env: dict[str, str], commit: str, *, already_pushed: b
         except (RuntimeError, subprocess.TimeoutExpired) as exc:
             if _remote_main(env) == commit:
                 return  # A transport error can occur after origin accepts the ref update.
+            if attempt == 1 and _is_non_fast_forward_error(exc):
+                raise _NonFastForwardError(str(exc)) from exc
             if attempt == 2 or not _is_transient_error(exc):
                 raise
             print(f"[git] Retry push of {commit[:12]} after transient error: {exc}", file=sys.stderr)
@@ -269,7 +398,10 @@ def _push_verified_commit(env: dict[str, str], commit: str, *, already_pushed: b
 
 def _push_main(
     env: dict[str, str], output: Path, git_dir: Path,
-    *, edition: str | None = None, before_push: Callable[[str], None] | None = None,
+    *,
+    edition: str | None = None,
+    before_push: Callable[[str], None] | None = None,
+    on_push_rejected: Callable[[str], None] | None = None,
 ) -> str:
     for attempt in (1, 2):
         try:
@@ -296,7 +428,17 @@ def _push_main(
             before_push(commit)
         try:
             _push_verified_commit(env, commit)
+        except _NonFastForwardError as exc:
+            # Origin deterministically rejected the ref update (non-fast-forward) and commit never landed.
+            if on_push_rejected is not None:
+                on_push_rejected(commit)
+            if attempt == 2:
+                raise
+            print(f"[git] Remote main moved ahead (non-fast-forward); rebasing and retrying: {exc}", file=sys.stderr)
+            time.sleep(3)
+            continue
         except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            # Uncertain network/transport failure: keep push intent locked when before_push was used.
             if attempt == 2 or before_push is not None:
                 raise
             print(f"[git] Retry after {exc}", file=sys.stderr)
@@ -322,10 +464,15 @@ def _save_json(path: Path, value: dict) -> None:
 
 def _prepare_commit(
     env: dict[str, str], work: Path, output: Path, *,
-    edition: str | None, message: str | None,
+    edition: str | None,
+    message: str | None,
+    automated: bool = False,
+    explicit_stage: list[str] | None = None,
 ) -> None:
     current_tree = _git(env, "rev-parse", "HEAD^{tree}").strip()
-    tree, automatic = _publication_tree(env, work / "publish-index")
+    tree, automatic = _publication_tree(
+        env, work / "publish-index", automated=automated, explicit_stage=explicit_stage,
+    )
     _validate_revision(tree, output, env, edition=edition)
     if tree == current_tree:
         return
@@ -363,21 +510,38 @@ def _push_edition(
     else:
         expected = pushed
 
+    def remember(candidate: str) -> None:
+        edition_run.check_publication_candidate(token, sha=candidate, repository=repository)
+        _save_json(intent, {"edition": edition, "repository": repository, "sha": candidate})
+
+    def forget(_rejected: str) -> None:
+        intent.unlink(missing_ok=True)
+
     if expected is not None:
         if _git(env, "rev-parse", "HEAD").strip() != expected:
             raise RuntimeError(f"Resume the recorded publication commit {expected} before creating another commit.")
         _validate_revision(expected, output, env, edition=edition)
         edition_run.check_publication_candidate(token, sha=expected, repository=repository)
-        _push_verified_commit(env, expected, already_pushed=pushed is not None)
-        sha = expected
+        try:
+            _push_verified_commit(env, expected, already_pushed=pushed is not None)
+            sha = expected
+        except _NonFastForwardError:
+            if pushed is not None or _is_commit_on_remote_main(env, expected):
+                raise RuntimeError(
+                    f"Recorded commit {expected} is already on or superseded by origin/main; "
+                    "verify deployment or run close-superseded."
+                )
+            intent.unlink(missing_ok=True)
+            sha = _push_main(
+                env, output, git_dir, edition=edition,
+                before_push=remember, on_push_rejected=forget,
+            )
     else:
-        _prepare_commit(env, work, output, edition=edition, message=message)
-
-        def remember(candidate: str) -> None:
-            edition_run.check_publication_candidate(token, sha=candidate, repository=repository)
-            _save_json(intent, {"edition": edition, "repository": repository, "sha": candidate})
-
-        sha = _push_main(env, output, git_dir, edition=edition, before_push=remember)
+        _prepare_commit(env, work, output, edition=edition, message=message, automated=True)
+        sha = _push_main(
+            env, output, git_dir, edition=edition,
+            before_push=remember, on_push_rejected=forget,
+        )
     edition_run.record_push(token, sha=sha, repository=repository)
     intent.unlink(missing_ok=True)
     return sha, intent
@@ -390,9 +554,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--check-manuscripts", action="store_true", help="Run both source manuscript lint gates without building or publishing.")
     parser.add_argument("--no-push", action="store_true", help="Validate and commit locally without remote changes.")
     parser.add_argument("--edition-token", help="Token for an active edition in the publish phase.")
+    parser.add_argument(
+        "--stage",
+        nargs="+",
+        metavar="PATH",
+        help="Explicit in-scope path(s) to stage for manual publication (cannot be combined with --edition-token).",
+    )
     args = parser.parse_args(argv)
-    if args.edition_token and (args.dry_run or args.check_manuscripts or args.no_push):
-        parser.error("Edition tokens require full publication.")
+    if args.edition_token and (args.dry_run or args.check_manuscripts or args.no_push or args.stage):
+        parser.error("Edition tokens require full automated publication without --stage/--dry-run/--no-push.")
+    if args.stage and (args.dry_run or args.check_manuscripts):
+        parser.error("--stage cannot be combined with --dry-run or --check-manuscripts.")
     return args
 
 
@@ -438,22 +610,41 @@ def main(argv: list[str] | None = None) -> int:
                     if origin.lower() != repository.lower():
                         raise RuntimeError("The origin fetch and push repositories differ.")
 
+                pushed_sha: str | None = None
                 if token is not None:
                     assert edition is not None and repository is not None
-                    _push_edition(
+                    pushed_sha, _ = _push_edition(
                         token, edition, repository, env, git_dir=git_dir, common=common, work=work,
                         output=output, message=args.message,
                     )
                 else:
-                    _prepare_commit(env, work, output, edition=None, message=args.message)
+                    _prepare_commit(
+                        env, work, output, edition=None, message=args.message,
+                        automated=False, explicit_stage=args.stage,
+                    )
                     if not args.no_push:
-                        _push_main(env, output, git_dir)
+                        pushed_sha = _push_main(env, output, git_dir)
 
-                _install_site(output)
+                try:
+                    _install_site(output)
+                except (OSError, RuntimeError) as exc:
+                    if pushed_sha is not None:
+                        print(
+                            f"[WARN] Remote push succeeded for commit {pushed_sha}, "
+                            f"but local preview install to {SITE_DIR} failed: {exc}",
+                            file=sys.stderr,
+                        )
+                    else:
+                        raise
+
                 if args.no_push:
                     print("[DONE] Validated the local publication snapshot.")
                 else:
-                    print("[DONE] Verified web portal source pushed. GitHub Pages deploys asynchronously through Actions.")
+                    sha_note = f" ({pushed_sha[:12]})" if pushed_sha else ""
+                    print(
+                        f"[DONE] Verified web portal source pushed{sha_note}. "
+                        "GitHub Pages deploys asynchronously through Actions."
+                    )
                 return 0
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         print(f"[FAIL] {exc}", file=sys.stderr)

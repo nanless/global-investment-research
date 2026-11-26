@@ -36,6 +36,8 @@ PLACEHOLDER_TOKENS = (
     "__REPO_ROOT__", "__PYTHON_BIN__", "__RUN_SLOT__", "__UNIFIED_PROMPT__", "__SHARED_GRANTS__",
 )
 FORBIDDEN_GLOBAL_TOKENS = ("--permission-mode",)
+SHELL_INJECTION_RE = re.compile(r"(?:;|&&|\|\||\||`|\$\()")
+FENCED_CODE_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 SCHEDULES = {
     "daily-global-investment-research": "CRON_TZ=Asia/Shanghai 30 7 * * *",
     "daily-global-investment-research-evening": "CRON_TZ=Asia/Shanghai 0 18 * * *",
@@ -139,11 +141,7 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
         entry[len("command("):-1] for entry in deduped_grants
         if entry.startswith("command(") and entry.endswith(")")
     ]
-    for command in re.findall(r"`([^\n`]+)`", args[5]):
-        if command.startswith(f"{python_bin} ") and not any(
-            command == grant or command.startswith(grant + " ") for grant in command_grants
-        ):
-            raise ValueError(f"{template_path.name}: shared prompt uses an unlisted command")
+    _audit_prompt_commands(args[5], python_bin, command_grants, template_path.name)
 
     final_text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
 
@@ -157,13 +155,52 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
     return final_text, data
 
 
-def atomic_write_text(dest: Path, content: str) -> None:
-    """Atomically write UTF-8 text to dest via temp file in same directory + os.replace."""
+def _audit_prompt_commands(
+    prompt_text: str, python_bin: str, command_grants: list[str], template_name: str
+) -> None:
+    """Audit both inline backticks and fenced code blocks for Python invocations and shell chaining/injection."""
+    for grant in command_grants:
+        if SHELL_INJECTION_RE.search(grant):
+            raise ValueError(f"{template_name}: command grant contains forbidden shell metacharacters: {grant!r}")
+
+    candidates: list[str] = []
+    for block_match in FENCED_CODE_BLOCK_RE.finditer(prompt_text):
+        for raw_line in block_match.group(1).splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("$ "):
+                line = line[2:].strip()
+            if line:
+                candidates.append(line)
+
+    inline_only = FENCED_CODE_BLOCK_RE.sub("", prompt_text)
+    for inline_cmd in re.findall(r"`([^\n`]+)`", inline_only):
+        cmd = inline_cmd.strip()
+        if cmd:
+            candidates.append(cmd)
+
+    py_cmd_re = re.compile(
+        rf"(?:^|[\s;|&])(?:{re.escape(python_bin)}|__PYTHON_BIN__|python3(?:\.\d+)?)(?:\s|$)"
+    )
+    for command in candidates:
+        if not py_cmd_re.search(command):
+            continue
+        if SHELL_INJECTION_RE.search(command):
+            raise ValueError(
+                f"{template_name}: shared prompt command contains forbidden shell metacharacters: {command!r}"
+            )
+        if not any(command == grant or command.startswith(grant + " ") for grant in command_grants):
+            raise ValueError(f"{template_name}: shared prompt uses an unlisted command: {command!r}")
+
+
+def atomic_write_bytes(dest: Path, content: bytes) -> None:
+    """Atomically write raw bytes to dest via temp file in same directory + os.replace."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(dest.parent))
     tmp_path = Path(tmp_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "wb") as fh:
             fh.write(content)
             fh.flush()
             os.fsync(fh.fileno())
@@ -171,6 +208,11 @@ def atomic_write_text(dest: Path, content: str) -> None:
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
+
+
+def atomic_write_text(dest: Path, content: str) -> None:
+    """Atomically write UTF-8 text to dest via temp file in same directory + os.replace."""
+    atomic_write_bytes(dest, content.encode("utf-8"))
 
 
 def find_stale_sidecar_dirs(target_dir: Path) -> list[str]:
@@ -356,14 +398,15 @@ def main(argv: list[str] | None = None) -> int:
         print("[DRY-RUN] Validation passed; no files modified.")
         return 0
 
-    written: list[tuple[Path, str | None]] = []
+    written: list[tuple[Path, bytes | None]] = []
     try:
         for sidecar_id, (rendered_text, data) in rendered_map.items():
             dest = target_dir / sidecar_id / "sidecar.json"
-            previous = dest.read_text(encoding="utf-8") if dest.is_file() else None
-            if previous == rendered_text:
+            expected_bytes = rendered_text.encode("utf-8")
+            previous = dest.read_bytes() if dest.is_file() else None
+            if previous == expected_bytes:
                 continue
-            atomic_write_text(dest, rendered_text)
+            atomic_write_bytes(dest, expected_bytes)
             written.append((dest, previous))
             print(f"[INSTALLED] {sidecar_id} -> {dest} ({len(data['agent_permissions']['access_grants'])} grants)")
     except (OSError, ValueError) as exc:
@@ -373,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
                 if previous is None:
                     path.unlink(missing_ok=True)
                 else:
-                    atomic_write_text(path, previous)
+                    atomic_write_bytes(path, previous)
             except OSError as rollback_error:
                 print(f"[FAIL] Cannot roll back {path.name}: {rollback_error}", file=sys.stderr)
         return 1

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Build the standalone Hong Kong Stock Market Flagship Manual (PDF + Pure-Python ECMA-376 DOCX)
+Pure-web Vector SVG chart renderer for the Hong Kong Stock Market Flagship Handbook & Dailies
 with 7 bespoke 850px colorblind-safe vector SVGs (CHART_H1 through CHART_H7).
 
-Also exports svg_chart_h1..h7(meta_override) for build_daily.py HK daily editions.
+Exports svg_chart_h1..h7(meta_override) consumed by scripts/build_site.py and equity/build_daily.py.
 """
 
 from __future__ import annotations
@@ -17,25 +17,15 @@ from pathlib import Path
 
 from pdf_common import (
     BASE_DIR,
-    atomic_copy,
-    build_theme_css,
     clean_svg_text,
-    freeze_equity_inputs,
     norm_chart_title as _norm_chart_title,
-    render_cover_banner,
-    render_docx_atomic,
-    render_md_body,
-    render_pdf_atomic,
-    resolve_chrome_bin,
-    run_lint_gate,
+    sanitize_hex_color,
+    sanitize_svg_anchor,
     svg_shape,
-    write_equity_receipt,
 )
 
 OUT_DIR = BASE_DIR
 META_PATH = OUT_DIR / "report_meta_hk_stock.json"
-HTML_PDF_PATH = OUT_DIR / ".tmp_hk_stock_pdf.html"
-TMP_PDF_PATH = OUT_DIR / ".tmp_hk_stock.pdf"
 
 
 def _svg_esc(val: object) -> str:
@@ -51,12 +41,9 @@ def load_meta(meta_override: dict | None = None) -> dict:
     return {}
 
 
-def resolve_flagship_paths(meta: dict) -> tuple[Path, Path, Path]:
+def resolve_flagship_md(meta: dict) -> Path:
     slug = str(meta.get("period_slug", "2026_11")).strip() or "2026_11"
-    md_path = OUT_DIR / f"hk_stock_market_report_{slug}.md"
-    pdf_path = OUT_DIR / f"hk_stock_market_report_{slug}.pdf"
-    docx_path = OUT_DIR / f"hk_stock_market_report_{slug}.docx"
-    return md_path, pdf_path, docx_path
+    return OUT_DIR / f"hk_stock_market_report_{slug}.md"
 
 
 def _read_hkma_bal_100m(cl: dict) -> float:
@@ -240,7 +227,9 @@ def svg_chart_h2_flow_and_rebalance(meta_override: dict | None = None) -> str:
     ]
     right_xml = ""
     cy = 42
-    for hdr, col, bg, lines in cards[:3]:
+    for hdr, col_raw, bg_raw, lines in cards[:3]:
+        col = sanitize_hex_color(col_raw, "#0F766E")
+        bg = sanitize_hex_color(bg_raw, "#F8FAFC")
         right_xml += (
             f'<rect x="404" y="{cy}" width="432" height="71" fill="{bg}" stroke="{col}" stroke-width="1" rx="5"/>'
             f'<text x="416" y="{cy+17}" font-size="9.3" fill="{col}" font-weight="800">{_svg_esc(hdr)}</text>'
@@ -315,7 +304,8 @@ def svg_chart_h3_peg_and_erp(meta_override: dict | None = None) -> str:
         erp_px = 440.0 / max_pos
     erp_bars = f'<line x1="{erp_zero_x:.1f}" y1="156" x2="{erp_zero_x:.1f}" y2="278" stroke="#64748b" stroke-width="1.1"/>'
     ey0 = 158
-    for idx, (lbl, val, col) in enumerate(erp_rows):
+    for idx, (lbl, val, col_raw) in enumerate(erp_rows):
+        col = sanitize_hex_color(col_raw, "#0072B2")
         yy = ey0 + idx * 30
         val_f = float(val)
         if val_f >= 0:
@@ -411,9 +401,12 @@ def svg_chart_h4_clock(meta_override: dict | None = None) -> str:
     cards_xml = ""
     for i, c in enumerate(cards[:4]):
         cx = 16 + i * 206
+        col = sanitize_hex_color(c.get("color"), "#0F766E")
+        bg = sanitize_hex_color(c.get("bg"), "#F8FAFC")
+        bd = sanitize_hex_color(c.get("border"), col)
         cards_xml += (
-            f'<rect x="{cx}" y="14" width="198" height="128" fill="{c["bg"]}" stroke="{c["border"]}" stroke-width="1.1" rx="6"/>'
-            f'<rect x="{cx}" y="14" width="198" height="24" fill="{c["color"]}" rx="5"/>'
+            f'<rect x="{cx}" y="14" width="198" height="128" fill="{bg}" stroke="{bd}" stroke-width="1.1" rx="6"/>'
+            f'<rect x="{cx}" y="14" width="198" height="24" fill="{col}" rx="5"/>'
             f'<text x="{cx+99}" y="30" text-anchor="middle" font-size="9.0" fill="#ffffff" font-weight="800">{_svg_esc(c["header"])}</text>'
         )
         for j, it in enumerate(c.get("items", [])[:3]):
@@ -467,11 +460,13 @@ def svg_chart_h5_targets_and_scenarios(meta_override: dict | None = None) -> str
     bars = ""
     base_x = 142.0
     max_w = 258.0
-    cur_x = base_x + (hsi - 14000) / (33000 - 14000) * max_w
-    for idx, (nm, tgt, col) in enumerate(banks[:7]):
+    hsi_denom = max(1.0, hsi)
+    cur_x = max(base_x, min(base_x + max_w, base_x + (hsi - 14000) / (33000 - 14000) * max_w))
+    for idx, (nm, tgt, col_raw) in enumerate(banks[:7]):
+        col = sanitize_hex_color(col_raw, "#0072B2")
         yy = 48 + idx * 30
-        bw = max(8.0, (float(tgt) - 14000) / (33000 - 14000) * max_w)
-        chg = (float(tgt) / hsi - 1) * 100
+        bw = max(8.0, min(max_w - 8.0, (float(tgt) - 14000) / (33000 - 14000) * max_w))
+        chg = (float(tgt) / hsi_denom - 1) * 100
         bars += (
             f'<text x="136" y="{yy+14}" text-anchor="end" font-size="9.0" fill="#0f172a" font-weight="700">{_svg_esc(nm)}</text>'
             f'<rect x="{base_x:.1f}" y="{yy+3}" width="{bw:.1f}" height="14" fill="{col}" rx="2.5"/>'
@@ -487,9 +482,10 @@ def svg_chart_h5_targets_and_scenarios(meta_override: dict | None = None) -> str
     max_prob = max([50.0] + [float(s[1]) for s in scenarios[:4]])
     sc_xml = ""
     sy = 50
-    for nm, prob, rng, col in scenarios[:4]:
+    for nm, prob, rng, col_raw in scenarios[:4]:
+        col = sanitize_hex_color(col_raw, "#0F766E")
         prob_f = float(prob)
-        pw = min(320.0, (prob_f / max_prob) * 290.0)
+        pw = max(0.0, min(320.0, (prob_f / max_prob) * 290.0))
         dots_n = max(1, int(round(prob_f / 10.0)))
         sc_xml += (
             f'<text x="488" y="{sy+12}" font-size="9.0" fill="#0f172a" font-weight="800">{_svg_esc(nm)}（10次约{dots_n}次）</text>'
@@ -655,8 +651,10 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
     )))
 
     dots = ""
-    for nm, x, y, sh, col, dx, dy, anc in pts:
-        dots += svg_shape(str(sh), float(x), float(y), str(col))
+    for nm, x, y, sh, col_raw, dx, dy, anc_raw in pts:
+        col = sanitize_hex_color(col_raw, "#334155")
+        anc = sanitize_svg_anchor(anc_raw, "start")
+        dots += svg_shape(str(sh), float(x), float(y), col)
         dots += f'<text x="{float(x)+float(dx)}" y="{float(y)+float(dy)}" text-anchor="{anc}" font-size="9.0" fill="{col}" font-weight="700">{html_mod.escape(clean_svg_text(str(nm)))}</text>'
 
     return f'''
@@ -691,80 +689,28 @@ def svg_chart_h7_stock_quadrant(meta_override: dict | None = None) -> str:
 
 
 def run_check() -> None:
-    chrome = resolve_chrome_bin()
-    assert Path(chrome).exists(), f"Chrome missing: {chrome}"
-    import bs4  # noqa: F401
-    from PIL import Image  # noqa: F401
     assert META_PATH.exists(), f"Missing {META_PATH}"
     meta = load_meta()
-    md_path, _, _ = resolve_flagship_paths(meta)
+    md_path = resolve_flagship_md(meta)
     assert md_path.exists(), f"Missing {md_path}"
-    print(f"HK-Stock builder check OK: {md_path.name} (Chrome + bs4 + Pillow ready)")
+    for fn in (
+        svg_chart_h1_cycles,
+        svg_chart_h2_flow_and_rebalance,
+        svg_chart_h3_peg_and_erp,
+        svg_chart_h4_clock,
+        svg_chart_h5_targets_and_scenarios,
+        svg_chart_h6_ah_arbitrage_and_sectors,
+        svg_chart_h7_stock_quadrant,
+    ):
+        assert "<svg" in fn(meta)
+    print(f"HK-Stock pure-web SVG check OK: {md_path.name} (7 vector charts ready)")
 
 
 def main() -> None:
-    args = sys.argv[1:]
-    if "--check" in args:
+    if "--check" in sys.argv[1:]:
         run_check()
         return
-    no_lint = "--no-lint" in args
-    no_docx = "--no-docx" in args
-    meta = load_meta()
-    md_path, pdf_path, docx_path = resolve_flagship_paths(meta)
-    frozen = freeze_equity_inputs(md_path, Path(__file__), META_PATH) if not no_docx else None
-    if frozen is not None:
-        meta = load_meta()
-        if resolve_flagship_paths(meta)[0] != md_path:
-            raise ValueError("Flagship period changed while preparing compilation")
-    report_md = md_path.read_text(encoding="utf-8")
-    print(f"Loaded HK-Stock MD ({len(report_md)} chars): {md_path}")
-    run_lint_gate(report_md, str(md_path), is_flagship=True, meta=meta, no_lint=no_lint)
-
-    cover_html, doc_title, page_footer, footer_note = render_cover_banner(
-        meta, "中国香港股市跨周期全景手册", "港股全景研究手册", "中国香港股市跨周期全景研究手册", meta_label="阅读说明"
-    )
-    charts = {
-        "<!-- CHART_H1 -->": svg_chart_h1_cycles(meta),
-        "<!-- CHART_H2 -->": svg_chart_h2_flow_and_rebalance(meta),
-        "<!-- CHART_H3 -->": svg_chart_h3_peg_and_erp(meta),
-        "<!-- CHART_H4 -->": svg_chart_h4_clock(meta),
-        "<!-- CHART_H5 -->": svg_chart_h5_targets_and_scenarios(meta),
-        "<!-- CHART_H6 -->": svg_chart_h6_ah_arbitrage_and_sectors(meta),
-        "<!-- CHART_H7 -->": svg_chart_h7_stock_quadrant(meta),
-    }
-    _, body_pdf = render_md_body(report_md, charts, is_flagship=True)
-    css_final = build_theme_css("hk_stock", page_footer, is_flagship=True)
-    full_pdf_html = (
-        f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
-        f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{html_mod.escape(doc_title)}</title><style>{css_final}</style></head>"
-        f'<body>{cover_html}{body_pdf}<div class="footer-note">{html_mod.escape(footer_note)}</div></body></html>'
-    )
-    render_pdf_atomic(full_pdf_html, pdf_path, HTML_PDF_PATH, TMP_PDF_PATH)
-    print(f"Wrote PDF ({pdf_path.stat().st_size:,} bytes): {pdf_path}")
-
-    if no_docx:
-        receipt_path = md_path.with_suffix(".artifacts.json")
-        if receipt_path.exists():
-            receipt_path.unlink()
-            print(f"Removed stale artifact receipt: {receipt_path.name}")
-        print("[WARN] --no-docx skips syncing *_latest.* to prevent PDF/DOCX divergence.")
-        return
-
-    render_docx_atomic(full_pdf_html, docx_path, market="hk_stock", footer_title=page_footer)
-    write_equity_receipt(frozen, pdf_path, docx_path)
-    print(f"Wrote native OOXML DOCX ({docx_path.stat().st_size:,} bytes): {docx_path}")
-
-    latest_md = OUT_DIR / "hk_stock_market_report_latest.md"
-    latest_pdf = OUT_DIR / "hk_stock_market_report_latest.pdf"
-    latest_docx = OUT_DIR / "hk_stock_market_report_latest.docx"
-    atomic_copy(md_path, latest_md)
-    atomic_copy(pdf_path, latest_pdf)
-    if docx_path.exists():
-        atomic_copy(docx_path, latest_docx)
-        print(f"Synced: {latest_md}, {latest_pdf} & {latest_docx}")
-    else:
-        print(f"Synced: {latest_md} & {latest_pdf}")
+    print("Pure-web mode: build_hk_stock_pdf.py exports SVG charts H1–H7 for scripts/build_site.py.")
 
 
 if __name__ == "__main__":

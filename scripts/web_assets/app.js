@@ -1,9 +1,11 @@
 /* ==========================================================================
    Global Investment Research Portal — Interactive Client Engine (Zero Deps)
    Features: Obsidian Dark Mode, Font Scaler, Reading Progress & Back-to-Top,
-             TOC ScrollSpy & Mobile Drawer, Command-K Quick Jump Palette,
+             TOC ScrollSpy (rAF) & Mobile Drawer, Command-K Quick Jump Palette,
              Chart Lightbox + Shortcuts, 231-Stock Screener, Scorecard Tabs,
-             Multi-Facet Archive Search
+             Multi-Facet Archive Search, Dual-Mode Channel Filter & Four-Bucket
+             Jump, Global ETF Radar + Channel Detail ETF Modal, Glossary Popover
+             & Beginner Guide Search
    ========================================================================== */
 (function () {
   "use strict";
@@ -33,6 +35,10 @@
     if (!el) return false;
     const tag = (el.tagName || "").toUpperCase();
     return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el.isContentEditable;
+  }
+
+  function isFiniteNum(v) {
+    return typeof v === "number" && isFinite(v);
   }
 
   /* ------------------------------------------------------------------------
@@ -72,12 +78,13 @@
   }
 
   /* ------------------------------------------------------------------------
-     2. Auto-Scroll Active Mobile Nav Pill into View
+     2. Auto-Scroll Active Mobile Nav Pill & Active Channel Switcher Pill
      ------------------------------------------------------------------------ */
-  const mainNav = document.querySelector(".main-nav");
-  if (mainNav) {
-    const activePill = mainNav.querySelector(".nav-pill.active");
-    if (activePill && mainNav.scrollWidth > mainNav.clientWidth + 2) {
+  function centerActiveScrollPill(containerSel, pillSel) {
+    const container = document.querySelector(containerSel);
+    if (!container) return;
+    const activePill = container.querySelector(pillSel);
+    if (activePill && container.scrollWidth > container.clientWidth + 2) {
       try {
         activePill.scrollIntoView({ inline: "center", block: "nearest", behavior: "auto" });
       } catch (_) {
@@ -85,6 +92,8 @@
       }
     }
   }
+  centerActiveScrollPill(".main-nav", ".nav-pill.active");
+  centerActiveScrollPill(".ch-switcher", ".ch-switch-pill.active");
 
   /* ------------------------------------------------------------------------
      3. Font Size Scaler (A- / A+)
@@ -156,11 +165,6 @@
   if (backToTopBtn && backToTopBtn.getAttribute("data-action") !== "scroll-top") {
     backToTopBtn.addEventListener("click", scrollPageTop);
   }
-  document.querySelectorAll("[data-action='print']").forEach(function (el) {
-    el.addEventListener("click", function () {
-      window.print();
-    });
-  });
 
   /* ------------------------------------------------------------------------
      5. Shared Accessible Modal / Dialog Focus Manager
@@ -193,23 +197,35 @@
   }
 
   /* ------------------------------------------------------------------------
-     6. TOC ScrollSpy (Desktop Sidebar + Mobile TOC Strip) & Drawer
+     6. TOC ScrollSpy (rAF-Throttled Desktop Sidebar + Parent-H2 Mobile Strip)
      ------------------------------------------------------------------------ */
   const tocLinks = Array.from(document.querySelectorAll(".toc-sidebar .toc-link"));
   const mobileTocPills = Array.from(document.querySelectorAll(".mobile-toc-strip .mobile-toc-pill"));
 
   if (tocLinks.length > 0 || mobileTocPills.length > 0) {
     const sourceLinks = tocLinks.length > 0 ? tocLinks : mobileTocPills;
+    let lastH2Id = "";
     const headings = sourceLinks
       .map(function (a) {
         const href = a.getAttribute("href") || "";
         const id = href.replace(/^#/, "");
-        return { id: id, el: document.getElementById(id) };
+        const el = document.getElementById(id);
+        const isLvl3 = a.classList.contains("lvl-3");
+        if (!isLvl3 && el) lastH2Id = id;
+        return {
+          id: id,
+          el: el,
+          parentH2Id: isLvl3 ? (lastH2Id || id) : id,
+        };
       })
       .filter(function (x) { return !!x.el; });
 
     let activeId = "";
+    let activeMobileId = "";
+    let tocRaf = 0;
+
     function syncToc() {
+      tocRaf = 0;
       if (headings.length === 0) return;
       const offset = 118;
       let current = headings[0];
@@ -220,31 +236,43 @@
           break;
         }
       }
-      if (!current || current.id === activeId) return;
-      activeId = current.id;
+      if (!current) return;
 
-      const sidebar = document.querySelector(".toc-sidebar");
-      tocLinks.forEach(function (link) {
-        const isAct = (link.getAttribute("href") || "") === "#" + activeId;
-        link.classList.toggle("active", isAct);
-        if (isAct && sidebar && sidebar.scrollHeight > sidebar.clientHeight) {
-          const top = link.offsetTop - sidebar.clientHeight / 2;
-          sidebar.scrollTo({ top: Math.max(0, top), behavior: "auto" });
-        }
-      });
+      if (current.id !== activeId) {
+        activeId = current.id;
+        const sidebar = document.querySelector(".toc-sidebar");
+        tocLinks.forEach(function (link) {
+          const isAct = (link.getAttribute("href") || "") === "#" + activeId;
+          link.classList.toggle("active", isAct);
+          if (isAct && sidebar && sidebar.scrollHeight > sidebar.clientHeight) {
+            const top = link.offsetTop - sidebar.clientHeight / 2;
+            sidebar.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+          }
+        });
+      }
 
-      const mobileStrip = document.querySelector(".mobile-toc-strip");
-      mobileTocPills.forEach(function (pill) {
-        const isAct = (pill.getAttribute("href") || "") === "#" + activeId;
-        pill.classList.toggle("active", isAct);
-        if (isAct && mobileStrip && mobileStrip.scrollWidth > mobileStrip.clientWidth + 2) {
-          const left = pill.offsetLeft - mobileStrip.clientWidth / 2 + pill.clientWidth / 2;
-          mobileStrip.scrollTo({ left: Math.max(0, left), behavior: "auto" });
-        }
-      });
+      const mobTargetId = current.parentH2Id || current.id;
+      if (mobTargetId !== activeMobileId) {
+        activeMobileId = mobTargetId;
+        const mobileStrip = document.querySelector(".mobile-toc-strip");
+        mobileTocPills.forEach(function (pill) {
+          const isAct = (pill.getAttribute("href") || "") === "#" + activeMobileId;
+          pill.classList.toggle("active", isAct);
+          if (isAct && mobileStrip && mobileStrip.scrollWidth > mobileStrip.clientWidth + 2) {
+            const left = pill.offsetLeft - mobileStrip.clientWidth / 2 + pill.clientWidth / 2;
+            mobileStrip.scrollTo({ left: Math.max(0, left), behavior: "auto" });
+          }
+        });
+      }
     }
 
-    window.addEventListener("scroll", syncToc, { passive: true });
+    function scheduleSyncToc() {
+      if (!tocRaf) {
+        tocRaf = window.requestAnimationFrame(syncToc);
+      }
+    }
+
+    window.addEventListener("scroll", scheduleSyncToc, { passive: true });
     syncToc();
   }
 
@@ -320,7 +348,7 @@
     cmdIndex = 0;
 
     if (cmdFiltered.length === 0) {
-      cmdList.innerHTML = '<div class="cmd-empty">未找到匹配的页面或报告，试试输入「黄金」「A股」「记分卡」「筛选」</div>';
+      cmdList.innerHTML = '<div class="cmd-empty">未找到匹配的页面或报告，试试输入「黄金」「A股」「新手」「筛选」</div>';
       return;
     }
 
@@ -416,18 +444,19 @@
   }
 
   /* ------------------------------------------------------------------------
-     8. Chart Lightbox Fullscreen Zoom Modal + Keyboard Shortcuts
+     8. Chart Lightbox Fullscreen Zoom Modal (Mobile Scroll-Safe 100% Default)
      ------------------------------------------------------------------------ */
   const chartModal = document.getElementById("chart-modal");
   const chartModalTitle = document.getElementById("chart-modal-title");
   const chartModalCanvas = document.getElementById("chart-modal-canvas");
+  const chartModalStage = chartModal ? chartModal.querySelector(".chart-modal-stage") : null;
   let zoomPct = 100;
 
   function applyChartZoom(pct) {
     zoomPct = Math.max(70, Math.min(240, pct));
     if (chartModalCanvas) {
       if (zoomPct === 100) {
-        chartModalCanvas.style.width = "min(1080px, 96vw)";
+        chartModalCanvas.style.width = "min(1080px, 94vw)";
       } else {
         chartModalCanvas.style.width = Math.round(1080 * (zoomPct / 100)) + "px";
       }
@@ -448,7 +477,11 @@
     const clone = svg.cloneNode(true);
     clone.removeAttribute("style");
     chartModalCanvas.appendChild(clone);
-    applyChartZoom(window.innerWidth < 720 ? 115 : 100);
+    applyChartZoom(100);
+    if (chartModalStage) {
+      chartModalStage.scrollLeft = 0;
+      chartModalStage.scrollTop = 0;
+    }
     showDialog(chartModal);
   }
 
@@ -482,7 +515,13 @@
       b.addEventListener("click", function () { applyChartZoom(zoomPct - 25); });
     });
     document.querySelectorAll("[data-action='zoom-reset']").forEach(function (b) {
-      b.addEventListener("click", function () { applyChartZoom(100); });
+      b.addEventListener("click", function () {
+        applyChartZoom(100);
+        if (chartModalStage) {
+          chartModalStage.scrollLeft = 0;
+          chartModalStage.scrollTop = 0;
+        }
+      });
     });
     chartModal.addEventListener("click", function (e) {
       if (e.target === chartModal || e.target.classList.contains("chart-modal-stage")) {
@@ -491,6 +530,194 @@
     });
   }
 
+  /* ------------------------------------------------------------------------
+     9. Global Zero-Dependency Glossary Tooltip Popover (All Pages)
+     ------------------------------------------------------------------------ */
+  const GLOSSARY_DICT = {
+    four_buckets: {
+      term: "四笔钱规划（活钱 / 稳钱 / 长钱 / 保障）",
+      plain: "按「什么时候要用这笔钱」把积蓄分成四份：0–6 个月活钱、1–3 年稳钱、3–5 年以上长钱，外加先兜底的基础保障。",
+      avoid: "避坑提醒：最常见的亏损不是买错产品，而是把半年内要用的房租或首付拿去买股票（短钱长投）。",
+    },
+    traffic_light: {
+      term: "红绿灯信号（红灯停 / 黄灯 / 绿灯）",
+      plain: "红绿灯不是预测明天涨跌，而是仓位安全阀：绿灯代表赔率划算可分批，黄灯代表拉锯观望，红灯停代表风险收益比偏弱。",
+      avoid: "避坑提醒：红灯停绝不等于恐慌清仓，而是老底仓稳拿不乱卖、新钱先放稳钱池暂不追高或暂不新买。",
+    },
+    dfii10: {
+      term: "10 年美债真实利率（DFII10）",
+      plain: "扣除美国未来通胀预期后，买 10 年期美国国债能拿到手的「真实利息」。黄金不生息，因此真实利率越高，黄金承压越重。",
+      avoid: "避坑提醒：只要真实利率仍高悬在过关线之上，就别凭感觉猜底抢跑新买黄金。",
+    },
+    erp: {
+      term: "股权风险溢价（ERP）",
+      plain: "买一篮子股票的盈利收益率减去无风险国债利率的差值，可以理解为「冒风险买股票比买国债多拿的性价比补贴」，数值越高越划算。",
+      avoid: "避坑提醒：高 ERP 代表长期赔率好，但不代表明天立刻大涨，仍需配合趋势与仓位上限分批进场。",
+    },
+    hibor: {
+      term: "香港银行同业拆息（HIBOR）",
+      plain: "香港各家银行之间互相借港元的批发利率。它走高说明香港资金变紧、股票估值承压；走低说明市场流动性偏宽松。",
+      avoid: "避坑提醒：关注港股时要同时看 HIBOR 和美元兑港元汇率是否逼近 7.85 弱方保证线。",
+    },
+    hkma_bal: {
+      term: "香港金管局总结余",
+      plain: "香港银行体系放在金管局账户里的「港元总水池」。水位越浅，一旦外部抽水，港元利率越容易突然跳涨。",
+      avoid: "避坑提醒：当总结余逼近低水位警戒线时，港股高估值板块容易放大波动，不宜加杠杆。",
+    },
+    vix: {
+      term: "美股恐慌指数（VIX）",
+      plain: "由标普 500 期权价格算出来的市场「紧张度温度计」。20 以下偏平静，超过 30 说明全球资金正剧烈避险。",
+      avoid: "避坑提醒：VIX 急飙突破 30 时各类资产容易一起被抛售变现，切忌在高波动盘中盲目重仓抄底。",
+    },
+    us10y: {
+      term: "10 年期美债收益率（US10Y）",
+      plain: "全球资产定价的「无风险锚」。它飙升会直接抬高全球借贷成本，压制高估值科技股和新兴市场资产。",
+      avoid: "避坑提醒：若 10 年美债持续高企甚至触发熔断线，科技成长股新增仓位应保持克制。",
+    },
+    ah_premium: {
+      term: "A/H 溢价与倒挂",
+      plain: "同一家公司在 A 股和港股同时上市时的价格差。正值代表 A 股比港股贵；负值（倒挂）代表 A 股反而比港股便宜。",
+      avoid: "避坑提醒：别只看表面便宜就换港股，用内地港股通买 H 股分红要扣 20%–28% 红利税，务必算税后净股息。",
+    },
+    etf_vs_feeder: {
+      term: "场内 ETF vs 场外联接基金",
+      plain: "场内 ETF 在券商 App 像股票一样实时交易、费率极低；场外联接在支付宝或银行按收盘净值申购，无需股票账户且绝不买到场内溢价。",
+      avoid: "避坑提醒：跨境美股 ETF 场内抢购溢价高时，优先用场外联接按净值分批定投，别在场内当高溢价接盘侠。",
+    },
+    class_a_c: {
+      term: "基金 A 类 vs C 类（+7 天惩罚费）",
+      plain: "A 类在买入时一次性交申购费，适合长期持有；C 类不收申购费但按天扣销售服务费，适合短期波段。",
+      avoid: "避坑提醒：无论 A 类还是 C 类，持有不满 7 天卖出通常都要硬扣 1.5% 惩罚性赎回费，短钱别乱进出。",
+    },
+    premium_discount: {
+      term: "场内折价与溢价（参考净值 IOPV）",
+      plain: "基金真实价值叫参考净值（IOPV），场内买价高于真实价值就是溢价——相当于值 100 元的东西大家抢到 120 元卖给你。",
+      avoid: "避坑提醒：跨境 QDII 或商品场内溢价超过 2%–3% 坚决不追高，情绪退潮后多花的那部分溢价会直接蒸发。",
+    },
+    duration: {
+      term: "债券久期（Duration）",
+      plain: "衡量债券对利率变化有多敏感的「暴脾气系数」。久期 1 年以下像平稳直线，30 年国债久期近 20 年，利率微涨就能跌 5% 以上。",
+      avoid: "避坑提醒：千万别把 30 年超长国债 ETF 当成保本稳健存款重仓，它属于高波动波段与对冲工具。",
+    },
+    nav_break: {
+      term: "银行理财破净与真净值化",
+      plain: "资管新规后银行理财不再保本，每天按底层债券和股票市价算净值；「破净」就是净值跌破 1 元本金线。",
+      avoid: "避坑提醒：「业绩比较基准」只是目标不是承诺保底，追求本金绝对安全应选储蓄国债或 50 万以内银行存款。",
+    },
+    t0_t1: {
+      term: "T+0 / T+1 与「可用 / 可取」",
+      plain: "T+0 当天买当天能卖（债券/跨境/转债/商品 ETF）；T+1 次交易日才能卖（A 股普通股与 A 股股票 ETF）。资金「可用」指能买证券，「可取」指能提现回银行卡。",
+      avoid: "避坑提醒：做国债逆回购务必点「卖出（借钱）」；周四借 1 天期吃 3 天息，周五借 1 天期周末白闲置，且到期次日才可提现。",
+    },
+    deposit_insurance: {
+      term: "50 万元存款保险与单法人上限",
+      plain: "同一存款人在同一家独立法人银行的所有普通存款和大额存单，本金加利息合计 50 万元以内由存款保险全额保障。",
+      avoid: "避坑提醒：同一家银行的不同支行合并计算，实操单行控制在 45–47 万以内留出利息缓冲；理财、基金和保险不在存保范围内。",
+    },
+    dividend_tax: {
+      term: "红利税与通道税费差异",
+      plain: "A 股持股超 1 年免红利税；港股通收息直扣 20%（红筹最高 28%）；个人直买交易所公司债付息扣 20%，银行间债券 ETF 底层则更具税负优势。",
+      avoid: "避坑提醒：买港股高股息前先按税后打七到八折重算真实到手率；境外账户投资收益须依法履行年度全球纳税申报义务。",
+    },
+    mrf_hedged: {
+      term: "香港互认基金（MRF）对冲累计份额",
+      plain: "经两地监管批准在内地合法销售的香港公募基金。「人民币对冲」用于锁住汇率波动，「累计份额」把利息滚入净值。",
+      avoid: "避坑提醒：MRF 现金派息强制代扣 20% 个税，买卖价差暂免个税，认准「对冲 + 累计」份额，并核实未暂停申购。",
+    },
+    lof_delist: {
+      term: "QDII / 商品 LOF 退市回归净值",
+      plain: "部分场内跨境和商品 LOF 按交易所新规面临限期终止上市，退市转场外后只能按真实净值赎回。",
+      avoid: "避坑提醒：高溢价买进此类 LOF，一旦退市回归净值，多付的溢价将永久清零，切勿在两位数溢价时进场。",
+    },
+    cb_call: {
+      term: "可转债强赎与「Z 标识」",
+      plain: "正股大涨触发条款后，公司有权按约 100.5 元强行买回转债。临近强赎或到期停牌最后阶段，行情软件会亮出「Z」警示标识。",
+      avoid: "避坑提醒：忘记卖出或转股会被低价强赎瞬间亏掉 25%–50%；而已到期停牌的转债切忌误点转股。新手可优先选投资级转债 ETF 自动分散排雷。",
+    },
+    reits_irr: {
+      term: "公募 REITs 分派率 vs 中债真实 IRR",
+      plain: "产权类 REITs（保租房/商场）像买房收租看分派率与出租率；特许经营权类（高速/能源）到期资产无偿移交，高分派里混有本金归还。",
+      avoid: "避坑提醒：绝不能把高速 REITs 8%–12% 的表面分派率当成高股息，必须核对中债真实内部收益率（IRR）与薄量限价挂单。",
+    },
+  };
+
+  let activeTermPop = null;
+  let activeTermTrigger = null;
+
+  function closeTermPopover() {
+    if (activeTermPop && activeTermPop.parentNode) {
+      activeTermPop.parentNode.removeChild(activeTermPop);
+    }
+    if (activeTermTrigger) {
+      activeTermTrigger.setAttribute("aria-expanded", "false");
+    }
+    activeTermPop = null;
+    activeTermTrigger = null;
+  }
+
+  function openTermPopover(trigger) {
+    const key = trigger.getAttribute("data-term") || "";
+    const entry = GLOSSARY_DICT[key];
+    if (!entry) return;
+    if (activeTermTrigger === trigger && activeTermPop) {
+      closeTermPopover();
+      return;
+    }
+    closeTermPopover();
+
+    const basePrefix = document.body.getAttribute("data-base-prefix") || "";
+    const pop = document.createElement("div");
+    pop.className = "term-popover";
+    pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", entry.term);
+    pop.innerHTML =
+      '<div class="term-pop-head">' +
+      '<div class="term-pop-title">' + escHtml(entry.term) + "</div>" +
+      '<button type="button" class="term-pop-close" aria-label="关闭解释">×</button>' +
+      "</div>" +
+      '<p class="term-pop-plain">' + escHtml(entry.plain) + "</p>" +
+      '<div class="term-pop-avoid">' + escHtml(entry.avoid) + "</div>" +
+      '<div class="term-pop-foot"><a href="' + escHtml(basePrefix + "guide.html#term-" + key) + '">在《新手 3 分钟指南》查看全部术语 →</a></div>';
+
+    document.body.appendChild(pop);
+    const rect = trigger.getBoundingClientRect();
+    const popW = pop.offsetWidth || 320;
+    const popH = pop.offsetHeight || 180;
+    const margin = 12;
+    let left = rect.left + rect.width / 2 - popW / 2;
+    left = Math.max(margin, Math.min(window.innerWidth - popW - margin, left));
+    let top = rect.bottom + 8;
+    if (top + popH > window.innerHeight - margin && rect.top - popH - 8 >= margin) {
+      top = rect.top - popH - 8;
+    } else {
+      top = Math.max(margin, Math.min(window.innerHeight - popH - margin, top));
+    }
+    pop.style.left = Math.round(left) + "px";
+    pop.style.top = Math.round(top) + "px";
+
+    const closeBtn = pop.querySelector(".term-pop-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", closeTermPopover);
+    }
+    trigger.setAttribute("aria-expanded", "true");
+    activeTermPop = pop;
+    activeTermTrigger = trigger;
+  }
+
+  document.addEventListener("click", function (e) {
+    const tip = e.target.closest(".term-tip[data-term]");
+    if (tip) {
+      e.preventDefault();
+      e.stopPropagation();
+      openTermPopover(tip);
+      return;
+    }
+    if (activeTermPop && !activeTermPop.contains(e.target)) {
+      closeTermPopover();
+    }
+  });
+  window.addEventListener("resize", closeTermPopover, { passive: true });
+
   /* Global Keyboard Dispatcher (Cmd/Ctrl+K, Chart Shortcuts, Modal Escape/Tab) */
   document.addEventListener("keydown", function (e) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && cmdPalette) {
@@ -498,8 +725,11 @@
       if (cmdPalette.classList.contains("open")) {
         closeCmdPalette();
       } else {
+        closeTermPopover();
         closeChartModal();
         setTocDrawer(false);
+        hideDialog(document.getElementById("dossier-modal"));
+        hideDialog(document.getElementById("etf-modal"));
         openCmdPalette();
       }
       return;
@@ -527,6 +757,7 @@
     if (dialog) {
       if (e.key === "Escape") {
         e.preventDefault();
+        closeTermPopover();
         closeCmdPalette();
         closeChartModal();
         setTocDrawer(false);
@@ -549,21 +780,28 @@
       return;
     }
 
+    if (e.key === "Escape" && activeTermPop) {
+      e.preventDefault();
+      closeTermPopover();
+      return;
+    }
+
     if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditableElement(document.activeElement)) {
-      const scrSearch =
+      const searchBox =
         document.getElementById("scr-search") ||
         document.getElementById("etf-search") ||
-        document.getElementById("arc-search");
-      if (scrSearch) {
+        document.getElementById("arc-search") ||
+        document.getElementById("guide-term-search");
+      if (searchBox) {
         e.preventDefault();
-        scrSearch.focus();
-        scrSearch.select();
+        searchBox.focus();
+        searchBox.select();
       }
     }
   });
 
   /* ------------------------------------------------------------------------
-     9. Supercharged 231-Stock Global Screener (#screener-data)
+     10. Supercharged 231-Stock Global Screener (#screener-data)
      ------------------------------------------------------------------------ */
   const screenerDataEl = document.getElementById("screener-data");
   if (screenerDataEl) {
@@ -571,22 +809,7 @@
     try {
       const parsed = JSON.parse(screenerDataEl.textContent || "[]");
       if (Array.isArray(parsed)) {
-        allStocks = parsed.map(function (st) {
-          const item = Object.assign({}, st);
-          if (item.div_pct === undefined && typeof item.valuation === "string") {
-            const dm = item.valuation.match(/股息(?:率)?\s*([0-9]+(?:\.[0-9]+)?)%/);
-            if (dm) item.div_pct = parseFloat(dm[1]);
-          }
-          if (item.ah_pct === undefined && typeof item.valuation === "string") {
-            const am = item.valuation.match(/AH[^0-9+\-]*([+\-]?[0-9]+(?:\.[0-9]+)?)%/i);
-            if (am) item.ah_pct = parseFloat(am[1]);
-          }
-          if (item.pe_num === undefined && typeof item.valuation === "string") {
-            const pm = item.valuation.match(/PE(?:\([^)]*\))?\s*([0-9]+(?:\.[0-9]+)?)x/i);
-            if (pm) item.pe_num = parseFloat(pm[1]);
-          }
-          return item;
-        });
+        allStocks = parsed;
       }
     } catch (_) {
       allStocks = [];
@@ -605,7 +828,6 @@
 
     const qInput = document.getElementById("scr-search");
     const clearBtn = document.getElementById("scr-clear");
-    const sectorSel = document.getElementById("scr-sector");
     const sectorTray = document.getElementById("scr-sector-tray");
     const activeFiltersEl = document.getElementById("scr-active-filters");
     const mktBtns = Array.from(document.querySelectorAll("[data-filter-market]"));
@@ -638,10 +860,6 @@
         th.dataset.baseLabel = (th.textContent || "").replace(/\s*[⇅▲▼]\s*$/, "").trim();
       }
     });
-
-    function isFiniteNum(v) {
-      return typeof v === "number" && isFinite(v);
-    }
 
     function matchesPreset(st, preset) {
       if (!preset || preset === "all") return true;
@@ -732,7 +950,9 @@
       });
       statTiles.forEach(function (t) {
         const c = t.getAttribute("data-stat-color") || "all";
-        t.classList.toggle("active", c === state.color && (c !== "all" || state.preset === "all"));
+        const isAct = c === state.color && (c !== "all" || state.preset === "all");
+        t.classList.toggle("active", isAct);
+        t.setAttribute("aria-pressed", isAct ? "true" : "false");
       });
       presetBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-preset") || "all") === state.preset);
@@ -808,6 +1028,12 @@
           }
         });
       }
+      if (state.preset === "hide-red" && state.color === "r") {
+        state.preset = "all";
+      }
+      if (state.preset === "base" && state.color !== "all" && state.color !== "g") {
+        state.preset = "all";
+      }
       if (qInput) qInput.value = state.q;
       return true;
     }
@@ -821,7 +1047,6 @@
         counts.set(sec, (counts.get(sec) || 0) + 1);
       });
 
-      // Prune selected sectors that do not exist under current market
       Array.from(state.sectors).forEach(function (sec) {
         if (!counts.has(sec)) state.sectors.delete(sec);
       });
@@ -860,17 +1085,6 @@
             "</button>";
         }
         sectorTray.innerHTML = html;
-      }
-
-      if (sectorSel) {
-        sectorSel.innerHTML = '<option value="all">全部赛道 (' + list.length + ")</option>";
-        list.forEach(function (entry) {
-          const opt = document.createElement("option");
-          opt.value = entry[0];
-          opt.textContent = entry[0] + " (" + entry[1] + ")";
-          sectorSel.appendChild(opt);
-        });
-        sectorSel.value = state.sectors.size === 1 ? Array.from(state.sectors)[0] : "all";
       }
     }
 
@@ -993,8 +1207,8 @@
                 : "";
               return (
                 '<tr class="row-' + escHtml(st.color) + '" data-market="' + escHtml(st.market) + '">' +
-                '<td><span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span></td>" +
-                '<td class="col-sticky"><strong>' + escHtml(st.name) + '</strong> <span class="code-tag">' + escHtml(st.code) + "</span></td>" +
+                '<td class="col-sticky"><span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span></td>" +
+                '<td><strong>' + escHtml(st.name) + '</strong> <span class="code-tag">' + escHtml(st.code) + "</span></td>" +
                 '<td class="nw">' + escHtml(st.sector) + "</td>" +
                 '<td><div><strong>' + escHtml(st.price) + "</strong></div>" + formatValuationChips(st) + "</td>" +
                 "<td>" + formatDivAhCell(st) + "</td>" +
@@ -1053,7 +1267,6 @@
       }
     }
 
-    /* Event Wiring for Screener */
     let searchTimer = 0;
     if (qInput) {
       qInput.addEventListener("input", function () {
@@ -1076,16 +1289,6 @@
           qInput.value = "";
           qInput.focus();
         }
-        renderScreener(true);
-      });
-    }
-    if (sectorSel) {
-      sectorSel.addEventListener("change", function () {
-        state.sectors.clear();
-        if (sectorSel.value && sectorSel.value !== "all") {
-          state.sectors.add(sectorSel.value);
-        }
-        renderSectorControls();
         renderScreener(true);
       });
     }
@@ -1145,16 +1348,25 @@
         const col = btn.getAttribute("data-filter-color") || "all";
         state.color = col;
         if (state.preset === "base" && col !== "g") state.preset = "all";
+        if (state.preset === "hide-red" && col === "r") state.preset = "all";
         renderScreener(true);
       });
     });
     statTiles.forEach(function (tile) {
-      tile.addEventListener("click", function () {
+      function handleScreenerStatSelect() {
         const col = tile.getAttribute("data-stat-color") || "all";
         state.color = col !== "all" && state.color === col ? "all" : col;
         if (col === "all") state.preset = "all";
         else if (state.preset === "base" && state.color !== "g") state.preset = "all";
+        else if (state.preset === "hide-red" && state.color === "r") state.preset = "all";
         renderScreener(true);
+      }
+      tile.addEventListener("click", handleScreenerStatSelect);
+      tile.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleScreenerStatSelect();
+        }
       });
     });
     presetBtns.forEach(function (btn) {
@@ -1166,6 +1378,7 @@
         } else {
           state.preset = state.preset === p ? "all" : p;
           if (state.preset === "base") state.color = "all";
+          if (state.preset === "hide-red" && state.color === "r") state.color = "all";
         }
         renderScreener(true);
       });
@@ -1186,6 +1399,7 @@
     if (resetBtn) {
       resetBtn.addEventListener("click", resetScreener);
     }
+
     const dossierModal = document.getElementById("dossier-modal");
     const dossierTitle = document.getElementById("dossier-modal-title");
     const dossierSub = document.getElementById("dossier-modal-sub");
@@ -1241,7 +1455,10 @@
           "</div>";
       }
       if (dossierFootLink) dossierFootLink.setAttribute("href", st.report_url || "#");
-      if (dossierFootDate) dossierFootDate.textContent = "更新日期：" + (d.updated_at || "2026-11-26");
+      if (dossierFootDate) {
+        const fallbackDate = dossierFootDate.getAttribute("data-default-date") || "最新班次";
+        dossierFootDate.textContent = "更新日期：" + (d.updated_at || fallbackDate);
+      }
       showDialog(dossierModal);
     }
 
@@ -1284,13 +1501,18 @@
   }
 
   /* ------------------------------------------------------------------------
-     10. Scorecard & Changelog Tabs (with URL Hash Sync)
+     11. Scorecard & Changelog Tabs (Scrolls Gently to .tab-bar, Not top:0)
      ------------------------------------------------------------------------ */
   const tabBtns = Array.from(document.querySelectorAll("[data-tab-target]"));
   if (tabBtns.length > 0) {
     function keepTabBarVisible() {
       window.requestAnimationFrame(function () {
-        window.scrollTo({ top: 0, behavior: "auto" });
+        const tabBar = document.querySelector(".tab-bar");
+        if (!tabBar) return;
+        const header = document.querySelector(".site-header");
+        const headerH = header ? header.offsetHeight : 64;
+        const top = window.scrollY + tabBar.getBoundingClientRect().top - headerH - 12;
+        window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
       });
     }
 
@@ -1335,7 +1557,7 @@
   }
 
   /* ------------------------------------------------------------------------
-     11. Supercharged Archive Chronological Filters + Instant Search
+     12. Supercharged Archive Chronological Filters + URL Hash Sync
      ------------------------------------------------------------------------ */
   const arcItems = Array.from(document.querySelectorAll("[data-arc-item]"));
   if (arcItems.length > 0) {
@@ -1353,6 +1575,17 @@
       const s = String(val || "main").trim().toLowerCase();
       if (s === "watch" || s === "holiday_watch" || s === "light") return "watch";
       return "main";
+    }
+
+    function syncArchiveUrlHash() {
+      if (!history.replaceState) return;
+      const nextUrl =
+        arcState.market && arcState.market !== "all"
+          ? "#" + encodeURIComponent(arcState.market)
+          : window.location.pathname + window.location.search;
+      try {
+        history.replaceState(null, "", nextUrl);
+      } catch (_) {}
     }
 
     function syncArchiveButtons() {
@@ -1412,12 +1645,14 @@
       arcState.editionType = "all";
       arcState.q = "";
       if (arcSearchInput) arcSearchInput.value = "";
+      syncArchiveUrlHash();
       applyArchiveFilter();
     }
 
     arcMktBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         arcState.market = b.getAttribute("data-arc-market") || "all";
+        syncArchiveUrlHash();
         applyArchiveFilter();
       });
     });
@@ -1451,6 +1686,10 @@
         arcState.market = hashMkt;
         return true;
       }
+      if (!hashMkt) {
+        arcState.market = "all";
+        return true;
+      }
       return false;
     }
 
@@ -1464,90 +1703,160 @@
   }
 
   /* ------------------------------------------------------------------------
-     12. Multi-Asset Channels Category Filter (index.html & channels.html)
+     13. Multi-Asset Channels Dual-Mode Filter + Four Buckets + Capital Tier
      ------------------------------------------------------------------------ */
   const chCards = Array.from(document.querySelectorAll(".ch-overview-card[data-channel-cat], .channel-card[data-channel-cat]"));
-  if (chCards.length > 0) {
-    const chBtns = Array.from(document.querySelectorAll("[data-ch-cat]"));
-    const chCount = document.getElementById("ch-count");
-    let chCat = "all";
-    function applyChFilter() {
-      let shown = 0;
-      chBtns.forEach(function (b) {
-        b.classList.toggle("active", (b.getAttribute("data-ch-cat") || "all") === chCat);
-      });
-      chCards.forEach(function (c) {
-        const ok = chCat === "all" || c.getAttribute("data-channel-cat") === chCat;
-        c.style.display = ok ? "" : "none";
-        if (ok) shown++;
-      });
-      if (chCount) {
+  const chBucketBtns = Array.from(document.querySelectorAll("[data-ch-bucket]"));
+  const chCatBtns = Array.from(document.querySelectorAll("[data-ch-cat]"));
+  const chCount = document.getElementById("ch-count");
+  let chResetBtn = document.getElementById("ch-reset-empty");
+  let chBucket = "all";
+  let chCat = "all";
+
+  function applyChFilter() {
+    if (chCards.length === 0) return;
+    let shown = 0;
+    chBucketBtns.forEach(function (b) {
+      const val = b.getAttribute("data-ch-bucket") || "all";
+      b.classList.toggle("active", chCat === "all" && val === chBucket);
+    });
+    chCatBtns.forEach(function (b) {
+      const val = b.getAttribute("data-ch-cat") || "all";
+      b.classList.toggle("active", chBucket === "all" && val === chCat);
+    });
+    chCards.forEach(function (c) {
+      const okBucket = chBucket === "all" || c.getAttribute("data-channel-bucket") === chBucket;
+      const okCat = chCat === "all" || c.getAttribute("data-channel-cat") === chCat;
+      const ok = okBucket && okCat;
+      c.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    if (chCount) {
+      if (shown === 0) {
+        chCount.textContent = "未找到匹配渠道（0 / " + chCards.length + "）";
+        if (!chResetBtn && chCount.parentNode) {
+          chResetBtn = document.createElement("button");
+          chResetBtn.type = "button";
+          chResetBtn.id = "ch-reset-empty";
+          chResetBtn.className = "btn btn-sm";
+          chResetBtn.textContent = "重置筛选";
+          chResetBtn.addEventListener("click", function () {
+            chBucket = "all";
+            chCat = "all";
+            applyChFilter();
+          });
+          chCount.insertAdjacentElement("afterend", chResetBtn);
+        }
+        if (chResetBtn) {
+          chResetBtn.hidden = false;
+          chResetBtn.style.display = "";
+        }
+      } else {
         chCount.textContent = "显示 " + shown + " / " + chCards.length + " 大合规个人投资渠道";
+        if (chResetBtn) {
+          chResetBtn.hidden = true;
+          chResetBtn.style.display = "none";
+        }
       }
     }
-    chBtns.forEach(function (b) {
+  }
+
+  if (chCards.length > 0) {
+    chBucketBtns.forEach(function (b) {
       b.addEventListener("click", function () {
-        chCat = b.getAttribute("data-ch-cat") || "all";
+        chBucket = b.getAttribute("data-ch-bucket") || "all";
+        chCat = "all";
+        applyChFilter();
+      });
+    });
+    chCatBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        const nextCat = b.getAttribute("data-ch-cat") || "all";
+        if (nextCat === "all") {
+          chBucket = "all";
+          chCat = "all";
+        } else {
+          chCat = chCat === nextCat ? "all" : nextCat;
+          chBucket = "all";
+        }
         applyChFilter();
       });
     });
     applyChFilter();
   }
 
+  /* Four Buckets Quick Jump to Filtered Channels */
+  document.querySelectorAll("[data-jump-bucket]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const targetBucket = btn.getAttribute("data-jump-bucket") || "all";
+      chBucket = targetBucket;
+      chCat = "all";
+      applyChFilter();
+      const targetSec = document.getElementById("sec-multi-channels");
+      if (targetSec) {
+        targetSec.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+      }
+    });
+  });
+
+  /* Capital Tier Selector (Softly Dims High-Threshold Channels like 20w CDs / 300w Private Funds) */
+  const capTierBtns = Array.from(document.querySelectorAll("[data-cap-tier]"));
+  const capTierHint = document.getElementById("cap-tier-hint");
+  const CAP_TIER_HINTS = {
+    all: "当前展示全部档位：建议先留足 3–6 个月活钱与基础保障，再按期限匹配稳钱与长钱。",
+    "1-5w": "1–5 万刚起步档：优先 1 元起投的活钱工具、短融/债券 ETF 与低费场外定投；已为您柔和淡化 20 万起购大额存单及 300 万门槛渠道。",
+    "10-20w": "10–20 万攒桶金档：可按四笔钱比例搭配活钱池 + 储蓄国债/债券 ETF/银行理财 + 低费宽基 ETF；已淡化 300 万合格投资者渠道。",
+    "30-50w": "30–50 万家庭配档：可全盘组合活钱、50 万单行存保线内存款、债券与跨境锁汇工具；300 万专享私募信托仍为您标示淡化提醒。",
+  };
+
+  if (capTierBtns.length > 0) {
+    capTierBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const tier = btn.getAttribute("data-cap-tier") || "all";
+        capTierBtns.forEach(function (b) {
+          b.classList.toggle("active", b === btn);
+        });
+        if (capTierHint && CAP_TIER_HINTS[tier]) {
+          capTierHint.textContent = CAP_TIER_HINTS[tier];
+        }
+        chCards.forEach(function (card) {
+          const minTier = card.getAttribute("data-min-tier") || "1w";
+          let dim = false;
+          if (tier === "1-5w") dim = minTier === "20w" || minTier === "300w";
+          else if (tier === "10-20w" || tier === "30-50w") dim = minTier === "300w";
+          card.classList.toggle("ch-dimmed", dim);
+        });
+      });
+    });
+  }
+
   /* ------------------------------------------------------------------------
-     13. Interactive 100+ Global ETF Radar & Deep Modal (etfs.html)
+     14. Shared ETF 7-Dim Modal + Interactive Global ETF Radar (etfs.html & channels/*.html)
      ------------------------------------------------------------------------ */
-  const etfDataEl = document.getElementById("etf-data");
-  if (etfDataEl) {
-    let allEtfs = [];
-    try {
-      const parsed = JSON.parse(etfDataEl.textContent || "[]");
-      if (Array.isArray(parsed)) allEtfs = parsed;
-    } catch (_) {
-      allEtfs = [];
-    }
+  const PREM_LABELS = { normal: "折溢价常规", watch: "买前核参考净值", high_risk: "高溢价/高危预警" };
 
-    const etfState = {
-      q: "",
-      market: "all",
-      channel: "all",
-      preset: "all",
-      sortKey: "default",
-      sortDir: 1,
-    };
+  function etfRoleClass(it) {
+    if (it.gold_locked) return "role-lock";
+    const r = String(it.action_role || "");
+    if (r.indexOf("高危") !== -1 || r.indexOf("高费") !== -1) return "role-danger";
+    if (r.indexOf("现金盾") !== -1) return "role-shield";
+    if (r.indexOf("底座") !== -1 || r.indexOf("核心") !== -1 || r.indexOf("卫星") !== -1) return "role-base";
+    return "role-watch";
+  }
 
-    const etfSearch = document.getElementById("etf-search");
-    const etfClear = document.getElementById("etf-clear");
-    const etfReset = document.getElementById("etf-reset");
-    const etfCount = document.getElementById("etf-count");
-    const etfTbody = document.getElementById("etf-tbody");
-    const etfCardsEl = document.getElementById("etf-cards");
-    const etfMktBtns = Array.from(document.querySelectorAll("[data-etf-market]"));
-    const etfChanBtns = Array.from(document.querySelectorAll("[data-etf-channel]"));
-    const etfPresetBtns = Array.from(document.querySelectorAll("[data-etf-preset]"));
-    const etfSortThs = Array.from(document.querySelectorAll("table.etf-table th.sortable"));
-
+  function createEtfModalController(etfList) {
     const etfModal = document.getElementById("etf-modal");
     const etfModalTitle = document.getElementById("etf-modal-title");
     const etfModalSub = document.getElementById("etf-modal-sub");
     const etfModalBadges = document.getElementById("etf-modal-badges");
     const etfModalBody = document.getElementById("etf-modal-body");
     const etfByCode = new Map();
-    allEtfs.forEach(function (it) { etfByCode.set(it.code, it); });
-
-    const PREM_LABELS = { normal: "折溢价常规", watch: "买前核参考净值", high_risk: "高溢价/高危预警" };
-
-    function etfRoleClass(it) {
-      if (it.gold_locked) return "role-lock";
-      const r = String(it.action_role || "");
-      if (r.indexOf("高危") !== -1 || r.indexOf("高费") !== -1) return "role-danger";
-      if (r.indexOf("现金盾") !== -1) return "role-shield";
-      if (r.indexOf("底座") !== -1 || r.indexOf("核心") !== -1 || r.indexOf("卫星") !== -1) return "role-base";
-      return "role-watch";
-    }
+    etfList.forEach(function (it) {
+      if (it && it.code) etfByCode.set(String(it.code), it);
+    });
 
     function openEtfModal(code) {
-      const it = etfByCode.get(code);
+      const it = etfByCode.get(String(code || ""));
       if (!it || !etfModal) return;
       if (etfModalTitle) etfModalTitle.textContent = it.name + " (" + it.code + ")";
       if (etfModalSub) {
@@ -1586,7 +1895,8 @@
       showDialog(etfModal);
     }
 
-    if (etfModal) {
+    if (etfModal && !etfModal.dataset.boundClose) {
+      etfModal.dataset.boundClose = "1";
       document.querySelectorAll("[data-action='close-etf']").forEach(function (b) {
         b.addEventListener("click", function () { hideDialog(etfModal); });
       });
@@ -1595,9 +1905,75 @@
       });
     }
 
+    return openEtfModal;
+  }
+
+  /* 14A. Channel Detail Pages Related ETFs Interactive Modal (#ch-etf-data) */
+  const chEtfDataEl = document.getElementById("ch-etf-data");
+  if (chEtfDataEl) {
+    let chEtfs = [];
+    try {
+      const parsed = JSON.parse(chEtfDataEl.textContent || "[]");
+      if (Array.isArray(parsed)) chEtfs = parsed;
+    } catch (_) {
+      chEtfs = [];
+    }
+    if (chEtfs.length > 0) {
+      const openChEtfModal = createEtfModalController(chEtfs);
+      const chEtfTable = document.getElementById("ch-related-etf-table");
+      if (chEtfTable) {
+        chEtfTable.addEventListener("click", function (e) {
+          const btn = e.target.closest("[data-etf-code]");
+          if (btn) openChEtfModal(btn.getAttribute("data-etf-code"));
+        });
+      }
+    }
+  }
+
+  /* 14B. Full Global ETF Radar Page (#etf-data) */
+  const etfDataEl = document.getElementById("etf-data");
+  if (etfDataEl) {
+    let allEtfs = [];
+    try {
+      const parsed = JSON.parse(etfDataEl.textContent || "[]");
+      if (Array.isArray(parsed)) allEtfs = parsed;
+    } catch (_) {
+      allEtfs = [];
+    }
+
+    const openEtfModal = createEtfModalController(allEtfs);
+    const etfState = {
+      q: "",
+      market: "all",
+      channel: "all",
+      preset: "all",
+      sortKey: "default",
+      sortDir: 1,
+    };
+
+    const etfSearch = document.getElementById("etf-search");
+    const etfClear = document.getElementById("etf-clear");
+    const etfReset = document.getElementById("etf-reset");
+    const etfCount = document.getElementById("etf-count");
+    const etfTbody = document.getElementById("etf-tbody");
+    const etfCardsEl = document.getElementById("etf-cards");
+    const etfStatTiles = Array.from(document.querySelectorAll("[data-etf-stat-market]"));
+    const etfMktBtns = Array.from(document.querySelectorAll("[data-etf-market]"));
+    const etfChanBtns = Array.from(document.querySelectorAll("[data-etf-channel]"));
+    const etfPresetBtns = Array.from(document.querySelectorAll("[data-etf-preset]"));
+    const etfSortThs = Array.from(document.querySelectorAll("table.etf-table th.sortable"));
+
+    etfSortThs.forEach(function (th) {
+      const btn = th.querySelector("button");
+      if (btn) btn.disabled = allEtfs.length === 0;
+      if (!th.dataset.baseLabel) {
+        th.dataset.baseLabel = (th.textContent || "").replace(/\s*[⇅▲▼]\s*$/, "").trim();
+      }
+    });
+
     function matchesEtfPreset(it, p) {
       if (!p || p === "all") return true;
-      if (p === "low-fee") return typeof it.fee_num === "number" && it.fee_num <= 0.20;
+      if (p === "low-fee") return isFiniteNum(it.fee_num) && it.fee_num <= 0.20;
       if (p === "cash-shield") return String(it.action_role || "").indexOf("现金盾") !== -1;
       if (p === "base") return !it.gold_locked && String(it.action_role || "").indexOf("底座") !== -1;
       if (p === "high-risk") return it.premium_status === "high_risk" || String(it.action_role || "").indexOf("高危") !== -1;
@@ -1605,9 +1981,65 @@
       return true;
     }
 
-    function renderEtfs() {
+    function syncEtfSortHeaders() {
+      etfSortThs.forEach(function (th) {
+        const key = th.getAttribute("data-sort");
+        const base = th.dataset.baseLabel || "";
+        const target = th.querySelector("button") || th;
+        if (etfState.sortKey === key) {
+          const dirStr = etfState.sortDir === 1 ? "asc" : "desc";
+          th.setAttribute("data-sort-dir", dirStr);
+          th.setAttribute("aria-sort", etfState.sortDir === 1 ? "ascending" : "descending");
+          target.textContent = base + (etfState.sortDir === 1 ? " ▲" : " ▼");
+        } else {
+          th.removeAttribute("data-sort-dir");
+          th.removeAttribute("aria-sort");
+          target.textContent = base + " ⇅";
+        }
+      });
+    }
+
+    function syncEtfUrlHash() {
+      if (!history.replaceState) return;
+      const params = [];
+      if (etfState.market !== "all") params.push("market=" + encodeURIComponent(etfState.market));
+      if (etfState.channel !== "all") params.push("channel=" + encodeURIComponent(etfState.channel));
+      if (etfState.preset !== "all") params.push("preset=" + encodeURIComponent(etfState.preset));
+      if (etfState.q.trim()) params.push("q=" + encodeURIComponent(etfState.q.trim()));
+      const nextUrl = params.length > 0
+        ? "#" + params.join("&")
+        : window.location.pathname + window.location.search;
+      try {
+        history.replaceState(null, "", nextUrl);
+      } catch (_) {}
+    }
+
+    function resetAllEtfs() {
+      window.clearTimeout(etfTimer);
+      etfState.q = "";
+      etfState.market = "all";
+      etfState.channel = "all";
+      etfState.preset = "all";
+      etfState.sortKey = "default";
+      etfState.sortDir = 1;
+      if (etfSearch) etfSearch.value = "";
+      renderEtfs(true);
+    }
+
+    function renderEtfs(syncHash) {
+      if (syncHash !== false) syncEtfUrlHash();
+
       etfMktBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-etf-market") || "all") === etfState.market);
+      });
+      etfStatTiles.forEach(function (t) {
+        const sm = t.getAttribute("data-etf-stat-market") || "all";
+        const isAct =
+          (sm === etfState.market ||
+            (sm === "us-global" && (etfState.market === "us-global" || etfState.market === "us-stock" || etfState.market === "global"))) &&
+          (sm !== "all" || etfState.preset === "all");
+        t.classList.toggle("active", isAct);
+        t.setAttribute("aria-pressed", isAct ? "true" : "false");
       });
       etfChanBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-etf-channel") || "all") === etfState.channel);
@@ -1622,7 +2054,11 @@
 
       const tokens = etfState.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
       let rows = allEtfs.filter(function (it) {
-        if (etfState.market !== "all" && it.market !== etfState.market) return false;
+        if (etfState.market === "us-global") {
+          if (it.market !== "us-stock" && it.market !== "global") return false;
+        } else if (etfState.market !== "all" && it.market !== etfState.market) {
+          return false;
+        }
         if (etfState.channel !== "all" && it.channel !== etfState.channel) return false;
         if (!matchesEtfPreset(it, etfState.preset)) return false;
         if (tokens.length > 0) {
@@ -1641,11 +2077,14 @@
         const dir = etfState.sortDir;
         rows = rows.slice().sort(function (a, b) {
           if (key === "fee_num") {
-            return ((a.fee_num || 99) - (b.fee_num || 99)) * dir;
+            const va = isFiniteNum(a.fee_num) ? a.fee_num : 99;
+            const vb = isFiniteNum(b.fee_num) ? b.fee_num : 99;
+            return (va - vb) * dir;
           }
           return String(a[key] || "").localeCompare(String(b[key] || ""), "zh-Hans-CN", { numeric: true }) * dir;
         });
       }
+      syncEtfSortHeaders();
 
       if (etfCount) {
         etfCount.textContent = "显示 " + rows.length + " / " + allEtfs.length + " 只重点 ETF";
@@ -1653,7 +2092,12 @@
 
       if (etfTbody) {
         if (rows.length === 0) {
-          etfTbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-title">未找到匹配的 ETF</div><div class="empty-sub">尝试清空搜索词或切换市场与通道</div></div></td></tr>';
+          etfTbody.innerHTML =
+            '<tr><td colspan="7"><div class="empty-state">' +
+            '<div class="empty-title">未找到匹配的 ETF</div>' +
+            '<div class="empty-sub">尝试清空搜索词或切换市场与通道</div>' +
+            '<button type="button" class="btn btn-sm" data-action="etf-reset-all">清空所有筛选条件</button>' +
+            "</div></td></tr>";
         } else {
           etfTbody.innerHTML = rows.map(function (it) {
             return (
@@ -1673,7 +2117,12 @@
 
       if (etfCardsEl) {
         if (rows.length === 0) {
-          etfCardsEl.innerHTML = '<div class="panel-card empty-state"><div class="empty-title">未找到匹配的 ETF</div></div>';
+          etfCardsEl.innerHTML =
+            '<div class="panel-card empty-state">' +
+            '<div class="empty-title">未找到匹配的 ETF</div>' +
+            '<div class="empty-sub">尝试清空搜索词或切换市场与通道</div>' +
+            '<button type="button" class="btn btn-sm" data-action="etf-reset-all">清空所有筛选条件</button>' +
+            "</div>";
         } else {
           etfCardsEl.innerHTML = rows.map(function (it) {
             return (
@@ -1683,7 +2132,7 @@
               '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
               "</div>" +
               '<div class="etf-card-meta"><span><strong>通道：</strong>' + escHtml(it.channel) + "</span><span><strong>费率：</strong>" + escHtml(it.fee_total_pct) + "</span><span><strong>规模：</strong>" + escHtml(it.aum) + "</span></div>" +
-              '<div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + "</span> <span class=\"sec-sub\">" + escHtml(it.yield_or_pe) + "</span></div>" +
+              '<div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + '</span> <span class="sec-sub">' + escHtml(it.yield_or_pe) + "</span></div>" +
               '<div class="sc-summary">' + escHtml(it.thesis_deep) + "</div>" +
               '<div><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">查看 ETF 7 维深度拆解</button></div>' +
               "</div>"
@@ -1697,90 +2146,201 @@
     if (etfSearch) {
       etfSearch.addEventListener("input", function () {
         etfState.q = etfSearch.value;
+        if (etfClear) {
+          etfClear.hidden = !etfState.q;
+          etfClear.style.display = etfState.q ? "" : "none";
+        }
         window.clearTimeout(etfTimer);
-        etfTimer = window.setTimeout(renderEtfs, 60);
+        etfTimer = window.setTimeout(function () { renderEtfs(true); }, 60);
       });
     }
     if (etfClear) {
       etfClear.addEventListener("click", function () {
+        window.clearTimeout(etfTimer);
         etfState.q = "";
         if (etfSearch) { etfSearch.value = ""; etfSearch.focus(); }
-        renderEtfs();
+        renderEtfs(true);
       });
     }
     if (etfReset) {
-      etfReset.addEventListener("click", function () {
-        etfState.q = "";
-        etfState.market = "all";
-        etfState.channel = "all";
-        etfState.preset = "all";
-        etfState.sortKey = "default";
-        etfState.sortDir = 1;
-        if (etfSearch) etfSearch.value = "";
-        renderEtfs();
-      });
+      etfReset.addEventListener("click", resetAllEtfs);
     }
+    etfStatTiles.forEach(function (tile) {
+      function handleStatSelect() {
+        const sm = tile.getAttribute("data-etf-stat-market") || "all";
+        etfState.market = sm !== "all" && etfState.market === sm ? "all" : sm;
+        if (sm === "all") {
+          etfState.channel = "all";
+          etfState.preset = "all";
+        }
+        renderEtfs(true);
+      }
+      tile.addEventListener("click", handleStatSelect);
+      tile.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleStatSelect();
+        }
+      });
+    });
     etfMktBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         etfState.market = b.getAttribute("data-etf-market") || "all";
-        renderEtfs();
+        renderEtfs(true);
       });
     });
     etfChanBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         etfState.channel = b.getAttribute("data-etf-channel") || "all";
-        renderEtfs();
+        renderEtfs(true);
       });
     });
     etfPresetBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         const p = b.getAttribute("data-etf-preset") || "all";
         etfState.preset = etfState.preset === p && p !== "all" ? "all" : p;
-        renderEtfs();
+        renderEtfs(true);
       });
     });
     etfSortThs.forEach(function (th) {
       const btn = th.querySelector("button") || th;
-      if (btn.tagName === "BUTTON") btn.disabled = false;
       btn.addEventListener("click", function () {
         const k = th.getAttribute("data-sort");
         if (etfState.sortKey === k) etfState.sortDir *= -1;
         else { etfState.sortKey = k; etfState.sortDir = 1; }
-        renderEtfs();
+        renderEtfs(false);
       });
     });
     [etfTbody, etfCardsEl].forEach(function (container) {
       if (!container) return;
       container.addEventListener("click", function (e) {
+        if (e.target.closest("[data-action='etf-reset-all']")) {
+          resetAllEtfs();
+          return;
+        }
         const btn = e.target.closest("[data-etf-code]");
         if (btn) openEtfModal(btn.getAttribute("data-etf-code"));
       });
     });
 
     function applyEtfHash() {
+      etfState.q = "";
+      etfState.market = "all";
+      etfState.channel = "all";
+      etfState.preset = "all";
       const raw = (window.location.hash || "").replace(/^#/, "").trim();
-      if (!raw) return;
+      if (!raw) {
+        if (etfSearch) etfSearch.value = "";
+        return;
+      }
       raw.split("&").forEach(function (pair) {
         const eq = pair.indexOf("=");
         if (eq <= 0) return;
         const k = safeDecode(pair.slice(0, eq));
         const v = safeDecode(pair.slice(eq + 1));
-        if (k === "market" && ["all", "a-share", "hk-stock", "us-stock", "global", "multi-asset"].indexOf(v) !== -1) {
+        if (k === "market" && ["all", "a-share", "hk-stock", "us-stock", "global", "us-global", "multi-asset"].indexOf(v) !== -1) {
           etfState.market = v;
+        } else if (k === "channel" && v) {
+          etfState.channel = v;
         } else if (k === "preset" && ["all", "low-fee", "base", "cash-shield", "high-risk", "hide-gold"].indexOf(v) !== -1) {
           etfState.preset = v;
+        } else if (k === "q") {
+          etfState.q = v;
         }
       });
+      if (etfSearch) etfSearch.value = etfState.q;
     }
 
     if (allEtfs.length > 0) {
       applyEtfHash();
-      renderEtfs();
+      renderEtfs(false);
       root.classList.add("etf-enhanced");
       window.addEventListener("hashchange", function () {
         applyEtfHash();
-        renderEtfs();
+        renderEtfs(false);
       });
     }
+  }
+
+  /* ------------------------------------------------------------------------
+     15. Beginner Guide Glossary Search & Category Filter (guide.html)
+     ------------------------------------------------------------------------ */
+  const guideTermGrid = document.getElementById("guide-term-grid");
+  if (guideTermGrid) {
+    const gCards = Array.from(guideTermGrid.querySelectorAll(".guide-term-card"));
+    const gSearch = document.getElementById("guide-term-search");
+    const gClear = document.getElementById("guide-term-clear");
+    const gReset = document.getElementById("guide-term-reset");
+    const gEmptyReset = document.getElementById("guide-empty-reset");
+    const gCount = document.getElementById("guide-term-count");
+    const gEmpty = document.getElementById("guide-term-empty");
+    const gCatBtns = Array.from(document.querySelectorAll("[data-guide-cat]"));
+    const gState = { cat: "all", q: "" };
+    let gTimer = 0;
+
+    function applyGuideFilter() {
+      gCatBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-guide-cat") || "all") === gState.cat);
+      });
+      if (gClear) {
+        gClear.hidden = !gState.q;
+        gClear.style.display = gState.q ? "" : "none";
+      }
+      const tokens = gState.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      gCards.forEach(function (card) {
+        const cat = card.getAttribute("data-guide-term-cat") || "";
+        const hay = (card.getAttribute("data-guide-term-search") || card.textContent || "").toLowerCase();
+        const okCat = gState.cat === "all" || cat === gState.cat;
+        const okQ = tokens.length === 0 || tokens.every(function (tk) { return hay.indexOf(tk) !== -1; });
+        const ok = okCat && okQ;
+        card.style.display = ok ? "" : "none";
+        if (ok) shown++;
+      });
+      if (gCount) {
+        gCount.textContent = "共收录 " + shown + " / " + gCards.length + " 条高频白话词条";
+      }
+      if (gEmpty) {
+        gEmpty.hidden = shown > 0;
+        gEmpty.style.display = shown === 0 ? "" : "none";
+      }
+    }
+
+    function resetGuideFilter() {
+      window.clearTimeout(gTimer);
+      gState.cat = "all";
+      gState.q = "";
+      if (gSearch) gSearch.value = "";
+      applyGuideFilter();
+    }
+
+    if (gSearch) {
+      gSearch.addEventListener("input", function () {
+        gState.q = gSearch.value;
+        if (gClear) {
+          gClear.hidden = !gState.q;
+          gClear.style.display = gState.q ? "" : "none";
+        }
+        window.clearTimeout(gTimer);
+        gTimer = window.setTimeout(applyGuideFilter, 50);
+      });
+    }
+    if (gClear) {
+      gClear.addEventListener("click", function () {
+        window.clearTimeout(gTimer);
+        gState.q = "";
+        if (gSearch) { gSearch.value = ""; gSearch.focus(); }
+        applyGuideFilter();
+      });
+    }
+    if (gReset) gReset.addEventListener("click", resetGuideFilter);
+    if (gEmptyReset) gEmptyReset.addEventListener("click", resetGuideFilter);
+    gCatBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        gState.cat = b.getAttribute("data-guide-cat") || "all";
+        applyGuideFilter();
+      });
+    });
+    applyGuideFilter();
   }
 })();

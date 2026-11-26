@@ -57,6 +57,8 @@ def normalize_chart(kind: str, config: dict) -> dict:
         rows = (("gauges", ("pct", "threshold_pct"), "pct"),)
     elif kind == "DAILY_CHART_CROSS":
         cfg = _numeric_fields(cfg, ("linear_cap_pct",), kind)
+        if "linear_cap_pct" in cfg and cfg["linear_cap_pct"] <= 0:
+            raise ValueError(f"{kind}.linear_cap_pct 须大于 0")
         rows = (("items", ("pct",), "pct"), ("reverse_items", (), None))
     else:
         return cfg

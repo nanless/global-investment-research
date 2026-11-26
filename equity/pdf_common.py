@@ -1,78 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Shared publishing primitives, SkPDF emoji guard, markdown/CSS engine, atomic Chrome PDF builder,
-responsive mobile HTML exporter (with sticky nav, dark mode, interactive checklist & SVG scroll),
-and embedded pre-render redline linter."""
+"""Shared pure-web publishing primitives, vector badge/SVG helpers, Markdown-to-HTML engine,
+and embedded redline linter for global equity reports."""
 
 from __future__ import annotations
 
 import html as html_mod
-import os
 import re
-import shutil
-import signal
-import subprocess
-import sys
-import tempfile
-import time
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from scripts.artifact_receipt import FrozenInputs
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
-_DEFAULT_MACOS_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
-
-def resolve_chrome_bin() -> str:
-    """Resolve Chrome/Chromium binary via CHROME_BIN, macOS app bundle, or PATH."""
-    env_bin = os.environ.get("CHROME_BIN", "").strip()
-    if env_bin:
-        if Path(env_bin).exists():
-            return env_bin
-        found_env = shutil.which(env_bin)
-        if found_env:
-            return found_env
-    if Path(_DEFAULT_MACOS_CHROME).exists():
-        return _DEFAULT_MACOS_CHROME
-    for candidate in ("google-chrome", "chromium", "chromium-browser"):
-        found = shutil.which(candidate)
-        if found:
-            return found
-    raise FileNotFoundError(
-        "Chrome/Chromium binary not found (checked CHROME_BIN, macOS Google Chrome, "
-        "google-chrome, chromium, chromium-browser)"
-    )
-
-
-try:
-    CHROME_BIN = resolve_chrome_bin()
-except FileNotFoundError:
-    CHROME_BIN = _DEFAULT_MACOS_CHROME
-
-
-def freeze_equity_inputs(source: Path, *inputs: Path) -> FrozenInputs | None:
-    root = BASE_DIR.parent
-    if not source.resolve().is_relative_to(root):
-        return None
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-    from scripts.artifact_receipt import freeze_inputs
-
-    return freeze_inputs(source, inputs=(*inputs, Path(__file__), BASE_DIR / "docx_embed.py"))
-
-
-def write_equity_receipt(frozen: FrozenInputs | None, pdf: Path, docx: Path) -> None:
-    if frozen is not None:
-        from scripts.artifact_receipt import write_receipt
-
-        write_receipt(frozen, pdf, docx)
-
-
-# Strip color-emoji ranges that trigger Apple Color Emoji sbix failures in macOS Chrome SkPDF.
-# Deliberately preserves U+2610 (☐ ballot box) for printable checklists.
+# Strip color-emoji ranges cleanly while preserving U+2610 (☐ ballot box) for checklists.
 _EMOJI_STRIP_RE = re.compile(
     "["
     "\U0001F000-\U0001FAFF"
@@ -92,6 +32,21 @@ _EMOJI_STRIP_RE = re.compile(
     "]+",
     flags=re.UNICODE,
 )
+
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+_ALLOWED_SVG_ANCHORS = frozenset({"start", "middle", "end"})
+
+
+def sanitize_hex_color(val: object, default: str = "#334155") -> str:
+    """Validate hex color tokens sourced from JSON before interpolating into SVG attributes."""
+    s = str(val).strip() if val is not None else ""
+    return s if _HEX_COLOR_RE.fullmatch(s) else default
+
+
+def sanitize_svg_anchor(val: object, default: str = "start") -> str:
+    """Validate SVG text-anchor values sourced from JSON."""
+    s = str(val).strip().lower() if val is not None else ""
+    return s if s in _ALLOWED_SVG_ANCHORS else default
 
 
 def clean_plain_text(s: str) -> str:
@@ -228,17 +183,28 @@ def html_vector_badges(s: str) -> str:
 
 def svg_shape(shape: str, x: float, y: float, col: str) -> str:
     """Okabe-Ito colorblind-safe vector markers: circle(g), diamond(b), triangle(y), cross(r)."""
+    safe_col = sanitize_hex_color(col, "#334155")
     if shape == "g":
-        return f'<circle cx="{x}" cy="{y}" r="5.5" fill="{col}" stroke="#ffffff" stroke-width="1.5"/>'
+        return f'<circle cx="{x}" cy="{y}" r="5.5" fill="{safe_col}" stroke="#ffffff" stroke-width="1.5"/>'
     if shape == "b":
-        return f'<polygon points="{x},{y-6.2} {x+6.2},{y} {x},{y+6.2} {x-6.2},{y}" fill="{col}" stroke="#ffffff" stroke-width="1.4"/>'
+        return f'<polygon points="{x},{y-6.2} {x+6.2},{y} {x},{y+6.2} {x-6.2},{y}" fill="{safe_col}" stroke="#ffffff" stroke-width="1.4"/>'
     if shape == "y":
-        return f'<polygon points="{x},{y-6.2} {x+6.2},{y+5.0} {x-6.2},{y+5.0}" fill="{col}" stroke="#ffffff" stroke-width="1.3"/>'
+        return f'<polygon points="{x},{y-6.2} {x+6.2},{y+5.0} {x-6.2},{y+5.0}" fill="{safe_col}" stroke="#ffffff" stroke-width="1.3"/>'
     return (
-        f'<circle cx="{x}" cy="{y}" r="6.2" fill="#fee2e2" stroke="{col}" stroke-width="1.4"/>'
-        f'<line x1="{x-3.4}" y1="{y-3.4}" x2="{x+3.4}" y2="{y+3.4}" stroke="{col}" stroke-width="1.9" stroke-linecap="round"/>'
-        f'<line x1="{x+3.4}" y1="{y-3.4}" x2="{x-3.4}" y2="{y+3.4}" stroke="{col}" stroke-width="1.9" stroke-linecap="round"/>'
+        f'<circle cx="{x}" cy="{y}" r="6.2" fill="#fee2e2" stroke="{safe_col}" stroke-width="1.4"/>'
+        f'<line x1="{x-3.4}" y1="{y-3.4}" x2="{x+3.4}" y2="{y+3.4}" stroke="{safe_col}" stroke-width="1.9" stroke-linecap="round"/>'
+        f'<line x1="{x+3.4}" y1="{y-3.4}" x2="{x-3.4}" y2="{y+3.4}" stroke="{safe_col}" stroke-width="1.9" stroke-linecap="round"/>'
     )
+
+
+def _split_md_row(line: str) -> list[str]:
+    """Split a Markdown table row on unescaped pipes while preserving escaped \\| literals."""
+    inner = line.strip()
+    if inner.startswith("|"):
+        inner = inner[1:]
+    if inner.endswith("|") and not inner.endswith(r"\|"):
+        inner = inner[:-1]
+    return [c.replace(r"\|", "|").strip() for c in re.split(r"(?<!\\)\|", inner)]
 
 
 def md_inline(text: str) -> str:
@@ -254,12 +220,17 @@ def md_inline(text: str) -> str:
 
     def save_link(m):
         lbl = html_vector_badges(m.group(1))
-        href = html_mod.escape(m.group(2), quote=True)
+        raw_href = html_mod.unescape(m.group(2)).strip()
+        if raw_href.lower().startswith(("file:", "javascript:", "data:")):
+            return lbl
+        if not re.match(r"^(?:https?://|\.\.?/|#[A-Za-z0-9_.:-]+$)", raw_href, flags=re.IGNORECASE):
+            return m.group(0)
+        href = html_mod.escape(raw_href, quote=True)
         link_tokens.append(f'<a href="{href}" class="md-link">{lbl}</a>')
         return f"___LINK_{len(link_tokens)-1}___"
 
     text = re.sub(r"`([^`]+)`", save_code, text)
-    text = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+|file://[^)\s]+|\.\.?/[^)\s]+)\)", save_link, text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", save_link, text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"(?<![A-Za-z0-9_])\*(?!\s|ST)([^*\n]+?)(?<!\s)\*(?![A-Za-z0-9_])", r"<em>\1</em>", text)
     text = html_vector_badges(text)
@@ -307,7 +278,7 @@ def classify_callout(raw_lines: list[str]) -> str:
 
 
 def _wrap_svg_scrollable(chart_html: str) -> str:
-    """Wrap raw <svg> inside .svg-scroll for narrow-screen mobile legibility (no-op in print)."""
+    """Wrap raw <svg> inside .svg-scroll for narrow-screen mobile legibility."""
     if 'class="svg-scroll"' in chart_html:
         return chart_html
     return re.sub(
@@ -501,7 +472,7 @@ def render_md_body(
 
         if line.startswith("|") and line.endswith("|"):
             close_lists()
-            cells = [c.strip() for c in line.strip("|").split("|")]
+            cells = _split_md_row(line)
             if all(re.match(r"^:?-{2,}:?$", c) for c in cells):
                 table_aligns = parse_alignments(cells)
                 continue
@@ -643,424 +614,13 @@ def render_cover_banner(
     return cover, doc_title, page_footer, footer_note
 
 
-def escape_css_content(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ").replace("\r", " ")
-
-
-def build_theme_css(
-    market: str,
-    page_footer: str,
-    *,
-    is_flagship: bool = False,
-    compact_us: bool = False,
-) -> str:
-    if market == "a_share":
-        cover_bg = "linear-gradient(135deg, #18181b 0%, #27272a 60%, #3f3f46 100%)"
-        accent = "#dc2626"
-        kpi_val_col = "#fbbf24"
-        vol_border = "#dc2626"
-        vol_bg = "linear-gradient(90deg, #fef2f2 0%, #fff7ed 100%)"
-        vol_txt = "#7f1d1d"
-        h2_border = "#fecaca"
-        h3_col = "#991b1b"
-        verdict_top = "#dc2626"
-        verdict_strong = "#991b1b"
-        guard_border = "#334155"
-        dark_h3 = "#fca5a5"
-        dark_verdict_strong = "#fca5a5"
-    elif market == "hk_stock":
-        cover_bg = "linear-gradient(135deg, #042f2e 0%, #115e59 58%, #134e4a 100%)"
-        accent = "#0d9488"
-        kpi_val_col = "#fbbf24"
-        vol_border = "#0f766e"
-        vol_bg = "linear-gradient(90deg, #f0fdfa 0%, #f8fafc 100%)"
-        vol_txt = "#115e59"
-        h2_border = "#99f6e4"
-        h3_col = "#0f766e"
-        verdict_top = "#0f766e"
-        verdict_strong = "#115e59"
-        guard_border = "#0f766e"
-        dark_h3 = "#5eead4"
-        dark_verdict_strong = "#5eead4"
-    else:
-        cover_bg = "linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #1e3a5f 100%)"
-        accent = "#2563eb"
-        kpi_val_col = "#38bdf8"
-        vol_border = "#1d4ed8"
-        vol_bg = "linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%)"
-        vol_txt = "#1e3a8a"
-        h2_border = "#bfdbfe"
-        h3_col = "#1e40af"
-        verdict_top = "#1d4ed8"
-        verdict_strong = "#1e3a8a"
-        guard_border = "#1e3a8a"
-        dark_h3 = "#93c5fd"
-        dark_verdict_strong = "#93c5fd"
-
-    if is_flagship and compact_us:
-        td_pad, tbl_lh, body_fs, body_lh = "2.9px 6px", "1.35", "9.3pt", "1.56"
-    elif is_flagship:
-        td_pad, tbl_lh, body_fs, body_lh = "3.0px 6px", "1.36", "9.3pt", "1.56"
-    else:
-        td_pad, tbl_lh, body_fs, body_lh = "3.4px 6px", "1.38", "9.25pt", "1.56"
-
-    safe_footer = escape_css_content(page_footer)
-    return f"""
-@page {{
-  size: A4 portrait;
-  margin: 14.5mm 14.5mm 15mm 14.5mm;
-  @bottom-center {{
-    content: "{safe_footer}  ·  第 " counter(page) " / " counter(pages) " 页";
-    font-family: "PingFang SC", sans-serif;
-    font-size: 7.8pt;
-    color: #94a3b8;
-  }}
-}}
-* {{ box-sizing: border-box; }}
-html {{ scroll-behavior: smooth; }}
-body {{
-  font-family: "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Microsoft YaHei", sans-serif;
-  color: #1f2937;
-  font-size: {body_fs};
-  line-height: {body_lh};
-  font-variant-numeric: tabular-nums;
-  margin: 0;
-  padding: 0;
-  background: #ffffff;
-}}
-p, li {{ orphans: 3; widows: 3; }}
-.md-link {{ color: #0072B2; text-decoration: none; font-weight: 600; }}
-.md-link:hover {{ text-decoration: underline; }}
-.mob-nav, .svg-hint {{ display: none; }}
-.vmark {{
-  display: inline-block;
-  font-size: 9.0pt;
-  font-weight: 900;
-  line-height: 1;
-  vertical-align: -0.5px;
-  margin: 0 3px 0 1px;
-  text-indent: 0;
-}}
-.vm-g {{ color: #009E73; }}
-.vm-b {{ color: #0072B2; font-size: 8.6pt; }}
-.vm-y {{ color: #D97706; font-size: 8.2pt; }}
-.vm-r {{ color: #D55E00; font-size: 10.0pt; }}
-.vtag {{
-  display: inline-block;
-  font-size: 7.0pt;
-  font-weight: 800;
-  line-height: 1.15;
-  padding: 1px 4px;
-  border-radius: 3px;
-  vertical-align: middle;
-  margin: 0 3px 1px 1px;
-  text-indent: 0;
-}}
-.vt-shield {{ background: #fee2e2; color: #991b1b; border: 0.7px solid #fca5a5; }}
-.vt-ok {{ background: #dcfce7; color: #166534; border: 0.7px solid #86efac; }}
-.vt-go {{ background: #dbeafe; color: #1e40af; border: 0.7px solid #93c5fd; }}
-.vt-lock {{ background: #e0e7ff; color: #3730a3; border: 0.7px solid #a5b4fc; }}
-.vt-warn {{ background: #fef3c7; color: #92400e; border: 0.7px solid #fcd34d; }}
-.vt-stop {{ background: #fee2e2; color: #991b1b; border: 0.7px solid #fca5a5; }}
-.vt-tip {{ background: #e0f2fe; color: #075985; border: 0.7px solid #7dd3fc; }}
-.vt-money {{ background: #fef3c7; color: #78350f; border: 0.7px solid #fbbf24; }}
-.vt-key {{ background: #f3e8ff; color: #6b21a8; border: 0.7px solid #d8b4fe; }}
-.vt-wait {{ background: #f1f5f9; color: #475569; border: 0.7px solid #cbd5e1; }}
-.vt-hot {{ background: #ffedd5; color: #9a3412; border: 0.7px solid #fdba74; }}
-.cover-banner {{
-  background: {cover_bg};
-  color: #ffffff;
-  padding: 16px 20px 14px 20px;
-  border-radius: 9px;
-  border-bottom: 4px solid {accent};
-  margin-bottom: 11px;
-}}
-.cover-banner .vtag {{ font-size: 7.6pt; padding: 1.5px 5px; }}
-.cover-banner .vt-shield, .cover-banner .vt-stop {{
-  background: rgba(220, 38, 38, 0.28); color: #fecaca; border-color: rgba(248, 113, 113, 0.55);
-}}
-.cover-banner .vt-ok {{
-  background: rgba(16, 185, 129, 0.26); color: #a7f3d0; border-color: rgba(52, 211, 153, 0.55);
-}}
-.cover-banner .vt-go {{
-  background: rgba(59, 130, 246, 0.28); color: #bfdbfe; border-color: rgba(96, 165, 250, 0.55);
-}}
-.cover-banner .vt-warn, .cover-banner .vt-money {{
-  background: rgba(245, 158, 11, 0.28); color: #fde68a; border-color: rgba(251, 191, 36, 0.55);
-}}
-.cover-banner .vt-tip, .cover-banner .vt-lock, .cover-banner .vt-key, .cover-banner .vt-wait {{
-  background: rgba(56, 189, 248, 0.24); color: #bae6fd; border-color: rgba(125, 211, 252, 0.5);
-}}
-.cover-tag {{
-  display: inline-block;
-  background: {accent};
-  color: #ffffff;
-  font-size: 7.7pt;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  padding: 2.5px 9px;
-  border-radius: 4px;
-  margin-bottom: 6px;
-}}
-.cover-title {{ font-size: 16.0pt; font-weight: 800; line-height: 1.3; margin: 0 0 6px 0; color: #ffffff; }}
-.cover-meta {{ font-size: 8.2pt; color: #e2e8f0; line-height: 1.46; margin-bottom: 9px; }}
-.cover-banner strong {{ color: #ffffff; }}
-.kpi-strip {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 4px; }}
-.kpi-strip.cols-3 {{ grid-template-columns: repeat(3, 1fr); gap: 6px; }}
-.kpi-card {{
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  padding: 7px 10px;
-}}
-.kpi-label {{ font-size: 8.0pt; color: #cbd5e1; font-weight: 600; }}
-.kpi-val {{ font-size: 11.1pt; font-weight: 800; color: {kpi_val_col}; margin-top: 1.5px; }}
-.kpi-sub {{ font-size: 8.0pt; color: #f1f5f9; margin-top: 1.5px; line-height: 1.38; }}
-.vol-header {{
-  background: {vol_bg};
-  border-left: 5px solid {vol_border};
-  color: {vol_txt};
-  font-size: 12.2pt;
-  font-weight: 800;
-  padding: 7px 12px;
-  margin: 15px 0 8px 0;
-  border-radius: 0 6px 6px 0;
-  page-break-after: avoid;
-  break-after: avoid;
-}}
-h2 {{
-  font-size: 11.0pt; font-weight: 800; color: #0f172a;
-  border-bottom: 1.6px solid {h2_border}; padding-bottom: 3px;
-  margin: 12px 0 6px 0; page-break-after: avoid; break-after: avoid;
-}}
-h3 {{
-  font-size: 9.8pt; font-weight: 700; color: {h3_col};
-  margin: 9.5px 0 4.5px 0; page-break-after: avoid; break-after: avoid;
-}}
-h4 {{
-  font-size: 9.2pt; font-weight: 700; color: #334155;
-  background: #f8fafc; border-left: 3px solid {accent};
-  padding: 3px 8px; margin: 9px 0 4.5px 0; page-break-after: avoid; break-after: avoid;
-}}
-p {{ margin: 4px 0 7px 0; text-align: left; }}
-ul {{ margin: 4px 0 7px 0; padding-left: 19px; }}
-ol {{ margin: 4px 0 7px 0; padding-left: 22px; }}
-.sub-ul {{ margin: 2.5px 0 4.5px 0; padding-left: 16px; list-style-type: disc; }}
-li {{ margin-bottom: 3.6px; }}
-.ol-sub {{ margin-top: 2px; color: #334155; }}
-strong {{ color: #0f172a; font-weight: 700; }}
-.inline-code {{
-  font-family: "SF Mono", "Menlo", monospace; font-size: 8.3pt;
-  color: #1e293b; font-weight: 600; background: #f1f5f9;
-  padding: 0.5px 3.5px; border-radius: 3px;
-}}
-.code-block {{
-  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
-  padding: 7px 9px; font-family: "SF Mono", "Menlo", monospace;
-  font-size: 7.9pt; white-space: pre-wrap; word-break: break-word;
-}}
-.callout {{
-  background: #fffbeb; border-left: 3.5px solid #d97706;
-  border-radius: 0 6px 6px 0; padding: 8px 12px; margin: 7px 0 9px 0;
-  font-size: 9.0pt; line-height: 1.56; color: #451a03;
-  page-break-inside: avoid; break-inside: avoid;
-}}
-.callout-verdict {{
-  background: #f8f7f3; border-left: none;
-  border-top: 2px solid {verdict_top}; border-bottom: 1.2px solid #cbd5e1;
-  border-radius: 0; color: #1e293b; padding: 8px 11px;
-}}
-.callout-verdict strong {{ color: {verdict_strong}; }}
-.callout-danger {{ background: #fef2f2; border-left: 4px solid #dc2626; color: #7f1d1d; }}
-.callout-danger strong {{ color: #991b1b; }}
-.callout-guard {{ background: #f8fafc; border-left: 4px solid {guard_border}; color: #1e293b; }}
-.callout-guard strong {{ color: #0f172a; }}
-.callout-flow {{ page-break-inside: auto; break-inside: auto; }}
-.callout-title {{ font-size: 9.4pt; font-weight: 800; color: #0f172a; margin-bottom: 3.5px; }}
-.callout-danger .callout-title {{ color: #991b1b; }}
-.callout-item {{ margin: 2px 0; padding-left: 2px; }}
-.callout-ol {{ margin: 2px 0; padding-left: 2px; text-indent: 0; }}
-.callout-chk {{ display: flex; align-items: flex-start; gap: 6px; margin: 3.5px 0; text-indent: 0; cursor: pointer; }}
-.chk-inp {{ display: none; }}
-.chk-box {{ flex: 0 0 auto; font-weight: 700; color: #dc2626; font-size: 9.8pt; line-height: 1.5; }}
-.chk-txt {{ flex: 1 1 auto; text-indent: 0; }}
-.callout-line {{ margin: 2px 0; }}
-.table-wrap {{ margin: 7px 0 9.5px 0; overflow: visible; }}
-.kanban-wrap, .short-table {{ page-break-inside: avoid; break-inside: avoid; }}
-table {{ width: 100%; border-collapse: collapse; font-size: 8.2pt; line-height: {tbl_lh}; page-break-inside: auto; }}
-thead {{ display: table-header-group; }}
-tr {{ page-break-inside: avoid; break-inside: avoid; }}
-th {{
-  background: #f1f5f9; color: #0f172a; font-weight: 800; padding: 4.5px 6px;
-  border-top: 2px solid #0f172a; border-bottom: 1.4px solid #475569;
-  border-left: none; border-right: none;
-}}
-td {{
-  padding: {td_pad}; border-bottom: 1px solid #e2e8f0;
-  border-left: none; border-right: none; vertical-align: top;
-}}
-th.c1-nowrap, td.c1-nowrap {{ white-space: nowrap; width: 1%; }}
-th.c1-min, td.c1-min {{ min-width: 78px; }}
-tbody tr:nth-child(even) {{ background: #f8fafc; }}
-tbody tr.row-g td:first-child {{ border-left: 3px solid #009E73; }}
-tbody tr.row-b td:first-child {{ border-left: 3px solid #0072B2; }}
-tbody tr.row-y td:first-child {{ border-left: 3px solid #D97706; }}
-tbody tr.row-r td:first-child {{ border-left: 3px solid #D55E00; }}
-.chart-box {{
-  background: #ffffff; border: 1px solid #e2e8f0; border-radius: 7px;
-  padding: 8.5px 10px 7px 10px; margin: 8px 0 9.5px 0;
-  page-break-inside: avoid; break-inside: avoid;
-}}
-.chart-title {{ font-size: 9.6pt; font-weight: 800; color: #0f172a; margin-bottom: 2px; }}
-.chart-sub {{ font-size: 7.8pt; color: #64748b; margin-bottom: 5px; }}
-.chart-takeaway {{
-  background: #f0f9ff; border-left: 3.5px solid #0072B2; border-radius: 0 5px 5px 0;
-  padding: 5.5px 9px; margin-top: 5px; font-size: 8.3pt; line-height: 1.48; color: #0c4a6e;
-}}
-.chart-note {{ font-size: 7.4pt; color: #94a3b8; line-height: 1.36; margin-top: 3.5px; }}
-svg {{ display: block; width: 100%; height: auto; }}
-.footer-note {{
-  margin-top: 9px; padding-top: 6px; border-top: 1px solid #cbd5e1;
-  font-size: 7.7pt; color: #64748b; text-align: center; line-height: 1.46;
-}}
-@media screen {{
-  html {{ background: #f1f5f9; }}
-  body {{
-    max-width: 780px; margin: 16px auto; padding: 18px 20px 28px 20px;
-    border-radius: 12px; box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
-    font-size: 15.5px; line-height: 1.72;
-  }}
-  .mob-nav {{
-    display: flex; align-items: center; gap: 6px; overflow-x: auto;
-    -webkit-overflow-scrolling: touch; position: sticky; top: 0; z-index: 40;
-    background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(8px);
-    padding: 8px 10px; margin: -18px -20px 14px -20px;
-    border-bottom: 1px solid #e2e8f0; border-radius: 12px 12px 0 0;
-    white-space: nowrap;
-  }}
-  .mob-nav a {{
-    display: inline-block; font-size: 12.5px; font-weight: 700;
-    color: #334155; background: #f1f5f9; border: 1px solid #e2e8f0;
-    padding: 4px 10px; border-radius: 999px; text-decoration: none; flex: 0 0 auto;
-  }}
-  .mob-nav a.nav-switch {{
-    background: {accent}; color: #ffffff; border-color: {accent};
-  }}
-  .cover-tag {{ font-size: 12px; padding: 3px 10px; }}
-  .cover-title {{ font-size: 21px; }}
-  .cover-meta, .kpi-label, .kpi-sub {{ font-size: 13px; }}
-  .kpi-val {{ font-size: 16.5px; }}
-  .vol-header {{ font-size: 19px; padding: 9px 14px; margin: 20px 0 10px 0; }}
-  h2 {{ font-size: 17.5px; margin: 16px 0 8px 0; }}
-  h3 {{ font-size: 16px; margin: 13px 0 6px 0; }}
-  h4 {{ font-size: 15px; padding: 5px 10px; }}
-  .inline-code {{ font-size: 13px; padding: 1px 5px; }}
-  .vtag {{ font-size: 11.5px; padding: 1.5px 5px; }}
-  .vmark {{ font-size: 14px; }}
-  .callout {{ font-size: 14.5px; padding: 11px 14px; }}
-  .callout-title {{ font-size: 15.5px; margin-bottom: 5px; }}
-  .chk-box {{ display: none; }}
-  .chk-inp {{
-    display: inline-block; width: 17px; height: 17px; margin-top: 3px;
-    accent-color: #dc2626; cursor: pointer; flex: 0 0 auto;
-  }}
-  .callout-chk:has(.chk-inp:checked) .chk-txt {{ text-decoration: line-through; opacity: 0.62; }}
-  .table-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
-  table {{ font-size: 13.5px; }}
-  th, td {{ padding: 7px 8px; }}
-  .chart-title {{ font-size: 15.5px; }}
-  .chart-sub, .chart-takeaway {{ font-size: 13.5px; }}
-  .chart-note, .footer-note {{ font-size: 12px; }}
-}}
-@media screen and (max-width: 680px) {{
-  .svg-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }}
-  .svg-scroll svg {{ min-width: 640px; }}
-  .svg-hint {{
-    display: block; text-align: center; font-size: 11.5px; color: #64748b;
-    margin-top: 3px; letter-spacing: 0.3px;
-  }}
-}}
-@media screen and (max-width: 600px) {{
-  body {{
-    margin: 0; border-radius: 0;
-    padding: 12px calc(12px + env(safe-area-inset-right, 0px)) calc(22px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
-    font-size: 16px;
-  }}
-  .mob-nav {{ margin: -12px -12px 12px -12px; border-radius: 0; }}
-  .kpi-strip, .kpi-strip.cols-3 {{ grid-template-columns: 1fr; }}
-  table {{ min-width: 0; width: 100%; font-size: 13.5px; }}
-  th.c1-min, td.c1-min {{ min-width: 64px; }}
-}}
-@media screen and (prefers-color-scheme: dark) {{
-  html {{ background: #020617; }}
-  body {{ background: #0f172a; color: #e2e8f0; box-shadow: none; }}
-  .mob-nav {{ background: rgba(15, 23, 42, 0.94); border-bottom-color: #334155; }}
-  .mob-nav a {{ background: #1e293b; color: #e2e8f0; border-color: #334155; }}
-  h2 {{ color: #f8fafc; border-bottom-color: #334155; }}
-  h3 {{ color: {dark_h3}; }}
-  h4 {{ color: #e2e8f0; background: #1e293b; }}
-  strong {{ color: #f8fafc; }}
-  .ol-sub {{ color: #cbd5e1; }}
-  .vol-header {{ background: #1e293b; color: #f8fafc; }}
-  .inline-code {{ background: #1e293b; color: #93c5fd; }}
-  .code-block {{ background: #1e293b; border-color: #334155; color: #e2e8f0; }}
-  .callout {{ background: #292012; color: #fde68a; }}
-  .callout-verdict {{ background: #1e293b; color: #e2e8f0; border-bottom-color: #334155; }}
-  .callout-verdict strong {{ color: {dark_verdict_strong}; }}
-  .callout-danger {{ background: #2a1215; color: #fecaca; }}
-  .callout-danger strong, .callout-danger .callout-title {{ color: #fca5a5; }}
-  .callout-guard {{ background: #1e293b; color: #e2e8f0; }}
-  .callout-title {{ color: #f8fafc; }}
-  th {{ background: #1e293b; color: #f8fafc; border-top-color: #64748b; border-bottom-color: #475569; }}
-  td {{ border-bottom-color: #334155; }}
-  tbody tr:nth-child(even) {{ background: #172033; }}
-  .chart-box {{ background: #1e293b; border-color: #334155; }}
-  .chart-title {{ color: #f8fafc; }}
-  .chart-sub, .chart-note, .footer-note, .svg-hint {{ color: #94a3b8; }}
-  .chart-takeaway {{ background: #0c2a3e; color: #bae6fd; }}
-  .svg-scroll {{ background: #ffffff; border-radius: 6px; padding: 4px; }}
-  .md-link {{ color: #38bdf8; }}
-}}
-"""
-
-
-def prepare_mobile_html(full_html: str, market: str) -> str:
-    """Enhance single-file daily HTML for phone browsers (3-market sticky nav, safe-area viewport, relative links)."""
-    mob = full_html.replace(
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
-    )
-    root_uri = f"file://{BASE_DIR}"
-    mob = mob.replace(f"{root_uri}/daily/", "./").replace(f"{root_uri}/", "../")
-
-    market_tabs = [
-        ("a_share", "./latest_a_share.html", "A 股"),
-        ("hk_stock", "./latest_hk_stock.html", "港股"),
-        ("us_stock", "./latest_us_stock.html", "美股"),
-    ]
-    nav_links = [
-        f'<a href="{href}" class="nav-switch">切{lbl}</a>'
-        for mkey, href, lbl in market_tabs
-        if mkey != market
-    ]
-    sec_matches = re.findall(r'<h1 id="(sec-\d+)" class="vol-header">(.*?)</h1>', mob)
-    if not sec_matches:
-        sec_matches = re.findall(r'<h2 id="(h2-\d+)">(.*?)</h2>', mob)[:5]
-    for sec_id, raw_lbl in sec_matches:
-        plain = re.sub(r"<[^>]+>", "", raw_lbl).strip()
-        short = plain.split("：", 1)[0].split("（", 1)[0][:10].rstrip(" 、，,·-—:：")
-        nav_links.append(f'<a href="#{sec_id}">{html_mod.escape(short)}</a>')
-    nav_links.append('<a href="#top">↑ 顶部</a>')
-    nav_bar = '<nav class="mob-nav">' + "".join(nav_links) + "</nav>"
-    return mob.replace("<body>", f"<body>{nav_bar}", 1)
-
-
 _BANNED_INTERNAL_RE = re.compile(
     r"(?:\bV\d+\.\d+\b|Subagent|红队|法证|\bTier\s*[0-3]\b|"
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
     r"edition_(?:run|plan|validation)\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
+    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"master_snapshot\.json|data_snapshot\.json|unified-edition\.prompt\.md|permissions\.json|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|sidecar\.json|"
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|Meta-RSI|Recursive\s+Self-Improvement|"
@@ -1212,7 +772,7 @@ def lint_markdown_report(
     for ln in body_no_meta.splitlines():
         st = ln.strip()
         if st.startswith("|") and st.endswith("|"):
-            cols = len([c for c in st.strip("|").split("|")])
+            cols = len(_split_md_row(st))
             if cols > max_cols:
                 wide_tables += 1
         elif st and not st.startswith(("#", "|", ">", "-", "*", "<!--", "```")) and not re.match(r"^\d+\.\s", st):
@@ -1241,221 +801,3 @@ def lint_markdown_report(
                     warnings.append(f"提醒：daily/INDEX.md 尚未收录 {Path(filename).name}")
 
     return errors, warnings
-
-
-def run_lint_gate(
-    md_text: str,
-    filename: str,
-    *,
-    is_flagship: bool = False,
-    meta: dict | None = None,
-    no_lint: bool = False,
-) -> None:
-    errors, warnings = lint_markdown_report(md_text, filename, is_flagship=is_flagship, meta=meta)
-    for w in warnings:
-        print(f"  [LINT WARN] {Path(filename).name}: {w}")
-    if errors:
-        for e in errors:
-            print(f"  [LINT ERROR] {Path(filename).name}: {e}")
-        if not no_lint:
-            raise SystemExit(f"Blocked by redline linter ({len(errors)} error(s)) in {filename}")
-
-
-def atomic_copy(src: Path, dst: Path) -> None:
-    tmp = dst.with_name(dst.name + ".tmp")
-    shutil.copyfile(src, tmp)
-    os.replace(tmp, dst)
-
-
-def _is_complete_pdf(pdf_path: Path, min_bytes: int) -> bool:
-    if not pdf_path.exists() or pdf_path.stat().st_size < min_bytes:
-        return False
-    try:
-        with pdf_path.open("rb") as fh:
-            head = fh.read(5)
-            fh.seek(max(0, pdf_path.stat().st_size - 1024))
-            tail = fh.read(1024)
-        if head != b"%PDF-" or b"%%EOF" not in tail:
-            return False
-    except OSError:
-        return False
-    try:
-        from pypdf import PdfReader  # type: ignore
-        return len(PdfReader(str(pdf_path)).pages) >= 1
-    except ImportError:
-        return True
-    except Exception:
-        return False
-
-
-def _terminate_process_group(proc: subprocess.Popen) -> None:
-    if proc.poll() is not None:
-        return
-    try:
-        if hasattr(os, "killpg"):
-            os.killpg(proc.pid, signal.SIGTERM)
-        else:
-            proc.terminate()
-        proc.wait(timeout=1.5)
-    except (ProcessLookupError, OSError):
-        pass
-    except subprocess.TimeoutExpired:
-        try:
-            if hasattr(os, "killpg"):
-                os.killpg(proc.pid, signal.SIGKILL)
-            else:
-                proc.kill()
-            proc.wait(timeout=2.0)
-        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
-            pass
-
-
-def _run_chrome_to_output(
-    cmd: list[str],
-    out_path: Path,
-    validator,
-    *,
-    timeout: float = 120.0,
-    stderr_log: Path | None = None,
-    grace_seconds: float = 1.2,
-) -> tuple[int, str]:
-    err_fh = stderr_log.open("wb") if stderr_log is not None else None
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=err_fh if err_fh is not None else subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        t0 = time.monotonic()
-        stable_since: float | None = None
-        last_size = -1
-        try:
-            while True:
-                rc = proc.poll()
-                if rc is not None:
-                    break
-                if time.monotonic() - t0 >= timeout:
-                    _terminate_process_group(proc)
-                    if validator(out_path):
-                        break
-                    raise subprocess.TimeoutExpired(cmd, timeout)
-                if out_path.exists():
-                    try:
-                        sz = out_path.stat().st_size
-                    except OSError:
-                        sz = -1
-                    if sz > 0 and sz == last_size and validator(out_path):
-                        if stable_since is None:
-                            stable_since = time.monotonic()
-                        elif time.monotonic() - stable_since >= grace_seconds:
-                            _terminate_process_group(proc)
-                            break
-                    else:
-                        last_size = sz
-                        stable_since = None
-                time.sleep(0.15)
-        finally:
-            _terminate_process_group(proc)
-        rc = proc.returncode if proc.returncode is not None else 0
-    finally:
-        if err_fh is not None:
-            err_fh.close()
-    stderr_txt = ""
-    if stderr_log is not None and stderr_log.exists():
-        try:
-            stderr_txt = stderr_log.read_text(encoding="utf-8", errors="replace").strip()
-        except OSError:
-            pass
-    return rc, stderr_txt
-
-
-def render_pdf_atomic(
-    full_html: str,
-    pdf_path: Path,
-    tmp_html: Path,
-    tmp_pdf: Path,
-    *,
-    mobile_html_path: Path | None = None,
-    mobile_market: str = "a_share",
-    min_pdf_bytes: int = 50_000,
-) -> None:
-    chrome_bin = resolve_chrome_bin()
-    tmp_html.write_text(full_html, encoding="utf-8")
-    last_err: Exception | None = None
-    try:
-        for attempt in range(2):
-            chrome_profile = Path(tempfile.mkdtemp(prefix=f"eq_chrome_pdf_{attempt}_"))
-            stderr_log = chrome_profile / "chrome_stderr.log"
-            try:
-                tmp_pdf.unlink(missing_ok=True)
-                rc, stderr_txt = _run_chrome_to_output(
-                    [
-                        chrome_bin,
-                        "--headless",
-                        "--disable-gpu",
-                        "--disable-extensions",
-                        "--disable-background-networking",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                        f"--user-data-dir={chrome_profile}",
-                        "--no-pdf-header-footer",
-                        "--run-all-compositor-stages-before-draw",
-                        f"--print-to-pdf={tmp_pdf}",
-                        str(tmp_html),
-                    ],
-                    tmp_pdf,
-                    lambda p: _is_complete_pdf(p, min_pdf_bytes),
-                    timeout=120,
-                    stderr_log=stderr_log,
-                )
-                if not _is_complete_pdf(tmp_pdf, min_pdf_bytes):
-                    raise RuntimeError(
-                        f"PDF generation failed or incomplete (rc={rc}): {stderr_txt[:300]}"
-                    )
-                if rc != 0:
-                    print(
-                        f"  [CHROME WARN] Chrome exited rc={rc} on teardown after writing "
-                        f"complete verified PDF ({tmp_pdf.stat().st_size:,}B); accepting.",
-                        file=sys.stderr,
-                    )
-                last_err = None
-                break
-            except (subprocess.SubprocessError, RuntimeError) as exc:
-                last_err = exc
-                if attempt == 0:
-                    print(
-                        f"  [CHROME RETRY] PDF render attempt 1 failed ({exc}); retrying with fresh profile...",
-                        file=sys.stderr,
-                    )
-            finally:
-                shutil.rmtree(chrome_profile, ignore_errors=True)
-        if last_err is not None:
-            raise last_err
-        os.replace(tmp_pdf, pdf_path)
-        if mobile_html_path is not None:
-            mob_html = prepare_mobile_html(full_html, mobile_market)
-            tmp_mob = mobile_html_path.with_name(mobile_html_path.name + ".tmp")
-            tmp_mob.write_text(mob_html, encoding="utf-8")
-            os.replace(tmp_mob, mobile_html_path)
-    finally:
-        tmp_html.unlink(missing_ok=True)
-        tmp_pdf.unlink(missing_ok=True)
-
-
-def render_docx_atomic(
-    full_html: str,
-    docx_path: Path,
-    *,
-    market: str = "a_share",
-    footer_title: str = "全球股市深度投研报告",
-) -> None:
-    """Compile pure-Python ECMA-376 native .docx with 2x Retina PIL-cropped charts (zero textutil)."""
-    from docx_embed import build_native_docx_from_html
-
-    build_native_docx_from_html(
-        full_html,
-        docx_path,
-        market=market,
-        footer_title=footer_title,
-    )

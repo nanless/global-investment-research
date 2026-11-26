@@ -109,5 +109,76 @@ class WebPublicationRecoveryTests(unittest.TestCase):
             record.assert_not_called()
 
 
+class PublicationIsolationTests(unittest.TestCase):
+    def test_check_tree_no_forbidden_files_blocks_binary_and_receipt_files(self):
+        clean_tree = (
+            "gold/data_snapshot.json\0"
+            "gold/daily/2026-11-26_1800_晚报_黄金深度研报.md\0"
+            "equity/state/market_state.json\0"
+        )
+        with patch.object(publish, "_git", return_value=clean_tree):
+            publish._check_tree_no_forbidden_files({}, "deadbeef")
+
+        for forbidden_path in (
+            "gold/daily/2026-11-26_1800_晚报_黄金深度研报.pdf",
+            "equity/daily/2026-11-26_1800_a_share.docx",
+            "gold/daily/2026-11-26_1800_晚报_黄金深度研报.artifacts.json",
+            "equity/REPORT.PDF",
+            "gold/ARCHIVE.DOCX",
+        ):
+            with self.subTest(forbidden_path=forbidden_path):
+                self.assertTrue(publish._is_forbidden_stage_path(forbidden_path))
+                dirty_tree = f"{clean_tree}{forbidden_path}\0"
+                with patch.object(publish, "_git", return_value=dirty_tree):
+                    with self.assertRaisesRegex(RuntimeError, "Forbidden binary/receipt file"):
+                        publish._check_tree_no_forbidden_files({}, "deadbeef")
+
+    def test_automated_stage_paths_strictly_limited_to_gold_and_equity(self):
+        self.assertEqual(publish.AUTOMATED_STAGE_PATHS, ("gold", "equity"))
+        self.assertNotIn("scripts", publish.AUTOMATED_STAGE_PATHS)
+        self.assertNotIn("tests", publish.AUTOMATED_STAGE_PATHS)
+
+        for path, expected in (
+            ("gold/data_snapshot.json", True),
+            ("gold/daily/SCORECARD.md", True),
+            ("equity/state/market_state.json", True),
+            ("equity/state/multi_asset_channels.json", True),
+            ("scripts/publish_site.py", False),
+            ("scripts/build_site.py", False),
+            ("tests/test_publishing.py", False),
+            ("AGENTS.md", False),
+            (".github/workflows/deploy-pages.yml", False),
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(publish._scoped(path, publish.AUTOMATED_STAGE_PATHS), expected)
+
+    def test_remote_repository_parses_custom_ssh_aliases_and_credentialed_https(self):
+        valid_urls = (
+            ("https://github.com/org/research-repo.git", "org/research-repo"),
+            ("https://github.com/org/research-repo/", "org/research-repo"),
+            ("https://x-access-token:ghs_secret123@github.com/org/research-repo.git", "org/research-repo"),
+            ("https://alice@github.com/org/research-repo", "org/research-repo"),
+            ("git@github.com:org/research-repo.git", "org/research-repo"),
+            ("git@github-work:org/research-repo.git", "org/research-repo"),
+            ("git@corp.github.alias:org/research-repo", "org/research-repo"),
+            ("ssh://git@github.com/org/research-repo.git", "org/research-repo"),
+            ("ssh://git@github-personal:2222/org/research-repo.git", "org/research-repo"),
+        )
+        for url, expected in valid_urls:
+            with self.subTest(url=url):
+                self.assertEqual(publish._remote_repository(url), expected)
+
+        invalid_urls = (
+            "https://gitlab.com/org/research-repo.git",
+            "git@bitbucket.org:org/research-repo.git",
+            "https://github.com/org/research-repo/extra",
+            "/local/path/research-repo.git",
+        )
+        for bad_url in invalid_urls:
+            with self.subTest(bad_url=bad_url):
+                with self.assertRaisesRegex(RuntimeError, "github.com"):
+                    publish._remote_repository(bad_url)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -184,7 +184,7 @@ def load_renderers() -> Renderers:
         for k in ("docx_embed", "build_daily", "pdf_common", "lint_equity", "chart_input", "edition_plan")
     }
     try:
-        # 1. Stub docx_embed so gold/build_daily.py & gold/build_report.py need ZERO bs4/PIL
+        # 1. Compatibility shim for legacy renderer imports (pure web build needs zero bs4/PIL/Chrome)
         stub_docx = types.ModuleType("docx_embed")
         stub_docx.build_native_docx = lambda *a, **kw: None  # type: ignore[attr-defined]
         stub_docx.render_chart_to_png = lambda *a, **kw: None  # type: ignore[attr-defined]
@@ -584,12 +584,26 @@ def sanitize_public_ledger_md(md_text: str, *, is_audit_log: bool = False) -> st
 
 def _rewrite_href(raw_href: str, base_prefix: str, slug_map: dict[str, str], ctx_market: str) -> str:
     href = html_mod.unescape(raw_href).strip()
-    if href.startswith(_GIR_REL_PREFIX):
-        href = href[len(_GIR_REL_PREFIX) :]
-    if not href or href.startswith("#") or href.startswith("mailto:"):
-        return raw_href
-    if href.startswith("http://") or href.startswith("https://"):
-        return raw_href
+    had_sentinel = False
+    for _pref in (_GIR_REL_PREFIX, "http://gir-local.invalid/"):
+        if href.lower().startswith(_pref):
+            href = href[len(_pref) :].strip()
+            had_sentinel = True
+            break
+    if not href:
+        return "#"
+
+    # Explicitly block dangerous URI schemes (XSS / data exfiltration guard)
+    scheme_probe = re.sub(r"[\x00-\x20]+", "", href).lower()
+    if scheme_probe.startswith(("javascript:", "data:", "vbscript:", "blob:")):
+        return "#"
+    if "gir-local.invalid" in scheme_probe:
+        return "#"
+
+    if href.startswith("#") or scheme_probe.startswith(("mailto:", "tel:")):
+        return href
+    if scheme_probe.startswith(("http://", "https://")):
+        return href
 
     lower = href.lower()
     decoded = urllib.parse.unquote(href)
@@ -634,16 +648,33 @@ def _rewrite_href(raw_href: str, base_prefix: str, slug_map: dict[str, str], ctx
     if stem in slug_map:
         return f"{base_prefix}daily/{slug_map[stem]}.html"
 
-    # Fallback: NEVER allow file://, /Users/, /home/, or broken local .md/.pdf paths
+    # Fallback: NEVER allow file://, /Users/, /home/, gir-local.invalid/, or broken local .md/.pdf/.docx paths
     if (
         lower.startswith("file://")
         or "/users/" in lower
         or re.search(r"(?<![a-z0-9._-])/home/", lower)
         or lower.endswith((".md", ".pdf", ".docx"))
+        or "gir-local.invalid" in lower
     ):
         return f"{base_prefix}archive.html"
 
-    return raw_href
+    # Unmapped sentinel relative links must never leak gir-local.invalid/ or break Gate S2
+    if had_sentinel:
+        clean_path = href.split("#", 1)[0].split("?", 1)[0].lstrip("./")
+        known_static = (
+            "index.html",
+            "channels.html",
+            "etfs.html",
+            "screener.html",
+            "scorecard.html",
+            "archive.html",
+            "guide.html",
+        )
+        if clean_path in known_static or clean_path.startswith(("reports/", "daily/", "channels/")):
+            return f"{base_prefix}{href.lstrip('./')}"
+        return f"{base_prefix}archive.html"
+
+    return href
 
 
 def _strip_local_paths_in_text(fragment: str) -> str:
@@ -1824,8 +1855,178 @@ THEME_INIT_SCRIPT = (
     "var t=localStorage.getItem('gir_theme');"
     "if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}"
     "document.documentElement.setAttribute('data-theme',t);"
+    "var m=document.querySelector('meta[name=\"theme-color\"]');"
+    "if(m){m.setAttribute('content',t==='dark'?'#0f131a':'#f6f3ec');}"
     "}catch(e){}})();</script>"
 )
+
+# Shared Top-20 beginner-friendly glossary (rendered statically on guide.html & synced with app.js tooltip)
+GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
+    {
+        "key": "four_buckets",
+        "term": "四笔钱规划（活钱 / 稳钱 / 长钱 / 保障）",
+        "cat": "基础入门",
+        "plain": "按「什么时候要用这笔钱」把积蓄分成四份：0–6 个月活钱、1–3 年稳钱、3–5 年以上长钱，外加先兜底的基础保障。",
+        "avoid": "避坑提醒：最常见的亏损不是买错产品，而是把半年内要用的房租或首付拿去买股票（短钱长投）。",
+    },
+    {
+        "key": "traffic_light",
+        "term": "红绿灯信号（红灯停 / 黄灯 / 绿灯）",
+        "cat": "基础入门",
+        "plain": "红绿灯不是预测明天涨跌，而是仓位安全阀：绿灯代表赔率划算可分批，黄灯代表拉锯观望，红灯停代表风险收益比偏弱。",
+        "avoid": "避坑提醒：红灯停绝不等于恐慌清仓，而是老底仓稳拿不乱卖、新钱先放稳钱池暂不追高或暂不新买。",
+    },
+    {
+        "key": "dfii10",
+        "term": "10 年美债真实利率（DFII10）",
+        "cat": "大盘信号",
+        "plain": "扣除美国未来通胀预期后，买 10 年期美国国债能拿到手的「真实利息」。黄金不生息，因此真实利率越高，黄金承压越重。",
+        "avoid": "避坑提醒：只要真实利率仍高悬在过关线之上，就别凭感觉猜底抢跑新买黄金。",
+    },
+    {
+        "key": "erp",
+        "term": "股权风险溢价（ERP）",
+        "cat": "大盘信号",
+        "plain": "买一篮子股票的盈利收益率减去无风险国债利率的差值，可以理解为「冒风险买股票比买国债多拿的性价比补贴」，数值越高越划算。",
+        "avoid": "避坑提醒：高 ERP 代表长期赔率好，但不代表明天立刻大涨，仍需配合趋势与仓位上限分批进场。",
+    },
+    {
+        "key": "hibor",
+        "term": "香港银行同业拆息（HIBOR）",
+        "cat": "大盘信号",
+        "plain": "香港各家银行之间互相借港元的批发利率。它走高说明香港资金变紧、股票估值承压；走低说明市场流动性偏宽松。",
+        "avoid": "避坑提醒：关注港股时要同时看 HIBOR 和美元兑港元汇率是否逼近 7.85 弱方保证线。",
+    },
+    {
+        "key": "hkma_bal",
+        "term": "香港金管局总结余",
+        "cat": "大盘信号",
+        "plain": "香港银行体系放在金管局账户里的「港元总水池」。水位越浅，一旦外部抽水，港元利率越容易突然跳涨。",
+        "avoid": "避坑提醒：当总结余逼近低水位警戒线时，港股高估值板块容易放大波动，不宜加杠杆。",
+    },
+    {
+        "key": "vix",
+        "term": "美股恐慌指数（VIX）",
+        "cat": "大盘信号",
+        "plain": "由标普 500 期权价格算出来的市场「紧张度温度计」。20 以下偏平静，超过 30 说明全球资金正剧烈避险。",
+        "avoid": "避坑提醒：VIX 急飙突破 30 时各类资产容易一起被抛售变现，切忌在高波动盘中盲目重仓抄底。",
+    },
+    {
+        "key": "us10y",
+        "term": "10 年期美债收益率（US10Y）",
+        "cat": "大盘信号",
+        "plain": "全球资产定价的「无风险锚」。它飙升会直接抬高全球借贷成本，压制高估值科技股和新兴市场资产。",
+        "avoid": "避坑提醒：若 10 年美债持续高企甚至触发熔断线，科技成长股新增仓位应保持克制。",
+    },
+    {
+        "key": "ah_premium",
+        "term": "A/H 溢价与倒挂",
+        "cat": "大盘信号",
+        "plain": "同一家公司在 A 股和港股同时上市时的价格差。正值代表 A 股比港股贵；负值（倒挂）代表 A 股反而比港股便宜。",
+        "avoid": "避坑提醒：别只看表面便宜就换港股，用内地港股通买 H 股分红要扣 20%–28% 红利税，务必算税后净股息。",
+    },
+    {
+        "key": "etf_vs_feeder",
+        "term": "场内 ETF vs 场外联接基金",
+        "cat": "基金与ETF",
+        "plain": "场内 ETF 在券商 App 像股票一样实时交易、费率极低；场外联接在支付宝或银行按收盘净值申购，无需股票账户且绝不买到场内溢价。",
+        "avoid": "避坑提醒：跨境美股 ETF 场内抢购溢价高时，优先用场外联接按净值分批定投，别在场内当高溢价接盘侠。",
+    },
+    {
+        "key": "class_a_c",
+        "term": "基金 A 类 vs C 类（+7 天惩罚费）",
+        "cat": "基金与ETF",
+        "plain": "A 类在买入时一次性交申购费，适合长期持有；C 类不收申购费但按天扣销售服务费，适合短期波段。",
+        "avoid": "避坑提醒：无论 A 类还是 C 类，持有不满 7 天卖出通常都要硬扣 1.5% 惩罚性赎回费，短钱别乱进出。",
+    },
+    {
+        "key": "premium_discount",
+        "term": "场内折价与溢价（参考净值 IOPV）",
+        "cat": "基金与ETF",
+        "plain": "基金真实价值叫参考净值（IOPV），场内买价高于真实价值就是溢价——相当于值 100 元的东西大家抢到 120 元卖给你。",
+        "avoid": "避坑提醒：跨境 QDII 或商品场内溢价超过 2%–3% 坚决不追高，情绪退潮后多花的那部分溢价会直接蒸发。",
+    },
+    {
+        "key": "duration",
+        "term": "债券久期（Duration）",
+        "cat": "债券与固收",
+        "plain": "衡量债券对利率变化有多敏感的「暴脾气系数」。久期 1 年以下像平稳直线，30 年国债久期近 20 年，利率微涨就能跌 5% 以上。",
+        "avoid": "避坑提醒：千万别把 30 年超长国债 ETF 当成保本稳健存款重仓，它属于高波动波段与对冲工具。",
+    },
+    {
+        "key": "nav_break",
+        "term": "银行理财破净与真净值化",
+        "cat": "债券与固收",
+        "plain": "资管新规后银行理财不再保本，每天按底层债券和股票市价算净值；「破净」就是净值跌破 1 元本金线。",
+        "avoid": "避坑提醒：「业绩比较基准」只是目标不是承诺保底，追求本金绝对安全应选储蓄国债或 50 万以内银行存款。",
+    },
+    {
+        "key": "t0_t1",
+        "term": "T+0 / T+1 与「可用 / 可取」",
+        "cat": "基础入门",
+        "plain": "T+0 当天买当天能卖（债券/跨境/转债/商品 ETF）；T+1 次交易日才能卖（A 股普通股与 A 股股票 ETF）。资金「可用」指能买证券，「可取」指能提现回银行卡。",
+        "avoid": "避坑提醒：做国债逆回购务必点「卖出（借钱）」；周四借 1 天期吃 3 天息，周五借 1 天期周末白闲置，且到期次日才可提现。",
+    },
+    {
+        "key": "deposit_insurance",
+        "term": "50 万元存款保险与单法人上限",
+        "cat": "债券与固收",
+        "plain": "同一存款人在同一家独立法人银行的所有普通存款和大额存单，本金加利息合计 50 万元以内由存款保险全额保障。",
+        "avoid": "避坑提醒：同一家银行的不同支行合并计算，实操单行控制在 45–47 万以内留出利息缓冲；理财、基金和保险不在存保范围内。",
+    },
+    {
+        "key": "dividend_tax",
+        "term": "红利税与通道税费差异",
+        "cat": "税费与跨境",
+        "plain": "A 股持股超 1 年免红利税；港股通收息直扣 20%（红筹最高 28%）；个人直买交易所公司债付息扣 20%，银行间债券 ETF 底层则更具税负优势。",
+        "avoid": "避坑提醒：买港股高股息前先按税后打七到八折重算真实到手率；境外账户投资收益须依法履行年度全球纳税申报义务。",
+    },
+    {
+        "key": "mrf_hedged",
+        "term": "香港互认基金（MRF）对冲累计份额",
+        "cat": "税费与跨境",
+        "plain": "经两地监管批准在内地合法销售的香港公募基金。「人民币对冲」用于锁住汇率波动，「累计份额」把利息滚入净值。",
+        "avoid": "避坑提醒：MRF 现金派息强制代扣 20% 个税，买卖价差暂免个税，认准「对冲 + 累计」份额，并核实未暂停申购。",
+    },
+    {
+        "key": "lof_delist",
+        "term": "QDII / 商品 LOF 退市回归净值",
+        "cat": "税费与跨境",
+        "plain": "部分场内跨境和商品 LOF 按交易所新规面临限期终止上市，退市转场外后只能按真实净值赎回。",
+        "avoid": "避坑提醒：高溢价买进此类 LOF，一旦退市回归净值，多付的溢价将永久清零，切勿在两位数溢价时进场。",
+    },
+    {
+        "key": "cb_call",
+        "term": "可转债强赎与「Z 标识」",
+        "cat": "债券与固收",
+        "plain": "正股大涨触发条款后，公司有权按约 100.5 元强行买回转债。临近强赎或到期停牌最后阶段，行情软件会亮出「Z」警示标识。",
+        "avoid": "避坑提醒：忘记卖出或转股会被低价强赎瞬间亏掉 25%–50%；而已到期停牌的转债切忌误点转股。新手可优先选投资级转债 ETF 自动分散排雷。",
+    },
+    {
+        "key": "reits_irr",
+        "term": "公募 REITs 分派率 vs 中债真实 IRR",
+        "cat": "债券与固收",
+        "plain": "产权类 REITs（保租房/商场）像买房收租看分派率与出租率；特许经营权类（高速/能源）到期资产无偿移交，高分派里混有本金归还。",
+        "avoid": "避坑提醒：绝不能把高速 REITs 8%–12% 的表面分派率当成高股息，必须核对中债真实内部收益率（IRR）与薄量限价挂单。",
+    },
+)
+
+
+def _term_tip(term_key: str, label: str) -> str:
+    """Render an accessible inline glossary button handled by app.js zero-dep tooltip."""
+    return (
+        f'<button type="button" class="term-tip" data-term="{esc(term_key)}" '
+        f'aria-label="查看术语白话解释：{esc(label)}">'
+        f'{esc(label)}<span class="term-q" aria-hidden="true">?</span></button>'
+    )
+
+
+def _fmt_ch_num(order: Any, fallback_idx: int = 1) -> str:
+    """Format channel order cleanly as 01..09, 10, 11, 12 (never 010/011/012)."""
+    try:
+        return f"{int(order):02d}"
+    except (TypeError, ValueError):
+        return f"{int(fallback_idx):02d}"
 
 
 def render_toc_list(toc: list[tuple[int, str, str]]) -> str:
@@ -1840,14 +2041,30 @@ def render_toc_list(toc: list[tuple[int, str, str]]) -> str:
     return '<ul class="toc-list">' + "".join(lis) + "</ul>"
 
 
-def _build_cmd_nav_items(base_prefix: str, total_pool: int) -> list[dict[str, str]]:
+def _build_cmd_nav_items(
+    base_prefix: str,
+    total_pool: int,
+    channels_list: list[dict[str, Any]] | None = None,
+    etf_count: int = 0,
+) -> list[dict[str, str]]:
     pool_label = f"{total_pool}股池" if total_pool > 0 else "龙头股池"
-    return [
+    ch_items = [c for c in (channels_list or []) if isinstance(c, dict) and str(c.get("id", "")).strip()]
+    ch_cnt = len(ch_items)
+    ch_cnt_lbl = f"{ch_cnt} 大独立通道" if ch_cnt else "全渠道总览"
+    etf_cnt_lbl = f"{etf_count} 只" if etf_count else "全球重点"
+
+    items: list[dict[str, str]] = [
         {
             "title": "全球大类资产 10 秒水温驾驶舱",
-            "meta": "总览 · 四市红绿灯与风险雷达",
+            "meta": "总览 · 四市红绿灯、四笔钱与全渠道",
             "href": f"{base_prefix}index.html",
-            "keywords": "总览 首页 驾驶舱 overview cockpit home",
+            "keywords": "总览 首页 驾驶舱 overview cockpit home 四笔钱",
+        },
+        {
+            "title": "新手 3 分钟入门指南与高频关键词速查",
+            "meta": "指南 · 红绿灯解读、8 大常见避坑与 20 词白话解释",
+            "href": f"{base_prefix}guide.html",
+            "keywords": "新手 指南 入门 术语 白话 避坑 四笔钱 guide glossary",
         },
         {
             "title": "黄金最新早晚报",
@@ -1898,126 +2115,103 @@ def _build_cmd_nav_items(base_prefix: str, total_pool: int) -> list[dict[str, st
             "keywords": "美股 全景手册 旗舰 us-stock flagship",
         },
         {
-            "title": "个人多元投资渠道总览（8 大独立通道）",
-            "meta": "专页 · 8 大渠道卡片、组合模板与排雷红线",
+            "title": f"个人多元投资渠道总览（{ch_cnt_lbl}）",
+            "meta": "专页 · 一眼对比表、组合模板、打新与双层风控墙",
             "href": f"{base_prefix}channels.html",
-            "keywords": "多元渠道 债券 理财 逆回购 qdii 互认 大额存单 可转债 reits 商品 channels",
-        },
-        {
-            "title": "渠道详情 01：债券（储蓄国债与万亿债券 ETF）",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/bonds.html",
-            "keywords": "债券 储蓄国债 债券etf 科创债 短融 511360 511260 bonds",
-        },
-        {
-            "title": "渠道详情 02：公募基金、银行理财与税优养老金",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/funds_wm.html",
-            "keywords": "公募基金 银行理财 破净 养老金 同业存单 固收+ funds",
-        },
-        {
-            "title": "渠道详情 03：国债逆回购（GC001 / R-001）",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/reverse_repo.html",
-            "keywords": "逆回购 gc001 r-001 204001 131810 闲钱 repo",
-        },
-        {
-            "title": "渠道详情 04：场内外 QDII、香港互认 MRF 与理财通",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/qdii_mrf.html",
-            "keywords": "qdii 互认基金 mrf 跨境理财通 锁汇 停牌 159509 968050",
-        },
-        {
-            "title": "渠道详情 05：银行大额存单（CDs）",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/large_cds.html",
-            "keywords": "大额存单 存单 转让 50万 存款保险 cds",
-        },
-        {
-            "title": "渠道详情 06：可转债（零门槛 ETF 与个券排雷）",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/convertible_bonds.html",
-            "keywords": "可转债 转债 511380 511180 强赎 到期 convertible",
-        },
-        {
-            "title": "渠道详情 07：中国公募 REITs（百只时代）",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/c_reits.html",
-            "keywords": "公募reits reits 产权 特许经营权 irr 028272 508610",
-        },
-        {
-            "title": "渠道详情 08：非黄金大宗商品 ETF（期货直持与 LOF 排雷）",
-            "meta": "多元渠道 · 独立详情页",
-            "href": f"{base_prefix}channels/commodity_etfs.html",
-            "keywords": "大宗商品 豆粕 有色 能化 白银lof 原油lof 159985 161226",
-        },
-        {
-            "title": "全球三通道重点 ETF 深度雷达（100+ 只）",
-            "meta": "工具 · A/港/美/全球/债券商品 ETF 费率、溢价与深度拆解",
-            "href": f"{base_prefix}etfs.html",
-            "keywords": "etf 雷达 宽基 红利 溢价 qdii ucits 债券 现金盾 etfs",
-        },
-        {
-            "title": f"全球核心龙头交互筛选器（{pool_label} · 含7维深研）",
-            "meta": "工具 · 三市龙头估值、股息、安全锚与 7 维机构档案",
-            "href": f"{base_prefix}screener.html",
-            "keywords": "股池 筛选器 龙头 7维 深研 screener stocks",
-        },
-        {
-            "title": "快捷视图：● 当下底座龙头",
-            "meta": "股池预设 · 红灯期可配置防弹衣底座",
-            "href": f"{base_prefix}screener.html#preset=base",
-            "keywords": "底座 绿灯 防守 base green",
-        },
-        {
-            "title": "快捷视图：高股息 ≥4% 龙头",
-            "meta": "股池预设 · 现金流与分红缓冲",
-            "href": f"{base_prefix}screener.html#preset=high-div",
-            "keywords": "高股息 分红 息率 dividend high-div",
-        },
-        {
-            "title": "快捷视图：近安全锚 ≤12%",
-            "meta": "股池预设 · 接近目标击球区间",
-            "href": f"{base_prefix}screener.html#preset=near-anchor",
-            "keywords": "安全锚 买点 击球 near-anchor",
-        },
-        {
-            "title": "快捷视图：A/H 倒挂折价股",
-            "meta": "股池预设 · A 股较 H 股折价套利视角",
-            "href": f"{base_prefix}screener.html#preset=ah-inverted",
-            "keywords": "ah 倒挂 折价 溢价 ah-inverted",
-        },
-        {
-            "title": "全球股市公开预测记分卡",
-            "meta": "记分卡 · 到期验真与避坑台账",
-            "href": f"{base_prefix}scorecard.html#equity-scorecard",
-            "keywords": "记分卡 股市 验真 scorecard equity",
-        },
-        {
-            "title": "黄金公开预测记分卡",
-            "meta": "记分卡 · 命中率与勘误留痕",
-            "href": f"{base_prefix}scorecard.html#gold-scorecard",
-            "keywords": "记分卡 黄金 验真 scorecard gold",
-        },
-        {
-            "title": "股市观点演进日志",
-            "meta": "账本 · 历期三市逻辑与仓位演化",
-            "href": f"{base_prefix}scorecard.html#equity-changelog",
-            "keywords": "演进 日志 changelog equity",
-        },
-        {
-            "title": "黄金观点演进与辟谣核查账本",
-            "meta": "账本 · 谣言证伪与官方核查明细",
-            "href": f"{base_prefix}scorecard.html#gold-audit-log",
-            "keywords": "辟谣 核查 账本 audit changelog gold",
-        },
-        {
-            "title": "历史早晚报档案与旗舰书架",
-            "meta": "档案 · 按市场/时段/刊型检索",
-            "href": f"{base_prefix}archive.html",
-            "keywords": "历史 档案 往期 archive",
+            "keywords": "多元渠道 活钱 存款 外币 债券 理财 保险 养老金 qdii 互认 可转债 reits 商品 私募 channels",
         },
     ]
+
+    for idx, ch in enumerate(ch_items, start=1):
+        cid = str(ch["id"]).strip()
+        num = _fmt_ch_num(ch.get("order"), idx)
+        cname = str(ch.get("name") or cid).strip()
+        short_nm = str(ch.get("short_name") or "").strip()
+        cat_lbl = str(ch.get("category_label") or "").strip()
+        badge = str(ch.get("badge") or "").strip()
+        prod_codes = " ".join(
+            str(p.get("code") or "") for p in (ch.get("products") or [])[:6] if isinstance(p, dict)
+        )
+        items.append(
+            {
+                "title": f"渠道详情 {num}：{cname}",
+                "meta": f"多元渠道 · {cat_lbl or '独立详情页'}",
+                "href": f"{base_prefix}channels/{cid}.html",
+                "keywords": f"{cid} {cname} {short_nm} {cat_lbl} {badge} {prod_codes}".strip(),
+            }
+        )
+
+    items.extend(
+        [
+            {
+                "title": f"全球重点 ETF 深度雷达（{etf_cnt_lbl}）",
+                "meta": "工具 · A/港/美/全球/债券商品 ETF 费率、溢价与深度拆解",
+                "href": f"{base_prefix}etfs.html",
+                "keywords": "etf 雷达 宽基 红利 溢价 qdii ucits 债券 现金盾 etfs",
+            },
+            {
+                "title": f"全球核心龙头交互筛选器（{pool_label} · 含7维深研）",
+                "meta": "工具 · 三市龙头估值、股息、安全锚与 7 维机构档案",
+                "href": f"{base_prefix}screener.html",
+                "keywords": "股池 筛选器 龙头 7维 深研 screener stocks",
+            },
+            {
+                "title": "快捷视图：● 当下底座龙头",
+                "meta": "股池预设 · 红灯期可配置防弹衣底座",
+                "href": f"{base_prefix}screener.html#preset=base",
+                "keywords": "底座 绿灯 防守 base green",
+            },
+            {
+                "title": "快捷视图：高股息 ≥4% 龙头",
+                "meta": "股池预设 · 现金流与分红缓冲",
+                "href": f"{base_prefix}screener.html#preset=high-div",
+                "keywords": "高股息 分红 息率 dividend high-div",
+            },
+            {
+                "title": "快捷视图：近安全锚 ≤12%",
+                "meta": "股池预设 · 接近目标击球区间",
+                "href": f"{base_prefix}screener.html#preset=near-anchor",
+                "keywords": "安全锚 买点 击球 near-anchor",
+            },
+            {
+                "title": "快捷视图：A/H 倒挂折价股",
+                "meta": "股池预设 · A 股较 H 股折价套利视角",
+                "href": f"{base_prefix}screener.html#preset=ah-inverted",
+                "keywords": "ah 倒挂 折价 溢价 ah-inverted",
+            },
+            {
+                "title": "全球股市公开预测记分卡",
+                "meta": "记分卡 · 到期验真与避坑台账",
+                "href": f"{base_prefix}scorecard.html#equity-scorecard",
+                "keywords": "记分卡 股市 验真 scorecard equity",
+            },
+            {
+                "title": "黄金公开预测记分卡",
+                "meta": "记分卡 · 命中率与勘误留痕",
+                "href": f"{base_prefix}scorecard.html#gold-scorecard",
+                "keywords": "记分卡 黄金 验真 scorecard gold",
+            },
+            {
+                "title": "股市观点演进日志",
+                "meta": "账本 · 历期三市逻辑与仓位演化",
+                "href": f"{base_prefix}scorecard.html#equity-changelog",
+                "keywords": "演进 日志 changelog equity",
+            },
+            {
+                "title": "黄金观点演进与辟谣核查账本",
+                "meta": "账本 · 谣言证伪与官方核查明细",
+                "href": f"{base_prefix}scorecard.html#gold-audit-log",
+                "keywords": "辟谣 核查 账本 audit changelog gold",
+            },
+            {
+                "title": "历史早晚报档案与旗舰书架",
+                "meta": "档案 · 按市场/时段/刊型检索",
+                "href": f"{base_prefix}archive.html",
+                "keywords": "历史 档案 往期 archive",
+            },
+        ]
+    )
+    return items
 
 
 def render_page_shell(
@@ -2030,13 +2224,18 @@ def render_page_shell(
     doc_kind: str = "overview",
     edition_attr: str = "",
     total_pool: int = 0,
+    channel_count: int = 0,
+    channels_list: list[dict[str, Any]] | None = None,
+    etf_count: int = 0,
     toc_items: list[tuple[int, str, str]] | None = None,
     show_chart_modal: bool = False,
     footer_ts: str = "",
 ) -> str:
     pool_label = f"{total_pool}股池" if total_pool > 0 else "龙头股池"
+    ch_footer_lbl = f"{channel_count}大多元渠道" if channel_count > 0 else "多元渠道"
     nav_items = [
         ("overview", f"{base_prefix}index.html", "总览"),
+        ("guide", f"{base_prefix}guide.html", "新手指南"),
         ("gold", f"{base_prefix}daily/gold-latest.html", "黄金"),
         ("a-share", f"{base_prefix}daily/a-share-latest.html", "A股"),
         ("hk-stock", f"{base_prefix}daily/hk-stock-latest.html", "港股"),
@@ -2054,8 +2253,9 @@ def render_page_shell(
             if key in ("gold", "a-share", "hk-stock", "us-stock")
             else ""
         )
+        extra_cls = " nav-pill-guide" if key == "guide" else ""
         nav_parts.append(
-            f'<a class="nav-pill{" active" if key == active_nav else ""}" data-nav="{key}" href="{href}">{dot_html}{lbl}</a>'
+            f'<a class="nav-pill{extra_cls}{" active" if key == active_nav else ""}" data-nav="{key}" href="{href}">{dot_html}{lbl}</a>'
         )
     nav_html = "".join(nav_parts)
 
@@ -2106,13 +2306,14 @@ def render_page_shell(
     )
 
     cmd_nav_json = json.dumps(
-        _build_cmd_nav_items(base_prefix, total_pool), ensure_ascii=False
+        _build_cmd_nav_items(base_prefix, total_pool, channels_list=channels_list, etf_count=etf_count),
+        ensure_ascii=False,
     ).replace("</", "<\\/")
     cmd_palette_html = (
         '<div class="cmd-backdrop no-print" id="cmd-palette" role="dialog" aria-modal="true" aria-label="快速跳转">'
         '<div class="cmd-dialog">'
         '<div class="cmd-head">'
-        '<input type="search" id="cmd-input" class="cmd-input" placeholder="输入市场、股池视图、记分卡或关键词快速跳转…" autocomplete="off" aria-label="快速跳转搜索">'
+        '<input type="search" id="cmd-input" class="cmd-input" placeholder="输入市场、渠道、新手指南、股池或关键词快速跳转…" autocomplete="off" aria-label="快速跳转搜索">'
         '<button type="button" class="ctrl-btn" data-action="close-cmd" aria-label="关闭快速跳转">ESC</button>'
         "</div>"
         '<div class="cmd-list" id="cmd-list" role="listbox"></div>'
@@ -2130,7 +2331,7 @@ def render_page_shell(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{esc(title)} ｜ 全球投研</title>
-  <meta name="theme-color" content="#141a24">
+  <meta name="theme-color" content="#f6f3ec">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="全球投研">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -2139,7 +2340,7 @@ def render_page_shell(
   {THEME_INIT_SCRIPT}
   <link rel="stylesheet" href="{base_prefix}assets/app.css">
 </head>
-<body data-market="{esc(market_attr)}" data-doc-kind="{esc(doc_kind)}"{f' data-edition="{esc(edition_attr)}"' if edition_attr else ""}>
+<body data-market="{esc(market_attr)}" data-doc-kind="{esc(doc_kind)}" data-base-prefix="{esc(base_prefix)}"{f' data-edition="{esc(edition_attr)}"' if edition_attr else ""}>
   <div class="reading-progress" id="reading-progress"></div>
   <header class="site-header">
     <div class="header-inner">
@@ -2171,11 +2372,12 @@ def render_page_shell(
           <div class="footer-col-title">核心导航</div>
           <div class="footer-links">
             <a href="{base_prefix}index.html">总览</a>
+            <a href="{base_prefix}guide.html">新手3分钟指南</a>
             <a href="{base_prefix}daily/gold-latest.html">黄金日报</a>
             <a href="{base_prefix}daily/a-share-latest.html">A股日报</a>
             <a href="{base_prefix}daily/hk-stock-latest.html">港股日报</a>
             <a href="{base_prefix}daily/us-stock-latest.html">美股日报</a>
-            <a href="{base_prefix}channels.html">8大多元渠道</a>
+            <a href="{base_prefix}channels.html">{esc(ch_footer_lbl)}</a>
             <a href="{base_prefix}etfs.html">全球ETF雷达</a>
             <a href="{base_prefix}screener.html">{pool_label}</a>
             <a href="{base_prefix}scorecard.html">记分卡</a>
@@ -2333,14 +2535,21 @@ def _resolve_etf_cn(gold_snap: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _render_flagship_web_shelf(stock_counts: dict[str, int]) -> str:
+def _render_flagship_web_shelf(
+    stock_counts: dict[str, int],
+    *,
+    a_etf_count: int = 0,
+    channel_count: int = 0,
+) -> str:
     """Render the pure-web evergreen flagship shelf (zero PDF/Word links)."""
     a_pool = stock_counts.get("a-share", 0)
     hk_pool = stock_counts.get("hk-stock", 0)
     us_pool = stock_counts.get("us-stock", 0)
+    a_etf_lbl = f"{a_etf_count} 只核心 ETF" if a_etf_count > 0 else "核心宽基与红利 ETF"
+    ch_lbl = f"{channel_count} 大多元渠道" if channel_count > 0 else "多元合规渠道"
     specs = [
         ("gold", "🥇 黄金跨世纪周期主报告（1971–2030）", "宏观框架 · 四步买金红绿灯 · 中国全渠道税费与回购实操", "reports/gold.html", "daily/gold-latest.html"),
-        ("a-share", f"🇨🇳 中国 A 股跨周期全景手册（{a_pool} 股）", "七维大盘体检 · 35 只核心 ETF · 8 大多元渠道与全行业龙头", "reports/a-share.html", "daily/a-share-latest.html"),
+        ("a-share", f"🇨🇳 中国 A 股跨周期全景手册（{a_pool} 股）", f"七维大盘体检 · {a_etf_lbl} · {ch_lbl}与全行业龙头", "reports/a-share.html", "daily/a-share-latest.html"),
         ("hk-stock", f"🇭🇰 中国香港股市跨周期全景手册（{hk_pool} 股）", "联汇双通道水位 · 港股三通道 ETF 税制 · AH 折溢价套利", "reports/hk-stock.html", "daily/hk-stock-latest.html"),
         ("us-stock", f"🇺🇸 美国股市跨周期全景手册（{us_pool} 股）", "政策市五维雷达 · 美股与爱尔兰 UCITS ETF · 11 板块防弹衣", "reports/us-stock.html", "daily/us-stock-latest.html"),
     ]
@@ -2359,59 +2568,639 @@ def _render_flagship_web_shelf(stock_counts: dict[str, int]) -> str:
     return "".join(cards)
 
 
-def _render_channel_overview_cards(channels: list[Any], *, base_prefix: str = "") -> str:
-    """Render concise, scannable overview cards for each personal channel linking to its dedicated detail page."""
-    cards: list[str] = []
+# ==============================================================================
+# 6A. BEGINNER-FRIENDLY CHANNEL METADATA HELPERS (Graceful Fallback for 8/12 Ch)
+# ==============================================================================
+
+_BUCKET_ORDER: tuple[str, ...] = ("liquid", "stable", "growth", "protection")
+_BUCKET_META: dict[str, tuple[str, str]] = {
+    "liquid": ("💧 活钱（0–6月）", "💧 活钱"),
+    "stable": ("🛡️ 稳钱（1–3年）", "🛡️ 稳钱"),
+    "growth": ("🌱 长钱（3–5年+）", "🌱 长钱"),
+    "protection": ("🏥 保障与超长锁息", "🏥 保障锁息"),
+}
+_DEFAULT_BUCKET_BY_ID: dict[str, str] = {
+    "reverse_repo": "liquid",
+    "large_cds": "stable",
+    "fx_deposits_wm": "stable",
+    "bonds": "stable",
+    "funds_wm": "stable",
+    "savings_insurance": "protection",
+    "tax_advantaged_accounts": "protection",
+    "qdii_mrf": "growth",
+    "convertible_bonds": "growth",
+    "c_reits": "growth",
+    "commodity_etfs": "growth",
+    "private_funds_trust": "growth",
+}
+
+_DEFAULT_CHANNEL_BEGINNER: dict[str, dict[str, Any]] = {
+    "reverse_repo": {
+        "risk_stars": 1,
+        "one_liner": "随存随用的零钱包升级版，把券商或活期闲钱放进低风险工具稳赚日息。",
+        "today_alert": "逆回购务必点「卖出」借钱；周五借 1 天期仅计 1 天息，周四买才吃 3 天息。",
+        "short_threshold": "100–1,000 元 · 随时可用",
+        "what_it_is": "涵盖国债逆回购、货币基金、场内短融 ETF 与同业存单 AAA 等超低波现金管理工具，专为日常备用金和炒股待机现金设计。",
+        "how_it_earns": "把短期闲钱借给国家信用担保的机构或银行，按天收取稳定利息，季末或节前资金紧张时常有脉冲加息。",
+        "worst_case": "标准国债逆回购由交易所担保几乎零违约；货基与短融 ETF 历史回撤极微，主要风险是忘记周五计息规则白白闲置两天。",
+        "steps": [
+            ("1. 选对入口 App", "股票账户闲钱在正规券商 App 搜国债逆回购或短融 ETF（511360）；银行卡零钱在支付宝或手机银行选头部货基或同业存单 AAA。"),
+            ("2. 查门槛与时间", "沪深逆回购均已统一 1,000 元起，佣金低至十万分之一；上午 09:30–10:30 与 14:30 前利率往往优于尾盘。"),
+            ("3. 下单防呆动作", "逆回购操作方向必点「卖出」；周四借 1 天期享周末 3 天息，周五闲钱改放 T+0 短融 ETF；到期次交易日可买股、再下一日才可提现。"),
+        ],
+        "picks": ["周四与节前倒数第 2 日国债逆回购（GC001 / R-001）", "券商账户活钱停泊池：短融 ETF（511360）", "场外低波升级：同业存单 AAA 指数基金"],
+        "avoids": ["周五或节前最后一个交易日盲目做 1 天期逆回购", "把次日必须提现交房租的救命钱锁进 T+2 才能提现的逆回购"],
+        "faq": [
+            ("做国债逆回购点「买入」还是「卖出」？", "务必点「卖出」，意思是把你的钱借给需要资金的机构收取利息，很多券商界面也直接标作「借出」。"),
+            ("为什么说到期后「可用」不等于「可取」？", "T+1 日开盘钱已回到证券账户，能立刻买股票或 ETF（可用），但要等到 T+2 日才能转回银行卡（可取）。"),
+        ],
+    },
+    "large_cds": {
+        "risk_stars": 1,
+        "one_liner": "有国家 50 万存款保险兜底的保本钱袋子，适合 1–3 年确定不用的稳健资金。",
+        "today_alert": "单家独立法人银行本息合计严控 50 万以内；二手接盘存单绝不可直接提前支取。",
+        "short_threshold": "定存 50 元 / 存单 20 万起",
+        "what_it_is": "包括普通定期存款、大额存单、通知存款与结构性存款，属于真正受存款保险保障的银行表内保本存款。",
+        "how_it_earns": "银行按约定固定利率支付利息，个人存款利息暂免个人所得税；大额存单还支持在官方 App 转让专区提前变现。",
+        "worst_case": "单家银行 50 万元本息内由存款保险全额保障；主要亏损坑是直接提前支取惨跌至活期利率，或二手接盘后提前支取造成本金实亏。",
+        "steps": [
+            ("1. 选对入口 App", "在国有大行、股份制银行或本地头部城商行官方手机银行「存款 / 大额存单」专区直接办理，不找中介代抢。"),
+            ("2. 查门槛与条款", "普通定存几十元起，大额存单多为 20 万元起；下手前务必确认是否支持「官方 App 零费转让」以及是否禁止二次转让。"),
+            ("3. 分散与比价", "对比同期储蓄国债与不同银行利率；单家独立法人银行下所有存款本息实操控制在 45–47 万以内，留出利息缓冲。"),
+        ],
+        "picks": ["3 年期股份制或头部城商行可转让大额存单", "20 万以下资金选正规银行特色定期存款或改配储蓄国债"],
+        "avoids": ["把超过 50 万存款全部集中在同一家银行的不同支行", "二手转让专区接盘后急用钱直接向银行提前支取（只退原票面本金+活期）"],
+        "faq": [
+            ("同一家银行办两张卡，每张都保 50 万吗？", "不是。50 万元限额按「同一存款人 × 同一独立法人银行」所有支行网点的全部存款本息合并计算。"),
+            ("大额存单利息要扣 20% 个人所得税吗？", "不需要。中国大陆对个人储蓄存款和大额存单利息暂免征收个人所得税。"),
+        ],
+    },
+    "fx_deposits_wm": {
+        "risk_stars": 2,
+        "one_liner": "适合已有存量美元或港元现汇的持币人原币生息，严防人民币换汇赚息亏汇。",
+        "today_alert": "人民币新换汇买外币定存须先算汇率波动账，绝不违规拆借个人 5 万美元额度。",
+        "short_threshold": "100 美元起 · 锁期定存",
+        "what_it_is": "在境内正规银行直接办理的美元、港元等外币定期存款与低波外币理财，面向已有外汇储备或留学旅游刚需家庭。",
+        "how_it_earns": "赚取境外货币无风险利率差，但换回人民币时的最终收益 = 外币利息 + 汇率涨跌。",
+        "worst_case": "外币存款在境内也受 50 万人民币等值存保上限约束，但外币理财不保本；若人民币显著升值，利息可能被汇兑损失全部吞噬甚至倒亏。",
+        "steps": [
+            ("1. 选对入口 App", "在持有外币牌照的国有大行、股份行或外资行官方手机银行「外币存款 / 外币理财」栏目办理。"),
+            ("2. 分清资金来源", "已有存量美元现汇优先原币定存避免反复换汇点差；若用人民币购汇，务必遵守每年 5 万美元个人便利化额度合规用途。"),
+            ("3. 核算综合回报", "比较外币定存利率、银行结售汇点差与未来用汇时间，绝不为了账面息差忽视双向汇率波动。"),
+        ],
+        "picks": ["存量美元现汇直配正规银行中短期美元定存", "留学/境外消费刚需资金按到期日匹配外币定存"],
+        "avoids": ["用人民币盲目换汇追高息外币存款却忽略人民币升值汇损", "轻信代购额度、地下换汇等触碰外汇合规红线的操作"],
+        "faq": [
+            ("为什么看着外币利率高，换回人民币反而亏了？", "因为外币收益按外币计价，如果持有期间人民币对美元大幅升值，换回人民币时的汇率折损可能大于拿到的利息。"),
+            ("外币存款和外币理财都受 50 万存款保险保护吗？", "只有银行表内「外币存款」按折合人民币合并计入 50 万存保上限，净值化外币理财产品不在存款保险保障范围内。"),
+        ],
+    },
+    "bonds": {
+        "risk_stars": 1,
+        "one_liner": "把钱借给国家或优质大企业稳吃利息，是普通人替代低息定存的稳钱压舱石。",
+        "today_alert": "30 年超长国债久期近 20 年、波动像股票，新手严禁把它当保本存款重仓。",
+        "short_threshold": "100 元起 · 债基ETF T+0",
+        "what_it_is": "核心包含国家发行的储蓄国债，以及在券商账户像买股票一样交易的短融、国债、政金债和高等级公司债/科创债 ETF。",
+        "how_it_earns": "主要靠每天稳定累积的债券票息，外加市场降息时债券价格上涨带来的资本利得。",
+        "worst_case": "储蓄国债持有到期稳保本息；中短债 ETF 常规回撤约 0.5%–1.5%；但 30 年国债 ETF 利率反弹时可能出现 5%–10% 回撤。",
+        "steps": [
+            ("1. 选对入口 App", "储蓄国债用六大行或主流股份行官方手机银行；债券 ETF（如 511360、511260、551500）用正规证券公司股票 App。"),
+            ("2. 查门槛与规则", "储蓄国债 100 元起、多在每月 10 日开售；债券 ETF 约百元至千元起，普通 A 股账户免印花税且支持 T+0 当日买卖。"),
+            ("3. 下单防呆动作", "盘中核对参考净值，溢价超 0.2% 不追高；买公司债优先借道 ETF 分散违约风险并留意底层税负差异，超长债严控仓位。"),
+        ],
+        "picks": ["3年期 / 5年期电子式储蓄国债（免个税稳保本）", "短融 ETF（511360）与银行间中短久期利率债 ETF", "高等级科创债 / 基准做市公司债 ETF（分散配置）"],
+        "avoids": ["把 30 年超长国债 ETF 当保本存款满仓买入", "个人直接重仓单只高息民营信用债（既扣 20% 利息税又有违约风险）"],
+        "faq": [
+            ("买债券 ETF 会亏本金吗？", "短融 ETF 极少回撤；中长久期债券 ETF 净值随利率波动，短期可能小幅浮亏，持有拿息通常可逐步修复；30 年国债则属高波动工具。"),
+            ("为什么储蓄国债提前取会扣利息？", "储蓄国债鼓励持有到期，不满 6 个月兑取无息且扣 0.1% 手续费，满 6 个月后按档扣除相应天数利息。"),
+        ],
+    },
+    "funds_wm": {
+        "risk_stars": 2,
+        "one_liner": "门槛低至 1 元的净值化理财工具箱，买前务必分清「保本存款」和「波动净值」。",
+        "today_alert": "银行理财全面真净值化且存在破净波动，切勿把业绩比较基准当承诺保本利率。",
+        "short_threshold": "1–1,000 元 · 申赎灵活",
+        "what_it_is": "涵盖公募短债/纯债、固收+、多资产 ETF-FOF、真净值银行理财以及持牌基金投顾组合，适合习惯用银行或三方平台打理资金的人群。",
+        "how_it_earns": "由专业团队打包投资债券、存单或少量权益资产，靠底层利息与资产增值推升每日净值。",
+        "worst_case": "债市回调或股市下跌时，银行理财和固收+可能跌破 1 元本金线（破净），部分含权较高的固收+回撤可达 3%–8%。",
+        "steps": [
+            ("1. 选对入口 App", "在官方手机银行、天天基金、蚂蚁财富或持牌券商 App 选购，优先查看 2026 销售费改后的透明低费份额。"),
+            ("2. 核对关键参数", "先看底层资产是否混入股票或超长债，再核对近 3 年最大回撤、C 类销售服务费及满 1 年免收条款。"),
+            ("3. 避开 7 天惩罚费", "无论 A 类还是 C 类公募基金，持有不满 7 天赎回通常硬扣 1.5% 惩罚费；选产品按用钱周期匹配，不盲追榜单短期冠军。"),
+        ],
+        "picks": ["头部低费同业存单 AAA 与高等级短债基金", "费率透明的多资产平衡型 ETF-FOF 或持牌稳健投顾"],
+        "avoids": ["把近期宣传高业绩基准的银行固收+理财当保本存款买", "买入公募基金不满 7 天就频繁赎回白交 1.5% 惩罚费"],
+        "faq": [
+            ("基金 A 类和 C 类到底怎么选？", "长期持有（通常 1 年以上）选 1 折申购费的 A 类更划算；几个月内波段选 C 类。注意 2026 费改后不少指数/债基 C 类满 1 年停收销服费，下单前查合同。"),
+            ("理财显示 R2 中低风险为什么还会亏钱？", "R2 代表波动较小而非保本。债市利率突然反弹或底层信用债估值调整时，净值化理财同样会出现阶段性浮亏。"),
+        ],
+    },
+    "savings_insurance": {
+        "risk_stars": 2,
+        "one_liner": "适合 10 年以上绝对不动的闲钱提前锁息，前 5 年退保本金亏损极大必须量力而行。",
+        "today_alert": "看懂白纸黑字的「保证现价 IRR」而非夸大演示收益，绝不拿 3–5 年内要用的钱买储蓄险。",
+        "short_threshold": "数千元至数万元/年 · 锁定 10 年+",
+        "what_it_is": "包括增额终身寿险、养老年金险与分红型储蓄险，属于用长期流动性换取合同锁定复利与身故/长寿现金流安排的保险合同。",
+        "how_it_earns": "传统险按合同写死的现金价值复利增长；分红险由较低的保证利率加不保证的险企经营分红构成。",
+        "worst_case": "保险合同前期扣除渠道与保障成本，前 3–7 年现金价值显著低于已交保费，中途急用钱退保会直接亏损 20%–50% 本金。",
+        "steps": [
+            ("1. 先配保障再谈储蓄", "确认家庭已配齐基本医保、百万医疗与意外险后，再只拿 10 年以上绝对不用的闲钱考虑储蓄险。"),
+            ("2. 自己算清真实 IRR", "向官方渠道索要现金价值表，重点核对第 10 年、20 年的保证复利（IRR）及险企历史分红实现率，不被「单利」话术误导。"),
+            ("3. 用好犹豫期与验真", "只在持牌保险公司或正规持牌经纪渠道投保，保单在国家金融监管总局体系可查，15 天犹豫期内反悔可全额退保。"),
+        ],
+        "picks": ["资本充足、历史分红实现率稳健的头部险企合规产品", "10 年以上确定养老或教育金专款专用规划"],
+        "avoids": ["用 3 年内可能买房结婚的钱买长年期储蓄险被迫中途退保", "把分红险演示上限当成保证收益，或轻信地下非合规境外保单"],
+        "faq": [
+            ("分红险宣传的演示收益一定能拿到吗？", "不一定。合同里只有「保证现金价值」写死必给，分红部分随保险公司投资收益浮动，可能低于演示水平甚至为 0。"),
+            ("买完后悔了怎么办？", "签收保单后通常有 15 天犹豫期可无损全退；过了犹豫期前几年退保只能退现金价值，往往大幅低于已交保费。"),
+        ],
+    },
+    "tax_advantaged_accounts": {
+        "risk_stars": 2,
+        "one_liner": "国家给中高收入工薪族的合法节税专户，个税边际税率 20% 及以上最划算。",
+        "today_alert": "领取时本息统一扣 3% 个税，0%–3% 低税档人群切勿盲目锁进个人养老金账户。",
+        "short_threshold": "每年上限 1.2 万元 · 锁定至退休",
+        "what_it_is": "以个人养老金账户（每年最高缴存 1.2 万元）和税优健康险为核心的法定税收优惠账户，可在年度个税汇算时直接抵扣应纳税所得额。",
+        "how_it_earns": "「立刻省下的个税 + 账户内 Y 份额基金/养老储蓄/国债/商业养老保险的长期复利」，且 Y 份额管理费普遍打五折。",
+        "worst_case": "资金原则上锁定至退休（大病、长期失业、低保等法定情形除外），且未来领取时连本带利扣 3% 个税；低税档缴存反而倒贴税差。",
+        "steps": [
+            ("1. 先查个人个税档位", "打开「个人所得税」App 查上年度综合所得边际税率：20% 及以上档高度推荐顶格参与，10% 档视流动需求而定，0%–3% 档暂不参与。"),
+            ("2. 选低费正规开户行", "在支持丰富 Y 份额基金、养老储蓄国债与低费产品的头部银行开立唯一个人养老金资金账户。"),
+            ("3. 买完别忘报税退税", "每年底前完成缴存并选好底层低费 Y 份额宽基/红利/固收+或国债，次年 3–6 月在个税 App 一键导入凭证办理退税。"),
+        ],
+        "picks": ["个税边际税率 ≥20% 人群顶格 1.2 万/年配置低费 Y 份额或养老储蓄国债", "符合需求的合规税优健康险（每年最高 2,400 元税前扣除）"],
+        "avoids": ["年收入未达起征点或 3% 税档人群跟风开户缴存白交 3% 领取税", "只把钱存进养老金账户当活期放着不动，白白浪费长期复利"],
+        "faq": [
+            ("为什么说 3% 税档买个人养老金不划算？", "因为你现在只省了 3% 的税，退休领取时连本带利都要交 3% 的税，资金被锁几十年却几乎没有净节税优势。"),
+            ("中间遇到重大困难急用钱能提前取吗？", "可以。除达到退休年龄外，遇到完全丧失劳动能力、大病重疾支出、长期领取失业金或低保等法定情形均可按规申请提前领取。"),
+        ],
+    },
+    "qdii_mrf": {
+        "risk_stars": 3,
+        "one_liner": "合法不出境就能配置全球股债的合规桥梁，核心纪律是「避开高溢价、选对冲累计」。",
+        "today_alert": "严禁在场内追买溢价超 3% 或停牌提示的跨境基；MRF 必选「人民币对冲+累计」避汇损与 20% 派息税。",
+        "short_threshold": "10–100 元起（理财通 2.0 需大湾区资格）",
+        "what_it_is": "包括场内外 QDII 基金、香港北向互认基金（MRF）以及粤港澳大湾区跨境理财通，全部在国家合规框架内投资海外股票或债券。",
+        "how_it_earns": "分享海外优质企业盈利或高评级美元债票息，降低单一市场波动对家庭资产的冲击。",
+        "worst_case": "场内高溢价接盘在情绪退潮或 LOF 退市时溢价直接清零；未锁汇美元债遇到人民币大幅升值可能赚息亏汇。",
+        "steps": [
+            ("1. 选对无溢价通道", "想投海外宽基且场内溢价高时，改在支付宝/银行用场外 QDII 联接按收盘净值定投；想买海外稳健债基在银行/三方搜开放的香港互认基金（MRF）。"),
+            ("2. 核对三项必查项", "查实时参考净值溢价（>2%–3% 不买）、查 MRF 是否为「人民币对冲 + 累计份额」、查当前是否开放申购及单日限额。"),
+            ("3. 严守合规与税务", "MRF 选累计份额可合法免除 20% 现金派息个税；不触碰非法地下换汇，离岸投资收益依法合规申报。"),
+        ],
+        "picks": ["开放申购的「人民币对冲 + 累计」香港互认债基（968082 / 968021）", "低溢价非美 QDII（如日股/亚洲）或场外零溢价联接定投"],
+        "avoids": ["场内追买两位数溢价及频繁停牌的纳指/标普 ETF 或高溢价 QDII-LOF", "买 MRF 月派息份额白扣 20% 个税，或买已暂停申购的基金代码"],
+        "faq": [
+            ("为什么一定要选香港互认基金的「累计份额」？", "内地买香港互认基金买卖价差暂免个税，但现金分红会强制代扣 20% 个税；累计份额把利息滚进净值，能合法避开这笔税损。"),
+            ("场外美股联接每天限购几十上百元怎么投？", "可以把同一指数下不同基金公司的低费联接基金分散定投拼单，既享受零场内溢价又天然摊薄成本。"),
+        ],
+    },
+    "convertible_bonds": {
+        "risk_stars": 3,
+        "one_liner": "「进可攻、退可守」的股债混合工具，新手直接选零门槛投资级转债 ETF 最省心。",
+        "today_alert": "违约刚兑已打破！个券严防低评级问题债、强赎「Z 标识」与到期停牌误点转股。",
+        "short_threshold": "ETF 百元零门槛 / 个券需 10 万+2 年",
+        "what_it_is": "上市公司发行的既像债券能到期还本付息、又能按约定价格换成股票的混合品种，场内有 T+0 可转债 ETF 可零门槛一键打包。",
+        "how_it_earns": "股市跌时靠债券面值托底抗跌，股市涨时跟着正股上涨赚取弹性差价。",
+        "worst_case": "个券已打破刚兑，低评级或退市边缘转债可能大跌超 50%；忘记处理强赎通知会被按约 100.5 元强行买回瞬间大亏。",
+        "steps": [
+            ("1. 选对入口与品种", "普通人无须凑 10 万元权限，直接在证券 App 买零门槛、T+0 的投资级转债 ETF（511180）或全市场转债 ETF（511380）。"),
+            ("2. 进阶个券先开权限", "确需买卖单只转债或参与信用打新，需满足 20 日日均 10 万元资产 + 2 年交易经验在线开通权限。"),
+            ("3. 盯紧三道排雷线", "个券坚持分散持仓、剔除 ST 与低评级；行情软件出现「Z」标识或强赎倒计时务必及时卖出或转股，已到期停牌券切勿误点转股。"),
+        ],
+        "picks": ["零门槛 T+0 自动排雷：上证投资级转债 ETF（511180）", "高流动性低费宽基：中证可转债 ETF（511380）"],
+        "avoids": ["为了高表面到期收益率去赌低评级、退市边缘问题转债", "忽略强赎最后交易日被百元强赎，或在到期停牌期间误操作转股"],
+        "faq": [
+            ("没有 10 万元资金可以买可转债吗？", "买单只可转债需要 10 万资产加 2 年经验，但买场内可转债 ETF（511180、511380）零门槛、几百元就能 T+0 买卖且自动分散风险。"),
+            ("可转债打新还会稳赚吗？", "信用打新中签率较低但中签前零占用资金，上市首日仍具正期望，但需核对评级与溢价率，切忌盲目高价追涨上市后的次新券。"),
+        ],
+    },
+    "c_reits": {
+        "risk_stars": 3,
+        "one_liner": "几百元就能当商场、保租房或算力机房的「包租公」，买前必分清产权与经营权两类。",
+        "today_alert": "特许经营权 REITs 到期归零、高分派里混有本金；二级成交较薄务必挂限价单。",
+        "short_threshold": "几百元起 · 线上零门槛开通",
+        "what_it_is": "把成熟收费基础设施或商业不动产打包上市的公募基金，强制将绝大部分可供分配现金流分红给持有人。",
+        "how_it_earns": "靠底层物业租金或收费公路车流收取稳定现金分红，加上资产基本面改善带来的价格重估。",
+        "worst_case": "价格波动接近股票，历史回调幅度可达 10%–25%；特许经营权类若只看表面高分派不看真实 IRR，可能越分越亏总账。",
+        "steps": [
+            ("1. 开通权限或选场外", "A 股证券账户线上零门槛即可开通 REITs 权限；没股票账户也可在支付宝/银行买场外 REITs 指数基金（如 028272/028273）。"),
+            ("2. 先分清产权与经营权", "产权类（保租房、消费商场、IDC 数据中心）看中长期出租率与分派率；特许经营权类（高速、能源）必须看中债真实 IRR。"),
+            ("3. 分批限价控制仓位", "公募 REITs 日成交较薄，下单务必挂限价单防滑点，作为卫星仓位控制在总组合 10% 以内，不盲目跟风打新。"),
+        ],
+        "picks": ["一键分散全市场：场外中证 REITs 全收益指数基金", "现金流稳健的头部保租房、核心消费商业与高收缴率 IDC 产权类 REITs"],
+        "avoids": ["把高速公路 REITs 的表面高分派率当成永续高股息重仓买入", "大额市价扫单吃出滑点，或在解禁高峰盲目追高"],
+        "faq": [
+            ("产权类和特许经营权类 REITs 最大区别是什么？", "产权类底层物业类似长期收租资产；特许经营权类到期要无偿移交政府、净值归零，所以每年高额分派里很大一部分是把你自己的本金还给你。"),
+            ("买公募 REITs 分红要交个人所得税吗？", "现行规则下，个人二级市场买卖价差与公募 REITs 现金分红暂免征收个人所得税。"),
+        ],
+    },
+    "commodity_etfs": {
+        "risk_stars": 4,
+        "one_liner": "与股票债市走势关联度极低的抗通胀卫星工具，用普通股票户即可免期货门槛参与。",
+        "today_alert": "严守黄金红灯停暂不新买纪律；坚决避开两位数高溢价及面临退市回归净值的商品 LOF。",
+        "short_threshold": "几百元起 · 场内 T+0",
+        "what_it_is": "直接跟踪豆粕、有色金属、能源化工等大宗商品期货价格的场内 ETF，为组合提供独立的抗通胀对冲能力。",
+        "how_it_earns": "在通胀抬头或商品供需偏紧时上涨；其中常年近贵远便宜（贴水）的品种还能在期货换月时持续赚取正展期收益。",
+        "worst_case": "大宗商品周期性强、波动剧烈，单品种回撤可达 15%–45%；高溢价商品 LOF 更可能遭遇净值下跌与溢价蒸发双杀。",
+        "steps": [
+            ("1. 选对纯期货 ETF", "在证券 App 优先查看场内直持期货合约的纯商品 ETF（如豆粕 159985、有色 159980、能化 159981），免 10 万/50 万期货门槛。"),
+            ("2. 严查溢价与展期结构", "下单前必看参考净值溢价与合约升贴水结构；警惕高费率、高溢价且受退市新规约束的场内商品 LOF。"),
+            ("3. 严控卫星仓位上限", "非金大宗商品仅作组合抗通胀卫星，单品种及合计仓位严控在 5%–10% 以内，切忌急涨后重仓追高。"),
+        ],
+        "picks": ["常年贴水正展期、与股债低相关的豆粕期货 ETF（159985）", "通胀周期对冲观察：有色金属期货 ETF（159980）"],
+        "avoids": ["追买两位数溢价的白银 LOF（161226）或升水磨损的原油 LOF", "单只商品重仓押注，或在黄金红灯停期违规借道新买黄金"],
+        "faq": [
+            ("为什么同样是大宗商品，有的长期涨、有的长期磨净值？", "期货合约到期必须换月：远月比近月便宜（贴水）时换月能多买份额赚正展期；远月比近月贵（升水，如原油常态）则每次换月都在悄悄扣血。"),
+            ("普通人买商品 ETF 会像炒期货一样爆仓吗？", "不会。商品期货 ETF 是无杠杆全额保证金运作，闲置保证金还会买国债存单生息，不会发生期货爆仓倒欠钱。"),
+        ],
+    },
+    "private_funds_trust": {
+        "risk_stars": 4,
+        "one_liner": "面向 300 万金融资产合格投资者的进阶对冲工具，门槛高、锁定期长、新手无须碰。",
+        "today_alert": "严守 300 万门槛与单笔 100 万底线，下单前必核中基协/中国信登备案与独立托管专户。",
+        "short_threshold": "300 万资产认证 · 单笔 100 万起",
+        "what_it_is": "面向法定合格投资者的合规私募证券基金（如多核量化 CTA、股票多头/指增）与净值化标品信托，提供公募无法实现的危机负相关对冲策略。",
+        "how_it_earns": "依赖管理人投研与多策略量化模型获取超额收益或危机期趋势保护，通常收固定管理费加业绩提成。",
+        "worst_case": "存在 6–12 个月锁定期或固定开放日，流动性弱；选错管理人或误碰违规非标/高杠杆雪球可能出现大幅本金亏损。",
+        "steps": [
+            ("1. 核实自身合格资质", "依法需满足家庭金融资产 ≥300 万元或近 3 年年均收入 ≥50 万元，且单只私募起投 100 万元（标品信托多为 30 万–100 万元起）。"),
+            ("2. 四道官方系统验真", "付款前务必在中基协、中国信登等官方平台核实机构牌照与产品备案，确认资金打入银行/券商独立托管专户，严拒私账与口头保本。"),
+            ("3. 严控仓位与策略分散", "用好 24 小时投资冷静期与回访确认，优先分散至多核量化 CTA 等低相关策略，远离非标政信定融与超限雪球结构。"),
+        ],
+        "picks": ["中基协备案齐全、券商/大行托管的头部多核量化 CTA", "底层为公开标准化债股资产的净值化标品信托"],
+        "avoids": ["资金未达合格门槛硬凑拼单代持", "轻信飞单保本承诺、非标政信定融或将资金转入非托管个人/公司账户"],
+        "faq": [
+            ("没有 300 万可以找朋友拼单买私募吗？", "绝对不可以。拼单代持违反合格投资者监管红线，一旦发生纠纷或管理人风险，实际出资人权益很难受到法律保护。"),
+            ("为什么标品信托和以前的非标信托不一样？", "标品信托底层投资公开市场标准化债券、基金等，每日/每周按净值波动且信息更透明；非标城投/地产信托则缺乏流动性且刚兑已彻底打破。"),
+        ],
+    },
+}
+
+
+def _normalize_money_bucket(ch: dict[str, Any]) -> str:
+    raw = str(ch.get("money_bucket") or "").strip().lower()
+    if raw in ("liquid", "cash", "活钱"):
+        return "liquid"
+    if raw in ("stable", "steady", "稳钱"):
+        return "stable"
+    if raw in ("growth", "long", "long_term", "长钱"):
+        return "growth"
+    if raw in ("protection", "insurance", "lock", "tax", "保障"):
+        return "protection"
+    cid = str(ch.get("id") or "").strip()
+    if cid in _DEFAULT_BUCKET_BY_ID:
+        return _DEFAULT_BUCKET_BY_ID[cid]
+    cat = str(ch.get("category") or "").strip().lower()
+    if cat == "cash":
+        return "liquid"
+    if cat in ("fixed_income", "deposits"):
+        return "stable"
+    if cat in ("insurance", "tax_advantaged"):
+        return "protection"
+    return "growth"
+
+
+def _is_hnw_channel(ch: dict[str, Any]) -> bool:
+    if ch.get("high_net_worth_only") is True:
+        return True
+    cid = str(ch.get("id") or "").strip()
+    if cid == "private_funds_trust":
+        return True
+    thr = str(ch.get("min_threshold") or "")
+    return "300万" in thr or "300 万" in thr
+
+
+def _channel_min_tier(ch: dict[str, Any]) -> str:
+    """Return minimum capital tier token ('1w', '20w', '300w') for homepage beginner capital selector."""
+    if _is_hnw_channel(ch):
+        return "300w"
+    raw = str(ch.get("min_amount_tier") or "").strip().lower()
+    if raw in ("1w", "20w", "300w"):
+        return raw
+    cid = str(ch.get("id") or "").strip()
+    if cid == "large_cds":
+        return "20w"
+    thr = str(ch.get("min_threshold") or "")
+    if "20 万" in thr or "20万" in thr:
+        return "20w"
+    return "1w"
+
+
+def _channel_risk_stars(ch: dict[str, Any]) -> int:
+    val = ch.get("risk_stars")
+    if isinstance(val, int) and 1 <= val <= 5:
+        return val
+    cid = str(ch.get("id") or "").strip()
+    if cid in _DEFAULT_CHANNEL_BEGINNER:
+        return int(_DEFAULT_CHANNEL_BEGINNER[cid]["risk_stars"])
+    rl = str(ch.get("risk_level") or "")
+    if "极低" in rl:
+        return 1
+    if "中低" in rl or "低至" in rl:
+        return 2
+    if "中高" in rl:
+        return 3
+    if "高" in rl:
+        return 4
+    return 2
+
+
+def _fmt_stars(n: int) -> tuple[str, str]:
+    clamped = max(1, min(5, int(n)))
+    lbls = {1: "极低波", 2: "中低波", 3: "中等波", 4: "高波动", 5: "极高波"}
+    return ("★" * clamped + "☆" * (5 - clamped)), lbls[clamped]
+
+
+def _short_yield_for_card(yield_range: str) -> str:
+    txt = str(yield_range or "").strip()
+    if not txt:
+        return "详见详情页"
+    first = re.split(r"[｜|]", txt, maxsplit=1)[0].strip()
+    return first if len(first) <= 28 else (first[:26].rstrip("，、；： （(") + "等")
+
+
+def _short_threshold_for_card(ch: dict[str, Any]) -> str:
+    cid = str(ch.get("id") or "").strip()
+    custom = str(ch.get("short_threshold") or "").strip()
+    if custom:
+        return custom
+    if cid in _DEFAULT_CHANNEL_BEGINNER:
+        return str(_DEFAULT_CHANNEL_BEGINNER[cid]["short_threshold"])
+    thr = str(ch.get("min_threshold") or "").strip()
+    first = re.split(r"[（(；;｜|]", thr, maxsplit=1)[0].strip()
+    return first or "详见详情页"
+
+
+def _channel_one_liner(ch: dict[str, Any]) -> str:
+    custom = str(ch.get("beginner_one_liner") or "").strip()
+    if custom:
+        return custom
+    cid = str(ch.get("id") or "").strip()
+    if cid in _DEFAULT_CHANNEL_BEGINNER:
+        return str(_DEFAULT_CHANNEL_BEGINNER[cid]["one_liner"])
+    summary = str(ch.get("summary") or "").strip()
+    if summary:
+        first_sent = re.split(r"[。！？]", summary, maxsplit=1)[0].strip()
+        if first_sent:
+            return first_sent + "。"
+    return str(ch.get("badge") or ch.get("name") or "")
+
+
+def _channel_today_alert(ch: dict[str, Any]) -> str:
+    custom = str(ch.get("today_alert") or "").strip()
+    if custom:
+        return custom
+    cid = str(ch.get("id") or "").strip()
+    if cid in _DEFAULT_CHANNEL_BEGINNER:
+        return str(_DEFAULT_CHANNEL_BEGINNER[cid]["today_alert"])
+    avoid = str(ch.get("avoid_if") or "").strip()
+    if avoid:
+        first_sent = re.split(r"[。！？；]", avoid, maxsplit=1)[0].strip()
+        if first_sent:
+            return first_sent + "。"
+    return str(ch.get("status_tag") or "下单前核对费率与风险条款。")
+
+
+def _channel_explainer(ch: dict[str, Any]) -> dict[str, str]:
+    raw = ch.get("beginner_explainer")
+    cid = str(ch.get("id") or "").strip()
+    fb = _DEFAULT_CHANNEL_BEGINNER.get(cid, {})
+    if isinstance(raw, dict):
+        what = str(raw.get("what_it_is") or "").strip()
+        earns = str(raw.get("how_it_earns") or "").strip()
+        worst = str(raw.get("worst_case") or "").strip()
+        if what or earns or worst:
+            return {
+                "what_it_is": what or str(fb.get("what_it_is") or ch.get("summary") or ""),
+                "how_it_earns": earns or str(fb.get("how_it_earns") or ch.get("yield_range") or ""),
+                "worst_case": worst or str(fb.get("worst_case") or ch.get("risk_level") or ""),
+            }
+    return {
+        "what_it_is": str(fb.get("what_it_is") or ch.get("summary") or ""),
+        "how_it_earns": str(fb.get("how_it_earns") or ch.get("yield_range") or ""),
+        "worst_case": str(fb.get("worst_case") or ch.get("risk_level") or ""),
+    }
+
+
+def _channel_steps(ch: dict[str, Any]) -> list[tuple[str, str]]:
+    raw = ch.get("how_to_buy_steps")
+    out: list[tuple[str, str]] = []
+    if isinstance(raw, list) and raw:
+        for idx, item in enumerate(raw[:4], start=1):
+            if isinstance(item, dict):
+                st = str(item.get("step") or item.get("title") or f"第 {idx} 步").strip()
+                dt = str(item.get("detail") or item.get("text") or item.get("desc") or "").strip()
+                if dt:
+                    out.append((st, dt))
+            elif isinstance(item, str) and item.strip():
+                out.append((f"第 {idx} 步", item.strip()))
+    if out:
+        return out
+    cid = str(ch.get("id") or "").strip()
+    fb = _DEFAULT_CHANNEL_BEGINNER.get(cid, {})
+    fb_steps = fb.get("steps")
+    if isinstance(fb_steps, list) and fb_steps:
+        return [(str(s), str(d)) for s, d in fb_steps]
+    return [
+        ("1. 选对合规入口", "通过持牌银行、正规证券公司或持牌公募代销平台办理，拒绝任何非正规私下转账。"),
+        ("2. 核对门槛与费率", f"起投门槛：{ch.get('min_threshold') or '详见产品公告'}；确认费率与税费规则后再操作。"),
+        ("3. 严守风控与仓位", f"流动性特征：{ch.get('liquidity') or '详见产品条款'}；按资金使用期限匹配仓位，不盲目追高。"),
+    ]
+
+
+def _channel_picks_avoids(ch: dict[str, Any]) -> tuple[list[str], list[str]]:
+    def _norm_list(val: Any) -> list[str]:
+        res: list[str] = []
+        if isinstance(val, list):
+            for x in val:
+                if isinstance(x, str) and x.strip():
+                    res.append(x.strip())
+                elif isinstance(x, dict):
+                    t = str(x.get("title") or x.get("name") or "").strip()
+                    d = str(x.get("detail") or x.get("note") or "").strip()
+                    comb = f"{t}：{d}" if (t and d) else (t or d)
+                    if comb:
+                        res.append(comb)
+        return res
+
+    picks = _norm_list(ch.get("beginner_picks"))
+    avoids = _norm_list(ch.get("beginner_avoids"))
+    cid = str(ch.get("id") or "").strip()
+    fb = _DEFAULT_CHANNEL_BEGINNER.get(cid, {})
+    if not picks:
+        picks = list(fb.get("picks") or [])
+    if not picks:
+        for p in (ch.get("products") or [])[:3]:
+            if isinstance(p, dict) and "高危" not in str(p.get("code", "")) and "高危" not in str(p.get("name", "")):
+                picks.append(f"{p.get('name', '')}（{p.get('code', '')}）")
+    if not avoids:
+        avoids = list(fb.get("avoids") or [])
+    if not avoids and ch.get("avoid_if"):
+        avoids = [str(ch["avoid_if"]).strip()]
+    return picks, avoids
+
+
+def _channel_faq(ch: dict[str, Any]) -> list[tuple[str, str]]:
+    raw = ch.get("beginner_faq")
+    out: list[tuple[str, str]] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                q = str(item.get("q") or item.get("question") or "").strip()
+                a = str(item.get("a") or item.get("answer") or "").strip()
+                if q and a:
+                    out.append((q, a))
+    if out:
+        return out
+    cid = str(ch.get("id") or "").strip()
+    fb = _DEFAULT_CHANNEL_BEGINNER.get(cid, {})
+    return [(str(q), str(a)) for q, a in (fb.get("faq") or [])]
+
+
+def _render_channel_filter_panel(
+    channels: list[dict[str, Any]],
+    *,
+    right_cta_html: str = "",
+) -> str:
+    """Render dynamic dual-mode filter bar: Beginner Money Buckets + Advanced Asset Categories."""
+    total = len(channels)
+    bucket_counts: dict[str, int] = defaultdict(int)
+    cat_order: list[tuple[str, str]] = []
+    cat_counts: dict[str, int] = defaultdict(int)
+    seen_cats: set[str] = set()
+
     for ch in channels:
+        if not isinstance(ch, dict):
+            continue
+        bk = _normalize_money_bucket(ch)
+        bucket_counts[bk] += 1
+        ck = str(ch.get("category") or "other").strip()
+        clbl = str(ch.get("category_label") or ck).strip()
+        cat_counts[ck] += 1
+        if ck not in seen_cats:
+            seen_cats.add(ck)
+            cat_order.append((ck, clbl))
+
+    bucket_btns = [f'<button type="button" class="filter-pill active" data-ch-bucket="all">全部 {total} 大渠道</button>']
+    for bk in _BUCKET_ORDER:
+        cnt = bucket_counts.get(bk, 0)
+        if cnt > 0:
+            full_lbl, _ = _BUCKET_META[bk]
+            bucket_btns.append(
+                f'<button type="button" class="filter-pill" data-ch-bucket="{bk}">{full_lbl} ({cnt})</button>'
+            )
+
+    cat_btns = ['<button type="button" class="filter-pill active" data-ch-cat="all">全部类型</button>']
+    for ck, clbl in cat_order:
+        cat_btns.append(
+            f'<button type="button" class="filter-pill" data-ch-cat="{esc(ck)}">{esc(clbl)} ({cat_counts[ck]})</button>'
+        )
+
+    return (
+        '<section class="filter-panel" aria-label="多元渠道双模式筛选">'
+        '<div class="filter-row">'
+        '<span class="filter-mode-label">按用钱时间（新手推荐）</span>'
+        f'{"".join(bucket_btns)}'
+        "</div>"
+        '<div class="filter-row filter-divider">'
+        '<span class="filter-mode-label">按资产类型（进阶）</span>'
+        f'{"".join(cat_btns)}'
+        "</div>"
+        '<div class="screener-bar" style="margin:0;">'
+        f'<strong id="ch-count" role="status">显示 {total} / {total} 大合规个人投资渠道</strong>'
+        f"{right_cta_html}"
+        "</div>"
+        "</section>"
+    )
+
+
+def _render_channel_overview_cards(channels: list[Any], *, base_prefix: str = "") -> str:
+    """Render 5-element golden-density beginner-friendly overview cards (zero ellipsis truncation)."""
+    cards: list[str] = []
+    for idx, ch in enumerate(channels, start=1):
         if not isinstance(ch, dict):
             continue
         cid = str(ch.get("id", "")).strip()
         if not cid:
             continue
-        order = ch.get("order", "")
+        num_str = _fmt_ch_num(ch.get("order"), idx)
         cat = str(ch.get("category", "fixed_income"))
-        tone = str(ch.get("status_tone", "blue"))
-        if tone not in ("green", "blue", "amber"):
+        bucket = _normalize_money_bucket(ch)
+        _, bucket_short = _BUCKET_META[bucket]
+        min_tier = _channel_min_tier(ch)
+        is_hnw = _is_hnw_channel(ch)
+        tone = str(ch.get("status_tone", "blue")).strip().lower()
+        if tone not in ("green", "blue", "amber", "red"):
             tone = "blue"
         href = f"{base_prefix}channels/{cid}.html"
-        kpis = [k for k in (ch.get("key_metrics") or []) if isinstance(k, dict)][:2]
-        kpi_html = "".join(
-            f'<div class="ch-ov-kpi"><span class="ch-ov-kpi-lbl">{esc(k.get("label", ""))}</span>'
-            f'<span class="ch-ov-kpi-val">{esc(k.get("value", ""))}</span></div>'
-            for k in kpis
-        )
+
+        stars_str, stars_lbl = _fmt_stars(_channel_risk_stars(ch))
+        one_liner = _channel_one_liner(ch)
+        today_alert = _channel_today_alert(ch)
+        short_yield = _short_yield_for_card(str(ch.get("yield_range", "")))
+        short_thr = _short_threshold_for_card(ch)
+
         prods = [p for p in (ch.get("products") or []) if isinstance(p, dict)]
         rules = [r for r in (ch.get("rules_and_redlines") or []) if isinstance(r, str) and r.strip()]
-        summary_full = str(ch.get("summary", "")).strip()
-        summary_short = summary_full if len(summary_full) <= 88 else summary_full[:86].rstrip("，、；： ") + "…"
+        hnw_badge = '<span class="ch-hnw-badge">300万门槛</span>' if is_hnw else ""
+        hnw_cls = " ch-hnw" if is_hnw else ""
+
         cards.append(
-            f'<article class="ch-overview-card" id="ch-{esc(cid)}" data-channel-cat="{esc(cat)}">'
+            f'<article class="ch-overview-card{hnw_cls}" id="ch-{esc(cid)}" '
+            f'data-channel-cat="{esc(cat)}" data-channel-bucket="{esc(bucket)}" data-min-tier="{esc(min_tier)}">'
             f'<div class="ch-ov-top">'
             f'<div class="ch-ov-title-row">'
-            f'<span class="ch-num">0{esc(order)}</span>'
+            f'<span class="ch-num">{esc(num_str)}</span>'
             f'<h3 class="ch-ov-title"><a href="{esc(href)}">{esc(ch.get("name", ""))}</a></h3>'
             f"</div>"
+            f'<div class="ch-ov-badges">'
+            f'<span class="ch-bucket-pill">{bucket_short}</span>'
+            f"{hnw_badge}"
             f'<span class="ch-status ch-tone-{tone}">{esc(ch.get("status_tag", ""))}</span>'
             f"</div>"
-            f'<div class="ch-ov-yield">{esc(ch.get("yield_range", ""))}</div>'
-            f'<div class="ch-ov-kpis">{kpi_html}</div>'
-            f'<p class="ch-ov-summary">{esc(summary_short)}</p>'
+            f"</div>"
+            f'<p class="ch-ov-oneliner">{esc(one_liner)}</p>'
+            f'<div class="ch-ov-ruler">'
+            f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">参考年化</span><span class="ch-ruler-val">{esc(short_yield)}</span></div>'
+            f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">风险体感</span><span class="ch-ruler-val"><span class="ch-risk-stars" aria-label="{esc(stars_lbl)}">{stars_str}</span> {esc(stars_lbl)}</span></div>'
+            f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">门槛与流动性</span><span class="ch-ruler-val">{esc(short_thr)}</span></div>'
+            f"</div>"
+            f'<div class="ch-ov-alert"><strong>今日避坑：</strong>{esc(today_alert)}</div>'
             f'<div class="ch-ov-foot">'
-            f'<span class="ch-ov-meta">{len(prods)} 项代表标的 · {len(rules)} 条风控红线</span>'
-            f'<a class="btn btn-sm btn-primary" href="{esc(href)}">查看详情 →</a>'
+            f'<span class="ch-ov-meta">{len(prods)} 项标的 · {len(rules)} 条红线 · 含 3 步买法</span>'
+            f'<a class="btn btn-sm btn-primary" href="{esc(href)}">看 1 分钟指南 →</a>'
             f"</div>"
             f"</article>"
         )
     return f'<div class="ch-overview-grid">{"".join(cards)}</div>'
 
 
-def _match_related_etfs_for_channel(ch_id: str, etf_data: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Find matching ETFs from etf_universe.json for a specific channel detail page."""
+def _match_related_etfs_for_channel(ch: dict[str, Any] | str, etf_data: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Find matching ETFs from etf_universe.json for a specific channel detail page.
+    Prioritizes explicit related_etf_codes on channel dict; gracefully falls back to category rules."""
     if not isinstance(etf_data, dict):
         return []
     etfs = [x for x in (etf_data.get("etfs") or []) if isinstance(x, dict)]
     if not etfs:
         return []
+
+    ch_id = str(ch.get("id", "")).strip() if isinstance(ch, dict) else str(ch or "").strip()
+
+    # 1. Exact code match via related_etf_codes (preferred for 12-channel schema)
+    if isinstance(ch, dict) and isinstance(ch.get("related_etf_codes"), list) and ch["related_etf_codes"]:
+        by_code = {str(it.get("code", "")).strip().upper(): it for it in etfs if not it.get("gold_locked")}
+        exact: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw_cd in ch["related_etf_codes"]:
+            cd = str(raw_cd or "").strip().upper()
+            if cd and cd not in seen and cd in by_code:
+                exact.append(by_code[cd])
+                seen.add(cd)
+        if exact:
+            return exact[:12]
+
+    # 2. Graceful fallback matching by channel ID
     matched: list[dict[str, Any]] = []
     for it in etfs:
         if it.get("gold_locked"):
@@ -2420,14 +3209,23 @@ def _match_related_etfs_for_channel(ch_id: str, etf_data: dict[str, Any] | None)
         mkt = str(it.get("market", ""))
         chan = str(it.get("channel", ""))
         name = str(it.get("name", ""))
+        code = str(it.get("code", "")).upper()
         if ch_id == "bonds" and mkt == "multi-asset" and ("债" in cat or "债" in name or "短融" in name):
             if "转债" not in name and "转债" not in cat:
                 matched.append(it)
+        elif ch_id == "reverse_repo" and (code in {"511360", "511880", "511990", "511700"} or "货币" in name or "短融" in name):
+            matched.append(it)
+        elif ch_id == "fx_deposits_wm" and code in {"SGOV", "IB01", "SHV", "USFR", "BIL", "SHY"}:
+            matched.append(it)
         elif ch_id == "convertible_bonds" and ("转债" in cat or "转债" in name):
             matched.append(it)
-        elif ch_id == "commodity_etfs" and mkt == "multi-asset" and ("商品" in cat or "期货" in name or "豆粕" in name or "有色" in name or "能化" in name or "白银" in name or "原油" in name):
+        elif ch_id == "commodity_etfs" and mkt == "multi-asset" and (
+            "商品" in cat or "期货" in name or "豆粕" in name or "有色" in name or "能化" in name or "白银" in name or "原油" in name
+        ):
             matched.append(it)
         elif ch_id == "qdii_mrf" and ("QDII" in chan or mkt == "global"):
+            matched.append(it)
+        elif ch_id == "c_reits" and ("REIT" in name.upper() or "REIT" in cat.upper()):
             matched.append(it)
     return matched[:10]
 
@@ -2438,16 +3236,22 @@ def build_channel_detail_page(
     channels_data: dict[str, Any],
     etf_data: dict[str, Any] | None = None,
 ) -> str:
-    """Render a standalone, full-detail page for one personal investment channel (channels/<id>.html)."""
+    """Render a standalone channel detail page (channels/<id>.html) with 4-stage beginner loop + institutional depth."""
     cid = str(ch.get("id", "")).strip()
-    order = ch.get("order", "")
     as_of = str(channels_data.get("as_of_label") or "最新班次")
     mutex_note = str(channels_data.get("gold_mutex_note") or "")
-    tone = str(ch.get("status_tone", "blue"))
-    if tone not in ("green", "blue", "amber"):
+    tone = str(ch.get("status_tone", "blue")).strip().lower()
+    if tone not in ("green", "blue", "amber", "red"):
         tone = "blue"
 
-    # Quick switcher bar across all 8 channels
+    bucket = _normalize_money_bucket(ch)
+    bucket_full, bucket_short = _BUCKET_META[bucket]
+    is_hnw = _is_hnw_channel(ch)
+    stars_str, stars_lbl = _fmt_stars(_channel_risk_stars(ch))
+    etf_total = len((etf_data or {}).get("etfs") or []) if isinstance(etf_data, dict) else 0
+    all_etf_btn_lbl = f"进入全部 {etf_total} 只 ETF 雷达 →" if etf_total else "进入全球 ETF 雷达 →"
+
+    # Quick switcher bar across all channels
     switch_pills: list[str] = []
     cur_idx = 0
     for idx, other in enumerate(all_channels):
@@ -2458,12 +3262,44 @@ def build_channel_detail_page(
             cur_idx = idx
         lbl = str(other.get("short_name") or other.get("name") or oid)
         act_cls = " active" if oid == cid else ""
+        o_num = _fmt_ch_num(other.get("order"), idx + 1)
         switch_pills.append(
-            f'<a class="ch-switch-pill{act_cls}" href="{esc(oid)}.html">0{esc(other.get("order", idx + 1))} {esc(lbl)}</a>'
+            f'<a class="ch-switch-pill{act_cls}" href="{esc(oid)}.html">{esc(o_num)} {esc(lbl)}</a>'
         )
+    cur_num = _fmt_ch_num(ch.get("order"), cur_idx + 1)
     prev_ch = all_channels[cur_idx - 1] if cur_idx > 0 else None
     next_ch = all_channels[cur_idx + 1] if cur_idx + 1 < len(all_channels) else None
 
+    # Stage 1: Beginner 30-second explainer
+    expl = _channel_explainer(ch)
+    # Stage 2: 3-step buying guide
+    steps = _channel_steps(ch)
+    steps_html = "".join(
+        f'<div class="ch-step-card">'
+        f'<div class="ch-step-num">STEP {i:02d}</div>'
+        f'<div class="ch-step-title">{esc(st_title)}</div>'
+        f'<div class="ch-step-detail">{esc(st_detail)}</div>'
+        f"</div>"
+        for i, (st_title, st_detail) in enumerate(steps, start=1)
+    )
+    # Stage 3: Picks vs Avoids + FAQ
+    picks, avoids = _channel_picks_avoids(ch)
+    picks_li = "".join(f"<li>{esc(p)}</li>" for p in picks)
+    avoids_li = "".join(f"<li>{esc(a)}</li>" for a in avoids)
+    faqs = _channel_faq(ch)
+    faq_html = ""
+    if faqs:
+        faq_items = "".join(
+            f'<details class="faq-item"><summary class="faq-q">{esc(q)}</summary>'
+            f'<div class="faq-a">{esc(a)}</div></details>'
+            for q, a in faqs
+        )
+        faq_html = (
+            '<div class="sec-head"><h2>新手高频问答（点击展开）</h2><span class="sec-sub">先解开最容易卡壳的实操疑问</span></div>'
+            f'<div class="ch-faq-list">{faq_items}</div>'
+        )
+
+    # Stage 4: Institutional KPIs, products table, rules & interactive related ETFs
     kpis = [k for k in (ch.get("key_metrics") or []) if isinstance(k, dict)]
     kpi_html = "".join(
         f'<div class="ch-kpi"><div class="ch-kpi-lbl">{esc(k.get("label", ""))}</div>'
@@ -2499,7 +3335,7 @@ def build_channel_detail_page(
         else ""
     )
 
-    related_etfs = _match_related_etfs_for_channel(cid, etf_data)
+    related_etfs = _match_related_etfs_for_channel(ch, etf_data)
     related_etf_html = ""
     if related_etfs:
         prem_lbls = {"normal": "折溢价常规", "watch": "买前核参考净值", "high_risk": "高溢价/高危预警"}
@@ -2510,28 +3346,49 @@ def build_channel_detail_page(
             f'<td class="col-num nw"><strong>{esc(it.get("fee_total_pct", ""))}</strong></td>'
             f'<td><strong>{esc(it.get("aum", ""))}</strong><div class="sec-sub">{esc(it.get("yield_or_pe", ""))}</div></td>'
             f'<td><span class="prem-pill prem-{esc(it.get("premium_status", "normal"))}">{esc(prem_lbls.get(str(it.get("premium_status", "normal")), "常规"))}</span><div class="sec-sub">{esc(it.get("premium_note", ""))}</div></td>'
-            f'<td><span class="role-pill {_etf_role_cls(it)}">{esc(it.get("action_role", ""))}</span></td>'
+            f'<td><div><span class="role-pill {_etf_role_cls(it)}">{esc(it.get("action_role", ""))}</span></div>'
+            f'<div style="margin-top:5px;"><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="{esc(it.get("code", ""))}">深度拆解</button></div></td>'
             f"</tr>"
             for it in related_etfs
         )
+        safe_ch_etf_json = json.dumps(related_etfs, ensure_ascii=False).replace("</", "<\\/")
         related_etf_html = (
             '<div class="sec-head"><h2>关联重点 ETF 参数雷达</h2>'
-            '<a class="btn btn-sm" href="../etfs.html">进入全部 106 只 ETF 雷达 →</a></div>'
-            '<div class="table-wrap etf-table-wrap"><table class="etf-table">'
-            "<thead><tr><th>ETF 名称与代码</th><th>通道与指数</th><th>年费率</th><th>规模与特征</th><th>折溢价状态</th><th>当前定位</th></tr></thead>"
+            f'<a class="btn btn-sm" href="../etfs.html">{esc(all_etf_btn_lbl)}</a></div>'
+            '<div class="table-wrap etf-table-wrap"><table class="etf-table" id="ch-related-etf-table">'
+            "<thead><tr><th>ETF 名称与代码</th><th>通道与指数</th><th>年费率</th><th>规模与特征</th><th>折溢价状态</th><th>定位与 7 维拆解</th></tr></thead>"
             f"<tbody>{etf_rows}</tbody></table></div>"
+            '<div class="dossier-backdrop no-print" id="etf-modal" role="dialog" aria-modal="true" aria-label="ETF 深度拆解">'
+            '<div class="dossier-dialog">'
+            '<div class="dossier-head">'
+            '<div class="dossier-head-main">'
+            '<h3 class="dossier-title" id="etf-modal-title">ETF 深度档案</h3>'
+            '<div class="dossier-sub" id="etf-modal-sub"></div>'
+            '<div class="dossier-badges" id="etf-modal-badges"></div>'
+            "</div>"
+            '<button type="button" class="ctrl-btn" data-action="close-etf" aria-label="关闭 ETF 详情">关闭 ✕</button>'
+            "</div>"
+            '<div class="dossier-body" id="etf-modal-body"></div>'
+            '<div class="dossier-foot">'
+            '<span>数据经交易所、基金定期报告与官网费率交叉核验 · 下单前请实时核对盘口参考净值</span>'
+            '<a href="../etfs.html" class="btn btn-sm">前往完整 ETF 雷达 →</a>'
+            "</div></div></div>"
+            f'<script id="ch-etf-data" type="application/json">{safe_ch_etf_json}</script>'
         )
 
+    prev_num = _fmt_ch_num(prev_ch.get("order"), cur_idx) if prev_ch else ""
+    next_num = _fmt_ch_num(next_ch.get("order"), cur_idx + 2) if next_ch else ""
     nav_left = (
-        f'<a class="btn" href="{esc(prev_ch["id"])}.html">← 0{esc(prev_ch.get("order", ""))} {esc(prev_ch.get("short_name") or prev_ch.get("name", ""))}</a>'
+        f'<a class="btn" href="{esc(prev_ch["id"])}.html">← {esc(prev_num)} {esc(prev_ch.get("short_name") or prev_ch.get("name", ""))}</a>'
         if prev_ch
         else '<a class="btn" href="../channels.html">← 返回多元渠道总览</a>'
     )
     nav_right = (
-        f'<a class="btn btn-primary" href="{esc(next_ch["id"])}.html">0{esc(next_ch.get("order", ""))} {esc(next_ch.get("short_name") or next_ch.get("name", ""))} →</a>'
+        f'<a class="btn btn-primary" href="{esc(next_ch["id"])}.html">{esc(next_num)} {esc(next_ch.get("short_name") or next_ch.get("name", ""))} →</a>'
         if next_ch
         else '<a class="btn btn-primary" href="../etfs.html">前往全球 ETF 雷达 →</a>'
     )
+    hnw_hero_badge = '<span class="ch-hnw-badge">300万合格投资者专享</span>' if is_hnw else ""
 
     return f"""
     <div class="doc-toolbar no-print">
@@ -2541,16 +3398,17 @@ def build_channel_detail_page(
           <span class="bc-sep">/</span>
           <a href="../channels.html">多元渠道</a>
           <span class="bc-sep">/</span>
-          <span>0{esc(order)} {esc(ch.get("short_name") or ch.get("name", ""))}</span>
+          <span>{esc(cur_num)} {esc(ch.get("short_name") or ch.get("name", ""))}</span>
         </nav>
         <div class="doc-meta-pills">
+          <span class="meta-pill">{bucket_short}</span>
           <span class="meta-pill">{esc(ch.get("category_label", ""))}</span>
           <span class="meta-pill">更新：{esc(as_of)}</span>
         </div>
       </div>
       <div class="doc-toolbar-right">
-        <a class="btn btn-sm" href="../index.html#sec-multi-channels">回首页全渠道</a>
-        <a class="btn btn-sm" href="../channels.html">配置模板与排雷</a>
+        <a class="btn btn-sm" href="../guide.html">新手 3 分钟指南</a>
+        <a class="btn btn-sm" href="../channels.html">全渠道对比总表</a>
         <a class="btn btn-sm" href="../etfs.html">ETF 雷达</a>
       </div>
     </div>
@@ -2560,10 +3418,12 @@ def build_channel_detail_page(
     </nav>
 
     <section class="ch-detail-hero">
-      <div class="ch-head" style="border-bottom-color:rgba(255,255,255,0.16);">
+      <div class="ch-head">
         <div class="ch-head-left">
-          <span class="ch-num">0{esc(order)}</span>
+          <span class="ch-num">{esc(cur_num)}</span>
           <h1 style="margin:0;font-size:22px;color:#fffefb;">{esc(ch.get("name", ""))}</h1>
+          <span class="ch-bucket-pill">{bucket_full}</span>
+          {hnw_hero_badge}
           <span class="ch-badge">{esc(ch.get("badge", ""))}</span>
         </div>
         <span class="ch-status ch-tone-{tone}">{esc(ch.get("status_tag", ""))}</span>
@@ -2572,6 +3432,53 @@ def build_channel_detail_page(
       {f'<div class="channels-mutex" style="margin-bottom:0;">🛑 跨市场风控同步：{esc(mutex_note)}</div>' if mutex_note else ''}
     </section>
 
+    <section class="ch-b-section">
+      <div class="sec-head" style="margin-top:4px;">
+        <h2>① 30 秒看懂：它是什么 · 怎么赚 · 最坏亏多少</h2>
+        <span class="sec-sub">风险体感：<span class="ch-risk-stars">{stars_str}</span> {esc(stars_lbl)} · 所属资金桶：{bucket_full}</span>
+      </div>
+      <div class="ch-explain-grid">
+        <div class="ch-explain-card">
+          <div class="ch-explain-lbl">它到底是什么</div>
+          <div class="ch-explain-txt">{esc(expl["what_it_is"])}</div>
+        </div>
+        <div class="ch-explain-card">
+          <div class="ch-explain-lbl">钱从哪赚</div>
+          <div class="ch-explain-txt">{esc(expl["how_it_earns"])}</div>
+        </div>
+        <div class="ch-explain-card">
+          <div class="ch-explain-lbl">最坏会亏多少</div>
+          <div class="ch-explain-txt">{esc(expl["worst_case"])}</div>
+        </div>
+      </div>
+
+      <div class="sec-head">
+        <h2>② 去哪买 · 怎么买三步走</h2>
+        <span class="sec-sub">从选对 App 到下单防呆，一屏走完实操闭环</span>
+      </div>
+      <div class="ch-steps-grid">{steps_html}</div>
+
+      <div class="sec-head">
+        <h2>③ 新手优选 vs 高危避坑对照</h2>
+        <span class="sec-sub">先区分省心底仓与容易踩雷的高危变体</span>
+      </div>
+      <div class="ch-contrast-grid">
+        <div class="ch-picks-box">
+          <strong>✅ 新手省心优选区</strong>
+          <ul>{picks_li}</ul>
+        </div>
+        <div class="ch-avoids-box">
+          <strong>⛔ 高危避坑绕道区</strong>
+          <ul>{avoids_li}</ul>
+        </div>
+      </div>
+      {faq_html}
+    </section>
+
+    <div class="sec-head">
+      <h2>④ 机构级一线参数、代表标的与制度红线</h2>
+      <span class="sec-sub">实盘数据与税费细则完整留痕，方便进阶核对</span>
+    </div>
     <article class="channel-card" id="ch-{esc(cid)}">
       <div class="ch-kpi-grid">{kpi_html}</div>
       <div class="ch-meta-grid">
@@ -3013,7 +3920,7 @@ def build_cockpit_page(
             f"</div>"
         )
 
-    # Household Composite Allocation (100% null-safe)
+    # Household Composite Allocation (100% null-safe; omit 0% segments cleanly)
     eq_pct_f = _safe_float(hcw.get("equity_total_pct"))
     cb_pct_f = _safe_float(hcw.get("convertible_bond_pct"))
     bc_pct_f = _safe_float(hcw.get("bonds_and_cash_pct"))
@@ -3029,6 +3936,16 @@ def build_cockpit_page(
     cb_seg_lbl = f"{cb_pct}% 转" if cb_pct >= 12 else (f"{cb_pct}%" if cb_pct >= 3 else "")
     bc_seg_lbl = f"{bc_pct}% 债现" if bc_pct >= 14 else (f"{bc_pct}%" if bc_pct >= 4 else "")
     gd_seg_lbl = f"{gd_pct}% 金" if gd_pct >= 10 else (f"{gd_pct}%" if gd_pct >= 4 else "")
+    alloc_segs_html = "".join(
+        f'<div class="alloc-seg" style="width:{pct}%;background:{bg};" title="{esc(lbl)} {pct}%">{esc(seg_txt)}</div>'
+        for pct, bg, lbl, seg_txt in (
+            (eq_pct, "#1d4ed8", "股票底座", eq_seg_lbl),
+            (cb_pct, "#0f766e", "可转债", cb_seg_lbl),
+            (bc_pct, "#475569", "国债短债与现金", bc_seg_lbl),
+            (gd_pct, "#b45309", "存量黄金", gd_seg_lbl),
+        )
+        if pct > 0
+    )
 
     alloc_breakdown_html = ""
     hcw_accounts = hcw.get("accounts")
@@ -3218,64 +4135,180 @@ def build_cockpit_page(
             f"</a>"
         )
 
+    etf_list = (etf_data.get("etfs") or []) if isinstance(etf_data, dict) else []
+    a_etf_count = sum(1 for x in etf_list if isinstance(x, dict) and x.get("market") == "a-share")
+    ch_list_raw = (channels_data.get("channels") if isinstance(channels_data, dict) else []) or []
+    ch_list = [c for c in ch_list_raw if isinstance(c, dict) and str(c.get("id", "")).strip()]
+    ch_count_num = len(ch_list)
+
     flagship_shelf_html = _render_flagship_web_shelf(
         {"a-share": a_pool, "hk-stock": hk_pool, "us-stock": us_pool},
+        a_etf_count=a_etf_count,
+        channel_count=ch_count_num,
     )
 
+    # Layer 1A: Today's Beginner Action Lights (reads beginner_action_lights with Gold-Tier-0-safe fallback)
+    gold_blocked = (not gold_new_buy) or (gold_tier_code == "Tier 0")
+
+    def _extract_action_items(raw_seq: Any) -> list[str]:
+        out_items: list[str] = []
+        if isinstance(raw_seq, list):
+            for x in raw_seq[:4]:
+                if isinstance(x, str) and x.strip():
+                    out_items.append(x.strip())
+                elif isinstance(x, dict):
+                    t = str(x.get("title") or x.get("action") or "").strip()
+                    d = str(x.get("detail") or x.get("reason") or x.get("text") or "").strip()
+                    comb = f"{t}：{d}" if (t and d) else (t or d)
+                    if comb:
+                        out_items.append(comb)
+        return out_items
+
+    bal_raw = channels_data.get("beginner_action_lights") if isinstance(channels_data, dict) else None
+    al_do_items: list[str] = []
+    al_avoid_items: list[str] = []
+    if isinstance(bal_raw, dict):
+        al_do_items = _extract_action_items(
+            bal_raw.get("can_do") or bal_raw.get("do_today") or bal_raw.get("do") or bal_raw.get("green")
+        )
+        al_avoid_items = _extract_action_items(
+            bal_raw.get("avoid") or bal_raw.get("avoid_today") or bal_raw.get("dont") or bal_raw.get("red")
+        )
+    if not al_do_items:
+        al_do_items = [
+            "活钱升级：把闲置零钱与待机现金泊入短融 ETF（511360）、同业存单 AAA 或周四国债逆回购。",
+            "稳钱压舱：1–3 年确定资金优先配置储蓄国债、高等级债券 ETF 或单行 50 万以内可转让定期存款。",
+            "按表控仓：老底仓稳拿高股息防弹衣底座，不急着追高，先花 3 分钟用四笔钱理清个人资金期限。",
+        ]
+    if not al_avoid_items:
+        gold_avoid_line = (
+            "严禁抢跑新买黄金或黄金股：黄金当前红灯停（老持仓稳拿不乱卖，新钱先停在稳钱池静待四关信号）。"
+            if gold_blocked
+            else "严守黄金上限纪律：任何情形下家庭黄金总占比严控 10%–15%，不加杠杆追涨。"
+        )
+        al_avoid_items = [
+            gold_avoid_line,
+            "远离高溢价接盘：跨境美股 QDII 与商品 LOF 场内溢价超 3% 坚决不追，情绪回落或退市将令溢价归零。",
+            "不把波动产品当保本存款：避开破净隐忧重的伪稳健固收+理财，切忌重仓 30 年超长国债当活钱。",
+        ]
+    action_lights_html = (
+        '<section class="action-lights-grid" aria-label="今日行动红绿灯">'
+        '<div class="action-light-card al-do">'
+        '<div class="al-head"><span>🟢 今天可以做的 3 件事</span><a href="guide.html" class="al-link">新手 3 分钟指南 →</a></div>'
+        f'<ul class="al-list">{"".join(f"<li>{esc(x)}</li>" for x in al_do_items[:3])}</ul>'
+        "</div>"
+        '<div class="action-light-card al-avoid">'
+        '<div class="al-head"><span>🔴 今天先别碰的 3 件事</span><a href="channels.html#sec-warning-wall" class="al-link">看双层风控警示墙 →</a></div>'
+        f'<ul class="al-list">{"".join(f"<li>{esc(x)}</li>" for x in al_avoid_items[:3])}</ul>'
+        "</div>"
+        "</section>"
+    )
+
+    # Layer 1B: Four-Buckets Beginner Guide + Interactive Capital-Tier Selector
+    gold_bucket_note = "黄金当前红灯停暂不新买" if gold_blocked else "黄金按档分批不超上限"
+    four_buckets_html = f"""
+    <section class="buckets-section" id="sec-four-buckets" aria-label="新手先看：钱怎么分四笔">
+      <div class="buckets-head">
+        <div>
+          <h2 class="buckets-title">新手先看：先按「用钱时间」把钱分四笔</h2>
+          <p class="sec-sub" style="margin:2px 0 0 0;">点击下方任意一笔，直接定位下方对应合规渠道；切换资金档位自动淡化高门槛产品</p>
+        </div>
+        <div class="cap-tier-bar" role="group" aria-label="按手头可投资金档位过滤">
+          <button type="button" class="cap-tier-pill active" data-cap-tier="all">全部档位</button>
+          <button type="button" class="cap-tier-pill" data-cap-tier="1-5w">1–5万刚起步</button>
+          <button type="button" class="cap-tier-pill" data-cap-tier="10-20w">10–20万攒桶金</button>
+          <button type="button" class="cap-tier-pill" data-cap-tier="30-50w">30–50万家庭配</button>
+        </div>
+      </div>
+      <div class="cap-tier-hint" id="cap-tier-hint">当前展示全部档位：建议先留足 3–6 个月活钱与基础保障，再按期限匹配稳钱与长钱。</div>
+      <div class="buckets-grid">
+        <button type="button" class="bucket-card" data-jump-bucket="liquid">
+          <div class="bucket-top"><span class="bucket-icon">💧</span><span class="bucket-horizon">0–6 个月随时用</span></div>
+          <div class="bucket-title">第一笔：活钱应急池</div>
+          <div class="bucket-desc">留 3–6 个月生活费与待机弹药，绝不亏本、随时调用、跑赢传统活期。</div>
+          <div class="bucket-tags"><span class="bucket-tag">短融 ETF</span><span class="bucket-tag">国债逆回购</span><span class="bucket-tag">同业存单 AAA</span></div>
+          <div class="bucket-foot">筛选对应渠道 ↓</div>
+        </button>
+        <button type="button" class="bucket-card" data-jump-bucket="stable">
+          <div class="bucket-top"><span class="bucket-icon">🛡️</span><span class="bucket-horizon">1–3 年明确要用</span></div>
+          <div class="bucket-title">第二笔：稳钱压舱池</div>
+          <div class="bucket-desc">买车、首付、学费等确定支出，追求稳健票息与极小回撤，严守 50 万存保线。</div>
+          <div class="bucket-tags"><span class="bucket-tag">储蓄国债</span><span class="bucket-tag">债券 ETF</span><span class="bucket-tag">定期/大额存单</span></div>
+          <div class="bucket-foot">筛选对应渠道 ↓</div>
+        </button>
+        <button type="button" class="bucket-card" data-jump-bucket="growth">
+          <div class="bucket-top"><span class="bucket-icon">🌱</span><span class="bucket-horizon">3–5 年以上闲钱</span></div>
+          <div class="bucket-title">第三笔：长钱复利池</div>
+          <div class="bucket-desc">严守红绿灯节奏分批布局宽基、锁汇互认债、转债与实体租金（{esc(gold_bucket_note)}）。</div>
+          <div class="bucket-tags"><span class="bucket-tag">红利/宽基 ETF</span><span class="bucket-tag">锁汇 MRF</span><span class="bucket-tag">转债/REITs</span></div>
+          <div class="bucket-foot">筛选对应渠道 ↓</div>
+        </button>
+        <button type="button" class="bucket-card" data-jump-bucket="protection">
+          <div class="bucket-top"><span class="bucket-icon">🏥</span><span class="bucket-horizon">保障底线 · 10年+</span></div>
+          <div class="bucket-title">第四笔：保障与超长锁息</div>
+          <div class="bucket-desc">先配齐医保、百万医疗与意外险兜底；20%+ 税档再配个人养老金，10 年不动钱再看储蓄险。</div>
+          <div class="bucket-tags"><span class="bucket-tag">个人养老金</span><span class="bucket-tag">税优健康险</span><span class="bucket-tag">储蓄型保险</span></div>
+          <div class="bucket-foot">筛选对应渠道 ↓</div>
+        </button>
+      </div>
+    </section>
+    """
+
+    def _lamp_plain_explain(lamp_cls: str, is_gold_mkt: bool = False) -> str:
+        if is_gold_mkt:
+            if gold_blocked:
+                return "灯态含义：老持仓稳拿不乱割，新钱先放稳钱池暂不新买黄金，静待四关信号明确"
+            return "灯态含义：满足过关门槛，按家庭上限 10%–15% 分批稳健推进，不加杠杆"
+        if lamp_cls == "lamp-red":
+            return "灯态含义：老底仓保留高股息防弹衣，新钱严守仓位上限不追高，待信号转暖再分批"
+        if lamp_cls == "lamp-amber":
+            return "灯态含义：多空拉锯观察期，严格按安全锚小步分批，不情绪化追涨杀跌"
+        return "灯态含义：估值性价比与趋势共振，可按个人资金期限分批稳步配置"
+
     home_channels_section_html = ""
-    ch_count_num = 0
-    if isinstance(channels_data, dict):
-        ch_list = channels_data.get("channels") if isinstance(channels_data.get("channels"), list) else []
-        ch_count_num = len(ch_list)
-        if ch_list:
-            ch_as_of = str(channels_data.get("as_of_label") or eq_as_of or "最新班次")
-            ch_anchors = channels_data.get("macro_anchors") if isinstance(channels_data.get("macro_anchors"), list) else []
-            home_macro_cards = "".join(
-                f'<div class="home-macro-card">'
-                f'<div class="home-macro-lbl">{esc(a.get("label", ""))}</div>'
-                f'<div class="home-macro-val">{esc(a.get("value", ""))}</div>'
-                f"</div>"
-                for a in ch_anchors
-                if isinstance(a, dict)
-            )
-            home_channels_section_html = f"""
+    if ch_list:
+        ch_as_of = str((channels_data or {}).get("as_of_label") or eq_as_of or "最新班次")
+        ch_anchors = (channels_data or {}).get("macro_anchors") if isinstance((channels_data or {}).get("macro_anchors"), list) else []
+        home_macro_cards = "".join(
+            f'<div class="home-macro-card">'
+            f'<div class="home-macro-lbl">{esc(a.get("label", ""))}</div>'
+            f'<div class="home-macro-val">{esc(a.get("value", ""))}</div>'
+            f"</div>"
+            for a in ch_anchors
+            if isinstance(a, dict)
+        )
+        ch_filter_html = _render_channel_filter_panel(
+            ch_list,
+            right_cta_html='<a href="channels.html" class="btn btn-sm">一眼对比总表、模板与风控墙 →</a>',
+        )
+        home_channels_section_html = f"""
     <div class="sec-head" id="sec-multi-channels">
-      <h2>中国大陆 {ch_count_num} 大个人多元投资渠道（点击各卡片进独立详情）</h2>
+      <h2>中国大陆 {ch_count_num} 大个人合规多元投资渠道（点击进 1 分钟指南）</h2>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span class="sec-sub">基准：{esc(ch_as_of)}</span>
-        <a href="channels.html" class="btn btn-sm">配置模板与 6 大排雷 →</a>
+        <a href="channels.html" class="btn btn-sm">全渠道对比总表与风控墙 →</a>
       </div>
     </div>
     {f'<div class="home-macro-bar"><div class="home-macro-grid">{home_macro_cards}</div></div>' if home_macro_cards else ''}
-    <section class="filter-panel">
-      <div class="filter-row">
-        <button type="button" class="filter-pill active" data-ch-cat="all">全部 {ch_count_num} 大渠道</button>
-        <button type="button" class="filter-pill" data-ch-cat="fixed_income">固收与票息（债券 / 基金理财）</button>
-        <button type="button" class="filter-pill" data-ch-cat="cash">现金与短期流动（逆回购 / 大额存单）</button>
-        <button type="button" class="filter-pill" data-ch-cat="cross_border">跨境与汇率（QDII / 北向互认）</button>
-        <button type="button" class="filter-pill" data-ch-cat="hybrid">股债与实体（可转债 / 公募 REITs）</button>
-        <button type="button" class="filter-pill" data-ch-cat="alternatives">独立抗通胀（非金大宗商品 ETF）</button>
-      </div>
-      <div class="screener-bar" style="margin:0;">
-        <strong id="ch-count" role="status">显示 {ch_count_num} / {ch_count_num} 大合规个人投资渠道</strong>
-        <a href="channels.html" class="btn btn-sm">查看组合模板与排雷红线 →</a>
-      </div>
-    </section>
+    {ch_filter_html}
     <section class="channel-list">
       {_render_channel_overview_cards(ch_list)}
     </section>
     """
 
     home_etf_section_html = _render_home_etf_showcase(etf_data, total_pool)
-    etf_count_num = len((etf_data or {}).get("etfs") or []) if isinstance(etf_data, dict) else 0
+    etf_count_num = len(etf_list)
 
-    jump_pills: list[str] = ['<a class="home-jump-pill" href="#sec-core-markets">① 四大核心市场（金/A/港/美）</a>']
+    jump_pills: list[str] = [
+        '<a class="home-jump-pill" href="#sec-four-buckets">① 钱怎么分四笔</a>',
+        '<a class="home-jump-pill" href="#sec-core-markets">② 四大核心市场（金/A/港/美）</a>',
+    ]
     if home_channels_section_html:
-        jump_pills.append(f'<a class="home-jump-pill" href="#sec-multi-channels">② {ch_count_num} 大多元渠道卡片</a>')
+        jump_pills.append(f'<a class="home-jump-pill" href="#sec-multi-channels">③ {ch_count_num} 大多元渠道卡片</a>')
     if home_etf_section_html:
-        jump_pills.append(f'<a class="home-jump-pill" href="#sec-etf-radar">③ 5 大 ETF 通道入口</a>')
-    jump_pills.append('<a class="home-jump-pill" href="#sec-risk-radar">④ 风险雷达与家庭总账</a>')
-    jump_pills.append('<a class="home-jump-pill" href="#sec-latest-dailies">⑤ 最新早晚报与全景手册</a>')
+        jump_pills.append('<a class="home-jump-pill" href="#sec-etf-radar">④ 5 大 ETF 通道入口</a>')
+    jump_pills.append('<a class="home-jump-pill" href="#sec-risk-radar">⑤ 风险雷达与家庭总账</a>')
+    jump_pills.append('<a class="home-jump-pill" href="#sec-latest-dailies">⑥ 最新早晚报与手册</a>')
     jump_bar_html = f'<nav class="home-jump-bar" aria-label="首页版块快捷导航">{"".join(jump_pills)}</nav>'
 
     coverage_parts = [f"{total_pool} 家跨市场核心公司"]
@@ -3301,10 +4334,10 @@ def build_cockpit_page(
         </div>
         <div class="hero-cta-row">
           {f'<a class="hero-cta hero-cta-primary" href="#sec-multi-channels">直看 {ch_count_num} 大多元渠道卡片 ↓</a>' if home_channels_section_html else f'<a class="hero-cta hero-cta-primary" href="screener.html">打开 {total_pool} 股交互筛选器 →</a>'}
+          <a class="hero-cta" href="guide.html">新手 3 分钟指南</a>
           <a class="hero-cta" href="etfs.html">全球 ETF 雷达</a>
           <a class="hero-cta" href="screener.html">{total_pool} 股 7 维筛选器</a>
           <a class="hero-cta" href="scorecard.html">公开记分卡</a>
-          <a class="hero-cta" href="archive.html">历史档案</a>
         </div>
       </div>
       <div class="hero-pulse" aria-label="四市场实时水温速览">
@@ -3333,10 +4366,12 @@ def build_cockpit_page(
 
     {jump_bar_html}
     {disclosure_html}
+    {action_lights_html}
+    {four_buckets_html}
 
-    <div class="sec-head" id="sec-core-markets" style="margin-top:6px;">
+    <div class="sec-head" id="sec-core-markets" style="margin-top:10px;">
       <h2>四大核心市场红绿灯水温卡片</h2>
-      <span class="sec-sub">所有指标直连单一真相快照，严守机械仓位红线</span>
+      <span class="sec-sub">点击带虚线 <span class="sec-sub-mark">?</span> 的专业词可直接查看白话解释 · 所有数字直连单一真相快照</span>
     </div>
 
     <section class="market-grid">
@@ -3344,10 +4379,11 @@ def build_cockpit_page(
         <div class="m-card-head">
           <div>
             <div class="m-card-name">🥇 黄金（单一真相源）</div>
-            <div class="m-card-sub">四步买金红绿灯 · 当前通过 {esc(gold_pass)}</div>
+            <div class="m-card-sub">四步买金{_term_tip("traffic_light", "红绿灯")} · 当前通过 {esc(gold_pass)}</div>
           </div>
           <span class="lamp-pill {gold_lamp_cls}"><span class="lamp-dot"></span>{esc(gold_tier_short)} · {esc(gold_pass)}</span>
         </div>
+        <div class="m-lamp-explain">{esc(_lamp_plain_explain(gold_lamp_cls, is_gold_mkt=True))}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">纽约现货金（美元/盎司）</div>
@@ -3363,7 +4399,7 @@ def build_cockpit_page(
             <div class="m-stat-sub">{esc(sge_sub_txt)}</div>
           </div>
           <div class="m-stat">
-            <div class="m-stat-lbl">10 年美债真实利率 DFII10</div>
+            <div class="m-stat-lbl">10 年美债真实利率 {_term_tip("dfii10", "DFII10")}</div>
             <div class="m-stat-val">{esc(gold_dfii_val)}</div>
             <div class="m-stat-sub">{esc(dfii_sub)}</div>
           </div>
@@ -3389,14 +4425,15 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {a_lamp_cls}"><span class="lamp-dot"></span>{esc(a_lamp_lbl)} · {esc(a_score)}</span>
         </div>
+        <div class="m-lamp-explain">{esc(_lamp_plain_explain(a_lamp_cls))}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">沪深 300 基准</div>
             <div class="m-hero-num">{a_csi300_val}</div>
             <div class="m-hero-sub">上证 {a_sse_val} · 4年成本线 {a_200w_val}</div>
           </div>
+          {_render_score_meter(a_score_num, a_score)}
         </div>
-        {_render_score_meter(a_score_num, a_score)}
         <div class="m-stat-strip">
           <div class="m-stat">
             <div class="m-stat-lbl">股票仓位上限</div>
@@ -3404,7 +4441,7 @@ def build_cockpit_page(
             <div class="m-stat-sub">余下稳守国债 / 转债 / 现金</div>
           </div>
           <div class="m-stat">
-            <div class="m-stat-lbl">前瞻 / 静态 ERP</div>
+            <div class="m-stat-lbl">前瞻 / 静态 {_term_tip("erp", "ERP")}</div>
             <div class="m-stat-val">{a_erp_fwd_val} / {a_erp_ttm_val}</div>
             <div class="m-stat-sub">10 年国债 {a_cgb10y_val}</div>
           </div>
@@ -3430,27 +4467,28 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {hk_lamp_cls}"><span class="lamp-dot"></span>{esc(hk_lamp_lbl)} · {esc(hk_score)}</span>
         </div>
+        <div class="m-lamp-explain">{esc(_lamp_plain_explain(hk_lamp_cls))}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">恒生指数基准</div>
             <div class="m-hero-num">{hk_hsi_val}</div>
             <div class="m-hero-sub">恒科 {hk_hstech_val} · 200日线 {hk_200d_val}</div>
           </div>
+          {_render_score_meter(hk_score_num, hk_score)}
         </div>
-        {_render_score_meter(hk_score_num, hk_score)}
         <div class="m-stat-strip">
           <div class="m-stat">
             <div class="m-stat-lbl">离岸 / 港股通上限</div>
             <div class="m-stat-val">{hk_off_cap_val} / {hk_on_cap_val}</div>
-            <div class="m-stat-sub">AH 溢价指数 {hk_hsahp_val}</div>
+            <div class="m-stat-sub">{_term_tip("ah_premium", "AH 溢价")}指数 {hk_hsahp_val}</div>
           </div>
           <div class="m-stat">
-            <div class="m-stat-lbl">HIBOR 1M / 总结余</div>
+            <div class="m-stat-lbl">{_term_tip("hibor", "HIBOR 1M")} / {_term_tip("hkma_bal", "总结余")}</div>
             <div class="m-stat-val">{hibor_value} / {hkma_short_val}</div>
             <div class="m-stat-sub">美元/港元 {usd_hkd_value}（紧盯 7.85）</div>
           </div>
           <div class="m-stat">
-            <div class="m-stat-lbl">美元 / 人民币锚 ERP</div>
+            <div class="m-stat-lbl">美元 / 人民币锚 {_term_tip("erp", "ERP")}</div>
             <div class="m-stat-val">{hk_erp_usd_val} / {hk_erp_cny_val}</div>
             <div class="m-stat-sub">{hk_pool} 只龙头 · 南向年内 {hk_sb_ytd_val}</div>
           </div>
@@ -3471,14 +4509,15 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {us_lamp_cls}"><span class="lamp-dot"></span>{esc(us_lamp_lbl)} · {esc(us_score)}</span>
         </div>
+        <div class="m-lamp-explain">{esc(_lamp_plain_explain(us_lamp_cls))}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">标普 500 基准</div>
             <div class="m-hero-num">{us_sp_val}</div>
             <div class="m-hero-sub">10Y 美债 {us10y_val} · 200日线 {us_200d_val}</div>
           </div>
+          {_render_score_meter(us_score_num, us_score)}
         </div>
-        {_render_score_meter(us_score_num, us_score)}
         <div class="m-stat-strip">
           <div class="m-stat">
             <div class="m-stat-lbl">100% 闭环资产配置</div>
@@ -3486,7 +4525,7 @@ def build_cockpit_page(
             <div class="m-stat-sub">科技新增严控 {us_tech_cap_val}</div>
           </div>
           <div class="m-stat">
-            <div class="m-stat-lbl">前瞻 / 静态 ERP</div>
+            <div class="m-stat-lbl">前瞻 / 静态 {_term_tip("erp", "ERP")}</div>
             <div class="m-stat-val">{us_erp_fwd_val} / {us_erp_ttm_val}</div>
             <div class="m-stat-sub">前瞻 PE {us_pe_fwd_val}（静态 {us_pe_ttm_val}）</div>
           </div>
@@ -3522,7 +4561,7 @@ def build_cockpit_page(
         <div class="breaker-grid">
           <div class="breaker-item">
             <div class="breaker-top">
-              <span class="breaker-name">VIX 恐慌指数</span>
+              <span class="breaker-name">{_term_tip("vix", "VIX 恐慌指数")}</span>
               <span class="status-chip {vix_chip[0]}">{vix_chip[1]}</span>
             </div>
             <div class="breaker-val">{vix_close_val}</div>
@@ -3540,7 +4579,7 @@ def build_cockpit_page(
           </div>
           <div class="breaker-item">
             <div class="breaker-top">
-              <span class="breaker-name">10 年期美债 US10Y</span>
+              <span class="breaker-name">{_term_tip("us10y", "10 年期美债 US10Y")}</span>
               <span class="status-chip {us10y_chip[0]}">{us10y_chip[1]}</span>
             </div>
             <div class="breaker-val">{us10y_val}</div>
@@ -3549,7 +4588,7 @@ def build_cockpit_page(
           </div>
           <div class="breaker-item">
             <div class="breaker-top">
-              <span class="breaker-name">香港金管局总结余</span>
+              <span class="breaker-name">{_term_tip("hkma_bal", "香港金管局总结余")}</span>
               <span class="status-chip {hkma_chip[0]}">{hkma_chip[1]}</span>
             </div>
             <div class="breaker-val">{hkma_full_val}</div>
@@ -3561,7 +4600,7 @@ def build_cockpit_page(
 
       <div class="panel-card">
         <div class="panel-title">
-          <span>⚖️ 三市股权风险溢价（ERP）横向标尺</span>
+          <span>⚖️ 三市股权风险溢价（{_term_tip("erp", "ERP")}）横向标尺</span>
           <span class="sec-sub">数值越高越划算</span>
         </div>
         <div class="erp-list">
@@ -3576,10 +4615,7 @@ def build_cockpit_page(
           <span class="sec-sub">{hcw_sum_disp}</span>
         </div>
         <div class="alloc-bar" role="img" aria-label="家庭综合配置比例条">
-          <div class="alloc-seg" style="width:{eq_pct}%;background:#1d4ed8;" title="股票底座 {eq_pct}%">{eq_seg_lbl}</div>
-          <div class="alloc-seg" style="width:{cb_pct}%;background:#0f766e;" title="可转债 {cb_pct}%">{cb_seg_lbl}</div>
-          <div class="alloc-seg" style="width:{bc_pct}%;background:#475569;" title="国债短债与现金 {bc_pct}%">{bc_seg_lbl}</div>
-          <div class="alloc-seg" style="width:{gd_pct}%;background:#b45309;" title="存量黄金 {gd_pct}%">{gd_seg_lbl}</div>
+          {alloc_segs_html}
         </div>
         <div class="alloc-legend">
           <span class="alloc-leg-item"><span class="alloc-swatch" style="background:#1d4ed8;"></span>股票底座 {eq_pct}%</span>
@@ -3660,6 +4696,7 @@ def build_doc_toolbar(
     chart_count: int,
     has_toc: bool,
     total_pool: int = 0,
+    channel_count: int = 0,
     stock_counts: dict[str, int] | None = None,
     item: DailyItem | None = None,
     prev_item: DailyItem | None = None,
@@ -3669,6 +4706,7 @@ def build_doc_toolbar(
     """Build contextual editorial document toolbar (breadcrumb + metadata pills + pure-web actions)."""
     mm = MARKET_META[market]
     sc = stock_counts or {}
+    ch_btn_lbl = f"{channel_count}大多元渠道" if channel_count > 0 else "多元渠道"
 
     if doc_kind == "flagship":
         crumb_tail = mm["manual_label"]
@@ -3680,7 +4718,7 @@ def build_doc_toolbar(
         right_btns = [
             f'<a class="btn btn-sm" href="../daily/{market}-latest.html">最新日报</a>',
             f'<a class="btn btn-sm" href="../screener.html">{total_pool}股池</a>' if total_pool > 0 else "",
-            '<a class="btn btn-sm" href="../channels.html">8大多元渠道</a>',
+            f'<a class="btn btn-sm" href="../channels.html">{esc(ch_btn_lbl)}</a>',
             '<a class="btn btn-sm" href="../etfs.html">ETF雷达</a>',
         ]
     else:
@@ -3733,32 +4771,44 @@ _COLOR_MARKS: dict[str, str] = {"g": "●", "b": "◆", "y": "▲", "r": "×"}
 
 
 def _render_static_screener_row(stock: dict[str, Any]) -> str:
+    """Render static initial screener row matching app.js renderScreener() identically (zero CLS)."""
     col = str(stock["color"])
     mark = _COLOR_MARKS.get(col, "●")
-    pe_num = stock.get("pe_num")
     div_pct = stock.get("div_pct")
     ah_pct = stock.get("ah_pct")
     gap = stock.get("anchor_gap_pct")
 
-    pe_chip = (
-        f'<span class="val-chip">PE {pe_num:.1f}x</span>'
-        if isinstance(pe_num, (int, float))
-        else f'<span class="val-chip">{esc(stock["valuation"])}</span>'
+    raw_val = str(stock.get("valuation") or "").strip()
+    val_parts = [p.strip() for p in re.split(r"\s*[·｜|;；]\s*", raw_val) if p.strip()][:4] if raw_val else []
+    val_chips_html = (
+        '<div class="val-chips">'
+        + "".join(f'<span class="val-chip">{esc(p)}</span>' for p in val_parts)
+        + "</div>"
+        if val_parts
+        else ""
     )
+
     div_ah_chips: list[str] = []
     if isinstance(div_pct, (int, float)):
-        div_ah_chips.append(f'<span class="val-chip">息 {div_pct:.1f}%</span>')
+        div_ah_chips.append(f'<span class="val-chip">股息 {div_pct:.1f}%</span>')
     if isinstance(ah_pct, (int, float)):
-        div_ah_chips.append(f'<span class="val-chip">AH {ah_pct:+.1f}%</span>')
+        ah_cls = "ah-pill ah-disc" if ah_pct < 0 else "ah-pill ah-prem"
+        div_ah_chips.append(f'<span class="{ah_cls}">AH {ah_pct:+.1f}%</span>')
     div_ah_html = (
         f'<div class="val-chips">{"".join(div_ah_chips)}</div>'
         if div_ah_chips
         else '<span class="sec-sub">—</span>'
     )
+
     anchor_html = ""
     if isinstance(gap, (int, float)):
-        a_cls = "anchor-in" if gap <= 0 else ("anchor-near" if gap <= 12.0 else "anchor-far")
-        anchor_html = f'<span class="anchor-badge {a_cls}">距锚 {gap:+.1f}%</span> '
+        if gap <= 0:
+            a_lbl = f"低于锚 {abs(gap):.1f}%" if gap < -0.5 else "已触安全锚"
+            anchor_html = f'<span class="anchor-badge anchor-in">{esc(a_lbl)}</span>'
+        elif gap <= 12.0:
+            anchor_html = f'<span class="anchor-badge anchor-near">距锚 +{gap:.1f}%</span>'
+        else:
+            anchor_html = f'<span class="anchor-badge anchor-far">距锚 +{gap:.1f}%</span>'
 
     d_btn = (
         f' <button type="button" class="dossier-btn" data-dossier-key="{esc(stock["market"])}:{esc(stock["code"])}">7维深研</button>'
@@ -3767,13 +4817,13 @@ def _render_static_screener_row(stock: dict[str, Any]) -> str:
     )
     return (
         f'<tr class="row-{esc(col)}" data-market="{esc(stock["market"])}">'
-        f'<td><span class="mkt-badge mkt-{esc(stock["market"])}">{esc(stock["market_label"])}</span></td>'
-        f'<td class="col-sticky"><strong>{esc(stock["name"])}</strong> <span class="code-tag">{esc(stock["code"])}</span></td>'
+        f'<td class="col-sticky"><span class="mkt-badge mkt-{esc(stock["market"])}">{esc(stock["market_label"])}</span></td>'
+        f'<td><strong>{esc(stock["name"])}</strong> <span class="code-tag">{esc(stock["code"])}</span></td>'
         f'<td class="nw">{esc(stock["sector"])}</td>'
-        f'<td><div class="nw"><strong>{esc(stock["price"])}</strong></div><div class="val-chips">{pe_chip}</div></td>'
+        f'<td><div><strong>{esc(stock["price"])}</strong></div>{val_chips_html}</td>'
         f"<td>{div_ah_html}</td>"
         f'<td><span class="act-pill act-{esc(col)}">{mark} {esc(stock["action_label"])}</span></td>'
-        f'<td>{anchor_html}{esc(stock["summary"])}{d_btn} <a class="nw" href="{esc(stock["report_url"])}">手册 →</a></td>'
+        f'<td>{anchor_html}{esc(stock["summary"])}{d_btn} <a href="{esc(stock["report_url"])}" class="nw">手册 →</a></td>'
         f"</tr>"
     )
 
@@ -3806,21 +4856,262 @@ def merge_stock_dossiers(
     return stocks
 
 
-def build_channels_page(channels_data: dict[str, Any] | None) -> str:
-    """Render the dedicated 8 Personal Multi-Asset Investment Channels page (channels.html)."""
+_OFFICIAL_VERIFY_PORTALS: tuple[dict[str, str], ...] = (
+    {
+        "org": "中国证券投资基金业协会（中基协）",
+        "scope": "公募基金、私募基金管理人与私募产品备案真伪查询",
+        "url": "https://gs.amac.org.cn/",
+    },
+    {
+        "org": "中国信托登记有限责任公司（中国信登）",
+        "scope": "正规信托公司发行的标品与集合信托产品登记编码核验",
+        "url": "https://www.chinatrc.com.cn/",
+    },
+    {
+        "org": "中国理财网（银行业理财登记托管中心）",
+        "scope": "银行及理财子公司发行的全部正规理财产品登记编码查询",
+        "url": "https://www.chinawealth.com.cn/",
+    },
+    {
+        "org": "国家金融监督管理总局（许可证查询）",
+        "scope": "核验银行、保险公司、保险中介与持牌金融机构合法金融许可证",
+        "url": "https://xkz.nfra.gov.cn/",
+    },
+)
+
+_DEFAULT_IPO_TOOLBOX: tuple[dict[str, str], ...] = (
+    {
+        "title": "可转债信用打新（零资金占用）",
+        "tag": "新手首选低风险增厚",
+        "threshold": "20 日日均 10 万 + 2 年交易经验",
+        "detail": "申购日无须预缴现金，中签后按 1,000 元/签缴款；中签率虽低但零占用资金，上市前核对主体评级与溢价定位，上市后及时兑现不盲目高价追炒。",
+    },
+    {
+        "title": "A 股沪深市值配售打新",
+        "tag": "持仓底仓顺带增厚",
+        "threshold": "T-2 前 20 日日均非限售 A 股市值 ≥1 万元（科创/创业需对应权限）",
+        "detail": "仅需日常持有红利宽基个股底仓即可顺带申购，无须为打新专门买高波股；中签后评估发行市盈率与行业景气，严防高估值新股破发。",
+    },
+    {
+        "title": "北交所新股申购规则",
+        "tag": "资金门槛偏高 · 留意新政",
+        "threshold": "50 万资产 + 2 年经验；现行现金全额冻资竞争激烈，留意市值配售试点演进",
+        "detail": "北交所现行申购需提前冻结全额现金，中小资金中签效率偏低，更适合大额闲置资金在无更好票息窗口时理性测算性价比。",
+    },
+    {
+        "title": "港股打新与公募 REITs 认购提醒",
+        "tag": "破发常态化 · 切忌盲打",
+        "threshold": "港股需合规离岸账户；REITs 线上市值零门槛",
+        "detail": "港股新股回拨机制改革后首日分化极大，公募 REITs 新发亦已常态化破发；严禁融资加杠杆打新，只挑基石阵容扎实且估值留足折价的标的。",
+    },
+)
+
+
+def _render_ipo_toolbox_section(data: dict[str, Any]) -> str:
+    raw = data.get("ipo_toolbox")
+    title = "全市场打新与低风险增厚工具箱"
+    subtitle = "横向覆盖可转债、A 股沪深、北交所、港股与公募 REITs 打新机制与避坑边界"
+    items: list[dict[str, str]] = []
+
+    if isinstance(raw, dict):
+        if raw.get("title"):
+            title = str(raw["title"]).strip()
+        if raw.get("subtitle") or raw.get("summary"):
+            subtitle = str(raw.get("subtitle") or raw.get("summary")).strip()
+        seq = raw.get("items") or raw.get("channels") or raw.get("markets") or raw.get("tools") or raw.get("rows") or []
+    elif isinstance(raw, list):
+        seq = raw
+    else:
+        seq = []
+
+    if isinstance(seq, list):
+        for x in seq:
+            if not isinstance(x, dict):
+                continue
+            t = str(x.get("title") or x.get("name") or x.get("market") or "").strip()
+            if not t:
+                continue
+            tag = str(x.get("tag") or x.get("status") or x.get("priority") or "规则核对").strip()
+            thr = str(x.get("threshold") or x.get("requirement") or x.get("eligibility") or "").strip()
+            detail = str(x.get("detail") or x.get("strategy") or x.get("rules") or x.get("mechanism") or "").strip()
+            risk = str(x.get("risk") or x.get("note") or x.get("caveat") or x.get("tip") or "").strip()
+            full_detail = f"{detail} {risk}".strip() if (detail and risk and risk not in detail) else (detail or risk)
+            items.append({"title": t, "tag": tag, "threshold": thr, "detail": full_detail})
+
+    if not items:
+        items = list(_DEFAULT_IPO_TOOLBOX)
+
+    card_parts: list[str] = []
+    for it in items:
+        thr_html = (
+            f'<div class="ipo-meta"><strong>门槛：</strong>{esc(it["threshold"])}</div>'
+            if it.get("threshold")
+            else ""
+        )
+        card_parts.append(
+            f'<div class="ipo-card">'
+            f'<div class="ipo-head"><strong>{esc(it["title"])}</strong><span class="ipo-tag">{esc(it["tag"])}</span></div>'
+            f"{thr_html}"
+            f'<div class="ipo-detail">{esc(it["detail"])}</div>'
+            f"</div>"
+        )
+    cards = "".join(card_parts)
+    return (
+        '<div class="sec-head" id="sec-ipo-toolbox">'
+        f'<h2>{esc(title)}</h2>'
+        f'<span class="sec-sub">{esc(subtitle)}</span>'
+        "</div>"
+        f'<section class="ipo-grid">{cards}</section>'
+    )
+
+
+def _render_dual_warning_wall(data: dict[str, Any], cgb10y_disp: str) -> str:
+    """Render upgraded 2-tier Warning Wall: Legal High-Risk vs Illegal/Forbidden + 4 Official Verification Portals."""
+    caution_items: list[dict[str, str]] = []
+    ban_items: list[dict[str, str]] = []
+    portals: list[dict[str, str]] = []
+
+    wall = data.get("risk_warning_wall") or data.get("warning_wall")
+    if isinstance(wall, dict):
+        for raw_list, bucket in (
+            (wall.get("legal_high_risk") or wall.get("tier1_high_risk") or wall.get("high_risk") or [], caution_items),
+            (wall.get("illegal_forbidden") or wall.get("tier2_illegal") or wall.get("regulatory_ban") or wall.get("prohibited") or [], ban_items),
+        ):
+            if isinstance(raw_list, list):
+                for item in raw_list:
+                    if isinstance(item, dict) and (item.get("title") or item.get("name")):
+                        bucket.append(
+                            {
+                                "title": str(item.get("title") or item.get("name") or "").strip(),
+                                "detail": str(item.get("detail") or item.get("desc") or item.get("reason") or "").strip(),
+                            }
+                        )
+        raw_p = wall.get("verification_portals") or wall.get("official_verifications") or wall.get("verify_links")
+        if isinstance(raw_p, list):
+            for p in raw_p:
+                if isinstance(p, dict) and p.get("url"):
+                    url_s = str(p["url"]).strip()
+                    if url_s.startswith(("http://", "https://")):
+                        portals.append(
+                            {
+                                "org": str(p.get("org") or p.get("name") or p.get("title") or "").strip(),
+                                "scope": str(p.get("scope") or p.get("desc") or p.get("detail") or "").strip(),
+                                "url": url_s,
+                            }
+                        )
+
+    # Also gracefully absorb flat or layered red_flags
+    red_flags = data.get("red_flags") if isinstance(data.get("red_flags"), list) else []
+    if not caution_items and not ban_items and red_flags:
+        caution_kws = ("溢价", "LOF", "理财", "破净", "杠杆衍生", "期权", "30年", "雪球", "退市")
+        for rf in red_flags:
+            if not isinstance(rf, dict):
+                continue
+            title = str(rf.get("title") or "").strip()
+            detail = str(rf.get("detail") or "").strip()
+            if not title:
+                continue
+            layer = str(rf.get("layer") or rf.get("tier") or rf.get("level") or "").strip().lower()
+            if layer in ("legal_high_risk", "high_risk", "caution", "tier1", "1"):
+                caution_items.append({"title": title, "detail": detail})
+            elif layer in ("illegal", "forbidden", "regulatory_ban", "prohibited", "tier2", "2"):
+                ban_items.append({"title": title, "detail": detail})
+            elif any(k in title for k in caution_kws) and "空气盘" not in title:
+                caution_items.append({"title": title, "detail": detail})
+            else:
+                ban_items.append({"title": title, "detail": detail})
+
+    if not caution_items:
+        caution_items = [
+            {"title": "高溢价跨境 QDII 与临期退市商品 LOF", "detail": "合法挂牌但情绪溢价可达两位数，叠加 LOF 限期退市回归净值机制，高位接盘极易本金与溢价双杀。"},
+            {"title": "银行理财“低波幻觉”与超长债重仓", "detail": "全面真净值化后银行理财同样会阶段性破净；30 年超长国债久期近 20 年，绝非保本稳钱替代品。"},
+            {"title": "问题低评级转债、融资融券与复杂场外期权", "detail": "合法交易工具但杠杆或违约风险极高，普通新手切勿因高表面收益率贸然涉足。"},
+        ]
+    if not ban_items:
+        ban_items = [
+            {"title": "政信定融、城投非标与违规金交所通道", "detail": "全国合规地方金交所已实质性清零，非标定融违约与展期风险由出资人全额自担。"},
+            {"title": "违规私募飞单、实物金托管返息与“保本高息”", "detail": "凡宣称保本年化 6%–8% 以上、或引导转账至个人与非托管对公账户的均为高危骗局。"},
+            {"title": "场外高杠杆外汇黑平台、非法 RWA 与 OTC 冻卡", "detail": "境内从未批准面向个人的网络外汇保证金或非法虚拟货币/RWA 集资平台，资金不受法律保护且触碰冻卡与刑事红线。"},
+        ]
+    if not portals:
+        portals = list(_OFFICIAL_VERIFY_PORTALS)
+
+    caution_html = "".join(
+        f'<div class="warning-item"><strong>⚠️ {esc(x["title"])}</strong><p>{esc(x["detail"])}</p></div>'
+        for x in caution_items
+    )
+    ban_html = "".join(
+        f'<div class="warning-item"><strong>⛔ {esc(x["title"])}</strong><p>{esc(x["detail"])}</p></div>'
+        for x in ban_items
+    )
+    portals_html = "".join(
+        f'<a class="verify-card" href="{esc(p["url"])}" target="_blank" rel="noopener noreferrer">'
+        f'<div class="verify-org">{esc(p["org"])} ↗</div>'
+        f'<div class="verify-desc">{esc(p["scope"])}</div>'
+        f"</a>"
+        for p in portals
+    )
+    rate_ctx = f"在当前 10 年国债 {cgb10y_disp} 的低利率环境下" if cgb10y_disp else "在当前低利率环境下"
+    return (
+        '<div class="sec-head" id="sec-warning-wall">'
+        "<h2>双层风控警示墙与四道官方验真入口</h2>"
+        f'<span class="sec-sub">{esc(rate_ctx)}，先分清「合法但高风险」与「监管禁区」，凡宣称保本高息一律一票否决</span>'
+        "</div>"
+        '<section class="warning-wall">'
+        '<div class="warning-layer wl-caution">'
+        '<div class="wl-head">第一层｜合法但高风险 · 新手勿碰（持牌产品但波动/溢价/结构复杂）</div>'
+        f'<div class="warning-grid">{caution_html}</div>'
+        "</div>"
+        '<div class="warning-layer wl-ban">'
+        '<div class="wl-head">第二层｜监管禁区与非法金融 · 零容忍（无牌照、资金池或违法集资）</div>'
+        f'<div class="warning-grid">{ban_html}</div>'
+        "</div>"
+        '<div class="verify-box">'
+        '<div class="verify-title">🔍 转账前必查：四道中国官方金融真伪核验官网</div>'
+        f'<div class="verify-grid">{portals_html}</div>'
+        "</div>"
+        "</section>"
+    )
+
+
+def build_channels_page(
+    channels_data: dict[str, Any] | None,
+    *,
+    etf_data: dict[str, Any] | None = None,
+    eq_state: dict[str, Any] | None = None,
+) -> str:
+    """Render the dedicated Personal Multi-Asset Investment Channels overview page (channels.html)."""
     data = channels_data if isinstance(channels_data, dict) else {}
-    headline = str(data.get("headline") or "中国大陆个人投资者 8 大合规多元投资渠道全景调研")
+    channels = [c for c in (data.get("channels") or []) if isinstance(c, dict) and str(c.get("id", "")).strip()]
+    ch_cnt = len(channels)
+    etf_cnt = len((etf_data or {}).get("etfs") or []) if isinstance(etf_data, dict) else 0
+
+    ch_cnt_tag = f"{ch_cnt} 大合规多元投资渠道" if ch_cnt else "合规多元投资渠道"
+    headline = str(data.get("headline") or f"中国大陆个人投资者{ch_cnt_tag}全景调研")
     subtitle = str(
         data.get("subtitle")
-        or "系统追踪债券、公募基金理财、国债逆回购、场内外 QDII 与香港北向互认、大额存单、可转债、公募 REITs 与非黄金大宗商品 ETF"
+        or "系统追踪活钱现金、银行存款、外币定存、债券 ETF、基金理财、储蓄险、个人养老金、跨境互认、可转债、公募 REITs、非金商品与合规私募全版图"
     )
     as_of = str(data.get("as_of_label") or "最新班次")
     mutex_note = str(data.get("gold_mutex_note") or "")
     anchors = data.get("macro_anchors") if isinstance(data.get("macro_anchors"), list) else []
-    channels = data.get("channels") if isinstance(data.get("channels"), list) else []
     templates = data.get("allocation_templates") if isinstance(data.get("allocation_templates"), list) else []
-    red_flags = data.get("red_flags") if isinstance(data.get("red_flags"), list) else []
     proc = data.get("research_process") if isinstance(data.get("research_process"), dict) else {}
+
+    # Dynamic 10Y CGB yield (never hardcode 1.59%)
+    cgb10y_val: float | None = None
+    if isinstance(eq_state, dict):
+        cgb10y_val = _safe_float(((eq_state.get("markets") or {}).get("a_share") or {}).get("cgb10y_pct"))
+        if cgb10y_val is None:
+            cgb10y_val = _safe_float(((eq_state.get("cross_market_linkages") or {}).get("rates_fx_chain") or {}).get("cgb10y_pct"))
+    cgb10y_disp = f"{cgb10y_val:.2f}%" if cgb10y_val is not None else ""
+    if not cgb10y_disp:
+        for a in anchors:
+            if isinstance(a, dict) and "10Y" in str(a.get("label", "")) and "国债" in str(a.get("label", "")):
+                m_cgb = re.search(r"([0-9]+(?:\.[0-9]+)?%)", str(a.get("value", "")))
+                if m_cgb:
+                    cgb10y_disp = m_cgb.group(1)
+                    break
 
     anchor_html = "".join(
         f'<div class="macro-card">'
@@ -3832,6 +5123,43 @@ def build_channels_page(channels_data: dict[str, Any] | None) -> str:
         if isinstance(a, dict)
     )
 
+    # New: Side-by-side beginner comparison table across all channels
+    compare_rows: list[str] = []
+    for idx, ch in enumerate(channels, start=1):
+        cid = str(ch["id"]).strip()
+        num = _fmt_ch_num(ch.get("order"), idx)
+        bk = _normalize_money_bucket(ch)
+        _, bk_short = _BUCKET_META[bk]
+        stars_str, stars_lbl = _fmt_stars(_channel_risk_stars(ch))
+        hnw_tag = ' <span class="ch-hnw-badge">300万门槛</span>' if _is_hnw_channel(ch) else ""
+        compare_rows.append(
+            f"<tr>"
+            f'<td class="nw"><span class="ch-num">{esc(num)}</span> <a href="channels/{esc(cid)}.html"><strong>{esc(ch.get("short_name") or ch.get("name", ""))}</strong></a>{hnw_tag}</td>'
+            f'<td class="nw"><span class="ch-bucket-pill">{bk_short}</span></td>'
+            f'<td>{esc(_short_yield_for_card(str(ch.get("yield_range", ""))))}</td>'
+            f'<td class="nw"><span class="ch-risk-stars" aria-label="{esc(stars_lbl)}">{stars_str}</span> <span class="sec-sub">{esc(stars_lbl)}</span></td>'
+            f'<td>{esc(_short_threshold_for_card(ch))}</td>'
+            f'<td>{esc(str(ch.get("liquidity", "")))}</td>'
+            f'<td>{esc(str(ch.get("tax_summary", "")))}</td>'
+            f"</tr>"
+        )
+    compare_table_html = (
+        '<div class="sec-head" id="sec-compare-table">'
+        f'<h2>{ch_cnt} 大渠道一眼对比总表（按资金桶、年化、风险、门槛与税费横向比选）</h2>'
+        '<span class="sec-sub">点击任意渠道名称直达独立 1 分钟指南页</span>'
+        "</div>"
+        '<div class="table-wrap"><table class="data-table compare-table">'
+        "<thead><tr><th>编号与渠道</th><th>所属资金桶</th><th>参考年化区间</th><th>风险星级</th><th>起投门槛</th><th>流动性特征</th><th>税费核心要点</th></tr></thead>"
+        f'<tbody>{"".join(compare_rows)}</tbody></table></div>'
+        if compare_rows
+        else ""
+    )
+
+    etf_cta_lbl = f"进入全球 {etf_cnt} 只 ETF 深度雷达 →" if etf_cnt else "进入全球重点 ETF 深度雷达 →"
+    filter_html = _render_channel_filter_panel(
+        channels,
+        right_cta_html=f'<a href="etfs.html" class="btn btn-sm">{esc(etf_cta_lbl)}</a>',
+    )
     ch_cards_rendered = _render_channel_overview_cards(channels)
 
     tpl_html = "".join(
@@ -3851,11 +5179,8 @@ def build_channels_page(channels_data: dict[str, Any] | None) -> str:
         if isinstance(t, dict)
     )
 
-    rf_html = "".join(
-        f'<div class="redflag-card"><strong>⛔ {esc(rf.get("title", ""))}</strong>{esc(rf.get("detail", ""))}</div>'
-        for rf in red_flags
-        if isinstance(rf, dict)
-    )
+    ipo_html = _render_ipo_toolbox_section(data)
+    warning_wall_html = _render_dual_warning_wall(data, cgb10y_disp)
 
     pillars = proc.get("pillars") if isinstance(proc.get("pillars"), list) else []
     proc_html = "".join(
@@ -3868,29 +5193,23 @@ def build_channels_page(channels_data: dict[str, Any] | None) -> str:
         if isinstance(p, dict)
     )
 
+    ch_filter_h2 = f"按用钱时间或资产类型筛选全部 {ch_cnt} 大渠道" if ch_cnt else "按用钱时间或资产类型筛选全部合规渠道"
     return f"""
     <section class="channels-hero">
-      <div class="cover-tag">8 大个人合规多元投资渠道 · {esc(as_of)}</div>
+      <div class="cover-tag">{esc(ch_cnt_tag)} · {esc(as_of)}</div>
       <h1>{esc(headline)}</h1>
       <p class="channels-hero-sub">{esc(subtitle)}</p>
       {f'<div class="channels-mutex">🛑 跨市场风控同步：{esc(mutex_note)}</div>' if mutex_note else ''}
       <div class="macro-strip">{anchor_html}</div>
     </section>
 
-    <section class="filter-panel">
-      <div class="filter-row">
-        <button type="button" class="filter-pill active" data-ch-cat="all">全部 8 大渠道</button>
-        <button type="button" class="filter-pill" data-ch-cat="fixed_income">固收与票息（债券 / 基金理财）</button>
-        <button type="button" class="filter-pill" data-ch-cat="cash">现金与短期流动（逆回购 / 大额存单）</button>
-        <button type="button" class="filter-pill" data-ch-cat="cross_border">跨境与汇率（QDII / 北向互认）</button>
-        <button type="button" class="filter-pill" data-ch-cat="hybrid">股债与实体（可转债 / 公募 REITs）</button>
-        <button type="button" class="filter-pill" data-ch-cat="alternatives">独立抗通胀（非金大宗商品 ETF）</button>
-      </div>
-      <div class="screener-bar" style="margin:0;">
-        <strong id="ch-count" role="status">显示 {len(channels)} / {len(channels)} 大合规个人投资渠道</strong>
-        <a href="etfs.html" class="btn btn-sm">进入全球 100+ ETF 深度雷达 →</a>
-      </div>
-    </section>
+    {compare_table_html}
+
+    <div class="sec-head" id="sec-channel-cards">
+      <h2>{esc(ch_filter_h2)}</h2>
+      <a href="guide.html" class="btn btn-sm">新手 3 分钟指南 →</a>
+    </div>
+    {filter_html}
 
     <section class="channel-list">
       {ch_cards_rendered}
@@ -3902,11 +5221,8 @@ def build_channels_page(channels_data: dict[str, Any] | None) -> str:
     </div>
     <section class="tpl-grid">{tpl_html}</section>
 
-    <div class="sec-head">
-      <h2>中国大陆 6 大高危“伪投资”排雷红线</h2>
-      <span class="sec-sub">在 10 年国债 1.59% 环境下，凡宣称保本高息 6%–8%+ 一律一票否决</span>
-    </div>
-    <section class="redflag-grid">{rf_html}</section>
+    {ipo_html}
+    {warning_wall_html}
 
     <div class="sec-head">
       <h2>{esc(proc.get("title") or "每班调研追踪与质量核验制度")}</h2>
@@ -3929,14 +5245,16 @@ def _etf_role_cls(item: dict[str, Any]) -> str:
     return "role-watch"
 
 
-def build_etfs_page(etf_data: dict[str, Any] | None) -> str:
-    """Render the interactive 100+ Global Three-Channel ETF Radar page (etfs.html)."""
+def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) -> str:
+    """Render the interactive Global Multi-Channel ETF Radar page (etfs.html)."""
     data = etf_data if isinstance(etf_data, dict) else {}
     etfs = data.get("etfs") if isinstance(data.get("etfs"), list) else []
     total = len(etfs)
     as_of = str(data.get("as_of_label") or "最新班次")
     lock_notice = str(data.get("gold_lock_notice") or "")
     rules = data.get("key_2026_rules") if isinstance(data.get("key_2026_rules"), list) else []
+    ch_link_lbl = f"查看 {channel_count} 大个人多元渠道详规 →" if channel_count > 0 else "查看个人多元渠道详规 →"
+    ch_short_lbl = f"查看 {channel_count} 大多元渠道 →" if channel_count > 0 else "查看个人多元渠道 →"
 
     cnt_m = defaultdict(int)
     for it in etfs:
@@ -3966,7 +5284,7 @@ def build_etfs_page(etf_data: dict[str, Any] | None) -> str:
 
     return f"""
     <div class="sec-head" style="margin-top:4px;">
-      <h2>全球 {total} 只重点 ETF 三通道深度雷达</h2>
+      <h2>全球 {total} 只重点 ETF 多通道深度雷达</h2>
       <span class="sec-sub">覆盖 A 股、港股三通道、美股原版、爱尔兰 UCITS、境内非美 QDII 及债券商品 ETF · 基准 {esc(as_of)}</span>
     </div>
 
@@ -3974,23 +5292,23 @@ def build_etfs_page(etf_data: dict[str, Any] | None) -> str:
     {f'<div class="etf-rules-grid">{rules_html}</div>' if rules_html else ''}
 
     <div class="screener-stats">
-      <div class="stat-tile stat-total">
+      <div class="stat-tile stat-total active" data-etf-stat-market="all" role="button" tabindex="0" aria-pressed="true">
         <div class="stat-tile-lbl">全通道重点 ETF</div>
         <div class="stat-tile-num">{total}</div>
       </div>
-      <div class="stat-tile" style="border-top:3px solid #9f2326;">
+      <div class="stat-tile" data-etf-stat-market="a-share" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #9f2326;">
         <div class="stat-tile-lbl">🇨🇳 A 股核心 ETF</div>
         <div class="stat-tile-num">{cnt_m["a-share"]}</div>
       </div>
-      <div class="stat-tile" style="border-top:3px solid #0d6963;">
+      <div class="stat-tile" data-etf-stat-market="hk-stock" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #0d6963;">
         <div class="stat-tile-lbl">🇭🇰 港股三通道 ETF</div>
         <div class="stat-tile-num">{cnt_m["hk-stock"]}</div>
       </div>
-      <div class="stat-tile" style="border-top:3px solid #1b4b8a;">
+      <div class="stat-tile" data-etf-stat-market="us-global" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #1b4b8a;">
         <div class="stat-tile-lbl">🇺🇸 美股与爱尔兰/全球</div>
         <div class="stat-tile-num">{cnt_m["us-stock"] + cnt_m["global"]}</div>
       </div>
-      <div class="stat-tile" style="border-top:3px solid #b45309;">
+      <div class="stat-tile" data-etf-stat-market="multi-asset" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #b45309;">
         <div class="stat-tile-lbl">🛡️ 债券/转债/商品</div>
         <div class="stat-tile-num">{cnt_m["multi-asset"]}</div>
       </div>
@@ -4034,7 +5352,7 @@ def build_etfs_page(etf_data: dict[str, Any] | None) -> str:
 
     <div class="screener-bar">
       <strong id="etf-count" role="status">显示 {total} / {total} 只重点 ETF</strong>
-      <a href="channels.html" class="btn btn-sm">查看 8 大个人多元渠道详规 →</a>
+      <a href="channels.html" class="btn btn-sm">{esc(ch_link_lbl)}</a>
     </div>
 
     <div class="table-wrap etf-table-wrap">
@@ -4069,7 +5387,7 @@ def build_etfs_page(etf_data: dict[str, Any] | None) -> str:
         <div class="dossier-body" id="etf-modal-body"></div>
         <div class="dossier-foot">
           <span>数据经交易所、基金定期报告与官网费率交叉核验 · 下单前请实时核对盘口参考净值</span>
-          <a href="channels.html" class="btn btn-sm">查看 8 大多元渠道 →</a>
+          <a href="channels.html" class="btn btn-sm">{esc(ch_short_lbl)}</a>
         </div>
       </div>
     </div>
@@ -4078,7 +5396,12 @@ def build_etfs_page(etf_data: dict[str, Any] | None) -> str:
     """
 
 
-def build_screener_page(stocks: list[dict[str, Any]], benchmarks: dict[str, str]) -> str:
+def build_screener_page(
+    stocks: list[dict[str, Any]],
+    benchmarks: dict[str, str],
+    *,
+    default_date: str = "",
+) -> str:
     total = len(stocks)
     cnt_m = defaultdict(int)
     cnt_c = defaultdict(int)
@@ -4094,6 +5417,7 @@ def build_screener_page(stocks: list[dict[str, Any]], benchmarks: dict[str, str]
     # Escape </script> safely inside embedded JSON
     safe_json = json.dumps(stocks, ensure_ascii=False).replace("</", "<\\/")
     static_rows = "".join(_render_static_screener_row(stock) for stock in stocks)
+    date_fallback = default_date.strip() or "最新班次"
 
     return f"""
     <div class="sec-head" style="margin-top:4px;">
@@ -4102,23 +5426,23 @@ def build_screener_page(stocks: list[dict[str, Any]], benchmarks: dict[str, str]
     </div>
 
     <div class="screener-stats">
-      <div class="stat-tile stat-total" data-stat-color="all">
+      <div class="stat-tile stat-total" data-stat-color="all" role="button" tabindex="0" aria-pressed="false">
         <div class="stat-tile-lbl">全部龙头池</div>
         <div class="stat-tile-num">{total}</div>
       </div>
-      <div class="stat-tile" data-stat-color="g" style="border-top:3px solid #059669;">
+      <div class="stat-tile" data-stat-color="g" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #059669;">
         <div class="stat-tile-lbl" style="color:var(--st-green-txt);">● 当下底座</div>
         <div class="stat-tile-num">{cnt_c["g"]}</div>
       </div>
-      <div class="stat-tile" data-stat-color="b" style="border-top:3px solid #0072b2;">
+      <div class="stat-tile" data-stat-color="b" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #0072b2;">
         <div class="stat-tile-lbl" style="color:var(--st-blue-txt);">◆ 未来主攻（已锁）</div>
         <div class="stat-tile-num">{cnt_c["b"]}</div>
       </div>
-      <div class="stat-tile" data-stat-color="y" style="border-top:3px solid #d97706;">
+      <div class="stat-tile" data-stat-color="y" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #d97706;">
         <div class="stat-tile-lbl" style="color:var(--st-amber-txt);">▲ 分歧观察</div>
         <div class="stat-tile-num">{cnt_c["y"]}</div>
       </div>
-      <div class="stat-tile" data-stat-color="r" style="border-top:3px solid #dc2626;">
+      <div class="stat-tile" data-stat-color="r" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #dc2626;">
         <div class="stat-tile-lbl" style="color:var(--st-red-txt);">× 高危回避</div>
         <div class="stat-tile-num">{cnt_c["r"]}</div>
       </div>
@@ -4166,8 +5490,8 @@ def build_screener_page(stocks: list[dict[str, Any]], benchmarks: dict[str, str]
       <table class="screener-table">
         <thead>
           <tr>
-            <th class="sortable" data-sort="market"><button type="button" disabled>市场 ⇅</button></th>
-            <th class="sortable col-sticky" data-sort="name"><button type="button" disabled>公司与代码 ⇅</button></th>
+            <th class="sortable col-sticky" data-sort="market"><button type="button" disabled>市场 ⇅</button></th>
+            <th class="sortable" data-sort="name"><button type="button" disabled>公司与代码 ⇅</button></th>
             <th class="sortable" data-sort="sector"><button type="button" disabled>赛道 ⇅</button></th>
             <th class="sortable" data-sort="pe_num"><button type="button" disabled>现价 / 估值 ⇅</button></th>
             <th class="sortable" data-sort="div_pct"><button type="button" disabled>股息 / AH ⇅</button></th>
@@ -4193,13 +5517,201 @@ def build_screener_page(stocks: list[dict[str, Any]], benchmarks: dict[str, str]
         </div>
         <div class="dossier-body" id="dossier-modal-body"></div>
         <div class="dossier-foot">
-          <span id="dossier-modal-date">更新日期：最新班次</span>
+          <span id="dossier-modal-date" data-default-date="{esc(date_fallback)}">更新日期：{esc(date_fallback)}</span>
           <a id="dossier-modal-link" href="reports/a-share.html" class="btn btn-sm">前往该市场全景手册 →</a>
         </div>
       </div>
     </div>
 
     <script id="screener-data" type="application/json">{safe_json}</script>
+    """
+
+
+def build_guide_page(
+    gold_snap: dict[str, Any] | None,
+    eq_state: dict[str, Any] | None,
+    channels_data: dict[str, Any] | None,
+    etf_data: dict[str, Any] | None,
+    total_pool: int = 0,
+) -> str:
+    """Render standalone Beginner 3-Minute Guide & Top-20 Financial Terms Page (guide.html)."""
+    gs = gold_snap if isinstance(gold_snap, dict) else {}
+    gold_blocked = (gs.get("new_buy_allowed") is False) or (str(gs.get("tier_code") or "").strip() == "Tier 0")
+    gold_status_text = (
+        "当前黄金处于红灯停阶段：老持仓稳拿不乱卖，新钱先停在稳钱池暂不新买黄金，等待四关信号逐步过关。"
+        if gold_blocked
+        else "黄金操作须严守家庭资产 10%–15% 上限，按四步信号分批推进、远离杠杆。"
+    )
+    ch_cnt = len((channels_data or {}).get("channels") or []) if isinstance(channels_data, dict) else 0
+    etf_cnt = len((etf_data or {}).get("etfs") or []) if isinstance(etf_data, dict) else 0
+    ch_lbl = f"{ch_cnt} 大个人多元渠道" if ch_cnt else "个人多元合规渠道"
+    etf_lbl = f"{etf_cnt} 只重点 ETF" if etf_cnt else "全球重点 ETF"
+
+    pitfalls: tuple[tuple[str, str, str, str], ...] = (
+        (
+            "短钱长投：拿半年内要用的钱冲进股市",
+            "把交房租、买车或结婚首付投进高波动股票，急用钱时恰逢下跌被迫低位割肉。",
+            "先按「活钱 0–6 月 / 稳钱 1–3 年 / 长钱 3–5 年+」切分账户，3 年内确定要用的钱绝不碰高波动权益。",
+            "index.html#sec-four-buckets",
+        ),
+        (
+            "把银行理财「业绩比较基准」当成保本利率",
+            "资管新规全面真净值化后，银行理财与固收+基金遇到债市调整同样会阶段性破净。",
+            "求本金零波动选储蓄国债或 50 万以内正规银行存款；买理财与债基务必先看底层持仓与历史最大回撤。",
+            "channels/funds_wm.html",
+        ),
+        (
+            "场内抢买高溢价跨境 QDII 或临期退市商品 LOF",
+            "刷热点冲进溢价两位数甚至停牌的纳指 ETF 或白银/原油 LOF，即使底层没跌，溢价回落也会造成大幅亏损。",
+            "下单前必看实时参考净值（IOPV），场内溢价超过 2%–3% 坚决不追，优先改用场外联接按净值分批定投。",
+            "channels/qdii_mrf.html",
+        ),
+        (
+            "误把 30 年超长国债 ETF 当稳健存款重仓",
+            "看到「国债」二字便以为稳赚不赔，全仓买入久期近 20 年的超长国债 ETF，利率微涨即出现 5%–10% 回撤。",
+            "稳钱底仓优先选短融 ETF、储蓄国债或中短久期债券 ETF；超长久期国债属高波动对冲工具，严控占比。",
+            "channels/bonds.html",
+        ),
+        (
+            "把高速公路 REITs 表面高分派率当成永续股息",
+            "特许经营权类 REITs 到期资产无偿移交、净值归零，每年高额分派中混有大量本金归还。",
+            "产权类（保租房/商场/算力机房）看分派率与出租率；特许经营权类必须看中债真实内部收益率（IRR）。",
+            "channels/c_reits.html",
+        ),
+        (
+            "A/C 类基金选反，或持有不满 7 天硬挨 1.5% 赎回费",
+            "短期波段买了高申购费 A 类，或长期持有选了持续扣费的旧合同 C 类，甚至几天内频繁进出触发 1.5% 惩罚费。",
+            "短钱不动公募股债基；持有 7 天内不轻易赎回；长持 1 年以上优先对比 1 折 A 类与 2026 费改后满 1 年免销服费的 C 类。",
+            "channels/funds_wm.html",
+        ),
+        (
+            "忽略港股通 20%–28% 红利税与未锁汇汇率损失",
+            "冲着高表面股息买港股通，或用人民币新换汇买未锁汇美元债，结果红利税与人民币升值吃光全部利息。",
+            "买港股高股息前先按税后折算真实到手率；内地买香港互认债基认准「人民币对冲 + 累计份额」合法避税锁汇。",
+            "etfs.html",
+        ),
+        (
+            "周五借 1 天期逆回购踩空 & 二手存单提前支取实亏",
+            "周五做 1 天期逆回购周末两天白闲置；单家银行存超 50 万超出存保上限；二手接盘大额存单提前支取按原票面退还致本金实亏。",
+            "周四借 1 天期吃 3 天息，周五闲钱放短融 ETF；单家独立法人银行存款控在 45–47 万内；二手存单变现只能再次挂单转让。",
+            "channels/reverse_repo.html",
+        ),
+    )
+
+    pitfall_cards = "".join(
+        f'<article class="pitfall-card">'
+        f'<div class="pitfall-top"><span class="pitfall-num">{idx:02d}</span><h3>{esc(title)}</h3></div>'
+        f'<p class="pitfall-scene"><strong>常见场景：</strong>{esc(scene)}</p>'
+        f'<p class="pitfall-fix"><strong>避坑建议：</strong>{esc(fix)}</p>'
+        f'<a class="pitfall-link" href="{esc(href)}">查看对应详规 →</a>'
+        f"</article>"
+        for idx, (title, scene, fix, href) in enumerate(pitfalls, start=1)
+    )
+
+    term_cats: list[str] = []
+    for t in GLOSSARY_TERMS:
+        if t["cat"] not in term_cats:
+            term_cats.append(t["cat"])
+    cat_pills = '<button type="button" class="filter-pill active" data-guide-cat="all">全部词条</button>' + "".join(
+        f'<button type="button" class="filter-pill" data-guide-cat="{esc(c)}">{esc(c)}</button>'
+        for c in term_cats
+    )
+
+    term_cards = "".join(
+        f'<article class="guide-term-card" id="term-{esc(t["key"])}" '
+        f'data-guide-term-cat="{esc(t["cat"])}" data-guide-term-search="{esc((t["term"] + " " + t["plain"] + " " + t["avoid"]).lower())}">'
+        f'<div class="guide-term-head"><h3>{esc(t["term"])}</h3><span class="guide-term-cat">{esc(t["cat"])}</span></div>'
+        f'<p class="guide-term-plain">{esc(t["plain"])}</p>'
+        f'<div class="guide-term-avoid">{esc(t["avoid"])}</div>'
+        f"</article>"
+        for t in GLOSSARY_TERMS
+    )
+
+    return f"""
+    <section class="guide-hero">
+      <div class="cover-tag">新手 3 分钟入门指南 · 平等透明投研导航</div>
+      <h1>3 分钟读懂全球投研门户与高频金融关键词</h1>
+      <p class="channels-hero-sub">不必背诵复杂金融黑话，按「看懂红绿灯 → 分好四笔钱 → 避开 8 大高频误区」三步节奏，轻松把全站 {esc(ch_lbl)}、{esc(etf_lbl)} 与 {total_pool} 只核心龙头变成清晰好用的决策参考。</p>
+      <div class="hero-cta-row">
+        <a class="hero-cta hero-cta-primary" href="#sec-guide-glossary">直查 Top {len(GLOSSARY_TERMS)} 关键词白话速查 ↓</a>
+        <a class="hero-cta" href="index.html#sec-four-buckets">回首页看四笔钱导览</a>
+        <a class="hero-cta" href="channels.html">全渠道一眼对比总表</a>
+        <a class="hero-cta" href="etfs.html">重点 ETF 雷达</a>
+      </div>
+    </section>
+
+    <div class="sec-head" id="sec-guide-lamps">
+      <h2>① 1 分钟看懂本站「红绿灯」与四笔钱路线图</h2>
+      <span class="sec-sub">红绿灯是帮你管住手的仓位安全阀，绝非情绪化喊单</span>
+    </div>
+    <section class="guide-lamp-grid">
+      <div class="guide-lamp-card gl-green">
+        <div class="gl-badge"><span class="lamp-pill lamp-green"><span class="lamp-dot"></span>绿灯 · 条件齐备</span></div>
+        <h3>性价比划算，按计划分批配置</h3>
+        <p>说明该市场的估值安全边际、利率环境与趋势条件同步达标，可把对应期限的长钱分 3–4 批稳步建仓。</p>
+      </div>
+      <div class="guide-lamp-card gl-amber">
+        <div class="gl-badge"><span class="lamp-pill lamp-amber"><span class="lamp-dot"></span>黄灯 · 分歧观察</span></div>
+        <h3>多空拉锯，小步按锚不追高</h3>
+        <p>说明机会与风险并存，仅在回落至关键安全锚附近小额分批，严禁看到单日大涨就冲动追买。</p>
+      </div>
+      <div class="guide-lamp-card gl-red">
+        <div class="gl-badge"><span class="lamp-pill lamp-red"><span class="lamp-dot"></span>红灯停 · 防守控仓</span></div>
+        <h3>老底仓稳拿不乱割，新钱先放稳钱池</h3>
+        <p>红灯停不是要你恐慌清仓，而是防止在风险报酬比偏弱时把新钱急着买在半山腰。{esc(gold_status_text)}</p>
+      </div>
+    </section>
+
+    <div class="panel-card guide-roadmap">
+      <div class="panel-title">
+        <span>🧭 每日 3 分钟标准阅读动线（推荐收藏）</span>
+        <a class="btn btn-sm" href="index.html">前往首页驾驶舱 →</a>
+      </div>
+      <div class="ch-steps-grid">
+        <div class="ch-step-card">
+          <div class="ch-step-num">第 1 分钟</div>
+          <div class="ch-step-title">看首页大势与今日行动红绿灯</div>
+          <div class="ch-step-detail">扫一眼四大市场红绿灯和「今天可以做 / 今天先别碰」，立刻掌握当日大方向与禁区。</div>
+        </div>
+        <div class="ch-step-card">
+          <div class="ch-step-num">第 2 分钟</div>
+          <div class="ch-step-title">按用钱时间挑合规渠道</div>
+          <div class="ch-step-detail">点开「四笔钱」或 {esc(ch_lbl)}，点进对应渠道的独立 1 分钟指南页，核对 3 步买法、税费和起投门槛。</div>
+        </div>
+        <div class="ch-step-card">
+          <div class="ch-step-num">第 3 分钟</div>
+          <div class="ch-step-title">查 ETF 溢价与 7 维深度档案</div>
+          <div class="ch-step-detail">下单前在 ETF 雷达核对折溢价和低费替身，需要深入研究龙头公司时打开 {total_pool} 股 7 维筛选器。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-head" id="sec-guide-pitfalls">
+      <h2>② 新手最常踩的 8 大真实避坑清单</h2>
+      <span class="sec-sub">避开这 8 个常见误区，就能守住绝大部分本金与收益</span>
+    </div>
+    <section class="pitfall-grid">{pitfall_cards}</section>
+
+    <div class="sec-head" id="sec-guide-glossary">
+      <h2>③ Top {len(GLOSSARY_TERMS)} 高频金融关键词白话速查</h2>
+      <strong id="guide-term-count" class="sec-sub" role="status">共 {len(GLOSSARY_TERMS)} 个高频词条</strong>
+    </div>
+    <section class="filter-panel">
+      <div class="filter-row">
+        <div class="search-wrap">
+          <input type="search" id="guide-term-search" class="search-input" placeholder="输入关键词实时搜索（如 溢价、久期、红利税、ERP、逆回购、破净）…" autocomplete="off">
+          <button type="button" id="guide-term-clear" class="search-clear" aria-label="清空词条搜索" hidden>×</button>
+        </div>
+        <button type="button" class="btn btn-sm" id="guide-term-reset">重置</button>
+      </div>
+      <div class="filter-row">{cat_pills}</div>
+    </section>
+    <section class="guide-term-grid" id="guide-term-grid">{term_cards}</section>
+    <div class="panel-card empty-state guide-empty" id="guide-term-empty" hidden>
+      <div class="empty-title">未找到匹配的金融词条</div>
+      <div class="empty-sub">换个简短关键词试试，或点击下方按钮查看全部词条。</div>
+      <button type="button" class="btn btn-sm" id="guide-empty-reset">显示全部词条</button>
+    </div>
     """
 
 
@@ -4654,6 +6166,19 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     etf_data = json.loads(etf_path.read_text(encoding="utf-8")) if etf_path.is_file() else None
     dossiers_data = json.loads(dossiers_path.read_text(encoding="utf-8")) if dossiers_path.is_file() else None
 
+    all_chs: list[dict[str, Any]] = (
+        [c for c in (channels_data.get("channels") or []) if isinstance(c, dict) and str(c.get("id", "")).strip()]
+        if isinstance(channels_data, dict)
+        else []
+    )
+    ch_total = len(all_chs)
+    etf_total = len((etf_data or {}).get("etfs") or []) if isinstance(etf_data, dict) else 0
+    default_dossier_date = (
+        str((dossiers_data or {}).get("as_of_date") or "").strip()
+        or str(eq_state.get("as_of_cst") or "").strip()[:10]
+        or "最新班次"
+    )
+
     # Pre-load equity flagship metadata & markdowns (with defensive rollover fallback)
     # so dynamic stock pool counts are known before building manifest, navs & reports.
     eq_specs = [
@@ -4665,8 +6190,10 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     eq_flagship_mds: dict[str, str] = {}
     for eq_key, _, eq_mod, _, _ in eq_specs:
         meta = eq_mod.load_meta()
-        paths = eq_mod.resolve_flagship_paths(meta)
-        md_path = paths[0]
+        if hasattr(eq_mod, "resolve_flagship_md"):
+            md_path = eq_mod.resolve_flagship_md(meta)
+        else:
+            md_path = eq_mod.resolve_flagship_paths(meta)[0]
         if not md_path.is_file():
             fallback_md = EQUITY_DIR / f"{eq_key}_market_report_latest.md"
             if fallback_md.is_file():
@@ -4757,6 +6284,9 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         market_attr="gold",
         doc_kind="flagship",
         total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
         toc_items=g_toc,
         show_chart_modal=True,
         footer_ts=R.gold_report.REPORT_SHORT_DATE,
@@ -4768,6 +6298,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 chart_count=g_charts,
                 has_toc=bool(g_toc),
                 total_pool=total_pool,
+                channel_count=ch_total,
             ),
             cover_html=g_cover,
             body_html=g_body,
@@ -4812,6 +6343,9 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
             market_attr=m_slug,
             doc_kind="flagship",
             total_pool=total_pool,
+            channel_count=ch_total,
+            channels_list=all_chs,
+            etf_count=etf_total,
             toc_items=toc,
             show_chart_modal=True,
             footer_ts=str(meta.get("benchmark_time", "")).split("（")[0],
@@ -4823,6 +6357,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                     chart_count=n_charts,
                     has_toc=bool(toc),
                     total_pool=total_pool,
+                    channel_count=ch_total,
                 ),
                 cover_html=cover_html,
                 body_html=body_clean,
@@ -4961,6 +6496,9 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 doc_kind="daily",
                 edition_attr=item.edition_type,
                 total_pool=total_pool,
+                channel_count=ch_total,
+                channels_list=all_chs,
+                etf_count=etf_total,
                 toc_items=item.toc,
                 show_chart_modal=(item.chart_count > 0),
                 footer_ts=f"{item.date_str} {item.session_label}",
@@ -4986,8 +6524,11 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         market_attr="overview",
         doc_kind="tool",
         total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
         footer_ts=next(iter(unique_benchmarks)) if len(unique_benchmarks) == 1 else "",
-        content_html=build_screener_page(stocks, screener_benchmarks),
+        content_html=build_screener_page(stocks, screener_benchmarks, default_date=default_dossier_date),
     )
     (out_dir / "screener.html").write_text(screener_html, encoding="utf-8")
 
@@ -5001,6 +6542,9 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         market_attr="overview",
         doc_kind="tool",
         total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
         footer_ts=eq_as_of_disp,
         content_html=build_scorecard_page(R, slug_map, gold_snap=gold_snap),
     )
@@ -5017,6 +6561,9 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         market_attr="overview",
         doc_kind="tool",
         total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
         footer_ts=eq_as_of_disp,
         content_html=build_archive_page(
             dailies, flagship_info, stock_counts, total_pool, total_flagship_charts
@@ -5025,23 +6572,27 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     (out_dir / "archive.html").write_text(archive_html, encoding="utf-8")
 
     # ------------------------------------------------------------------
-    # C2. Build Multi-Asset Personal Channels (channels.html + channels/<id>.html) & ETF Radar (etfs.html)
+    # C2. Build Multi-Asset Personal Channels (channels.html + channels/<id>.html),
+    #     ETF Radar (etfs.html) & Beginner 3-Min Guide (guide.html)
     # ------------------------------------------------------------------
+    ch_page_title = f"{ch_total} 大个人合规多元投资渠道总览" if ch_total else "个人合规多元投资渠道总览"
     channels_html = render_page_shell(
-        title="8 大个人合规多元投资渠道总览",
+        title=ch_page_title,
         active_nav="channels",
         base_prefix="",
         market_attr="overview",
         doc_kind="tool",
         total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
         footer_ts=eq_as_of_disp,
-        content_html=build_channels_page(channels_data),
+        content_html=build_channels_page(channels_data, etf_data=etf_data, eq_state=eq_state),
     )
     (out_dir / "channels.html").write_text(channels_html, encoding="utf-8")
 
     channel_detail_pages = 0
     if isinstance(channels_data, dict):
-        all_chs = [c for c in (channels_data.get("channels") or []) if isinstance(c, dict) and str(c.get("id", "")).strip()]
         for ch in all_chs:
             cid = str(ch["id"]).strip()
             ch_title = str(ch.get("name") or cid)
@@ -5052,24 +6603,44 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 market_attr="overview",
                 doc_kind="tool",
                 total_pool=total_pool,
+                channel_count=ch_total,
+                channels_list=all_chs,
+                etf_count=etf_total,
                 footer_ts=str(channels_data.get("as_of_label") or eq_as_of_disp),
                 content_html=build_channel_detail_page(ch, all_chs, channels_data, etf_data=etf_data),
             )
             (out_dir / "channels" / f"{cid}.html").write_text(detail_html, encoding="utf-8")
             channel_detail_pages += 1
 
-    etf_total = len((etf_data or {}).get("etfs") or [])
     etfs_html = render_page_shell(
-        title=f"全球 {etf_total} 只重点 ETF 三通道深度雷达" if etf_total else "全球重点 ETF 深度雷达",
+        title=f"全球 {etf_total} 只重点 ETF 多通道深度雷达" if etf_total else "全球重点 ETF 深度雷达",
         active_nav="etfs",
         base_prefix="",
         market_attr="overview",
         doc_kind="tool",
         total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
         footer_ts=eq_as_of_disp,
-        content_html=build_etfs_page(etf_data),
+        content_html=build_etfs_page(etf_data, channel_count=ch_total),
     )
     (out_dir / "etfs.html").write_text(etfs_html, encoding="utf-8")
+
+    guide_html = render_page_shell(
+        title="新手 3 分钟入门指南与高频关键词速查",
+        active_nav="guide",
+        base_prefix="",
+        market_attr="overview",
+        doc_kind="tool",
+        total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
+        footer_ts=eq_as_of_disp,
+        content_html=build_guide_page(gold_snap, eq_state, channels_data, etf_data, total_pool=total_pool),
+    )
+    (out_dir / "guide.html").write_text(guide_html, encoding="utf-8")
 
     # ------------------------------------------------------------------
     # F. Build Global Weather Cockpit (index.html)
@@ -5081,6 +6652,9 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         market_attr="overview",
         doc_kind="overview",
         total_pool=total_pool,
+        channel_count=ch_total,
+        channels_list=all_chs,
+        etf_count=etf_total,
         footer_ts=eq_as_of_disp,
         content_html=build_cockpit_page(
             gold_snap,
@@ -5099,6 +6673,8 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         "flagship_total_charts": sum(flagship_stats.values()),
         "daily_pages": len(dailies),
         "latest_pages": len(latest_by_market),
+        "channel_detail_pages": channel_detail_pages,
+        "etf_total": etf_total,
         "daily_total_charts": total_daily_charts,
         "screener_total": len(stocks),
         "screener_by_market": dict(stock_counts),
@@ -5119,9 +6695,11 @@ def main() -> None:
     print(
         f"Built static portal -> {summary['out_dir']}\n"
         f"  HTML pages:      {summary['html_files']} "
-        f"(6 core + 4 flagships + {summary['daily_pages']} dated dailies + {summary['latest_pages']} canonical latest)\n"
+        f"(7 core + {summary['channel_detail_pages']} channel details + 4 flagships + "
+        f"{summary['daily_pages']} dated dailies + {summary['latest_pages']} canonical latest)\n"
         f"  Flagship charts: {summary['flagship_total_charts']} {summary['flagship_charts']}\n"
         f"  Daily charts:    {summary['daily_total_charts']}\n"
+        f"  ETF radar:       {summary['etf_total']} ETFs\n"
         f"  Screener pool:   {summary['screener_total']} {summary['screener_by_market']}"
     )
 

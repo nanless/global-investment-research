@@ -30,9 +30,7 @@
       "first_pass_strict": true,
       "strict_retries": 0,
       "strict_errors_fixed": [],
-      "pdf_pages": 12,
       "master_updated": true,
-      "master_pdf_pages": 22,
       "scores": {
         "data_freshness_and_zero_hallucination": 5,
         "prior_forecast_calibration": 5,
@@ -81,9 +79,7 @@
         "首次 PDF 抽检抓出图 2 左侧高亮标签超宽（10.75–11.40 字）碰撞琥珀竖条，精简至 <=8.0 字重编消除",
         "盲审后顺手修复 AUDIT_LOG 第二节同步至 20:20、正文二次上冲/VIX冲破30/花旗昨日日期与 Layer 0–1 降密去行话"
       ],
-      "pdf_pages": 11,
       "master_updated": false,
-      "master_pdf_pages": 22,
       "scores": {
         "data_freshness_and_zero_hallucination": 4,
         "prior_forecast_calibration": 4,
@@ -142,9 +138,7 @@
       "first_pass_strict": true,
       "strict_retries": 0,
       "strict_errors_fixed": [],
-      "pdf_pages": 11,
       "master_updated": false,
-      "master_pdf_pages": 22,
       "scores": {
         "data_freshness_and_zero_hallucination": 5,
         "prior_forecast_calibration": 4,
@@ -203,7 +197,6 @@
       "first_pass_strict": false,
       "lint_retries": 1,
       "visual_retries": 0,
-      "pdf_pages": 11,
       "master_updated": false,
       "lint_errors_fixed": [
         "预检 Gate 1 在 Layer 0–1 DAILY_SIGNAL_NOISE 拦下 1 处禁词“提保”，立即改为白话“提高保证金”后一次通过 --precheck --strict、build_daily.py 与全量 7 门禁 --strict（0 错 0 警，满版 11 页零孤页，末页 2,396 字）"
@@ -261,7 +254,6 @@
       "first_pass_strict": true,
       "lint_retries": 0,
       "visual_retries": 2,
-      "pdf_pages": 10,
       "master_updated": false,
       "lint_errors_fixed": [
         "首次 --precheck --strict 与全量 7 门禁 --strict 均 0 错 0 警（lint_retries=0）；初编 PDF 抽检触发 2 次图 1 参考线防撞调优（visual_retries=2）；独立盲审（24/30）揪出 4 处实质偏差后全部修正并重编通过全量 7 门禁与 PDF 复核"
@@ -397,7 +389,6 @@
       "first_pass_strict": true,
       "lint_retries": 0,
       "visual_retries": 1,
-      "pdf_pages": 7,
       "master_updated": false,
       "lint_errors_fixed": [
         "收敛主刊首刊首次 --precheck --strict 与全量 7 门禁 --strict 均 0 错 0 警（lint_retries=0）；独立盲审（24/30）揪出图 1 今欧低 $3,552 标签上跳横跨 $3,590 绿色虚线（A1）、D 类卡标题“三大鲜活样本”与 2 条正文不符（A2）及 B2 卡克价表述歧义，全部修正并重编 7 页 PDF/DOCX/HTML（visual_retries=1）通过 --strict 与第 3–4 页目检"
@@ -416,7 +407,7 @@
         {
           "claim": "11/26 07:30 追踪：【感恩节 Mode A 切换与 6 项滞后表全清零】切入感恩节 Mode A 并 100% 清零 6 项早报滞后官方表",
           "outcome": "partial",
-          "evidence": "准确切入感恩节 Mode A（沿用 11/25 美盘四关、vix_live=null、明示 CME 停盘 3.5h），并集中核销 4.5/6 项（11/25 GLD 1,027.88t / +0.57t、11/25 GDX NAV $73.70、11/25 LBMA 金 $3,533.20/$3,466.35 & 银 $39.40、11/24 FRED HY/CCC OAS 372/1,405bp、11/26 四大行 783.07 / 周大福 1,068 / CFETS 6.6736）；但 Cboe VIX_History.csv 11/25 原表与 11/25 FRED OAS 因美盘休市尚未核销，已透明挂账次晨"
+          "evidence": "准确切入感恩节 Mode A（沿用 11/25 美盘四关、vix_live=null、明示 CME 停盘 3.5h），并集中核销 4.5/6 项（11/25 GLD 1,027.88t / +0.57t、11/25 GDX NAV $73.70、11/25 LBMA 金 $3,533.20/$3,466.35 & 银 $39.40、11/24 FRED HY/CCC OAS 372/1,405bp、11/26 四大行 783.07 / 周大福 1,068 / CFETS 6.7096）；但 Cboe VIX_History.csv 11/25 原表与 11/25 FRED OAS 因美盘休市尚未核销，已透明挂账次晨"
         },
         {
           "claim": "11/26 07:30 追踪：【国内早盘补涨验真与 SCORECARD 结案】核对 11/26 SGE 官收、SHFE pm20261126.dat 席位、四大行调价与 16:00 山东黄金业绩会并结案 SCORECARD",
@@ -488,7 +479,7 @@
       "tier_c_proposals": [],
       "next_run_watch": [
         "【晚间挂账 6 项核销与老铺除净校验】清零 11/26 LBMA 定盘、SGE 加权均价与递延费、SHFE 结算价与 pm20261126.dat 席位、国内黄金 ETF 11/26 净值份额、山东黄金 16:00 说明会全文、11/25 FRED HY/CCC OAS 及老铺 06181.HK 11/26 官收与今日除净参考价；重试 Cboe VIX_History.csv 11/25 原始行（距 3 日核销窗余 2 日）",
-        "【黑五半日市前瞻、欧央行纪要与 07:30 东京 CPI】封账今晚 20:30 欧洲央行 10 月纪要与明晨 03:30–07:00 CME 停盘复市行情；跟踪 07:30 东京核心 CPI；明示黑五半日市周六 02:00 美股 / 03:00 美债 / 03:45 COMEX 提前收、第 4 关门槛滚降至 $3,589.85、第 1 关差 1bp 与工行 0 费率最后 1 天（11/28 到期）",
+        "【黑五半日市前瞻、欧央行纪要与 07:30 东京 CPI】封账今晚 20:30 欧洲央行 10 月纪要与明晨 03:30–07:00 CME 停盘复市行情；跟踪 07:30 东京核心 CPI；明示黑五半日市周六 02:00 美股 / 03:00 美债 / 03:45 COMEX 提前收、第 4 关门槛滚降至 $3,589.85、第 1 关差 1bp 与工行 0 费率已于 11/25 官宣延至 2027-03-31（定投至 2027-12-31）",
         "【图 1 零碰撞 + 收敛主刊零视觉返工冲刺】发前逐项核对图 1 参考线胶囊与数据点相对高度、PERSONA 标题计数一致及克价单位显式标注，冲刺 lint_retries=0 且 visual_retries=0"
       ]
     }
