@@ -578,6 +578,135 @@ class OperationalRegressionTest(unittest.TestCase):
             (base / "projects" / "fixture-0.json").unlink()
             self.assertIn("cannot verify", install_sidecars.check_registry(registry, rendered)[0])
 
+    def test_collect_data_caveats_sanitizes_internal_paths_and_filters_by_market(self):
+        gold_snap = {
+            "data_caveats": [
+                {
+                    "id": "gold_explicit_item",
+                    "market": "gold",
+                    "category": "delayed_official",
+                    "severity": "info",
+                    "item": "伦敦金定盘与 data_snapshot.json 核销",
+                    "detail": "参考 /Users/alice/secret.csv 与 file:///tmp/VIX_History.csv 核对 **官源** `audit_ledger.md`",
+                    "impact": "不影响红灯结论",
+                    "next_review": "2026-11-26_1800",
+                }
+            ],
+            "vix_daily_row_checks": {
+                "2026-11-25": {
+                    "status": "provisional_close",
+                    "note": "Cboe 官方历史 CSV（VIX_History.csv）仍止于 11/24，暂采官网收盘 28.29。",
+                }
+            },
+        }
+        eq_state = {
+            "data_caveats": [
+                {
+                    "id": "us_provisional",
+                    "market": "us_stock",
+                    "category": "provisional_close",
+                    "severity": "high",
+                    "item": "美股盘后终盘待封账",
+                    "detail": "来自 market_state.json 的挂账",
+                    "impact": "次级复核项",
+                    "next_review": "2026-11-27_0730",
+                }
+            ],
+            "pending_backfills": [
+                {
+                    "market": "a_share",
+                    "item": "11/25 两融终值（参考 build_site.py）",
+                    "due_session": "2026-11-26_1800",
+                },
+                {
+                    "market": "us_stock",
+                    "item": "应被已有美股显式挂账跳过",
+                    "due_session": "2026-11-26_1800",
+                },
+            ],
+            "publication_exceptions": [
+                {
+                    "market": "cross",
+                    "title": "感恩节休市编排",
+                    "detail": "美股切守望刊，其他三市照常",
+                }
+            ],
+        }
+        all_caveats = build_site.collect_data_caveats(gold_snap, eq_state)
+        self.assertEqual(all_caveats[0]["severity"], "high")
+        self.assertEqual(all_caveats[0]["market"], "us-stock")
+        self.assertEqual(all_caveats[0]["due_label"], "预计 11/27 07:30 早报核销")
+        titles = [c["title"] for c in all_caveats]
+        self.assertTrue(any("恐慌指数" in t for t in titles))
+        self.assertTrue(any("两融终值" in t for t in titles))
+        self.assertFalse(any("应被已有美股显式挂账跳过" in t for t in titles))
+
+        joined = " ".join(f"{c['title']} {c['detail']} {c['impact']}" for c in all_caveats)
+        for leak in ("VIX_History.csv", "data_snapshot.json", "market_state.json", "audit_ledger.md", "build_site.py", "file://", "/Users/", "**", "`"):
+            self.assertNotIn(leak, joined)
+
+        gold_only = build_site.collect_data_caveats(gold_snap, eq_state, market="gold")
+        self.assertTrue(all(c["market"] in ("gold", "cross") for c in gold_only))
+        self.assertTrue(any(c["market"] == "cross" for c in gold_only))
+
+    def test_extract_all_stocks_parses_numeric_fields_cleanly(self):
+        a_md = (
+            "### 5.2\n"
+            "| 标的 | 现价 | 估值 | 锚 | 结论 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 招商银行 `600036` | 43.32 | 7.3x | 安全锚：40.00–42.00 元 | 🟢 当下底座 |\n"
+            "### 5.3\n"
+            "## 附表二\n"
+            "| 赛道 | 标的 | 价格 | 估值 | 诊断 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 银行 | 招商银行 `600036` | 43.32（11/25 收） | 7.3x / 0.92x / 4.7% / -5.0% | 🟢 当下底座；派息率 35% |\n"
+        )
+        hk_md = (
+            "## 附表二\n"
+            "| 赛道 | 标的 | 价格 | 估值 | 诊断 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 能源 | 中国海油 `00883` | 18.50（1,000 股） | TTM PE 6.8x / 6.2% / 无 A 股 | 🟢 当下底座；锚 17.0 下 |\n"
+        )
+        us_md = (
+            "## 附表二\n"
+            "| 赛道 | 标的 | 价格 | 估值 | 诊断 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 矿业 | **纽蒙特** `NEM` | $99.95 (-0.77%) | FWD PE 10.7x · 🟡 观察（禁新买） | 股息 2.5%，存量稳拿；锚 $85–$90 |\n"
+        )
+        stocks = build_site.extract_all_stocks(
+            a_md,
+            hk_md,
+            us_md,
+            ah_benchmarks=[{"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.2}],
+        )
+        by_code = {s["code"]: s for s in stocks}
+        self.assertEqual(by_code["600036"]["price_num"], 43.32)
+        self.assertEqual(by_code["600036"]["pe_num"], 7.3)
+        self.assertEqual(by_code["600036"]["div_pct"], 4.7)
+        self.assertEqual(by_code["600036"]["ah_pct"], -5.0)
+        self.assertEqual(by_code["600036"]["anchor_low"], 40.0)
+        self.assertEqual(by_code["600036"]["anchor_high"], 42.0)
+        self.assertEqual(by_code["600036"]["anchor_gap_pct"], 5.7)
+        self.assertFalse(by_code["600036"]["is_gold_locked"])
+
+        self.assertEqual(by_code["00883.HK"]["pe_num"], 6.8)
+        self.assertEqual(by_code["00883.HK"]["div_pct"], 6.2)
+        self.assertEqual(by_code["00883.HK"]["ah_pct"], 69.2)
+        self.assertEqual(by_code["00883.HK"]["anchor_gap_pct"], 8.8)
+
+        self.assertEqual(by_code["NEM"]["price_num"], 99.95)
+        self.assertEqual(by_code["NEM"]["pe_num"], 10.7)
+        self.assertEqual(by_code["NEM"]["div_pct"], 2.5)
+        self.assertEqual(by_code["NEM"]["anchor_low"], 85.0)
+        self.assertEqual(by_code["NEM"]["anchor_high"], 90.0)
+        self.assertTrue(by_code["NEM"]["is_gold_locked"])
+
+        for st in stocks:
+            for k in ("market", "market_label", "sector", "name", "code", "price", "valuation", "color", "action_label", "summary"):
+                self.assertIsInstance(st[k], str)
+                self.assertNotIn("**", st[k])
+                self.assertNotIn("`", st[k])
+
 
 if __name__ == "__main__":
     unittest.main()

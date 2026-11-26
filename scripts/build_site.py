@@ -29,6 +29,7 @@ import types
 import urllib.parse
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from math import isfinite
 from pathlib import Path
 from typing import Any
@@ -134,15 +135,16 @@ MARKET_META = {
 FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="60%" stop-color="#1e3a5f"/>
-      <stop offset="100%" stop-color="#b45309"/>
+      <stop offset="0%" stop-color="#141a24"/>
+      <stop offset="100%" stop-color="#222b3a"/>
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="14" fill="url(#g)"/>
-  <circle cx="32" cy="32" r="21" fill="none" stroke="#fbbf24" stroke-width="2.4" opacity="0.9"/>
-  <polygon points="32,14 38,32 32,50 26,32" fill="#fbbf24"/>
-  <circle cx="32" cy="32" r="4" fill="#0f172a"/>
+  <circle cx="32" cy="32" r="21" fill="none" stroke="#d4a238" stroke-width="2.2" opacity="0.92"/>
+  <circle cx="32" cy="32" r="16" fill="none" stroke="#d4a238" stroke-width="0.9" opacity="0.45"/>
+  <polygon points="32,12 37.5,32 32,52 26.5,32" fill="#d4a238"/>
+  <polygon points="12,32 32,27.5 52,32 32,36.5" fill="#d4a238" opacity="0.35"/>
+  <circle cx="32" cy="32" r="3.8" fill="#141a24"/>
 </svg>
 """
 
@@ -314,6 +316,7 @@ class DailyItem:
     body_html: str = ""
     footer_note: str = ""
     chart_count: int = 0
+    read_minutes: int = 3
     edition_type: str = "main"
     toc: list[tuple[int, str, str]] = field(default_factory=list)
 
@@ -748,6 +751,40 @@ def _normalize_chart_boxes(html_str: str) -> str:
     )
 
 
+_BARE_URL_LINK_RE = re.compile(
+    r"<a\b([^>]*)>(\s*https?://[^<\s][^<]*?)</a>",
+    flags=re.IGNORECASE,
+)
+
+
+def _shorten_bare_url_links(html_seg: str) -> str:
+    """Shorten long bare URL display labels (>42 chars) inside <a> to '<domain> ↗' while preserving href/title."""
+    def _repl(m: re.Match) -> str:
+        attrs = m.group(1) or ""
+        raw_label = html_mod.unescape(m.group(2)).strip()
+        if len(raw_label) <= 42:
+            return m.group(0)
+        netloc = urllib.parse.urlsplit(raw_label).netloc.strip()
+        if netloc.lower().startswith("www."):
+            netloc = netloc[4:]
+        if not netloc:
+            return m.group(0)
+        if not re.search(r'\btitle\s*=', attrs, flags=re.IGNORECASE):
+            attrs = f'{attrs} title="{esc(raw_label)}"'
+        return f"<a{attrs}>{esc(netloc)} ↗</a>"
+
+    return _BARE_URL_LINK_RE.sub(_repl, html_seg)
+
+
+def estimate_reading_minutes(body_html: str) -> int:
+    """Estimate Chinese + Latin reading duration (420 units/min, floor 2 min)."""
+    no_svg = _SVG_SPLIT_RE.sub(" ", body_html or "")
+    plain = html_mod.unescape(strip_tags(no_svg))
+    cjk_count = len(re.findall(r"[\u4e00-\u9fff]", plain))
+    latin_words = len(re.findall(r"[A-Za-z0-9]+", plain))
+    return max(2, int(round((cjk_count + latin_words) / 420.0)))
+
+
 def sanitize_and_extract_toc(
     body_html: str,
     *,
@@ -771,9 +808,11 @@ def sanitize_and_extract_toc(
             lambda m: f'href="{esc(_rewrite_href(m.group(1), base_prefix, slug_map, ctx_market))}"',
             seg,
         )
-        # 3. Strip any leaked local paths in text
+        # 3. Shorten long bare URL display labels (>42 chars) to '<domain> ↗'
+        seg = _shorten_bare_url_links(seg)
+        # 4. Strip any leaked local paths in text
         seg = _strip_local_paths_in_text(seg)
-        # 4. Restore any literal HTML comments that were inside code spans/blocks
+        # 5. Restore any literal HTML comments that were inside code spans/blocks
         seg = restore_backticked_comments(seg)
         segments[i] = seg
 
@@ -896,9 +935,199 @@ def _parse_app2_rows(md_text: str) -> list[list[str]]:
     return rows
 
 
-def extract_all_stocks(a_md: str, hk_md: str, us_md: str) -> list[dict[str, str]]:
-    """Extract all flagship pool stocks across A-Share, HK-Stock, and US-Stock with exact 4-color ratings."""
-    stocks: list[dict[str, str]] = []
+def _to_pos_float(raw: str) -> float | None:
+    try:
+        v = float(raw.replace(",", "").replace("−", "-"))
+    except ValueError:
+        return None
+    return v if isfinite(v) and v > 0 else None
+
+
+def _parse_price_num(price_str: str) -> float | None:
+    head = re.split(r"[（(]", str(price_str or ""), maxsplit=1)[0].strip()
+    m_rng = re.search(
+        r"(?:约\s*)?[\$￥¥]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*[–—\-~]\s*[\$￥¥]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+        head,
+    )
+    if m_rng:
+        lo, hi = _to_pos_float(m_rng.group(1)), _to_pos_float(m_rng.group(2))
+        if lo is not None and hi is not None:
+            return round((lo + hi) / 2.0, 2)
+    m_one = re.search(r"[\$￥¥]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)", head)
+    if m_one:
+        return _to_pos_float(m_one.group(1))
+    return None
+
+
+def _parse_pe_num(valuation: str, market: str) -> float | None:
+    txt = str(valuation or "").strip()
+    if not txt:
+        return None
+    m_lbl = re.search(
+        r"(?:(?:TTM|FWD|前瞻|静态|动态)?\s*PE\s*[（(]?(?:TTM|FWD)?[）)]?\s*[:：]?\s*[~≈<>≤≥]?\s*)([0-9]+(?:\.[0-9]+)?)",
+        txt,
+        flags=re.IGNORECASE,
+    )
+    if m_lbl:
+        v = _to_pos_float(m_lbl.group(1))
+        return round(v, 1) if (v is not None and v < 5000) else None
+    target = txt.split("/", 1)[0].strip() if market in ("a-share", "hk-stock") else txt
+    if any(tok in target for tok in ("亏损", "负值", "—", "核心溢利")):
+        return None
+    m_x = re.search(
+        r"[~≈<>≤≥]?\s*([0-9]+(?:\.[0-9]+)?)(?:\s*[–—\-~]\s*[0-9]+(?:\.[0-9]+)?)?\s*x\+?",
+        target,
+        flags=re.IGNORECASE,
+    )
+    if m_x:
+        v = _to_pos_float(m_x.group(1))
+        return round(v, 1) if (v is not None and v < 5000) else None
+    return None
+
+
+def _parse_div_pct(valuation: str, summary: str, market: str) -> float | None:
+    for src in (str(valuation or ""), str(summary or "")):
+        # Ignore 派息率 / 分红率 payout ratios; match explicit dividend yield labels
+        cleaned = re.sub(r"(?:派息率|分红率)\s*[~≈约]?\s*[0-9.]+%", "", src)
+        m = re.search(
+            r"(?:股息率|股息|息率|(?<![高降加升派分])息)\s*[~≈约]?\s*([0-9]+(?:\.[0-9]+)?)(?:\s*[–—\-~]\s*[0-9.]+)?%",
+            cleaned,
+        )
+        if m:
+            v = _to_pos_float(m.group(1))
+            if v is not None and v <= 25.0:
+                return round(v, 2)
+        m_rev = re.search(r"([0-9]+(?:\.[0-9]+)?)%\s*(?:高?息|股息)", cleaned)
+        if m_rev:
+            v = _to_pos_float(m_rev.group(1))
+            if v is not None and v <= 25.0:
+                return round(v, 2)
+    parts = [p.strip() for p in str(valuation or "").split("/")]
+    idx = 2 if (market == "a-share" and len(parts) >= 3) else (1 if (market == "hk-stock" and len(parts) >= 2) else -1)
+    if idx != -1:
+        seg = parts[idx]
+        if "AH" not in seg.upper() and not seg.startswith(("+", "-", "−")):
+            m_seg = re.search(r"([0-9]+(?:\.[0-9]+)?)(?:\s*[–—\-~]\s*[0-9.]+)?%", seg)
+            if m_seg:
+                v = _to_pos_float(m_seg.group(1))
+                if v is not None and v <= 25.0:
+                    return round(v, 2)
+    return None
+
+
+def _parse_ah_pct(
+    valuation: str,
+    summary: str,
+    market: str,
+    code: str,
+    ah_lookup: dict[str, float],
+) -> float | None:
+    for src in (str(valuation or ""), str(summary or "")):
+        m = re.search(r"AH\s*(?:溢价|折价|倒挂)?\s*[:：]?\s*([+\-−]?[0-9]+(?:\.[0-9]+)?)%", src, flags=re.IGNORECASE)
+        if m:
+            try:
+                v = float(m.group(1).replace("−", "-"))
+                if isfinite(v) and -90.0 <= v <= 500.0:
+                    return round(v, 1)
+            except ValueError:
+                pass
+    if market == "a-share":
+        parts = [p.strip() for p in str(valuation or "").split("/")]
+        if len(parts) >= 4:
+            m_tail = re.fullmatch(r"([+\-−][0-9]+(?:\.[0-9]+)?)%", parts[3])
+            if m_tail:
+                try:
+                    v = float(m_tail.group(1).replace("−", "-"))
+                    if isfinite(v) and -90.0 <= v <= 500.0:
+                        return round(v, 1)
+                except ValueError:
+                    pass
+    if code and code in ah_lookup:
+        return round(ah_lookup[code], 1)
+    return None
+
+
+def _parse_anchor(summary: str, price_num: float | None) -> tuple[float | None, float | None, float | None]:
+    txt = str(summary or "")
+    lo: float | None = None
+    hi: float | None = None
+    m_rng = re.search(
+        r"(?:安全锚|重估锚|极值锚|深坑锚|买点锚|锚)[：:\s≤<约]*[\$￥¥]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*[–—\-~]\s*[\$￥¥]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+        txt,
+    )
+    if m_rng:
+        lo, hi = _to_pos_float(m_rng.group(1)), _to_pos_float(m_rng.group(2))
+        if lo is not None and hi is not None and lo > hi:
+            lo, hi = hi, lo
+    else:
+        m_one = re.search(
+            r"(?:安全锚|重估锚|极值锚|深坑锚|买点锚|锚)[：:\s≤<约]*[\$￥¥]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+            txt,
+        )
+        if m_one:
+            v = _to_pos_float(m_one.group(1))
+            lo, hi = v, v
+        else:
+            m_lt = re.search(r"[≤<]\s*[\$￥¥]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:元|港元|美元)?\s*重估", txt)
+            if m_lt:
+                v = _to_pos_float(m_lt.group(1))
+                lo, hi = v, v
+    if lo is None or hi is None:
+        return None, None, None
+    gap: float | None = None
+    if price_num is not None and price_num > 0:
+        mid = (lo + hi) / 2.0
+        if mid > 0:
+            raw_gap = round((price_num - mid) / mid * 100.0, 1)
+            if -80.0 <= raw_gap <= 250.0:
+                gap = raw_gap
+    return round(lo, 2), round(hi, 2), gap
+
+
+def _enrich_stock_metrics(entry: dict[str, Any], ah_lookup: dict[str, float]) -> dict[str, Any]:
+    price_num = _parse_price_num(entry["price"])
+    pe_num = _parse_pe_num(entry["valuation"], entry["market"])
+    div_pct = _parse_div_pct(entry["valuation"], entry["summary"], entry["market"])
+    ah_pct = _parse_ah_pct(entry["valuation"], entry["summary"], entry["market"], entry["code"], ah_lookup)
+    anchor_low, anchor_high, anchor_gap_pct = _parse_anchor(entry["summary"], price_num)
+    comb_txt = f"{entry['valuation']} {entry['summary']}"
+    is_gold_locked = ("禁新买" in comb_txt) or ("黄金红灯" in comb_txt)
+    entry.update(
+        {
+            "price_num": price_num,
+            "pe_num": pe_num,
+            "div_pct": div_pct,
+            "ah_pct": ah_pct,
+            "anchor_low": anchor_low,
+            "anchor_high": anchor_high,
+            "anchor_gap_pct": anchor_gap_pct,
+            "is_gold_locked": is_gold_locked,
+        }
+    )
+    return entry
+
+
+def extract_all_stocks(
+    a_md: str,
+    hk_md: str,
+    us_md: str,
+    *,
+    ah_benchmarks: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Extract all flagship pool stocks across A-Share, HK-Stock, and US-Stock with 4-color ratings & numeric helpers."""
+    ah_lookup: dict[str, float] = {}
+    for row in ah_benchmarks or []:
+        if not isinstance(row, dict):
+            continue
+        pct = _safe_float(row.get("ah_premium_pct"))
+        if pct is None:
+            continue
+        for k in ("a", "h"):
+            c = str(row.get(k) or "").strip()
+            if c:
+                ah_lookup[c] = pct
+
+    stocks: list[dict[str, Any]] = []
 
     # --- 1. A-Share: map colors from ### 5.2, then merge with ## 附表二 ---
     a_color_map: dict[str, tuple[str, str]] = {}
@@ -936,19 +1165,22 @@ def extract_all_stocks(a_md: str, hk_md: str, us_md: str) -> list[dict[str, str]
         if anchor_txt and anchor_txt not in summary:
             summary = f"{summary}｜{anchor_txt}"
         stocks.append(
-            {
-                "market": "a-share",
-                "market_label": "A股",
-                "sector": sector,
-                "name": name,
-                "code": code,
-                "price": price,
-                "valuation": valuation,
-                "color": col,
-                "action_label": COLOR_LABELS[col],
-                "summary": summary,
-                "report_url": "reports/a-share.html",
-            }
+            _enrich_stock_metrics(
+                {
+                    "market": "a-share",
+                    "market_label": "A股",
+                    "sector": sector,
+                    "name": name,
+                    "code": code,
+                    "price": price,
+                    "valuation": valuation,
+                    "color": col,
+                    "action_label": COLOR_LABELS[col],
+                    "summary": summary,
+                    "report_url": "reports/a-share.html",
+                },
+                ah_lookup,
+            )
         )
 
     # --- 2. HK-Stock: colors directly in ## 附表二 col 4 ---
@@ -970,19 +1202,22 @@ def extract_all_stocks(a_md: str, hk_md: str, us_md: str) -> list[dict[str, str]
             summary_raw,
         ).strip()
         stocks.append(
-            {
-                "market": "hk-stock",
-                "market_label": "港股",
-                "sector": sector,
-                "name": name,
-                "code": code,
-                "price": price,
-                "valuation": valuation,
-                "color": col,
-                "action_label": COLOR_LABELS[col],
-                "summary": summary,
-                "report_url": "reports/hk-stock.html",
-            }
+            _enrich_stock_metrics(
+                {
+                    "market": "hk-stock",
+                    "market_label": "港股",
+                    "sector": sector,
+                    "name": name,
+                    "code": code,
+                    "price": price,
+                    "valuation": valuation,
+                    "color": col,
+                    "action_label": COLOR_LABELS[col],
+                    "summary": summary,
+                    "report_url": "reports/hk-stock.html",
+                },
+                ah_lookup,
+            )
         )
 
     # --- 3. US-Stock: colors directly in ## 附表二 col 3 ---
@@ -1000,22 +1235,506 @@ def extract_all_stocks(a_md: str, hk_md: str, us_md: str) -> list[dict[str, str]
         special_tag = "（黄金红灯禁新买）" if "禁新买" in val_plain else ""
         summary = clean_md_inline_plain(cells[4]) + special_tag
         stocks.append(
-            {
-                "market": "us-stock",
-                "market_label": "美股",
-                "sector": sector,
-                "name": name,
-                "code": code,
-                "price": price,
-                "valuation": val_clean,
-                "color": col,
-                "action_label": COLOR_LABELS[col],
-                "summary": summary,
-                "report_url": "reports/us-stock.html",
-            }
+            _enrich_stock_metrics(
+                {
+                    "market": "us-stock",
+                    "market_label": "美股",
+                    "sector": sector,
+                    "name": name,
+                    "code": code,
+                    "price": price,
+                    "valuation": val_clean,
+                    "color": col,
+                    "action_label": COLOR_LABELS[col],
+                    "summary": summary,
+                    "report_url": "reports/us-stock.html",
+                },
+                ah_lookup,
+            )
         )
 
     return stocks
+
+
+# ==============================================================================
+# 4B. DATA COMPLETENESS & CAVEATS TRANSPARENCY DISCLOSURE SYSTEM
+# ==============================================================================
+
+_CAVEAT_MARKET_NORM: dict[str, str] = {
+    "gold": "gold",
+    "a_share": "a-share",
+    "a-share": "a-share",
+    "hk_stock": "hk-stock",
+    "hk-stock": "hk-stock",
+    "us_stock": "us-stock",
+    "us-stock": "us-stock",
+    "cross": "cross",
+    "all": "cross",
+    "global": "cross",
+}
+
+_CAVEAT_MARKET_LABEL: dict[str, str] = {
+    "gold": "黄金",
+    "a-share": "A股",
+    "hk-stock": "港股",
+    "us-stock": "美股",
+    "cross": "跨市场",
+}
+
+_CAVEAT_CATEGORY_LABEL: dict[str, str] = {
+    "provisional_close": "暂采官网收盘",
+    "delayed_official": "官库待披露",
+    "single_source": "单源暂用",
+    "source_conflict": "多源口径差异",
+    "holiday_thin": "节假日薄量",
+    "publication_exception": "编排说明",
+}
+
+_CAVEAT_SEV_RANK: dict[str, int] = {"high": 0, "warn": 1, "info": 2}
+_CAVEAT_MKT_RANK: dict[str, int] = {"gold": 0, "a-share": 1, "hk-stock": 2, "us-stock": 3, "cross": 4}
+
+_HOLIDAY_TYPE_LABEL: dict[str, str] = {
+    "partial_holiday": "局部休市",
+    "half_day": "半日市",
+    "full_holiday_and_rollover": "三市休市",
+    "long_holiday_start": "长假休市",
+    "rebalance_and_policy": "重大调仓/政策",
+    "hk_major_rebalance": "港股季检调仓",
+    "policy_deadline": "政策截止日",
+    "monthly_rollover": "月度滚存",
+    "quad_witching_boj": "衍生品大交割",
+    "dst_transition": "夏令时切换",
+}
+
+_CAVEAT_SANITIZE_REPS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"file:///[^\s<>\"'）)》」]+", re.IGNORECASE), "官方数据源"),
+    (re.compile(r"(?:/Users/|(?<![A-Za-z0-9._-])/home/)[^\s<>\"'）)》」`]+", re.IGNORECASE), "站内数据"),
+    (re.compile(r"[（(]?\s*`?VIX_History\.csv`?\s*[）)]?", re.IGNORECASE), "官方历史日线表"),
+    (re.compile(r"`?data_snapshot\.json`?", re.IGNORECASE), "实时数据快照"),
+    (re.compile(r"`?market_state\.json`?", re.IGNORECASE), "三市状态快照"),
+    (re.compile(r"`?master_snapshot\.json`?", re.IGNORECASE), "主报告基线快照"),
+    (re.compile(r"`?audit_ledger\.md`?", re.IGNORECASE), "核查台账"),
+    (re.compile(r"`?RSI_PLAYBOOK(?:\.md)?`?", re.IGNORECASE), "复盘手册"),
+    (re.compile(r"`?rsi_metrics\.json`?", re.IGNORECASE), "复盘指标"),
+    (re.compile(r"`?(?:AGENTS|SKILL|GEMINI)\.md`?", re.IGNORECASE), "研究规范"),
+    (re.compile(r"`?(?:sidecar|permissions)\.json`?", re.IGNORECASE), "运行配置"),
+    (re.compile(r"\b[A-Za-z0-9_/-]+\.py\b", re.IGNORECASE), "核验流程"),
+)
+
+
+def _sanitize_caveat_text(text: Any) -> str:
+    """Ensure reader-facing caveat text contains zero internal filenames, local paths, or raw Markdown."""
+    out = clean_md_inline_plain(str(text or ""))
+    for pat, repl in _CAVEAT_SANITIZE_REPS:
+        out = pat.sub(repl, out)
+    out = re.sub(r"官方历史日线表\s*官方历史日线表", "官方历史日线表", out)
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _fmt_due_edition(code: Any) -> str:
+    s = str(code or "").strip()
+    if not s:
+        return ""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(?:_r\d+)?$", s)
+    if m:
+        hh = int(m.group(4))
+        slot = "早报" if hh < 12 else ("午报" if hh < 17 else "晚报")
+        return f"预计 {int(m.group(2))}/{int(m.group(3))} {m.group(4)}:{m.group(5)} {slot}核销"
+    m_d = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", s)
+    if m_d:
+        return f"预计 {int(m_d.group(2))}/{int(m_d.group(3))} 核销"
+    return _sanitize_caveat_text(s)
+
+
+def _norm_caveat_market(raw: Any, default: str = "cross") -> str:
+    key = str(raw or "").strip().lower()
+    return _CAVEAT_MARKET_NORM.get(key, default)
+
+
+def collect_data_caveats(
+    gold_snap: dict | None,
+    eq_state: dict | None,
+    *,
+    market: str | None = None,
+    extra_caveats: list[dict] | None = None,
+) -> list[dict[str, str]]:
+    """Collect, normalize, synthesize fallbacks, sanitize, deduplicate, and filter reader-facing caveats."""
+    gs = gold_snap if isinstance(gold_snap, dict) else {}
+    es = eq_state if isinstance(eq_state, dict) else {}
+
+    raw_items: list[dict[str, str]] = []
+    explicit_markets: set[str] = set()
+
+    def _add_raw(
+        entry: dict[str, Any],
+        default_mkt: str,
+        *,
+        is_explicit: bool,
+    ) -> None:
+        mkt = _norm_caveat_market(entry.get("market"), default_mkt)
+        sev = str(entry.get("severity") or "info").strip().lower()
+        if sev not in _CAVEAT_SEV_RANK:
+            sev = "info"
+        cat = str(entry.get("category") or "delayed_official").strip().lower()
+        if cat not in _CAVEAT_CATEGORY_LABEL:
+            cat = "delayed_official"
+        title = _sanitize_caveat_text(entry.get("item") or entry.get("title") or "")
+        detail = _sanitize_caveat_text(entry.get("detail") or entry.get("description") or entry.get("note") or "")
+        impact = _sanitize_caveat_text(entry.get("impact") or "")
+        due_raw = str(entry.get("next_review") or entry.get("due_edition") or entry.get("due_session") or "").strip()
+        if not title and detail:
+            title, detail = detail[:80], detail
+        if not title:
+            return
+        if is_explicit:
+            explicit_markets.add(mkt)
+        raw_items.append(
+            {
+                "id": str(entry.get("id") or "").strip(),
+                "market": mkt,
+                "market_label": _CAVEAT_MARKET_LABEL.get(mkt, "跨市场"),
+                "category": cat,
+                "category_label": _CAVEAT_CATEGORY_LABEL[cat],
+                "severity": sev,
+                "title": title,
+                "detail": detail,
+                "impact": impact,
+                "due_raw": due_raw,
+                "due_label": _fmt_due_edition(due_raw),
+            }
+        )
+
+    for item in gs.get("data_caveats") or []:
+        if isinstance(item, dict):
+            _add_raw(item, "gold", is_explicit=True)
+    for item in es.get("data_caveats") or []:
+        if isinstance(item, dict):
+            _add_raw(item, "cross", is_explicit=True)
+    for item in extra_caveats or []:
+        if isinstance(item, dict):
+            _add_raw(item, "cross", is_explicit=True)
+
+    # Fallback 1: VIX provisional/pending checks from gold snapshot if no explicit VIX/恐慌 caveat exists
+    has_vix_caveat = any(
+        "vix" in f"{it['id']} {it['title']} {it['detail']}".lower() or "恐慌" in f"{it['title']} {it['detail']}"
+        for it in raw_items
+    )
+    vix_checks = gs.get("vix_daily_row_checks")
+    if not has_vix_caveat and isinstance(vix_checks, dict):
+        for dt_key, chk in sorted(vix_checks.items(), reverse=True):
+            if not isinstance(chk, dict):
+                continue
+            st = str(chk.get("status") or "").strip().lower()
+            if st in ("provisional_close", "pending"):
+                _add_raw(
+                    {
+                        "id": f"vix_fallback_{dt_key}",
+                        "market": "gold",
+                        "category": "provisional_close" if st == "provisional_close" else "delayed_official",
+                        "severity": "warn",
+                        "item": f"美股恐慌指数（VIX）{dt_key} 官方历史日线表待核销",
+                        "detail": chk.get("note") or f"{dt_key} 官方历史日线表尚未更新，暂采交易所官网收盘读数。",
+                        "impact": "次班官方历史表刷新后自动复核清零，不影响核心风控红线。",
+                    },
+                    "gold",
+                    is_explicit=False,
+                )
+                break
+
+    # Fallback 2: pending_backfills for markets lacking explicit caveats
+    for pb in es.get("pending_backfills") or []:
+        if not isinstance(pb, dict):
+            continue
+        mkt = _norm_caveat_market(pb.get("market"), "cross")
+        if mkt in explicit_markets:
+            continue
+        _add_raw(
+            {
+                "market": mkt,
+                "category": "delayed_official",
+                "severity": "info",
+                "item": pb.get("item") or "",
+                "detail": "该市场部分官方次级数据尚待收盘或官方数据库披露，本期严守宁缺毋滥原则，下个班次统一封账核销。",
+                "due_session": pb.get("due_session") or "",
+            },
+            mkt,
+            is_explicit=False,
+        )
+
+    # Fallback 3: publication_exceptions (always surface transparently if present)
+    pub_exc = es.get("publication_exceptions")
+    if isinstance(pub_exc, list):
+        for exc in pub_exc:
+            if isinstance(exc, dict):
+                _add_raw(
+                    {
+                        "market": exc.get("market") or "cross",
+                        "category": "publication_exception",
+                        "severity": exc.get("severity") or "warn",
+                        "item": exc.get("title") or exc.get("item") or exc.get("reason") or "本期出版编排说明",
+                        "detail": exc.get("detail") or exc.get("note") or exc.get("reason") or "",
+                        "impact": exc.get("impact") or "",
+                        "next_review": exc.get("next_review") or "",
+                    },
+                    "cross",
+                    is_explicit=False,
+                )
+            elif isinstance(exc, str) and exc.strip():
+                _add_raw(
+                    {
+                        "market": "cross",
+                        "category": "publication_exception",
+                        "severity": "warn",
+                        "item": "本期出版编排说明",
+                        "detail": exc,
+                    },
+                    "cross",
+                    is_explicit=False,
+                )
+
+    # Deduplicate cleanly
+    deduped: list[dict[str, str]] = []
+    seen_keys: set[tuple[str, str]] = set()
+    for it in raw_items:
+        key_val = it["id"].lower() if it["id"] else re.sub(r"\W+", "", it["title"].lower())[:48]
+        dedup_key = (it["market"], key_val)
+        if dedup_key in seen_keys:
+            continue
+        seen_keys.add(dedup_key)
+        deduped.append(it)
+
+    # Optional market scope filter (always keeps "cross")
+    if market is not None:
+        norm_target = _norm_caveat_market(market, market)
+        deduped = [it for it in deduped if it["market"] in (norm_target, "cross")]
+
+    deduped.sort(
+        key=lambda it: (
+            _CAVEAT_SEV_RANK.get(it["severity"], 9),
+            _CAVEAT_MKT_RANK.get(it["market"], 9),
+        )
+    )
+    return deduped
+
+
+def collect_holiday_alerts(eq_state: dict | None, max_days: int = 7) -> list[dict[str, str]]:
+    """Extract upcoming calendar_overrides within [as_of_date, as_of_date + max_days]."""
+    es = eq_state if isinstance(eq_state, dict) else {}
+    as_of_raw = str(es.get("as_of_cst") or "").strip()[:10]
+    try:
+        base_d = date.fromisoformat(as_of_raw)
+    except ValueError:
+        return []
+    end_d = base_d + timedelta(days=max_days)
+
+    alerts: list[tuple[date, dict[str, str]]] = []
+    for ov in es.get("calendar_overrides") or []:
+        if not isinstance(ov, dict):
+            continue
+        d_raw = str(ov.get("date_cst") or "").strip()[:10]
+        try:
+            ev_d = date.fromisoformat(d_raw)
+        except ValueError:
+            continue
+        if not (base_d <= ev_d <= end_d):
+            continue
+        ov_type = str(ov.get("type") or "").strip().lower()
+        type_lbl = _HOLIDAY_TYPE_LABEL.get(ov_type, "交易日历提示")
+        mk_list = [
+            _CAVEAT_MARKET_LABEL.get(_norm_caveat_market(m, "cross"), str(m))
+            for m in (ov.get("markets_affected") or [])
+        ]
+        markets_lbl = " / ".join(dict.fromkeys(mk_list)) or "跨市场"
+        note = _sanitize_caveat_text(ov.get("note") or "")
+        alerts.append(
+            (
+                ev_d,
+                {
+                    "date": f"{ev_d.month:02d}/{ev_d.day:02d}",
+                    "type_label": type_lbl,
+                    "markets_label": markets_lbl,
+                    "note": note,
+                },
+            )
+        )
+    alerts.sort(key=lambda pair: pair[0])
+    return [item for _, item in alerts]
+
+
+def _render_caveat_items_html(caveats: list[dict[str, str]], empty_msg: str) -> str:
+    if not caveats:
+        return (
+            '<div class="caveat-item sev-info">'
+            '<div class="caveat-title">官源核验齐全</div>'
+            f'<div class="caveat-detail">{esc(empty_msg)}</div>'
+            "</div>"
+        )
+    rows: list[str] = []
+    for c in caveats:
+        due_html = f'<span class="caveat-due">{esc(c["due_label"])}</span>' if c.get("due_label") else ""
+        impact_html = (
+            f'<div class="caveat-impact"><strong>裁决影响：</strong>{esc(c["impact"])}</div>'
+            if c.get("impact")
+            else ""
+        )
+        rows.append(
+            f'<div class="caveat-item sev-{esc(c["severity"])}">'
+            f'<div class="caveat-head">'
+            f'<span class="caveat-mkt">{esc(c["market_label"])}</span>'
+            f'<span class="caveat-cat">{esc(c["category_label"])}</span>'
+            f"{due_html}"
+            f"</div>"
+            f'<div class="caveat-title">{esc(c["title"])}</div>'
+            f'<div class="caveat-detail">{esc(c["detail"])}</div>'
+            f"{impact_html}"
+            f"</div>"
+        )
+    return "".join(rows)
+
+
+def render_cockpit_disclosure(caveats: list[dict[str, str]], holidays: list[dict[str, str]]) -> str:
+    """Render homepage Data Completeness & Possible Omissions collapsible transparency bar."""
+    has_high = any(c.get("severity") == "high" for c in caveats)
+    open_attr = " open" if has_high else ""
+    if has_high:
+        badge_cls = "badge-high"
+    elif caveats:
+        badge_cls = "badge-warn"
+    else:
+        badge_cls = "badge-ok"
+    if caveats:
+        badge_txt = f"本期挂账 {len(caveats)} 项"
+        if holidays:
+            badge_txt += f" · 近7日异动 {len(holidays)} 项"
+    elif holidays:
+        badge_txt = f"官源齐全 · 近7日异动 {len(holidays)} 项"
+    else:
+        badge_txt = "本期官源齐全 · 0 挂账"
+
+    items_html = _render_caveat_items_html(
+        caveats,
+        "本期四市场核心官方数据源均已按时披露并完成交叉核验，无暂用或待补挂账项。",
+    )
+    holiday_html = ""
+    if holidays:
+        h_rows = "".join(
+            f'<div class="holiday-item">'
+            f'<span class="holiday-date">{esc(h["date"])} · {esc(h["markets_label"])} · {esc(h["type_label"])}</span>'
+            f'<span class="holiday-note">{esc(h["note"])}</span>'
+            f"</div>"
+            for h in holidays
+        )
+        holiday_html = (
+            '<div class="holiday-strip">'
+            '<div class="holiday-strip-title">近 7 日休市与重大调仓窗口</div>'
+            f"{h_rows}"
+            "</div>"
+        )
+
+    info_svg = (
+        '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" '
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="10" cy="10" r="8"/><path d="M10 6.2v4.3M10 13.6h.01"/></svg>'
+    )
+    chev_svg = (
+        '<svg class="disclosure-chev" viewBox="0 0 16 16" width="12" height="12" fill="none" '
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        '<path d="M4 6l4 4 4-4"/></svg>'
+    )
+    return (
+        f'<details class="disclosure-bar"{open_attr}>'
+        '<summary class="disclosure-summary">'
+        '<div class="disclosure-summary-main">'
+        f'<span class="disclosure-icon" aria-hidden="true">{info_svg}</span>'
+        '<div class="disclosure-heading">'
+        '<span class="disclosure-title">数据完整性与可能遗漏说明</span>'
+        '<span class="disclosure-sub">早报 07:30 · 晚报 18:00 准时发刊，未到官库披露时点或暂采官网收盘的数据如实挂账，绝不估算填表</span>'
+        "</div></div>"
+        '<div class="disclosure-summary-meta">'
+        f'<span class="disclosure-badge {badge_cls}">{esc(badge_txt)}</span>'
+        f'<span class="disclosure-toggle-lbl">展开明细 {chev_svg}</span>'
+        "</div>"
+        "</summary>"
+        '<div class="disclosure-body">'
+        f'<div class="disclosure-list-col">{items_html}</div>'
+        '<div class="disclosure-policy-col">'
+        '<div class="disclosure-policy-title">准时发刊与纠偏机制</div>'
+        '<ul class="disclosure-policy-list">'
+        "<li><strong>宁缺毋滥</strong>：未到官库披露时点的次级数据一律留空或沿用最近已核实官收并标注原日期，绝不估算填数。</li>"
+        "<li><strong>暂用明示</strong>：跨时区官方历史表尚未更新时，可暂采交易所官网收盘价，并在下一班次自动复核清零。</li>"
+        "<li><strong>留痕可查</strong>：任何后续官源修订均同步记入公开演进与核查账本，永不事后涂改旧账。</li>"
+        "</ul>"
+        '<div class="disclosure-policy-links">'
+        '<a class="btn btn-sm" href="scorecard.html#gold-audit-log">黄金核查账本 →</a>'
+        '<a class="btn btn-sm" href="scorecard.html#equity-changelog">股市观点演进 →</a>'
+        "</div>"
+        f"{holiday_html}"
+        "</div></div></details>"
+    )
+
+
+def render_daily_disclosure(
+    caveats: list[dict[str, str]],
+    market: str,
+    is_latest: bool,
+    date_str: str,
+    session_label: str,
+) -> str:
+    """Render scoped inline disclosure bar below cover banner on daily report pages."""
+    info_svg = (
+        '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" '
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="10" cy="10" r="8"/><path d="M10 6.2v4.3M10 13.6h.01"/></svg>'
+    )
+    chev_svg = (
+        '<svg class="disclosure-chev" viewBox="0 0 16 16" width="12" height="12" fill="none" '
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        '<path d="M4 6l4 4 4-4"/></svg>'
+    )
+    if is_latest:
+        has_high = any(c.get("severity") == "high" for c in caveats)
+        badge_cls = "badge-high" if has_high else ("badge-warn" if caveats else "badge-ok")
+        badge_txt = f"本市挂账 {len(caveats)} 项" if caveats else "本市官源齐全"
+        sum_title = "本刊数据完整性与待核挂账说明"
+        ledger_href = "../scorecard.html#gold-audit-log" if market == "gold" else "../scorecard.html#equity-changelog"
+        body_inner = (
+            _render_caveat_items_html(
+                caveats,
+                "本市场本期核心官方数据均已核实入账，无待补或暂用挂账项。",
+            )
+            + '<div class="disclosure-policy-links">'
+            + f'<a class="btn btn-sm" href="{ledger_href}">查阅公开核查与演进账本 →</a>'
+            + "</div>"
+        )
+    else:
+        badge_cls = "badge-ok"
+        badge_txt = "历史原刊留痕"
+        sum_title = f"历史档案口径说明（{date_str} {session_label}）"
+        body_inner = (
+            '<div class="caveat-item sev-info">'
+            '<div class="caveat-title">历史原刊如实归档，绝不事后改写</div>'
+            f'<div class="caveat-detail">本页完整保留 {esc(date_str)} {esc(session_label)} 发刊时的真实官方观测口径与当时挂账状态。最新实盘锚与后续挂账核销请前往查阅本期最新日报或公开记分卡。</div>'
+            "</div>"
+            '<div class="disclosure-policy-links">'
+            f'<a class="btn btn-sm" href="{esc(market)}-latest.html">查看本期最新日报 →</a>'
+            '<a class="btn btn-sm" href="../scorecard.html">公开记分卡与演进 →</a>'
+            "</div>"
+        )
+    return (
+        '<details class="disclosure-inline no-print">'
+        '<summary class="disclosure-inline-sum">'
+        '<div class="disclosure-summary-main">'
+        f'<span class="disclosure-icon" aria-hidden="true">{info_svg}</span>'
+        f'<span class="disclosure-title">{esc(sum_title)}</span>'
+        "</div>"
+        '<div class="disclosure-summary-meta">'
+        f'<span class="disclosure-badge {badge_cls}">{esc(badge_txt)}</span>'
+        f'<span class="disclosure-toggle-lbl">详情 {chev_svg}</span>'
+        "</div>"
+        "</summary>"
+        f'<div class="disclosure-inline-body">{body_inner}</div>'
+        "</details>"
+    )
 
 
 # ==============================================================================
@@ -1043,6 +1762,132 @@ def render_toc_list(toc: list[tuple[int, str, str]]) -> str:
     return '<ul class="toc-list">' + "".join(lis) + "</ul>"
 
 
+def _build_cmd_nav_items(base_prefix: str, total_pool: int) -> list[dict[str, str]]:
+    pool_label = f"{total_pool}股池" if total_pool > 0 else "龙头股池"
+    return [
+        {
+            "title": "全球大类资产 10 秒水温驾驶舱",
+            "meta": "总览 · 四市红绿灯与风险雷达",
+            "href": f"{base_prefix}index.html",
+            "keywords": "总览 首页 驾驶舱 overview cockpit home",
+        },
+        {
+            "title": "黄金最新早晚报",
+            "meta": "日报 · 四步买金红绿灯与实盘锚",
+            "href": f"{base_prefix}daily/gold-latest.html",
+            "keywords": "黄金 金价 早报 晚报 gold daily xau",
+        },
+        {
+            "title": "中国 A 股最新早晚报",
+            "meta": "日报 · 七维大盘与红利防守",
+            "href": f"{base_prefix}daily/a-share-latest.html",
+            "keywords": "a股 沪深300 上证 早报 晚报 a-share cn",
+        },
+        {
+            "title": "香港股市最新早晚报",
+            "meta": "日报 · 联汇水位与南向资金",
+            "href": f"{base_prefix}daily/hk-stock-latest.html",
+            "keywords": "港股 恒生 恒科 早报 晚报 hk-stock hsi",
+        },
+        {
+            "title": "美国股市最新早晚报",
+            "meta": "日报 · 标普纳指与政策雷达",
+            "href": f"{base_prefix}daily/us-stock-latest.html",
+            "keywords": "美股 标普 纳指 美债 早报 晚报 us-stock sp500",
+        },
+        {
+            "title": "黄金跨世纪周期主报告（1971–2030）",
+            "meta": "常青旗舰 · 宏观周期与配置框架",
+            "href": f"{base_prefix}reports/gold.html",
+            "keywords": "黄金 主报告 旗舰 手册 gold master flagship",
+        },
+        {
+            "title": "中国 A 股跨周期全景手册",
+            "meta": "常青旗舰 · 宏观与全池龙头诊断",
+            "href": f"{base_prefix}reports/a-share.html",
+            "keywords": "a股 全景手册 旗舰 a-share flagship",
+        },
+        {
+            "title": "香港股市跨周期全景手册",
+            "meta": "常青旗舰 · 联汇与红筹/H股税制",
+            "href": f"{base_prefix}reports/hk-stock.html",
+            "keywords": "港股 全景手册 旗舰 hk-stock flagship",
+        },
+        {
+            "title": "美国股市跨周期全景手册",
+            "meta": "常青旗舰 · 科技/防弹衣全板块覆盖",
+            "href": f"{base_prefix}reports/us-stock.html",
+            "keywords": "美股 全景手册 旗舰 us-stock flagship",
+        },
+        {
+            "title": f"全球核心龙头交互筛选器（{pool_label}）",
+            "meta": "工具 · 三市龙头估值、股息与安全锚",
+            "href": f"{base_prefix}screener.html",
+            "keywords": "股池 筛选器 龙头 screener stocks",
+        },
+        {
+            "title": "快捷视图：● 当下底座龙头",
+            "meta": "股池预设 · 红灯期可配置防弹衣底座",
+            "href": f"{base_prefix}screener.html#preset=base",
+            "keywords": "底座 绿灯 防守 base green",
+        },
+        {
+            "title": "快捷视图：高股息 ≥4% 龙头",
+            "meta": "股池预设 · 现金流与分红缓冲",
+            "href": f"{base_prefix}screener.html#preset=high-div",
+            "keywords": "高股息 分红 息率 dividend high-div",
+        },
+        {
+            "title": "快捷视图：近安全锚 ≤12%",
+            "meta": "股池预设 · 接近目标击球区间",
+            "href": f"{base_prefix}screener.html#preset=near-anchor",
+            "keywords": "安全锚 买点 击球 near-anchor",
+        },
+        {
+            "title": "快捷视图：A/H 倒挂折价股",
+            "meta": "股池预设 · A 股较 H 股折价套利视角",
+            "href": f"{base_prefix}screener.html#preset=ah-inverted",
+            "keywords": "ah 倒挂 折价 溢价 ah-inverted",
+        },
+        {
+            "title": "全球股市公开预测记分卡",
+            "meta": "记分卡 · 到期验真与避坑台账",
+            "href": f"{base_prefix}scorecard.html#equity-scorecard",
+            "keywords": "记分卡 股市 验真 scorecard equity",
+        },
+        {
+            "title": "黄金公开预测记分卡",
+            "meta": "记分卡 · 命中率与勘误留痕",
+            "href": f"{base_prefix}scorecard.html#gold-scorecard",
+            "keywords": "记分卡 黄金 验真 scorecard gold",
+        },
+        {
+            "title": "股市观点演进日志",
+            "meta": "账本 · 历期三市逻辑与仓位演化",
+            "href": f"{base_prefix}scorecard.html#equity-changelog",
+            "keywords": "演进 日志 changelog equity",
+        },
+        {
+            "title": "黄金观点演进与辟谣核查账本",
+            "meta": "账本 · 谣言证伪与官方核查明细",
+            "href": f"{base_prefix}scorecard.html#gold-audit-log",
+            "keywords": "辟谣 核查 账本 audit changelog gold",
+        },
+        {
+            "title": "历史早晚报档案与旗舰书架",
+            "meta": "档案 · 按市场/时段/刊型检索",
+            "href": f"{base_prefix}archive.html",
+            "keywords": "历史 档案 往期 archive",
+        },
+        {
+            "title": "GitHub Releases 离线 PDF / Word 附件库",
+            "meta": "外链 · 全部 16 份杂志级离线下载",
+            "href": RELEASES_TAG_URL,
+            "keywords": "下载 pdf word releases 离线",
+        },
+    ]
+
+
 def render_page_shell(
     *,
     title: str,
@@ -1050,6 +1895,7 @@ def render_page_shell(
     base_prefix: str,
     content_html: str,
     market_attr: str = "overview",
+    doc_kind: str = "overview",
     edition_attr: str = "",
     total_pool: int = 0,
     toc_items: list[tuple[int, str, str]] | None = None,
@@ -1067,10 +1913,17 @@ def render_page_shell(
         ("scorecard", f"{base_prefix}scorecard.html", "记分卡"),
         ("archive", f"{base_prefix}archive.html", "档案"),
     ]
-    nav_html = "".join(
-        f'<a class="nav-pill{" active" if key == active_nav else ""}" data-nav="{key}" href="{href}">{lbl}</a>'
-        for key, href, lbl in nav_items
-    )
+    nav_parts: list[str] = []
+    for key, href, lbl in nav_items:
+        dot_html = (
+            f'<span class="nav-dot nav-dot-{key}" aria-hidden="true"></span>'
+            if key in ("gold", "a-share", "hk-stock", "us-stock")
+            else ""
+        )
+        nav_parts.append(
+            f'<a class="nav-pill{" active" if key == active_nav else ""}" data-nav="{key}" href="{href}">{dot_html}{lbl}</a>'
+        )
+    nav_html = "".join(nav_parts)
 
     has_toc = bool(toc_items)
     toc_drawer_html = ""
@@ -1078,7 +1931,7 @@ def render_page_shell(
         toc_drawer_html = (
             '<div class="toc-backdrop" id="toc-backdrop" role="dialog" aria-modal="true" aria-label="章节目录">'
             '<div class="toc-sheet">'
-            '<div class="toc-sheet-hdr"><span>📑 报告目录</span>'
+            '<div class="toc-sheet-hdr"><span>报告目录</span>'
             '<button type="button" class="ctrl-btn" data-action="close-toc">关闭 ✕</button></div>'
             f'<div class="toc-sheet-body">{render_toc_list(toc_items or [])}</div>'
             "</div></div>"
@@ -1100,17 +1953,41 @@ def render_page_shell(
             "</div>"
         )
 
-    dock_toc_btn = (
-        '<button type="button" class="dock-btn dock-toc-btn" data-action="open-toc">📑 目录</button>'
-        if has_toc
-        else ""
+    brand_svg = (
+        '<svg viewBox="0 0 28 28" width="20" height="20">'
+        '<circle cx="14" cy="14" r="10.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.88"/>'
+        '<polygon points="14,4.5 17,14 14,23.5 11,14" fill="currentColor"/>'
+        '<circle cx="14" cy="14" r="2.1" fill="#141a24"/></svg>'
     )
-    mobile_dock_html = (
-        '<div class="mobile-dock no-print" aria-label="快捷工具">'
-        f"{dock_toc_btn}"
-        '<button type="button" class="dock-btn" data-action="scroll-top">↑ 顶部</button>'
-        '<button type="button" class="dock-btn" data-action="print">🖨️ PDF</button>'
+    sun_svg = (
+        '<svg class="icon-sun" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        '<circle cx="12" cy="12" r="4"/>'
+        '<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>'
+    )
+    moon_svg = (
+        '<svg class="icon-moon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>'
+    )
+
+    cmd_nav_json = json.dumps(
+        _build_cmd_nav_items(base_prefix, total_pool), ensure_ascii=False
+    ).replace("</", "<\\/")
+    cmd_palette_html = (
+        '<div class="cmd-backdrop no-print" id="cmd-palette" role="dialog" aria-modal="true" aria-label="快速跳转">'
+        '<div class="cmd-dialog">'
+        '<div class="cmd-head">'
+        '<input type="search" id="cmd-input" class="cmd-input" placeholder="输入市场、股池视图、记分卡或关键词快速跳转…" autocomplete="off" aria-label="快速跳转搜索">'
+        '<button type="button" class="ctrl-btn" data-action="close-cmd" aria-label="关闭快速跳转">ESC</button>'
         "</div>"
+        '<div class="cmd-list" id="cmd-list" role="listbox"></div>'
+        "</div></div>"
+        f'<script id="cmd-nav-data" type="application/json">{cmd_nav_json}</script>'
+    )
+    back_to_top_html = (
+        '<button type="button" class="back-to-top no-print" id="back-to-top" '
+        'data-action="scroll-top" title="回到顶部" aria-label="回到顶部">↑</button>'
     )
 
     return f"""<!DOCTYPE html>
@@ -1119,7 +1996,7 @@ def render_page_shell(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{esc(title)} ｜ 全球投研</title>
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#141a24">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="全球投研">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1128,19 +2005,19 @@ def render_page_shell(
   {THEME_INIT_SCRIPT}
   <link rel="stylesheet" href="{base_prefix}assets/app.css">
 </head>
-<body data-market="{esc(market_attr)}"{f' data-edition="{esc(edition_attr)}"' if edition_attr else ""}>
+<body data-market="{esc(market_attr)}" data-doc-kind="{esc(doc_kind)}"{f' data-edition="{esc(edition_attr)}"' if edition_attr else ""}>
   <div class="reading-progress" id="reading-progress"></div>
   <header class="site-header">
     <div class="header-inner">
       <a class="brand-link" href="{base_prefix}index.html">
-        <span class="brand-mark" aria-hidden="true">◈</span>
-        <span>全球投研<span class="brand-sub"> · 黄金 × A/港/美</span></span>
+        <span class="brand-mark" aria-hidden="true">{brand_svg}</span>
+        <span class="brand-text"><span class="brand-title">全球投研</span><span class="brand-sub">GOLD · CN · HK · US</span></span>
       </a>
-      <nav class="main-nav" aria-label="主导航">{nav_html}</nav>
+      <div class="main-nav-wrap"><nav class="main-nav" aria-label="主导航">{nav_html}</nav></div>
       <div class="header-controls">
-        <button type="button" class="ctrl-btn" id="font-dec" title="缩小字号" aria-label="缩小字号">A-</button>
-        <button type="button" class="ctrl-btn" id="font-inc" title="放大字号" aria-label="放大字号">A+</button>
-        <button type="button" class="ctrl-btn" id="theme-toggle" title="切换深浅色模式" aria-label="切换深浅色模式">🌙</button>
+        <button type="button" class="ctrl-btn ctrl-cmd" id="cmd-open" title="快速跳转 (⌘K)" aria-label="快速跳转">跳转 <kbd class="kbd-chip">⌘K</kbd></button>
+        <div class="ctrl-seg"><button type="button" class="ctrl-btn" id="font-dec" title="缩小字号" aria-label="缩小字号">A-</button><button type="button" class="ctrl-btn" id="font-inc" title="放大字号" aria-label="放大字号">A+</button></div>
+        <button type="button" class="ctrl-btn ctrl-theme" id="theme-toggle" title="切换深浅色模式" aria-label="切换深浅色模式">{sun_svg}{moon_svg}</button>
       </div>
     </div>
   </header>
@@ -1151,18 +2028,35 @@ def render_page_shell(
 
   <footer class="site-footer">
     <div class="footer-inner">
-      <div>全球投研 · 黄金 × A股 × 港股 × 美股 ｜ 多源官方库交叉核验 · 严守仓位与风控纪律{(" · 更新：" + esc(footer_ts)) if footer_ts else ""}</div>
-      <div class="footer-links">
-        <a href="{base_prefix}index.html">总览</a>
-        <a href="{base_prefix}screener.html">{pool_label}</a>
-        <a href="{base_prefix}scorecard.html">记分卡</a>
-        <a href="{base_prefix}archive.html">历史档案</a>
-        <a href="{RELEASES_TAG_URL}" target="_blank" rel="noopener">PDF/Word 下载 ↗</a>
+      <div class="footer-grid">
+        <div class="footer-col">
+          <div class="footer-brand">全球投研 · GOLD × CN × HK × US</div>
+          <p class="footer-desc">每日 07:30 早报 · 18:00 晚报北京时间准时交付 · 多源官方库交叉核验{(" · 更新：" + esc(footer_ts)) if footer_ts else ""}</p>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">核心导航</div>
+          <div class="footer-links">
+            <a href="{base_prefix}index.html">总览</a>
+            <a href="{base_prefix}daily/gold-latest.html">黄金日报</a>
+            <a href="{base_prefix}daily/a-share-latest.html">A股日报</a>
+            <a href="{base_prefix}daily/hk-stock-latest.html">港股日报</a>
+            <a href="{base_prefix}daily/us-stock-latest.html">美股日报</a>
+            <a href="{base_prefix}screener.html">{pool_label}</a>
+            <a href="{base_prefix}scorecard.html">记分卡</a>
+            <a href="{base_prefix}archive.html">历史档案</a>
+            <a href="{RELEASES_TAG_URL}" target="_blank" rel="noopener">PDF/Word 下载 ↗</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">透明与风控声明</div>
+          <p class="footer-disclaimer">准时发刊不阻塞，未披露官源如实挂账留痕；严守仓位红线、远离杠杆，所有研究仅供信息参考，不构成个性化投资建议。</p>
+        </div>
       </div>
     </div>
   </footer>
 
-  {mobile_dock_html}
+  {back_to_top_html}
+  {cmd_palette_html}
   {toc_drawer_html}
   {chart_modal_html}
   <script src="{base_prefix}assets/app.js"></script>
@@ -1173,31 +2067,44 @@ def render_page_shell(
 
 def render_doc_with_toc(
     *,
-    sibling_bar_html: str,
+    toolbar_html: str,
     cover_html: str,
     body_html: str,
     footer_note: str,
     toc_items: list[tuple[int, str, str]],
+    doc_kind: str = "daily",
+    disclosure_html: str = "",
 ) -> str:
     footer_div = f'<div class="footer-note">{esc(footer_note)}</div>' if footer_note else ""
+    mobile_strip = ""
     if toc_items:
         sidebar = (
             '<aside class="toc-sidebar" aria-label="目录导航">'
-            '<div class="toc-heading">本篇目录</div>'
+            '<div class="toc-heading"><span>本篇目录</span><span class="toc-pct" id="toc-pct">0%</span></div>'
             f"{render_toc_list(toc_items)}"
             "</aside>"
         )
+        top_toc = [t for t in toc_items if t[0] in (1, 2)] or toc_items[:8]
+        pills = "".join(
+            f'<a class="mobile-toc-pill" href="#{esc(hid)}">'
+            f'{esc(lbl if len(lbl) <= 18 else lbl[:17].rstrip(" 、，,·:：—-") + "…")}</a>'
+            for _, hid, lbl in top_toc
+        )
+        mobile_strip = f'<div class="mobile-toc-strip no-print" aria-label="章节快捷跳转">{pills}</div>'
         layout_cls = "doc-layout"
     else:
         sidebar = ""
         layout_cls = "doc-layout no-toc"
 
+    art_cls = "doc-flagship" if doc_kind == "flagship" else "doc-daily"
     return (
-        f"{sibling_bar_html}"
+        f"{toolbar_html}"
         f'<div class="{layout_cls}">'
         f"{sidebar}"
-        f'<article class="article-card">'
+        f"{mobile_strip}"
+        f'<article class="article-card {art_cls}">'
         f"{cover_html}"
+        f"{disclosure_html}"
         f'<div class="article-body">{body_html}</div>'
         f"{footer_div}"
         f"</article>"
@@ -1310,18 +2217,18 @@ def _render_release_downloads_grid(
         assets = RELEASE_ASSET_NAMES[mk]
         links: list[str] = []
         if include_web_link:
-            links.append(f'<a class="dl-link" href="{web_href}">网页版</a>')
+            links.append(f'<a class="dl-link dl-badge-web" href="{web_href}">网页版</a>')
         links.append(
-            f'<a class="dl-link" href="{RELEASES_DL_BASE}/{assets["flagship_pdf"]}" target="_blank" rel="noopener">{f_lbl} PDF ↗</a>'
+            f'<a class="dl-link dl-badge-pdf" href="{RELEASES_DL_BASE}/{assets["flagship_pdf"]}" target="_blank" rel="noopener">{f_lbl} PDF ↗</a>'
         )
         links.append(
-            f'<a class="dl-link" href="{RELEASES_DL_BASE}/{assets["flagship_docx"]}" target="_blank" rel="noopener">{f_lbl} Word ↗</a>'
+            f'<a class="dl-link dl-badge-docx" href="{RELEASES_DL_BASE}/{assets["flagship_docx"]}" target="_blank" rel="noopener">{f_lbl} Word ↗</a>'
         )
         links.append(
-            f'<a class="dl-link" href="{RELEASES_DL_BASE}/{assets["daily_pdf"]}" target="_blank" rel="noopener">日报 PDF ↗</a>'
+            f'<a class="dl-link dl-badge-pdf" href="{RELEASES_DL_BASE}/{assets["daily_pdf"]}" target="_blank" rel="noopener">日报 PDF ↗</a>'
         )
         links.append(
-            f'<a class="dl-link" href="{RELEASES_DL_BASE}/{assets["daily_docx"]}" target="_blank" rel="noopener">日报 Word ↗</a>'
+            f'<a class="dl-link dl-badge-docx" href="{RELEASES_DL_BASE}/{assets["daily_docx"]}" target="_blank" rel="noopener">日报 Word ↗</a>'
         )
         cards.append(
             f'<div class="dl-card">'
@@ -1330,6 +2237,76 @@ def _render_release_downloads_grid(
             f"</div>"
         )
     return "".join(cards)
+
+
+def _dot_css_class(lamp_cls: str) -> str:
+    if lamp_cls == "lamp-green":
+        return "dot-green"
+    if lamp_cls == "lamp-amber":
+        return "dot-amber"
+    return "dot-red"
+
+
+def _breaker_fill_cls(chip_cls: str) -> str:
+    if chip_cls == "chip-danger":
+        return "fill-danger"
+    if chip_cls == "chip-warn":
+        return "fill-warn"
+    return "fill-ok"
+
+
+def _edition_pill_html(edition_type: str) -> str:
+    ed = str(edition_type or "main").strip().lower()
+    if ed == "holiday_watch":
+        return '<span class="ed-pill ed-watch">守望刊</span>'
+    if ed == "light":
+        return '<span class="ed-pill ed-watch">轻刊</span>'
+    return '<span class="ed-pill ed-main">主刊</span>'
+
+
+def _render_score_meter(score_num: float | None, score_str: str) -> str:
+    val = score_num if score_num is not None else 0.0
+    segs: list[str] = []
+    for idx in range(1, 7):
+        if val >= idx:
+            cls = "seg-full"
+        elif val >= idx - 0.5:
+            cls = "seg-half"
+        else:
+            cls = "seg-empty"
+        segs.append(f'<span class="score-seg {cls}"></span>')
+    return (
+        '<div class="score-meter-row">'
+        f'<div class="score-meter" aria-hidden="true">{"".join(segs)}</div>'
+        f'<span class="score-meter-lbl">大盘水温 {esc(score_str)}</span>'
+        "</div>"
+    )
+
+
+def _render_gold_gate_strip(t1_gates: Any) -> str:
+    if not isinstance(t1_gates, list) or not t1_gates:
+        return ""
+    short_map = {
+        "real_yield": "1.真实利率",
+        "rate_spread": "2.加息利差",
+        "vix": "3.恐慌回落",
+        "ny_close": "4.金价站稳",
+    }
+    chips: list[str] = []
+    for idx, gate in enumerate(t1_gates[:4], start=1):
+        if not isinstance(gate, dict):
+            continue
+        gid = str(gate.get("id") or "").strip().lower()
+        raw_name = str(gate.get("name") or f"第{idx}关").strip()
+        short_lbl = short_map.get(gid) or re.sub(r"^第\s*\d+\s*关[：:]\s*", "", raw_name)[:6]
+        passed = bool(gate.get("passed", False))
+        reading = str(gate.get("reading") or "").strip()
+        threshold = str(gate.get("threshold") or "").strip()
+        tip = f"{raw_name}｜读数：{reading}｜门槛：{threshold}" if (reading or threshold) else raw_name
+        cls = "gate-pass" if passed else "gate-fail"
+        sym = "✓" if passed else "×"
+        chips.append(f'<span class="gate-chip {cls}" title="{esc(tip)}">{sym} {esc(short_lbl)}</span>')
+    return f'<div class="gate-strip">{"".join(chips)}</div>' if chips else ""
 
 
 def build_cockpit_page(
@@ -1348,6 +2325,7 @@ def build_cockpit_page(
     erp = linkages.get("erp_ruler") or {}
     hcw = linkages.get("household_composite_weights") or {}
     brake = linkages.get("crisis_correlation_brake") or {}
+    ah_radar = linkages.get("ah_premium_radar") or {}
 
     gold_as_of = str(gold_snap.get("as_of_bjt") or gold_snap.get("as_of_short") or "")
     eq_as_of = fmt_cst_iso(str(eq_state.get("as_of_cst") or ""))
@@ -1417,6 +2395,7 @@ def build_cockpit_page(
     dfii_lvl = str(gold_snap.get("dfii10_level_short") or "").strip()
     dfii_sub_parts = [p for p in (g1_thr, dfii_lvl) if p]
     dfii_sub = " · ".join(dfii_sub_parts) if dfii_sub_parts else "跟踪实际利率门槛"
+    gold_gate_strip_html = _render_gold_gate_strip(t1_gates)
 
     # Dynamic Gold new-buy label, household legend suffix, and mirror badge
     if not gold_new_buy or gold_tier_code == "Tier 0":
@@ -1439,6 +2418,7 @@ def build_cockpit_page(
     a_pool_num = _safe_float(a_m.get("stock_pool_count"))
     a_pool = int(a_pool_num) if a_pool_num is not None else stock_counts.get("a-share", 0)
     a_score = str(a_m.get("score") or "待核")
+    a_score_num = _safe_float(a_m.get("score_num"))
     a_csi300_val = _fmt_num(a_m.get("benchmark_csi300"), ",.2f")
     a_sse_val = _fmt_num(a_m.get("benchmark_sse"), ",.2f")
     a_200w_val = _fmt_num(a_m.get("csi300_200w"), ",.0f")
@@ -1447,7 +2427,6 @@ def build_cockpit_page(
     a_erp_ttm_val = _fmt_num(a_m.get("erp_ttm_pct"), "+.2f", suffix="%")
     a_cgb10y_val = _fmt_num(a_m.get("cgb10y_pct"), ".3f", suffix="%")
 
-    # Dynamic PBOC / margin scan (normalized canonical keys with dated fallback)
     pboc_net = _resolve_dated_metric(a_m, "pboc_total_net_100m", r"pboc_(\d+)_total_net_100m")
     if pboc_net is not None:
         a_pool_sub = f"央行总净投放 {pboc_net:+,.0f} 亿"
@@ -1464,6 +2443,7 @@ def build_cockpit_page(
     hk_pool_num = _safe_float(hk_m.get("stock_pool_count"))
     hk_pool = int(hk_pool_num) if hk_pool_num is not None else stock_counts.get("hk-stock", 0)
     hk_score = str(hk_m.get("score") or "待核")
+    hk_score_num = _safe_float(hk_m.get("score_num"))
     hk_hsi_val = _fmt_num(hk_m.get("benchmark_hsi"), ",.2f")
     hk_hstech_val = _fmt_num(hk_m.get("benchmark_hstech"), ",.2f")
     hk_200d_val = _fmt_num(hk_m.get("hsi_200d"), ",.0f")
@@ -1480,6 +2460,7 @@ def build_cockpit_page(
     us_pool_num = _safe_float(us_m.get("stock_pool_count"))
     us_pool = int(us_pool_num) if us_pool_num is not None else stock_counts.get("us-stock", 0)
     us_score = str(us_m.get("score") or "待核")
+    us_score_num = _safe_float(us_m.get("score_num"))
     us_alloc_str = (
         f'{_fmt_num(us_m.get("equity_cap_pct"), ".0f", suffix="%")} 防弹衣 + '
         f'{_fmt_num(us_m.get("cash_tbill_pct"), ".0f", suffix="%")} 短债 + '
@@ -1511,11 +2492,13 @@ def build_cockpit_page(
         vix_thr = 30.0
     if vix_close is None:
         vix_chip = ("chip-warn", "待核")
+        vix_meter_pct = 0.0
     else:
         vix_caution = (vix_high is not None and vix_high >= vix_thr) or vix_close >= 24
         vix_chip = ("chip-danger", "已触红线") if vix_close >= vix_thr else (
             ("chip-warn", "逼近警戒") if vix_caution else ("chip-ok", "安全区间")
         )
+        vix_meter_pct = max(4.0, min(100.0, (vix_close / max(vix_thr, 1.0)) * 100.0))
     vix_close_val = _fmt_num(vix_close, ".2f")
 
     usdjpy = _safe_float(brake.get("usdjpy_level"))
@@ -1525,10 +2508,12 @@ def build_cockpit_page(
     jpy_drop_thr = abs(jpy_drop_thr_raw) if jpy_drop_thr_raw is not None else 3.0
     if usdjpy is None:
         jpy_chip = ("chip-warn", "待核")
+        jpy_meter_pct = 0.0
     else:
         jpy_chip = ("chip-danger", "干预高危") if usdjpy >= 160 else (
             ("chip-warn", "紧盯干预") if usdjpy >= 155 else ("chip-ok", "平稳")
         )
+        jpy_meter_pct = max(4.0, min(100.0, ((usdjpy - 135.0) / 30.0) * 100.0))
     usdjpy_val = _fmt_num(usdjpy, ".2f")
 
     us10y = _safe_float(rates.get("us10y_pct"))
@@ -1539,10 +2524,12 @@ def build_cockpit_page(
         us10y_thr = 5.25
     if us10y is None:
         us10y_chip = ("chip-warn", "待核")
+        us10y_meter_pct = 0.0
     else:
         us10y_chip = ("chip-danger", "触及熔断") if us10y >= us10y_thr else (
             ("chip-warn", "高息承压") if us10y >= 4.7 else ("chip-ok", "温和")
         )
+        us10y_meter_pct = max(4.0, min(100.0, ((us10y - 3.0) / max(us10y_thr - 3.0, 0.5)) * 100.0))
     us10y_val = _fmt_num(us10y, ".3f", suffix="%")
 
     hkma_bal = _safe_float(rates.get("hkma_agg_bal_hkd_100m"))
@@ -1551,10 +2538,12 @@ def build_cockpit_page(
         hkma_thr = 400.0
     if hkma_bal is None:
         hkma_chip = ("chip-warn", "待核")
+        hkma_meter_pct = 0.0
     else:
         hkma_chip = ("chip-danger", "触及底线") if hkma_bal <= hkma_thr else (
             ("chip-warn", "薄缓冲警戒") if hkma_bal < 650 else ("chip-ok", "缓冲充裕")
         )
+        hkma_meter_pct = max(4.0, min(100.0, ((1200.0 - hkma_bal) / max(1200.0 - hkma_thr, 100.0)) * 100.0))
     hkma_short_val = _fmt_num(hkma_bal, ".1f", suffix="亿")
     hkma_full_val = _fmt_num(hkma_bal, ".2f", suffix=" 亿")
 
@@ -1573,7 +2562,7 @@ def build_cockpit_page(
     else:
         brake_overall = '<span class="status-chip chip-ok">总熔断未触发 · 4 项均处安全区间</span>'
 
-    # Three-Market ERP Horizontal Visual Bar (0% to 10% scale, WCAG AA semantic classes)
+    # Three-Market ERP Horizontal Visual Bar (0% to 10% scale)
     erp_rows_data = [
         ("🇭🇰 港股恒指（人民币锚前瞻 ERP）", _safe_float(erp.get("hsi_erp_cny_fwd_pct")), _safe_float(erp.get("hsi_erp_cny_ttm_pct")), "erp-hk", "erp-fill-hk"),
         ("🇨🇳 A 股沪深300（前瞻 ERP）", _safe_float(erp.get("csi300_erp_fwd_pct")), _safe_float(erp.get("csi300_erp_ttm_pct")), "erp-a", "erp-fill-a"),
@@ -1609,6 +2598,47 @@ def build_cockpit_page(
     gd_pct = int(round(gd_pct_f)) if gd_pct_f is not None else 0
     hcw_sum_disp = f"合计 {eq_pct + cb_pct + bc_pct + gd_pct}%" if hcw_complete else "待核"
     hcw_note = str(hcw.get("formula_note") or "")
+    eq_seg_lbl = f"{eq_pct}% 股" if eq_pct >= 12 else (f"{eq_pct}%" if eq_pct >= 4 else "")
+    cb_seg_lbl = f"{cb_pct}% 转" if cb_pct >= 12 else (f"{cb_pct}%" if cb_pct >= 3 else "")
+    bc_seg_lbl = f"{bc_pct}% 债现" if bc_pct >= 14 else (f"{bc_pct}%" if bc_pct >= 4 else "")
+    gd_seg_lbl = f"{gd_pct}% 金" if gd_pct >= 10 else (f"{gd_pct}%" if gd_pct >= 4 else "")
+
+    alloc_breakdown_html = ""
+    hcw_accounts = hcw.get("accounts")
+    if isinstance(hcw_accounts, dict) and hcw_accounts:
+        acc_names = {
+            "a_share": "境内人民币池",
+            "hk_stock": "港股离岸池",
+            "us_stock": "美股离岸池",
+        }
+        acc_rows: list[str] = []
+        for ak, av in hcw_accounts.items():
+            if not isinstance(av, dict):
+                continue
+            w_s = _fmt_num(av.get("weight_pct"), ".0f", suffix="%")
+            a_eq = _fmt_num(av.get("equity_total_pct"), ".0f", suffix="%")
+            a_cb = _fmt_num(av.get("convertible_bond_pct"), ".0f", suffix="%")
+            a_bc = _fmt_num(av.get("bonds_and_cash_pct"), ".0f", suffix="%")
+            a_gd = _fmt_num(av.get("gold_existing_hold_pct"), ".0f", suffix="%")
+            mix_parts = [f"股 {a_eq}"]
+            cb_n = _safe_float(av.get("convertible_bond_pct"))
+            if cb_n is not None and cb_n > 0:
+                mix_parts.append(f"转债 {a_cb}")
+            mix_parts.append(f"债现 {a_bc}")
+            mix_parts.append(f"存量金 {a_gd}")
+            acc_rows.append(
+                '<div class="alloc-acc-row">'
+                f'<span class="alloc-acc-name">{esc(acc_names.get(ak, ak))}（权重 {w_s}）</span>'
+                f'<span class="alloc-acc-mix">{" · ".join(mix_parts)}</span>'
+                "</div>"
+            )
+        if acc_rows:
+            alloc_breakdown_html = (
+                '<details class="alloc-breakdown">'
+                "<summary>展开三账户加权拆解</summary>"
+                f'<div class="alloc-acc-list">{"".join(acc_rows)}</div>'
+                "</details>"
+            )
 
     # Commodity & FX Mirror Chips (100% dynamic contract / regime / timestamp-matched BTC)
     brent_usd = _safe_float(comm.get("brent_usd"))
@@ -1683,6 +2713,62 @@ def build_cockpit_page(
     cfets_value = f"{cfets:.4f}" if cfets is not None else "待核"
     hibor_value = _fmt_num(rates.get("hibor_1m_pct"), ".3f", suffix="%")
 
+    # A/H Premium Mini-Strip (top 2 highest A premiums + top 3 deepest A discounts)
+    ah_panel_html = ""
+    ah_benchmarks = ah_radar.get("benchmarks")
+    if isinstance(ah_benchmarks, list) and ah_benchmarks:
+        valid_ah = [
+            (str(r.get("name") or "").strip(), float(p))
+            for r in ah_benchmarks
+            if isinstance(r, dict)
+            and str(r.get("name") or "").strip()
+            and (p := _safe_float(r.get("ah_premium_pct"))) is not None
+        ]
+        top_prems = sorted((x for x in valid_ah if x[1] > 0), key=lambda x: x[1], reverse=True)[:2]
+        top_discs = sorted((x for x in valid_ah if x[1] < 0), key=lambda x: x[1])[:3]
+        ah_pills: list[str] = []
+        for nm, pct in top_prems:
+            ah_pills.append(
+                f'<div class="ah-pill ah-prem"><span class="ah-name">{esc(nm)}</span>'
+                f'<span class="ah-val">+{pct:.1f}%</span></div>'
+            )
+        for nm, pct in top_discs:
+            ah_pills.append(
+                f'<div class="ah-pill ah-disc"><span class="ah-name">{esc(nm)}</span>'
+                f'<span class="ah-val">{pct:+.1f}%</span></div>'
+            )
+        if ah_pills:
+            ah_panel_html = (
+                '<div class="panel-card span-2">'
+                '<div class="panel-title">'
+                f'<span>↔ A/H 溢价与倒挂风向标（恒生 AH 溢价指数 {hk_hsahp_val}）</span>'
+                '<a class="btn btn-sm" href="screener.html#preset=ah-inverted">在股池中查看倒挂股 →</a>'
+                "</div>"
+                f'<div class="ah-strip">{"".join(ah_pills)}</div>'
+                "</div>"
+            )
+
+    # Synthesize 1-sentence cross-market verdict for Hero Command Deck
+    total_pool = a_pool + hk_pool + us_pool
+    all_red = all(c == "lamp-red" for c in (gold_lamp_cls, a_lamp_cls, hk_lamp_cls, us_lamp_cls))
+    if all_red:
+        def_tail = f"，家庭综合债现防守占比 {bc_pct}%" if hcw_complete else ""
+        hero_verdict = (
+            f"四市场同步防守：黄金维持{gold_tier_short}（暂不新买 · {gold_pass}），"
+            f"A/港/美股严守红灯仓位上限{def_tail}，耐心等待宏观与四关信号明确。"
+        )
+    else:
+        gold_act = f"{gold_tier_short}（暂不新买）" if (not gold_new_buy or gold_tier_code == "Tier 0") else f"{gold_tier_short}（按档分批）"
+        hero_verdict = (
+            f"黄金{gold_act}（{gold_pass}）；三市大盘水温 A股 {a_score} · 港股 {hk_score} · 美股 {us_score}，"
+            "按红绿灯机械上限分账户严控回撤。"
+        )
+
+    # Data Completeness & Holiday Disclosure Bar
+    caveats = collect_data_caveats(gold_snap, eq_state)
+    holidays = collect_holiday_alerts(eq_state, max_days=7)
+    disclosure_html = render_cockpit_disclosure(caveats, holidays)
+
     # Latest Daily Feed Grid (4 markets)
     feed_cards_html = ""
     for mk in ("gold", "a-share", "hk-stock", "us-stock"):
@@ -1690,11 +2776,15 @@ def build_cockpit_page(
         if not it:
             continue
         mm = MARKET_META[mk]
+        chart_pill = f'<span class="session-pill">{it.chart_count} 图</span>' if it.chart_count else ""
         feed_cards_html += (
             f'<a class="feed-card" href="{mm["latest_href"]}">'
             f'<div class="feed-meta">'
             f'<span class="mkt-badge mkt-{mk}">{mm["emoji"]} {mm["short"]}</span>'
+            f'{_edition_pill_html(it.edition_type)}'
             f'<span class="session-pill">{esc(it.date_str)} · {esc(it.session_label)}</span>'
+            f"{chart_pill}"
+            f'<span class="session-pill">约 {it.read_minutes} 分钟</span>'
             f"</div>"
             f'<div class="feed-title">{esc(it.title)}</div>'
             f'<div class="feed-summary">{esc(it.summary)}</div>'
@@ -1706,21 +2796,56 @@ def build_cockpit_page(
         include_web_link=True,
     )
 
-    total_pool = a_pool + hk_pool + us_pool
+    g_assets = RELEASE_ASSET_NAMES["gold"]
+    a_assets = RELEASE_ASSET_NAMES["a-share"]
+    hk_assets = RELEASE_ASSET_NAMES["hk-stock"]
+    us_assets = RELEASE_ASSET_NAMES["us-stock"]
 
     return f"""
-    <section class="live-banner">
-      <div class="live-banner-top">
-        <span class="live-pill"><span class="live-pulse"></span>{esc(alert_label)}</span>
-        <span class="live-cadence">每日 07:30 一体化早报 ｜ 18:00 一体化晚报（黄金 × A/港/美 自动刷新）</span>
+    <section class="hero-deck">
+      <div class="hero-main">
+        <div class="hero-top">
+          <span class="live-pill"><span class="live-pulse"></span>{esc(alert_label)}</span>
+          <span class="live-cadence">每日 07:30 早报 · 18:00 晚报（北京时间）</span>
+        </div>
+        <h1 class="live-title">全球大类资产 10 秒水温驾驶舱</h1>
+        <p class="hero-verdict">{esc(hero_verdict)}</p>
+        <div class="live-meta-row">
+          <span><strong>黄金快照</strong>：{esc(gold_as_of or "待核")}</span>
+          <span><strong>三市股市快照</strong>：{esc(eq_as_of or "待核")}</span>
+          <span><strong>覆盖龙头</strong>：{total_pool} 家跨市场核心公司</span>
+        </div>
+        <div class="hero-cta-row">
+          <a class="hero-cta hero-cta-primary" href="screener.html">打开 {total_pool} 股交互筛选器 →</a>
+          <a class="hero-cta" href="scorecard.html">公开记分卡与演进</a>
+          <a class="hero-cta" href="archive.html">历史早晚报档案</a>
+        </div>
       </div>
-      <h1 class="live-title">全球大类资产 10 秒水温驾驶舱</h1>
-      <div class="live-meta-row">
-        <span><strong>黄金快照</strong>：{esc(gold_as_of)}</span>
-        <span><strong>三市股市快照</strong>：{esc(eq_as_of)}</span>
-        <span><strong>覆盖龙头</strong>：{total_pool} 家跨市场核心公司</span>
+      <div class="hero-pulse" aria-label="四市场实时水温速览">
+        <a class="pulse-row pulse-gold" href="daily/gold-latest.html">
+          <span class="pulse-mkt">黄金 XAU</span>
+          <span class="pulse-val">{_fmt_num(gold_spot, ",.2f", prefix="$")}</span>
+          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(gold_lamp_cls)}"></span><span class="pulse-score">{esc(gold_tier_short)} · {esc(gold_pass)}</span></span>
+        </a>
+        <a class="pulse-row pulse-a-share" href="daily/a-share-latest.html">
+          <span class="pulse-mkt">A 股 · 沪深300</span>
+          <span class="pulse-val">{a_csi300_val}</span>
+          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(a_lamp_cls)}"></span><span class="pulse-score">{esc(a_score)}</span></span>
+        </a>
+        <a class="pulse-row pulse-hk-stock" href="daily/hk-stock-latest.html">
+          <span class="pulse-mkt">港股 · 恒生</span>
+          <span class="pulse-val">{hk_hsi_val}</span>
+          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(hk_lamp_cls)}"></span><span class="pulse-score">{esc(hk_score)}</span></span>
+        </a>
+        <a class="pulse-row pulse-us-stock" href="daily/us-stock-latest.html">
+          <span class="pulse-mkt">美股 · 标普500</span>
+          <span class="pulse-val">{us_sp_val}</span>
+          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(us_lamp_cls)}"></span><span class="pulse-score">{esc(us_score)}</span></span>
+        </a>
       </div>
     </section>
+
+    {disclosure_html}
 
     <div class="sec-head" style="margin-top:6px;">
       <h2>四市场红绿灯水温卡片</h2>
@@ -1736,32 +2861,39 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {gold_lamp_cls}"><span class="lamp-dot"></span>{esc(gold_tier_short)} · {esc(gold_pass)}</span>
         </div>
-        <div class="m-metrics">
-          <div class="m-metric">
-            <div class="m-metric-lbl">纽约现货金（美元/盎司）</div>
-            <div class="m-metric-val">{gold_spot_val}</div>
-            <div class="m-metric-sub">{esc(gold_asia_sub)}</div>
+        <div class="m-hero-row">
+          <div class="m-hero-main">
+            <div class="m-hero-lbl">纽约现货金（美元/盎司）</div>
+            <div class="m-hero-num">{gold_spot_val}</div>
+            <div class="m-hero-sub">{esc(gold_asia_sub)}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">{esc(sge_main_lbl)}</div>
-            <div class="m-metric-val">{esc(sge_main_val)}</div>
-            <div class="m-metric-sub">{esc(sge_sub_txt)}</div>
+        </div>
+        {gold_gate_strip_html}
+        <div class="m-stat-strip">
+          <div class="m-stat">
+            <div class="m-stat-lbl">{esc(sge_main_lbl)}</div>
+            <div class="m-stat-val">{esc(sge_main_val)}</div>
+            <div class="m-stat-sub">{esc(sge_sub_txt)}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">10 年美债真实利率 DFII10</div>
-            <div class="m-metric-val">{esc(gold_dfii_val)}</div>
-            <div class="m-metric-sub">{esc(dfii_sub)}</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">10 年美债真实利率 DFII10</div>
+            <div class="m-stat-val">{esc(gold_dfii_val)}</div>
+            <div class="m-stat-sub">{esc(dfii_sub)}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">新仓规则 / 家庭上限</div>
-            <div class="m-metric-val">{esc(gold_new_buy_val)}</div>
-            <div class="m-metric-sub">{esc(gold_new_buy_sub)}</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">新仓规则 / 家庭上限</div>
+            <div class="m-stat-val">{esc(gold_new_buy_val)}</div>
+            <div class="m-stat-sub">{esc(gold_new_buy_sub)}</div>
           </div>
         </div>
         <div class="m-verdict"><strong>核心指令：</strong>{esc(gold_verdict)}</div>
         <div class="m-actions">
           <a class="btn btn-primary" href="daily/gold-latest.html">最新日报 →</a>
           <a class="btn" href="reports/gold.html">跨世纪主报告</a>
+          <span class="m-dl-micro">
+            <a href="{RELEASES_DL_BASE}/{g_assets['daily_pdf']}" target="_blank" rel="noopener">PDF ↗</a>
+            <a href="{RELEASES_DL_BASE}/{g_assets['daily_docx']}" target="_blank" rel="noopener">Word ↗</a>
+          </span>
         </div>
       </article>
 
@@ -1773,32 +2905,39 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {a_lamp_cls}"><span class="lamp-dot"></span>{esc(a_lamp_lbl)} · {esc(a_score)}</span>
         </div>
-        <div class="m-metrics">
-          <div class="m-metric">
-            <div class="m-metric-lbl">沪深 300 / 上证指数</div>
-            <div class="m-metric-val">{a_csi300_val}</div>
-            <div class="m-metric-sub">上证 {a_sse_val} · 4年成本线 {a_200w_val}</div>
+        <div class="m-hero-row">
+          <div class="m-hero-main">
+            <div class="m-hero-lbl">沪深 300 基准</div>
+            <div class="m-hero-num">{a_csi300_val}</div>
+            <div class="m-hero-sub">上证 {a_sse_val} · 4年成本线 {a_200w_val}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">股票仓位上限</div>
-            <div class="m-metric-val">{a_eq_cap_val}</div>
-            <div class="m-metric-sub">余下稳守国债 / 转债 / 现金</div>
+        </div>
+        {_render_score_meter(a_score_num, a_score)}
+        <div class="m-stat-strip">
+          <div class="m-stat">
+            <div class="m-stat-lbl">股票仓位上限</div>
+            <div class="m-stat-val">{a_eq_cap_val}</div>
+            <div class="m-stat-sub">余下稳守国债 / 转债 / 现金</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">前瞻 / 静态 ERP</div>
-            <div class="m-metric-val">{a_erp_fwd_val} / {a_erp_ttm_val}</div>
-            <div class="m-metric-sub">10 年国债 {a_cgb10y_val}</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">前瞻 / 静态 ERP</div>
+            <div class="m-stat-val">{a_erp_fwd_val} / {a_erp_ttm_val}</div>
+            <div class="m-stat-sub">10 年国债 {a_cgb10y_val}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">核心龙头诊断池</div>
-            <div class="m-metric-val">{a_pool} 只龙头</div>
-            <div class="m-metric-sub">{esc(a_pool_sub)}</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">核心龙头诊断池</div>
+            <div class="m-stat-val">{a_pool} 只龙头</div>
+            <div class="m-stat-sub">{esc(a_pool_sub)}</div>
           </div>
         </div>
         <div class="m-verdict"><strong>防踏空升级线：</strong>{esc(a_m.get("fomo_threshold", ""))}</div>
         <div class="m-actions">
           <a class="btn btn-primary" href="daily/a-share-latest.html">最新日报 →</a>
           <a class="btn" href="reports/a-share.html">全景手册 ({a_pool}股)</a>
+          <span class="m-dl-micro">
+            <a href="{RELEASES_DL_BASE}/{a_assets['daily_pdf']}" target="_blank" rel="noopener">PDF ↗</a>
+            <a href="{RELEASES_DL_BASE}/{a_assets['daily_docx']}" target="_blank" rel="noopener">Word ↗</a>
+          </span>
         </div>
       </article>
 
@@ -1810,32 +2949,39 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {hk_lamp_cls}"><span class="lamp-dot"></span>{esc(hk_lamp_lbl)} · {esc(hk_score)}</span>
         </div>
-        <div class="m-metrics">
-          <div class="m-metric">
-            <div class="m-metric-lbl">恒生指数 / 恒生科技</div>
-            <div class="m-metric-val">{hk_hsi_val}</div>
-            <div class="m-metric-sub">恒科 {hk_hstech_val} · 200日线 {hk_200d_val}</div>
+        <div class="m-hero-row">
+          <div class="m-hero-main">
+            <div class="m-hero-lbl">恒生指数基准</div>
+            <div class="m-hero-num">{hk_hsi_val}</div>
+            <div class="m-hero-sub">恒科 {hk_hstech_val} · 200日线 {hk_200d_val}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">离岸 / 港股通上限</div>
-            <div class="m-metric-val">{hk_off_cap_val} / {hk_on_cap_val}</div>
-            <div class="m-metric-sub">AH 溢价指数 {hk_hsahp_val}</div>
+        </div>
+        {_render_score_meter(hk_score_num, hk_score)}
+        <div class="m-stat-strip">
+          <div class="m-stat">
+            <div class="m-stat-lbl">离岸 / 港股通上限</div>
+            <div class="m-stat-val">{hk_off_cap_val} / {hk_on_cap_val}</div>
+            <div class="m-stat-sub">AH 溢价指数 {hk_hsahp_val}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">HIBOR 1M / 总结余</div>
-            <div class="m-metric-val">{hibor_value} / {hkma_short_val}</div>
-            <div class="m-metric-sub">美元/港元 {usd_hkd_value}（紧盯 7.85）</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">HIBOR 1M / 总结余</div>
+            <div class="m-stat-val">{hibor_value} / {hkma_short_val}</div>
+            <div class="m-stat-sub">美元/港元 {usd_hkd_value}（紧盯 7.85）</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">美元 / 人民币锚前瞻 ERP</div>
-            <div class="m-metric-val">{hk_erp_usd_val} / {hk_erp_cny_val}</div>
-            <div class="m-metric-sub">{hk_pool} 只核心龙头 · 南向年内 {hk_sb_ytd_val}</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">美元 / 人民币锚 ERP</div>
+            <div class="m-stat-val">{hk_erp_usd_val} / {hk_erp_cny_val}</div>
+            <div class="m-stat-sub">{hk_pool} 只龙头 · 南向年内 {hk_sb_ytd_val}</div>
           </div>
         </div>
         <div class="m-verdict"><strong>防踏空升级线：</strong>{esc(hk_m.get("fomo_threshold", ""))}</div>
         <div class="m-actions">
           <a class="btn btn-primary" href="daily/hk-stock-latest.html">最新日报 →</a>
           <a class="btn" href="reports/hk-stock.html">全景手册 ({hk_pool}股)</a>
+          <span class="m-dl-micro">
+            <a href="{RELEASES_DL_BASE}/{hk_assets['daily_pdf']}" target="_blank" rel="noopener">PDF ↗</a>
+            <a href="{RELEASES_DL_BASE}/{hk_assets['daily_docx']}" target="_blank" rel="noopener">Word ↗</a>
+          </span>
         </div>
       </article>
 
@@ -1847,32 +2993,39 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {us_lamp_cls}"><span class="lamp-dot"></span>{esc(us_lamp_lbl)} · {esc(us_score)}</span>
         </div>
-        <div class="m-metrics">
-          <div class="m-metric">
-            <div class="m-metric-lbl">标普 500 / 10 年美债</div>
-            <div class="m-metric-val">{us_sp_val}</div>
-            <div class="m-metric-sub">10Y 美债 {us10y_val} · 200日线 {us_200d_val}</div>
+        <div class="m-hero-row">
+          <div class="m-hero-main">
+            <div class="m-hero-lbl">标普 500 基准</div>
+            <div class="m-hero-num">{us_sp_val}</div>
+            <div class="m-hero-sub">10Y 美债 {us10y_val} · 200日线 {us_200d_val}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">100% 闭环资产配置</div>
-            <div class="m-metric-val" style="font-size:13.5px;">{esc(us_alloc_str)}</div>
-            <div class="m-metric-sub">科技新增严控 {us_tech_cap_val}</div>
+        </div>
+        {_render_score_meter(us_score_num, us_score)}
+        <div class="m-stat-strip">
+          <div class="m-stat">
+            <div class="m-stat-lbl">100% 闭环资产配置</div>
+            <div class="m-stat-val">{esc(us_alloc_str)}</div>
+            <div class="m-stat-sub">科技新增严控 {us_tech_cap_val}</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">前瞻 / 静态 ERP</div>
-            <div class="m-metric-val">{us_erp_fwd_val} / {us_erp_ttm_val}</div>
-            <div class="m-metric-sub">前瞻 PE {us_pe_fwd_val}（静态 {us_pe_ttm_val}）</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">前瞻 / 静态 ERP</div>
+            <div class="m-stat-val">{us_erp_fwd_val} / {us_erp_ttm_val}</div>
+            <div class="m-stat-sub">前瞻 PE {us_pe_fwd_val}（静态 {us_pe_ttm_val}）</div>
           </div>
-          <div class="m-metric">
-            <div class="m-metric-lbl">核心龙头诊断池</div>
-            <div class="m-metric-val">{us_pool} 只龙头</div>
-            <div class="m-metric-sub">{esc(us_pool_sub)}</div>
+          <div class="m-stat">
+            <div class="m-stat-lbl">核心龙头诊断池</div>
+            <div class="m-stat-val">{us_pool} 只龙头</div>
+            <div class="m-stat-sub">{esc(us_pool_sub)}</div>
           </div>
         </div>
         <div class="m-verdict"><strong>防踏空升级线：</strong>{esc(us_m.get("fomo_threshold", ""))}</div>
         <div class="m-actions">
           <a class="btn btn-primary" href="daily/us-stock-latest.html">最新日报 →</a>
           <a class="btn" href="reports/us-stock.html">全景手册 ({us_pool}股)</a>
+          <span class="m-dl-micro">
+            <a href="{RELEASES_DL_BASE}/{us_assets['daily_pdf']}" target="_blank" rel="noopener">PDF ↗</a>
+            <a href="{RELEASES_DL_BASE}/{us_assets['daily_docx']}" target="_blank" rel="noopener">Word ↗</a>
+          </span>
         </div>
       </article>
     </section>
@@ -1895,6 +3048,7 @@ def build_cockpit_page(
               <span class="status-chip {vix_chip[0]}">{vix_chip[1]}</span>
             </div>
             <div class="breaker-val">{vix_close_val}</div>
+            <div class="breaker-meter"><div class="breaker-meter-fill {_breaker_fill_cls(vix_chip[0])}" style="width:{vix_meter_pct:.0f}%;"></div></div>
             <div class="breaker-thr">{vix_high_label} ｜ 熔断线：连2日 &gt; {vix_thr:.0f}</div>
           </div>
           <div class="breaker-item">
@@ -1903,6 +3057,7 @@ def build_cockpit_page(
               <span class="status-chip {jpy_chip[0]}">{jpy_chip[1]}</span>
             </div>
             <div class="breaker-val">{usdjpy_val}</div>
+            <div class="breaker-meter"><div class="breaker-meter-fill {_breaker_fill_cls(jpy_chip[0])}" style="width:{jpy_meter_pct:.0f}%;"></div></div>
             <div class="breaker-thr">熔断线：3 日急跌 &gt; {jpy_drop_thr:g}%（日元急升防平仓）</div>
           </div>
           <div class="breaker-item">
@@ -1911,6 +3066,7 @@ def build_cockpit_page(
               <span class="status-chip {us10y_chip[0]}">{us10y_chip[1]}</span>
             </div>
             <div class="breaker-val">{us10y_val}</div>
+            <div class="breaker-meter"><div class="breaker-meter-fill {_breaker_fill_cls(us10y_chip[0])}" style="width:{us10y_meter_pct:.0f}%;"></div></div>
             <div class="breaker-thr">熔断线：突破 {us10y_thr:.2f}%</div>
           </div>
           <div class="breaker-item">
@@ -1919,6 +3075,7 @@ def build_cockpit_page(
               <span class="status-chip {hkma_chip[0]}">{hkma_chip[1]}</span>
             </div>
             <div class="breaker-val">{hkma_full_val}</div>
+            <div class="breaker-meter"><div class="breaker-meter-fill {_breaker_fill_cls(hkma_chip[0])}" style="width:{hkma_meter_pct:.0f}%;"></div></div>
             <div class="breaker-thr">熔断线：跌破 {hkma_thr:.0f} 亿港元</div>
           </div>
         </div>
@@ -1932,6 +3089,7 @@ def build_cockpit_page(
         <div class="erp-list">
           {erp_bars_html}
         </div>
+        <div class="erp-scale-marks"><span>0%</span><span>5%</span><span>10%</span></div>
       </div>
 
       <div class="panel-card">
@@ -1940,10 +3098,10 @@ def build_cockpit_page(
           <span class="sec-sub">{hcw_sum_disp}</span>
         </div>
         <div class="alloc-bar" role="img" aria-label="家庭综合配置比例条">
-          <div class="alloc-seg" style="width:{eq_pct}%;background:#1d4ed8;" title="股票底座 {eq_pct}%">{eq_pct}% 股</div>
-          <div class="alloc-seg" style="width:{cb_pct}%;background:#0f766e;" title="可转债 {cb_pct}%">{cb_pct}%</div>
-          <div class="alloc-seg" style="width:{bc_pct}%;background:#475569;" title="国债短债与现金 {bc_pct}%">{bc_pct}% 债现</div>
-          <div class="alloc-seg" style="width:{gd_pct}%;background:#b45309;" title="存量黄金 {gd_pct}%">{gd_pct}% 金</div>
+          <div class="alloc-seg" style="width:{eq_pct}%;background:#1d4ed8;" title="股票底座 {eq_pct}%">{eq_seg_lbl}</div>
+          <div class="alloc-seg" style="width:{cb_pct}%;background:#0f766e;" title="可转债 {cb_pct}%">{cb_seg_lbl}</div>
+          <div class="alloc-seg" style="width:{bc_pct}%;background:#475569;" title="国债短债与现金 {bc_pct}%">{bc_seg_lbl}</div>
+          <div class="alloc-seg" style="width:{gd_pct}%;background:#b45309;" title="存量黄金 {gd_pct}%">{gd_seg_lbl}</div>
         </div>
         <div class="alloc-legend">
           <span class="alloc-leg-item"><span class="alloc-swatch" style="background:#1d4ed8;"></span>股票底座 {eq_pct}%</span>
@@ -1952,6 +3110,7 @@ def build_cockpit_page(
           <span class="alloc-leg-item"><span class="alloc-swatch" style="background:#b45309;"></span>存量黄金 {gd_pct}%{esc(gold_alloc_suffix)}</span>
         </div>
         <div class="alloc-note">{esc(hcw_note)}</div>
+        {alloc_breakdown_html}
       </div>
 
       <div class="panel-card span-2">
@@ -1992,6 +3151,7 @@ def build_cockpit_page(
           </div>
         </div>
       </div>
+      {ah_panel_html}
     </section>
 
     <div class="sec-head">
@@ -2007,11 +3167,11 @@ def build_cockpit_page(
       <div class="panel-title" style="margin-bottom:4px;">
         <span>📥 杂志级 PDF / 原生 Word 离线下载中心</span>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" class="btn btn-sm" data-action="print">🖨️ 当前页一键存 PDF</button>
+          <button type="button" class="btn btn-sm" data-action="print">当前页一键存 PDF</button>
           <a class="btn btn-sm" href="{RELEASES_TAG_URL}" target="_blank" rel="noopener">GitHub Releases 全部附件 ↗</a>
         </div>
       </div>
-      <div class="sec-sub">离线文件托管于 GitHub Releases（不占网页仓库体积）；打开任意报告网页点击右下角「🖨️ PDF」亦可零等待即时打印导出。</div>
+      <div class="sec-sub">离线文件托管于 GitHub Releases（不占网页仓库体积）；打开任意报告网页点击顶部「打印」亦可零等待即时导出 PDF。</div>
       <div class="downloads-grid">
         {dl_cards_html}
       </div>
@@ -2019,67 +3179,137 @@ def build_cockpit_page(
     """
 
 
-def build_flagship_sibling_bar(active_market: str, total_pool: int) -> str:
-    tabs = [
-        ("gold", "gold.html", "🥇 黄金主报告"),
-        ("a-share", "a-share.html", "🇨🇳 A股手册"),
-        ("hk-stock", "hk-stock.html", "🇭🇰 港股手册"),
-        ("us-stock", "us-stock.html", "🇺🇸 美股手册"),
-    ]
-    left = "".join(
-        f'<a class="sib-pill{" active" if mk == active_market else ""}" href="{href}">{lbl}</a>'
-        for mk, href, lbl in tabs
-    )
-    latest_href = f"../daily/{active_market}-latest.html"
-    return (
-        '<div class="sibling-bar no-print">'
-        f'<div class="sibling-group">{left}</div>'
-        '<div class="sibling-group">'
-        f'<a class="btn btn-sm" href="{latest_href}">📰 最新日报</a>'
-        f'<a class="btn btn-sm" href="../screener.html">🔍 {total_pool}股池</a>'
-        '<button type="button" class="btn btn-sm" data-action="print">🖨️ 打印/存PDF</button>'
-        "</div></div>"
-    )
-
-
-def build_daily_sibling_bar(
-    item: DailyItem,
-    prev_item: DailyItem | None,
-    next_item: DailyItem | None,
-    stock_counts: dict[str, int],
+def build_doc_toolbar(
+    *,
+    market: str,
+    doc_kind: str,
+    read_minutes: int,
+    chart_count: int,
+    has_toc: bool,
+    total_pool: int = 0,
+    stock_counts: dict[str, int] | None = None,
+    item: DailyItem | None = None,
+    prev_item: DailyItem | None = None,
+    next_item: DailyItem | None = None,
+    is_latest: bool = False,
 ) -> str:
-    tabs = [
-        ("gold", "gold-latest.html", "🥇 黄金最新"),
-        ("a-share", "a-share-latest.html", "🇨🇳 A股最新"),
-        ("hk-stock", "hk-stock-latest.html", "🇭🇰 港股最新"),
-        ("us-stock", "us-stock-latest.html", "🇺🇸 美股最新"),
-    ]
-    left = "".join(
-        f'<a class="sib-pill{" active" if mk == item.market else ""}" href="{href}">{lbl}</a>'
-        for mk, href, lbl in tabs
-    )
-    mm = MARKET_META[item.market]
-    manual_lbl = (
-        mm["manual_label"]
-        if item.market == "gold"
-        else f'{mm["manual_label"]} ({stock_counts.get(item.market, 0)}股)'
-    )
-    nav_btns = []
-    if prev_item:
-        nav_btns.append(f'<a class="btn btn-sm" href="{prev_item.slug}.html" title="{esc(prev_item.title)}">← 上一期</a>')
-    if next_item:
-        nav_btns.append(f'<a class="btn btn-sm" href="{next_item.slug}.html" title="{esc(next_item.title)}">下一期 →</a>')
-    nav_btns.append(f'<a class="btn btn-sm" href="../{mm["report_href"]}">📖 {manual_lbl}</a>')
-    nav_btns.append(f'<a class="btn btn-sm" href="../archive.html#{item.market}">🗂️ 往期档案</a>')
+    """Build contextual editorial document toolbar (breadcrumb + metadata pills + actions + Release PDF/Word)."""
+    mm = MARKET_META[market]
+    assets = RELEASE_ASSET_NAMES[market]
+    sc = stock_counts or {}
+
+    if doc_kind == "flagship":
+        crumb_tail = mm["manual_label"]
+        meta_pills = [
+            '<span class="meta-pill">常青旗舰</span>',
+            f'<span class="meta-pill">{chart_count} 张矢量图</span>' if chart_count else "",
+            f'<span class="meta-pill">约 {read_minutes} 分钟阅读</span>',
+        ]
+        right_btns = [
+            f'<a class="btn btn-sm" href="../daily/{market}-latest.html">最新日报</a>',
+            f'<a class="btn btn-sm" href="../screener.html">{total_pool}股池</a>' if total_pool > 0 else "",
+            f'<a class="btn btn-sm dl-badge-pdf" href="{RELEASES_DL_BASE}/{assets["flagship_pdf"]}" target="_blank" rel="noopener">PDF ↗</a>',
+            f'<a class="btn btn-sm dl-badge-docx" href="{RELEASES_DL_BASE}/{assets["flagship_docx"]}" target="_blank" rel="noopener">Word ↗</a>',
+        ]
+    else:
+        assert item is not None
+        crumb_tail = f"{item.date_str} {item.session_label}"
+        ed_lbl = {"main": "深度主刊", "light": "轻刊", "holiday_watch": "守望刊"}.get(item.edition_type, "深度主刊")
+        meta_pills = [
+            f'<span class="meta-pill">{ed_lbl}</span>',
+            f'<span class="meta-pill">{chart_count} 张矢量图</span>' if chart_count else "",
+            f'<span class="meta-pill">约 {read_minutes} 分钟阅读</span>',
+        ]
+        manual_lbl = (
+            mm["manual_label"]
+            if market == "gold"
+            else f'{mm["manual_label"]} ({sc.get(market, 0)}股)'
+        )
+        right_btns = []
+        if prev_item:
+            right_btns.append(
+                f'<a class="btn btn-sm" href="{prev_item.slug}.html" title="{esc(prev_item.title)}">← 上一期</a>'
+            )
+        if next_item:
+            right_btns.append(
+                f'<a class="btn btn-sm" href="{next_item.slug}.html" title="{esc(next_item.title)}">下一期 →</a>'
+            )
+        right_btns.append(f'<a class="btn btn-sm" href="../{mm["report_href"]}">{manual_lbl}</a>')
+        right_btns.append(f'<a class="btn btn-sm" href="../archive.html#{market}">往期档案</a>')
+        if is_latest:
+            right_btns.append(
+                f'<a class="btn btn-sm dl-badge-pdf" href="{RELEASES_DL_BASE}/{assets["daily_pdf"]}" target="_blank" rel="noopener">PDF ↗</a>'
+            )
+            right_btns.append(
+                f'<a class="btn btn-sm dl-badge-docx" href="{RELEASES_DL_BASE}/{assets["daily_docx"]}" target="_blank" rel="noopener">Word ↗</a>'
+            )
+
+    if has_toc:
+        right_btns.append('<button type="button" class="btn btn-sm toolbar-toc-btn" data-action="open-toc">目录</button>')
+    right_btns.append('<button type="button" class="btn btn-sm" data-action="print">打印</button>')
+
     return (
-        '<div class="sibling-bar no-print">'
-        f'<div class="sibling-group">{left}</div>'
-        f'<div class="sibling-group">{"".join(nav_btns)}</div>'
+        '<div class="doc-toolbar no-print">'
+        '<div class="doc-toolbar-left">'
+        '<nav class="breadcrumb" aria-label="面包屑">'
+        '<a href="../index.html">总览</a>'
+        '<span class="bc-sep">/</span>'
+        f'<a href="../archive.html#{market}">{esc(mm["short"])}</a>'
+        '<span class="bc-sep">/</span>'
+        f'<span>{esc(crumb_tail)}</span>'
+        "</nav>"
+        f'<div class="doc-meta-pills">{"".join(p for p in meta_pills if p)}</div>'
+        "</div>"
+        f'<div class="doc-toolbar-right">{"".join(b for b in right_btns if b)}</div>'
         "</div>"
     )
 
 
-def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]) -> str:
+_COLOR_MARKS: dict[str, str] = {"g": "●", "b": "◆", "y": "▲", "r": "×"}
+
+
+def _render_static_screener_row(stock: dict[str, Any]) -> str:
+    col = str(stock["color"])
+    mark = _COLOR_MARKS.get(col, "●")
+    pe_num = stock.get("pe_num")
+    div_pct = stock.get("div_pct")
+    ah_pct = stock.get("ah_pct")
+    gap = stock.get("anchor_gap_pct")
+
+    pe_chip = (
+        f'<span class="val-chip">PE {pe_num:.1f}x</span>'
+        if isinstance(pe_num, (int, float))
+        else f'<span class="val-chip">{esc(stock["valuation"])}</span>'
+    )
+    div_ah_chips: list[str] = []
+    if isinstance(div_pct, (int, float)):
+        div_ah_chips.append(f'<span class="val-chip">息 {div_pct:.1f}%</span>')
+    if isinstance(ah_pct, (int, float)):
+        div_ah_chips.append(f'<span class="val-chip">AH {ah_pct:+.1f}%</span>')
+    div_ah_html = (
+        f'<div class="val-chips">{"".join(div_ah_chips)}</div>'
+        if div_ah_chips
+        else '<span class="sec-sub">—</span>'
+    )
+    anchor_html = ""
+    if isinstance(gap, (int, float)):
+        a_cls = "anchor-in" if gap <= 0 else ("anchor-near" if gap <= 12.0 else "anchor-far")
+        anchor_html = f'<span class="anchor-badge {a_cls}">距锚 {gap:+.1f}%</span> '
+
+    return (
+        f'<tr class="row-{esc(col)}" data-market="{esc(stock["market"])}">'
+        f'<td><span class="mkt-badge mkt-{esc(stock["market"])}">{esc(stock["market_label"])}</span></td>'
+        f'<td class="col-sticky"><strong>{esc(stock["name"])}</strong> <span class="code-tag">{esc(stock["code"])}</span></td>'
+        f'<td class="nw">{esc(stock["sector"])}</td>'
+        f'<td><div class="nw"><strong>{esc(stock["price"])}</strong></div><div class="val-chips">{pe_chip}</div></td>'
+        f"<td>{div_ah_html}</td>"
+        f'<td><span class="act-pill act-{esc(col)}">{mark} {esc(stock["action_label"])}</span></td>'
+        f'<td>{anchor_html}{esc(stock["summary"])} <a class="nw" href="{esc(stock["report_url"])}">手册 →</a></td>'
+        f"</tr>"
+    )
+
+
+def build_screener_page(stocks: list[dict[str, Any]], benchmarks: dict[str, str]) -> str:
     total = len(stocks)
     cnt_m = defaultdict(int)
     cnt_c = defaultdict(int)
@@ -2094,24 +3324,16 @@ def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]
 
     # Escape </script> safely inside embedded JSON
     safe_json = json.dumps(stocks, ensure_ascii=False).replace("</", "<\\/")
-    static_rows = "".join(
-        f'<tr class="row-{esc(stock["color"])}" data-market="{esc(stock["market"])}">'
-        f'<td>{esc(stock["market_label"])}</td><td>{esc(stock["sector"])}</td>'
-        f'<td><strong>{esc(stock["name"])}</strong> <span class="code-tag">{esc(stock["code"])}</span></td>'
-        f'<td>{esc(stock["price"])}</td><td>{esc(stock["valuation"])}</td>'
-        f'<td>{esc(stock["action_label"])}</td>'
-        f'<td>{esc(stock["summary"])} <a href="{esc(stock["report_url"])}">手册 →</a></td></tr>'
-        for stock in stocks
-    )
+    static_rows = "".join(_render_static_screener_row(stock) for stock in stocks)
 
     return f"""
     <div class="sec-head" style="margin-top:4px;">
-      <h2>🔍 全球 {total} 家核心龙头交互筛选器</h2>
+      <h2>全球 {total} 家核心龙头交互筛选器</h2>
       <span class="sec-sub">各市场数据基准取自旗舰手册附表二 · {source_labels}</span>
     </div>
 
     <div class="screener-stats">
-      <div class="stat-tile" data-stat-color="all">
+      <div class="stat-tile stat-total" data-stat-color="all">
         <div class="stat-tile-lbl">全部龙头池</div>
         <div class="stat-tile-num">{total}</div>
       </div>
@@ -2134,9 +3356,20 @@ def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]
     </div>
 
     <section class="filter-panel">
+      <div class="preset-row" role="group" aria-label="快捷筛选预设">
+        <button type="button" class="preset-pill active" data-preset="all">全部龙头</button>
+        <button type="button" class="preset-pill" data-preset="base">● 当下底座</button>
+        <button type="button" class="preset-pill" data-preset="high-div">高股息 ≥4%</button>
+        <button type="button" class="preset-pill" data-preset="near-anchor">近安全锚 ≤12%</button>
+        <button type="button" class="preset-pill" data-preset="ah-inverted">A/H 倒挂折价</button>
+        <button type="button" class="preset-pill" data-preset="hide-red">隐藏高危回避</button>
+      </div>
       <div class="filter-row">
-        <input type="search" id="scr-search" class="search-input" placeholder="搜索中文名 / 代码 / 赛道 / 关键词（如 宁德、NVDA、00883、银行、回购）…" autocomplete="off">
-        <select id="scr-sector" class="sector-select" aria-label="按赛道筛选"></select>
+        <div class="search-wrap">
+          <input type="search" id="scr-search" class="search-input" placeholder="搜索中文名 / 代码 / 赛道 / 关键词（如 宁德、NVDA、00883、银行、回购）…" autocomplete="off">
+          <button type="button" id="scr-clear" class="search-clear" aria-label="清空搜索" hidden>×</button>
+          <kbd class="kbd-hint" aria-hidden="true">/</kbd>
+        </div>
         <button type="button" class="btn btn-sm" id="scr-reset">重置筛选</button>
       </div>
       <div class="filter-row">
@@ -2152,10 +3385,12 @@ def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]
         <button type="button" class="filter-pill" data-filter-color="y" data-color="y">▲ 分歧观察 ({cnt_c["y"]})</button>
         <button type="button" class="filter-pill" data-filter-color="r" data-color="r">× 高危回避 ({cnt_c["r"]})</button>
       </div>
+      <div class="sector-tray" id="scr-sector-tray" aria-label="赛道多选筛选"></div>
     </section>
 
     <div class="screener-bar">
       <strong id="scr-count" role="status">显示 {total} / {total} 家龙头公司</strong>
+      <div class="active-filters" id="scr-active-filters"></div>
     </div>
 
     <div class="screener-table-wrap">
@@ -2163,12 +3398,12 @@ def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]
         <thead>
           <tr>
             <th class="sortable" data-sort="market"><button type="button" disabled>市场 ⇅</button></th>
+            <th class="sortable col-sticky" data-sort="name"><button type="button" disabled>公司与代码 ⇅</button></th>
             <th class="sortable" data-sort="sector"><button type="button" disabled>赛道 ⇅</button></th>
-            <th class="sortable" data-sort="name"><button type="button" disabled>公司与代码 ⇅</button></th>
-            <th>最新价 / 一手</th>
-            <th>估值 / 股息 / AH</th>
+            <th class="sortable" data-sort="pe_num"><button type="button" disabled>现价 / 估值 ⇅</button></th>
+            <th class="sortable" data-sort="div_pct"><button type="button" disabled>股息 / AH ⇅</button></th>
             <th class="sortable" data-sort="color"><button type="button" disabled>四色阵营 ⇅</button></th>
-            <th>核心诊断与安全锚摘要</th>
+            <th class="sortable" data-sort="anchor_gap_pct"><button type="button" disabled>核心诊断与距安全锚 ⇅</button></th>
           </tr>
         </thead>
         <tbody id="scr-tbody">{static_rows}</tbody>
@@ -2181,18 +3416,142 @@ def build_screener_page(stocks: list[dict[str, str]], benchmarks: dict[str, str]
     """
 
 
+def _first_int(text: str, default: int = 0) -> int:
+    m = re.search(r"(\d+)", str(text or ""))
+    return int(m.group(1)) if m else default
+
+
+def _first_pct(text: str, default: float | None = None) -> float | None:
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)%", str(text or ""))
+    return float(m.group(1)) if m else default
+
+
+def parse_scorecard_stats(gold_sc_md: str, eq_sc_md: str) -> dict[str, dict[str, Any]]:
+    """Extract settled/hit/partial/miss/tracking statistics from Gold & Equity SCORECARD.md files."""
+    # --- Gold SCORECARD.md ---
+    g_settled = g_scored = g_hit = g_partial = g_miss = g_untrig = g_track = 0
+    g_full_pct: float | None = None
+    g_part_pct: float | None = None
+    for raw in (gold_sc_md or "").splitlines():
+        st = raw.strip()
+        if not (st.startswith("|") and st.endswith("|")):
+            continue
+        cells = _split_md_cells(st)
+        if len(cells) >= 8 and "已到期" in cells[0]:
+            g_settled = _first_int(cells[1])
+            m_sc = re.search(r"计分\s*(\d+)", cells[1])
+            g_hit = _first_int(cells[2])
+            g_partial = _first_int(cells[3])
+            g_miss = _first_int(cells[4])
+            g_untrig = _first_int(cells[5])
+            g_scored = int(m_sc.group(1)) if m_sc else (g_hit + g_partial + g_miss)
+            g_full_pct = _first_pct(cells[6])
+            g_part_pct = _first_pct(cells[7])
+        elif len(cells) >= 2 and "持续追踪" in cells[0]:
+            g_track = _first_int(cells[1])
+    if g_scored == 0 and (g_hit + g_partial + g_miss) > 0:
+        g_scored = g_hit + g_partial + g_miss
+    if g_part_pct is None:
+        g_part_pct = round(((g_hit + g_partial) / g_scored) * 100.0, 1) if g_scored > 0 else 0.0
+    if g_full_pct is None:
+        g_full_pct = round((g_hit / g_scored) * 100.0, 1) if g_scored > 0 else 0.0
+
+    # --- Equity SCORECARD.md ---
+    e_settled = e_hit = e_partial = e_miss = e_untrig = e_track = 0
+    m_eq = re.search(
+        r"已到期\s*(\d+)\s*项[（(][^）)]*兑现\s*(\d+)[^）)]*部分兑现\s*(\d+)[^）)]*证伪\s*(\d+)[^）)]*未触发\s*(\d+)[）)][，,、\s]*持续追踪\s*(\d+)\s*项",
+        eq_sc_md or "",
+    )
+    if m_eq:
+        e_settled = int(m_eq.group(1))
+        e_hit = int(m_eq.group(2))
+        e_partial = int(m_eq.group(3))
+        e_miss = int(m_eq.group(4))
+        e_untrig = int(m_eq.group(5))
+        e_track = int(m_eq.group(6))
+    else:
+        for raw in (eq_sc_md or "").splitlines():
+            st = raw.strip()
+            if not (st.startswith("|") and st.endswith("|")):
+                continue
+            if "✅ 兑现" in st:
+                e_hit += 1
+            elif "⚠️ 部分兑现" in st:
+                e_partial += 1
+            elif "❌ 证伪" in st:
+                e_miss += 1
+            elif "条件未触发" in st:
+                e_untrig += 1
+            elif "⏳" in st:
+                e_track += 1
+        e_settled = e_hit + e_partial + e_miss + e_untrig
+    e_scored = e_hit + e_partial + e_miss
+    e_part_pct = round(((e_hit + e_partial) / e_scored) * 100.0, 1) if e_scored > 0 else 0.0
+    e_full_pct = round((e_hit / e_scored) * 100.0, 1) if e_scored > 0 else 0.0
+
+    return {
+        "gold": {
+            "settled": g_settled,
+            "scored": g_scored,
+            "hit": g_hit,
+            "partial": g_partial,
+            "miss": g_miss,
+            "untriggered": g_untrig,
+            "tracking": g_track,
+            "full_pct": g_full_pct,
+            "at_least_partial_pct": g_part_pct,
+        },
+        "equity": {
+            "settled": e_settled,
+            "scored": e_scored,
+            "hit": e_hit,
+            "partial": e_partial,
+            "miss": e_miss,
+            "untriggered": e_untrig,
+            "tracking": e_track,
+            "full_pct": e_full_pct,
+            "at_least_partial_pct": e_part_pct,
+        },
+    }
+
+
+def _render_ring_svg(pct: float, accent_cls: str, label: str) -> str:
+    """Render compact decorative circular gauge SVG (viewBox W=64 < 100, Gate S4 compliant)."""
+    clamped = max(0.0, min(100.0, float(pct)))
+    circ = 157.08  # 2 * pi * 25
+    offset = circ * (1.0 - clamped / 100.0)
+    return (
+        f'<svg class="ring-svg {esc(accent_cls)}" viewBox="0 0 64 64" width="58" height="58" aria-hidden="true">'
+        '<circle class="ring-track" cx="32" cy="32" r="25" fill="none" stroke-width="6"/>'
+        f'<circle class="ring-fill" cx="32" cy="32" r="25" fill="none" stroke-width="6" '
+        f'stroke-dasharray="{circ:.1f}" stroke-dashoffset="{offset:.1f}" transform="rotate(-90 32 32)"/>'
+        f'<text class="ring-val" x="32" y="36" text-anchor="middle">{esc(label)}</text>'
+        "</svg>"
+    )
+
+
 def build_scorecard_page(
     R: Renderers,
     slug_map: dict[str, str],
+    gold_snap: dict | None = None,
 ) -> str:
-    eq_sc_md = normalize_relative_md_links(
-        (EQUITY_DIR / "daily" / "SCORECARD.md").read_text(encoding="utf-8")
-    )
-    gd_sc_md = normalize_relative_md_links(
-        protect_backticked_comments(
-            (GOLD_DIR / "daily" / "SCORECARD.md").read_text(encoding="utf-8")
-        )
-    )
+    eq_sc_raw_md = (EQUITY_DIR / "daily" / "SCORECARD.md").read_text(encoding="utf-8")
+    gd_sc_raw_md = (GOLD_DIR / "daily" / "SCORECARD.md").read_text(encoding="utf-8")
+    sc_stats = parse_scorecard_stats(gd_sc_raw_md, eq_sc_raw_md)
+    eq_st = sc_stats["equity"]
+    gd_st = sc_stats["gold"]
+
+    trust = (gold_snap or {}).get("trust_assets") or {}
+    myths_blocked = _first_int(trust.get("myths_blocked"), 0)
+    model_upgrades = _first_int(trust.get("model_upgrades"), 0)
+    minor_corr = _first_int(trust.get("minor_corrections"), 0)
+    minor_impact = str(trust.get("minor_impact_on_core_verdict") or f"0 / {minor_corr}")
+
+    eq_ring_lbl = f'{eq_st["at_least_partial_pct"]:.0f}%'
+    gd_ring_lbl = f'{gd_st["at_least_partial_pct"]:.0f}%'
+
+    eq_sc_md = normalize_relative_md_links(eq_sc_raw_md)
+    gd_sc_md = normalize_relative_md_links(protect_backticked_comments(gd_sc_raw_md))
     eq_cl_md = normalize_relative_md_links(
         (EQUITY_DIR / "daily" / "CHANGELOG.md").read_text(encoding="utf-8")
     )
@@ -2227,8 +3586,65 @@ def build_scorecard_page(
 
     return f"""
     <div class="sec-head" style="margin-top:4px;">
-      <h2>📋 公开可证伪预测记分卡与观点演进账本</h2>
+      <h2>公开可证伪预测记分卡与观点演进账本</h2>
       <span class="sec-sub">对就写对、偏就写偏、错就公开认错，绝不事后涂改旧账</span>
+    </div>
+
+    <section class="sc-summary-grid" aria-label="双轨可证伪回验核心统计">
+      <div class="sc-stat-card">
+        <div class="sc-stat-head">
+          <div class="sc-stat-title">全球股市记分卡</div>
+          <div class="sc-stat-sub">已评分至少部分兑现率</div>
+        </div>
+        <div class="sc-stat-body">
+          {_render_ring_svg(eq_st["at_least_partial_pct"], "ring-eq", eq_ring_lbl)}
+          <div class="sc-stat-meta">
+            <div>已到期 {eq_st["settled"]} 项（计分 {eq_st["scored"]} 项）</div>
+            <div>兑现 {eq_st["hit"]} · 部分 {eq_st["partial"]} · 证伪 {eq_st["miss"]} · 追踪中 {eq_st["tracking"]} 项</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sc-stat-card">
+        <div class="sc-stat-head">
+          <div class="sc-stat-title">黄金深度记分卡</div>
+          <div class="sc-stat-sub">已评分至少部分兑现率</div>
+        </div>
+        <div class="sc-stat-body">
+          {_render_ring_svg(gd_st["at_least_partial_pct"], "ring-gold", gd_ring_lbl)}
+          <div class="sc-stat-meta">
+            <div>已到期 {gd_st["settled"]} 项（完全兑现 {gd_st["full_pct"]:.1f}%）</div>
+            <div>兑现 {gd_st["hit"]} · 部分 {gd_st["partial"]} · 证伪 {gd_st["miss"]} · 追踪中 {gd_st["tracking"]} 项</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sc-stat-card">
+        <div class="sc-stat-head">
+          <div class="sc-stat-title">谣言拦截与模型升级</div>
+          <div class="sc-stat-sub">一手官源交叉对抗沉淀</div>
+        </div>
+        <div class="sc-stat-body">
+          <div class="sc-stat-big">{myths_blocked} 条 / {model_upgrades} 次</div>
+          <div class="sc-stat-meta">累计证伪市场失实传闻 {myths_blocked} 条 · 量化与风控模型升级 {model_upgrades} 次</div>
+        </div>
+      </div>
+
+      <div class="sc-stat-card">
+        <div class="sc-stat-head">
+          <div class="sc-stat-title">细节勘误与核心裁决</div>
+          <div class="sc-stat-sub">动摇仓位方向占比</div>
+        </div>
+        <div class="sc-stat-body">
+          <div class="sc-stat-big">{esc(minor_impact)}</div>
+          <div class="sc-stat-meta">公开透明修正次级细节 {minor_corr} 笔 · 核心红绿灯与仓位红线零摇摆</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="transparency-pledge">
+      <div class="pledge-title">公开可证伪与准时发刊透明承诺</div>
+      <p class="pledge-text">每期预测一经发刊即锁定原时间、原价格与客观判据，到期仅填实盘官方结果、永不涂改历史；遇跨时区官库尚未更新或次级数据暂缺，一律按规则留空或暂采官网收盘并公开挂账核销，绝不估算造数。</p>
     </div>
 
     <div class="tab-bar no-print" role="tablist">
@@ -2245,10 +3661,10 @@ def build_scorecard_page(
     <section id="gold-scorecard" class="tab-panel article-card">
       <div class="article-body">{gd_sc_html}</div>
     </section>
-    <section id="equity-changelog" class="tab-panel article-card">
+    <section id="equity-changelog" class="tab-panel article-card timeline-ledger">
       <div class="article-body">{eq_cl_html}</div>
     </section>
-    <section id="gold-changelog" class="tab-panel article-card">
+    <section id="gold-changelog" class="tab-panel article-card timeline-ledger">
       <div class="article-body">{gd_cl_html}</div>
     </section>
     <section id="gold-audit-log" class="tab-panel article-card">
@@ -2266,13 +3682,21 @@ def build_archive_page(
 ) -> str:
     shelf_html = ""
     for fl in flagship_info:
+        mk = fl["market"]
+        assets = RELEASE_ASSET_NAMES[mk]
         shelf_html += (
-            f'<a class="flagship-tile" href="{fl["href"]}" style="--tile-accent:{fl["accent"]};">'
-            f'<div class="feed-meta"><span class="mkt-badge mkt-{fl["market"]}">{fl["badge"]}</span>'
-            f'<span class="session-pill">{esc(fl["charts"])} 张高清矢量图</span></div>'
-            f'<div class="ft-title">{esc(fl["title"])}</div>'
+            f'<div class="flagship-tile" style="--tile-accent:{fl["accent"]};">'
+            '<div class="ft-spine"></div>'
+            '<div class="ft-body">'
+            f'<div class="feed-meta"><span class="mkt-badge mkt-{mk}">{fl["badge"]}</span>'
+            f'<span class="session-pill">{esc(fl["charts"])} 张矢量图</span></div>'
+            f'<div class="ft-title"><a href="{fl["href"]}">{esc(fl["title"])}</a></div>'
             f'<div class="ft-meta">数据基线：{esc(fl["baseline"])}</div>'
-            f"</a>"
+            '<div class="ft-actions">'
+            f'<a class="dl-link dl-badge-web" href="{fl["href"]}">网页版</a>'
+            f'<a class="dl-link dl-badge-pdf" href="{RELEASES_DL_BASE}/{assets["flagship_pdf"]}" target="_blank" rel="noopener">PDF ↗</a>'
+            f'<a class="dl-link dl-badge-docx" href="{RELEASES_DL_BASE}/{assets["flagship_docx"]}" target="_blank" rel="noopener">Word ↗</a>'
+            "</div></div></div>"
         )
 
     by_date: dict[str, list[DailyItem]] = defaultdict(list)
@@ -2290,14 +3714,18 @@ def build_archive_page(
             mm = MARKET_META[it.market]
             chart_badge = f'<span class="session-pill">{it.chart_count} 图</span>' if it.chart_count else ""
             revision_badge = f'<span class="session-pill">修订 {it.rev}</span>' if it.rev > 1 else ""
+            search_text = f"{it.date_str} {mm['short']} {it.session_label} {it.title} {it.summary}".lower()
             cards.append(
                 f'<a class="feed-card" href="{it.rel_url}" data-arc-item="1" '
-                f'data-market="{it.market}" data-session="{it.session_key}">'
+                f'data-market="{it.market}" data-session="{it.session_key}" '
+                f'data-edition-type="{esc(it.edition_type)}" data-search="{esc(search_text)}">'
                 f'<div class="feed-meta">'
                 f'<span class="mkt-badge mkt-{it.market}">{mm["emoji"]} {mm["short"]}</span>'
-        f'<span class="session-pill">{esc(it.session_label)}</span>'
+                f'{_edition_pill_html(it.edition_type)}'
+                f'<span class="session-pill">{esc(it.session_label)}</span>'
                 f"{revision_badge}"
                 f"{chart_badge}"
+                f'<span class="session-pill">约 {it.read_minutes} 分钟</span>'
                 f"</div>"
                 f'<div class="feed-title">{esc(it.title)}</div>'
                 f'<div class="feed-summary">{esc(it.summary)}</div>'
@@ -2305,7 +3733,7 @@ def build_archive_page(
             )
         timeline_html += (
             f'<div class="archive-day">'
-            f'<div class="archive-date-hdr">📅 {esc(dt)} <span class="sec-sub">（共 {len(cards)} 期）</span></div>'
+            f'<div class="archive-date-hdr">{esc(dt)} <span class="sec-sub">（共 {len(cards)} 期）</span></div>'
             f'<div class="archive-list">{"".join(cards)}</div>'
             f"</div>"
         )
@@ -2314,17 +3742,21 @@ def build_archive_page(
 
     return f"""
     <div class="sec-head" style="margin-top:4px;">
-      <h2>📖 四大常青旗舰全景手册</h2>
+      <h2>四大常青旗舰全景手册</h2>
       <span class="sec-sub">{total_flagship_charts} 张原创矢量图表 · 随时查阅宏观框架与 {total_pool} 只龙头全诊断</span>
     </div>
     <section class="flagship-shelf">{shelf_html}</section>
 
     <div class="sec-head">
-      <h2>🗂️ 历史早晚报</h2>
+      <h2>历史早晚报时间轴</h2>
       <strong id="arc-count" class="sec-sub">共展示 {len(dailies)} 期历史日报</strong>
     </div>
 
     <section class="filter-panel">
+      <div class="arc-search-row">
+        <input type="search" id="arc-search" class="search-input" placeholder="搜索历史早晚报标题、日期或关键词（如 感恩节、核心通胀、两融、红灯）…" autocomplete="off">
+        <button type="button" class="btn btn-sm" id="arc-reset">重置筛选</button>
+      </div>
       <div class="filter-row">
         <button type="button" class="filter-pill active" data-arc-market="all">全部市场</button>
         <button type="button" class="filter-pill" id="gold" data-arc-market="gold">🥇 黄金</button>
@@ -2334,13 +3766,24 @@ def build_archive_page(
       </div>
       <div class="filter-row">
         <button type="button" class="filter-pill active" data-arc-session="all">全部时段</button>
-        <button type="button" class="filter-pill" data-arc-session="morning">🌅 早报 (07:30)</button>
-        <button type="button" class="filter-pill" data-arc-session="midday">☀️ 午报 (16:30)</button>
-        <button type="button" class="filter-pill" data-arc-session="evening">🌆 晚报 (18:00)</button>
+        <button type="button" class="filter-pill" data-arc-session="morning">早报 (07:30)</button>
+        <button type="button" class="filter-pill" data-arc-session="midday">午报 (16:30)</button>
+        <button type="button" class="filter-pill" data-arc-session="evening">晚报 (18:00)</button>
+      </div>
+      <div class="filter-row">
+        <button type="button" class="filter-pill active" data-arc-type="all">全部刊型</button>
+        <button type="button" class="filter-pill" data-arc-type="main">深度主刊</button>
+        <button type="button" class="filter-pill" data-arc-type="watch">守望 / 轻刊</button>
       </div>
     </section>
 
-    <section>{timeline_html}</section>
+    <section class="archive-rail">{timeline_html}</section>
+
+    <div class="empty-state" id="arc-empty" hidden>
+      <div class="empty-title">未找到匹配的历史早晚报</div>
+      <div class="empty-sub">请尝试清空搜索词，或放宽市场、时段与刊型筛选条件。</div>
+      <button type="button" class="btn btn-sm" id="arc-empty-reset">重置全部筛选</button>
+    </div>
 
     <section class="downloads-box">
       <div class="panel-title">
@@ -2436,10 +3879,16 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         eq_flagship_meta[eq_key] = meta
         eq_flagship_mds[eq_key] = md_path.read_text(encoding="utf-8")
 
+    ah_benchmarks = (
+        (eq_state.get("cross_market_linkages") or {})
+        .get("ah_premium_radar", {})
+        .get("benchmarks")
+    )
     stocks = extract_all_stocks(
         eq_flagship_mds["a_share"],
         eq_flagship_mds["hk_stock"],
         eq_flagship_mds["us_stock"],
+        ah_benchmarks=ah_benchmarks,
     )
     stock_counts: dict[str, int] = defaultdict(int)
     for st in stocks:
@@ -2460,11 +3909,11 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     manifest = {
         "name": "全球投研 · 黄金 × A股 × 港股 × 美股",
         "short_name": "全球投研",
-        "description": f"零门槛机构级全球跨市场投研门户：黄金、A股、港股、美股红绿灯驾驶舱、{total_pool}只龙头筛选器与每日早晚报。",
+        "description": f"机构级全球跨市场投研门户：黄金、A股、港股、美股红绿灯驾驶舱、{total_pool}只龙头筛选器与每日早晚报。",
         "start_url": "./",
         "display": "standalone",
-        "background_color": "#f5f6f8",
-        "theme_color": "#0f172a",
+        "background_color": "#f6f3ec",
+        "theme_color": "#141a24",
         "icons": [
             {
                 "src": "assets/favicon.svg",
@@ -2500,6 +3949,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     g_body, g_toc, g_charts = sanitize_and_extract_toc(
         g_body_raw, base_prefix="../", slug_map=slug_map, ctx_market="gold"
     )
+    g_read_min = estimate_reading_minutes(g_body)
     g_footer = (
         f"本报告（数据基线 {R.gold_report.REPORT_TIMESTAMP}）数据均经多源官方数据库核验；"
         "投资有风险，请按家庭总资产 10%–15% 合理配置，严禁借钱或加杠杆炒金。"
@@ -2509,16 +3959,25 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         active_nav="gold",
         base_prefix="../",
         market_attr="gold",
+        doc_kind="flagship",
         total_pool=total_pool,
         toc_items=g_toc,
         show_chart_modal=True,
         footer_ts=R.gold_report.REPORT_SHORT_DATE,
         content_html=render_doc_with_toc(
-            sibling_bar_html=build_flagship_sibling_bar("gold", total_pool),
+            toolbar_html=build_doc_toolbar(
+                market="gold",
+                doc_kind="flagship",
+                read_minutes=g_read_min,
+                chart_count=g_charts,
+                has_toc=bool(g_toc),
+                total_pool=total_pool,
+            ),
             cover_html=g_cover,
             body_html=g_body,
             footer_note=g_footer,
             toc_items=g_toc,
+            doc_kind="flagship",
         ),
     )
     (out_dir / "reports" / "gold.html").write_text(gold_report_html, encoding="utf-8")
@@ -2549,21 +4008,31 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         body_clean, toc, n_charts = sanitize_and_extract_toc(
             body_raw, base_prefix="../", slug_map=slug_map, ctx_market=m_slug
         )
+        read_min = estimate_reading_minutes(body_clean)
         page_html = render_page_shell(
             title=doc_title,
             active_nav=m_slug,
             base_prefix="../",
             market_attr=m_slug,
+            doc_kind="flagship",
             total_pool=total_pool,
             toc_items=toc,
             show_chart_modal=True,
             footer_ts=str(meta.get("benchmark_time", "")).split("（")[0],
             content_html=render_doc_with_toc(
-                sibling_bar_html=build_flagship_sibling_bar(m_slug, total_pool),
+                toolbar_html=build_doc_toolbar(
+                    market=m_slug,
+                    doc_kind="flagship",
+                    read_minutes=read_min,
+                    chart_count=n_charts,
+                    has_toc=bool(toc),
+                    total_pool=total_pool,
+                ),
                 cover_html=cover_html,
                 body_html=body_clean,
                 footer_note=footer_note,
                 toc_items=toc,
+                doc_kind="flagship",
             ),
         )
         (out_dir / "reports" / f"{m_slug}.html").write_text(page_html, encoding="utf-8")
@@ -2639,6 +4108,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         item.footer_note = footer_note
         item.toc = toc
         item.chart_count = n_charts
+        item.read_minutes = estimate_reading_minutes(body_clean)
         total_daily_charts += n_charts
         dailies_by_market[item.market].append(item)
 
@@ -2646,28 +4116,53 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     for mk, m_list in dailies_by_market.items():
         m_list.sort(key=lambda x: x.sort_key)
         last_by_session = {(item.date_str, item.hhmm): item for item in m_list}
+        mk_caveats = collect_data_caveats(gold_snap, eq_state, market=mk)
         for idx, item in enumerate(m_list):
             prev_it = m_list[idx - 1] if idx > 0 else None
             next_it = m_list[idx + 1] if idx + 1 < len(m_list) else None
-            sib_bar = build_daily_sibling_bar(item, prev_it, next_it, stock_counts)
+            is_latest = idx == len(m_list) - 1
+            toolbar_html = build_doc_toolbar(
+                market=item.market,
+                doc_kind="daily",
+                read_minutes=item.read_minutes,
+                chart_count=item.chart_count,
+                has_toc=bool(item.toc),
+                stock_counts=stock_counts,
+                item=item,
+                prev_item=prev_it,
+                next_item=next_it,
+                is_latest=is_latest,
+            )
             corrected = last_by_session[item.date_str, item.hhmm]
             if item.rev < corrected.rev:
-                sib_bar += (
-                    '<p class="no-print">此页为原刊档案。'
-                    f'<a href="{corrected.slug}.html">查看本班次修订稿</a>。</p>'
+                toolbar_html += (
+                    '<div class="revision-notice no-print">'
+                    "<span>此页为本班次原刊档案，后续已有修订更新。</span>"
+                    f'<a class="btn btn-sm" href="{corrected.slug}.html">查看本班次修订稿 →</a>'
+                    "</div>"
                 )
+            disclosure_inline = render_daily_disclosure(
+                mk_caveats,
+                item.market,
+                is_latest,
+                item.date_str,
+                item.session_label,
+            )
             doc_html = render_doc_with_toc(
-                sibling_bar_html=sib_bar,
+                toolbar_html=toolbar_html,
                 cover_html=item.cover_html,
                 body_html=item.body_html,
                 footer_note=item.footer_note,
                 toc_items=item.toc,
+                doc_kind="daily",
+                disclosure_html=disclosure_inline,
             )
             full_page = render_page_shell(
                 title=item.title,
                 active_nav=item.market,
                 base_prefix="../",
                 market_attr=item.market,
+                doc_kind="daily",
                 edition_attr=item.edition_type,
                 total_pool=total_pool,
                 toc_items=item.toc,
@@ -2676,7 +4171,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 content_html=doc_html,
             )
             (out_dir / "daily" / f"{item.slug}.html").write_text(full_page, encoding="utf-8")
-            if idx == len(m_list) - 1:
+            if is_latest:
                 latest_by_market[mk] = item
                 (out_dir / "daily" / f"{mk}-latest.html").write_text(full_page, encoding="utf-8")
 
@@ -2693,6 +4188,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         active_nav="screener",
         base_prefix="",
         market_attr="overview",
+        doc_kind="tool",
         total_pool=total_pool,
         footer_ts=next(iter(unique_benchmarks)) if len(unique_benchmarks) == 1 else "",
         content_html=build_screener_page(stocks, screener_benchmarks),
@@ -2707,9 +4203,10 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         active_nav="scorecard",
         base_prefix="",
         market_attr="overview",
+        doc_kind="tool",
         total_pool=total_pool,
         footer_ts=eq_as_of_disp,
-        content_html=build_scorecard_page(R, slug_map),
+        content_html=build_scorecard_page(R, slug_map, gold_snap=gold_snap),
     )
     (out_dir / "scorecard.html").write_text(scorecard_html, encoding="utf-8")
 
@@ -2722,6 +4219,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         active_nav="archive",
         base_prefix="",
         market_attr="overview",
+        doc_kind="tool",
         total_pool=total_pool,
         footer_ts=eq_as_of_disp,
         content_html=build_archive_page(
@@ -2738,6 +4236,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         active_nav="overview",
         base_prefix="",
         market_attr="overview",
+        doc_kind="overview",
         total_pool=total_pool,
         footer_ts=eq_as_of_disp,
         content_html=build_cockpit_page(gold_snap, eq_state, latest_by_market, stock_counts),
