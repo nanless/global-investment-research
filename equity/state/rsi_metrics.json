@@ -287,6 +287,122 @@
         "【A/港 07:30 轻刊与跨市同步】零延迟消费黄金最新 SSOT（含 06:00 NY 官收是否破 $3,526 及红绿灯状态）；以 05:00–05:15 A50/金龙/ADR 校正港股 03:00 夜期盲窗；盘前置顶提醒 10:30 159509/513100 停牌溢价坑、123080 海波转债最后交易日免税卖出窗及港股美盘休市薄盘 + 21,800–21,915 牛证重货区",
         "【零重试 + 零稀疏页冲刺（first_pass_clean=true）】严守一句话结论 <=50 字、正文 <=130 字、列表 <=160 字、主刊尾页 >=700 字（或紧凑 4 页），达成 lint_retries=0 且 visual_retries=0"
       ]
+    },
+    {
+      "run_id": "2026-11-26_0730",
+      "edition_type": "weekday_morning_unified",
+      "reports": [
+        "daily/2026-11-26_0730_a_share.md",
+        "daily/2026-11-26_0730_hk_stock.md",
+        "daily/2026-11-26_0730_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-26T08:30:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "visual_retries": 1,
+      "lint_errors_fixed": [
+        "初稿预检拦下美股“收红/翻红”色系混用、footer_note 触碰 Gate C2 正则与 2 条 >210 字列表（lint_retries=1）；初编 PDF 抽检发现港股轻刊第 4 页溢出 7 行与图 H2 第 5 柱占位“年内 +0.0%”（visual_retries=1），收短正文并启用第 4 元素自定义标签“较夜期再补涨 +56 点”后收敛至 3p/3p/5p",
+        "独立盲审（24/30）揪出美股早刊 L37 道指算术矛盾与 L136/L164 图 U4 4.85% 边界矛盾，修正并串行重编通过 lint_equity.py --strict（0 errors, 0 warnings）及 PDF 目检"
+      ],
+      "pdf_pages": {
+        "a_share": 3,
+        "hk_stock": 3,
+        "us_stock": 5
+      },
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 3
+      },
+      "total_score": 24,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/25 18:00 追踪：【美股 07:30 完整主刊封账（禁提前切休市简报！）】完整复盘 11/25 美股全天官收与 PCE/GDP/英央行/7Y/褐皮书，核验 VIX 30 熔断计数并回填 SCORECARD",
+          "outcome": "hit",
+          "evidence": "准点交付 5 页美股完整主刊，封账 11/25 全部宏观/行业官数，确认 Cboe 官网 16:15 VIX 官收 28.29 < 30 致连破 30 熔断归零，客观结案 SCORECARD 油价与高通胀预判为 ✅ 兑现，并预告 11/26 18:00 与 11/27 07:30 切模式 2 休市简报（且于发版前修正盲审揪出的 L37 与图 U4 边界）"
+        },
+        {
+          "claim": "11/25 18:00 追踪：【A/港 07:30 轻刊与跨市同步】零延迟消费黄金最新 SSOT、校正港股 03:00 夜期盲窗并置顶 159509/123080/港股牛证重货区提醒",
+          "outcome": "hit",
+          "evidence": "32 项跨轨共享键零延迟（0 分钟）100% 一致，精确算清港股盲窗 22,149 → 22,204.61（+55.6 点）并可视化入图 H2，置顶提醒 123080 海波转债末日免税卖出（68.97 vs 119.44）、159509 停牌至 10:30 与港股 36:64 牛熊重货区"
+        },
+        {
+          "claim": "11/25 18:00 追踪：【零重试 + 零稀疏页冲刺（first_pass_clean=true）】实现 lint_retries=0 且 visual_retries=0",
+          "outcome": "miss",
+          "evidence": "终版 3p/3p/5p 零稀疏页且全绿通过 --strict，但过程发生 lint_retries=1 与 visual_retries=1，且有 3 条列表略超软上限 160 字"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "equity/daily/2026-11-26_0730_us_stock.md L37 写“道指自日低 48,913 暴拉 1,481 点收涨 +0.33%（50,182.95）”存在 48,913+1,481=50,394≠50,182.95 算术矛盾（INDEX.md L13 同步优化表述）",
+            "status": "resolved",
+            "evidence": "已将 us_stock.md L37 更正为“道指自日低 48,913 盘中一度暴拉 1,481 点，最终自低点反弹 1,270 点收涨 +0.33%（50,182.95）”，同步将主标题改为“道指盘中反转千四点”及 INDEX.md L13 明确为“道指盘中反转 1,481 点、收 50,183（+0.33%）”，重编通过 lint_equity.py --strict（0 errors, 0 warnings）及 PDF p2 目检"
+          },
+          {
+            "description": "equity/daily/2026-11-26_0730_us_stock.md L136/L164 图 U4 将 10 年期美债官方曲线 4.85% 标为 us10y_zone=\"high\"（指向 >4.85% 红区），与图面印制的“4.5%–4.85% 过渡区”区间边界矛盾",
+            "status": "resolved",
+            "evidence": "已将 us_stock.md L136 改为 us10y_zone=\"mid\" 并将 L164 副标题更正为“下方刻度示出 10 年期美债官曲 4.85% 紧贴过渡区上沿（现券 4.864% 踩压制线），盯四阶段再转灯”，重编 5 页美股 PDF/DOCX/HTML 并通过 lint_equity.py --strict（0 errors, 0 warnings）及 PDF p5 图 U4 目检确认指针精准落于黄色过渡区"
+          },
+          {
+            "description": "Cboe VIX_History.csv 2026-11-25 官方日线 OHLC 行截至 08:24 CST 尚未批处理刷新",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "与黄金 SSOT 同步采信 Cboe 官网 16:15 EST 官收 28.29（vix_live=null, vix_intraday_high=null），连破 30 总熔断归零，挂账 18:00 晚刊核对完整官方 CSV"
+            }
+          },
+          {
+            "description": "A 股 11/25 全市场两融余额终值、11/26 09:15 CFETS 中间价与 09:20 央行 6,170 亿隔夜逆回购对冲结果在 08:30 截点尚未公布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.sse.com.cn/market/othersdata/margin/sum/",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "按交易所披露节拍保留带日期戳的 11/24 两融 21,717.77 亿与 11/25 CFETS 6.7088，挂账今晚 18:00 A 股收盘主刊实盘封账"
+            }
+          },
+          {
+            "description": "港股 11/26 11:15 HKAB HIBOR 定盘与 16:10 港交所收盘/南向资金终值属白盘截点后数据",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.hkab.org.hk/en/rates/hibor",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "保留已核 11/25 1M HIBOR 2.879%、金管局总结余 540.83 亿港元及 11/25 官收/南向 +64.34 亿，挂账今晚 18:00 港股收盘主刊封账"
+            }
+          },
+          {
+            "description": "美股 11/25 09:00 CST 盘后终盘、Farside 11/25 加密 ETF 官流、FRED 11/24–25 信用利差及多源分歧个股官收（KRE/JPM/RTX/UNH）截点时不可取或未核清",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://farside.co.uk/btc/",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "严守 07:30 禁写 09:00 盘后终盘与零编造纪律，省略分歧个股读数、保留 11/24 比特币官流 (-$231.4M) 与 11/23 OAS (363/1,387bp) 并标原交易日，挂账今晚 18:00 美股感恩节休市守望简报清零"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化仪表盘边界与振幅算术发前双检：凡写盘中反抽必验“日低 + 收盘反弹 == 官收”（严分日内总振幅 vs 收盘反弹幅度）；凡填 us10y_zone 必严格对照图 U4 区间（<4.5%=low / 4.5%–4.85%=mid / >4.85%=high）；美股正文严禁出现“收红/翻红”，footer_note 写黄金红灯用“黄金红灯停新仓 0%”避开 Gate C2 正则误伤",
+        "固化港股轻刊 1 图 3 页硬预算（Markdown ≤165 行、图 H2 第 5 柱用 row[3] 自定义字符串替代 0.0 占位）与列表 ≤160 字软红线，冲刺 lint_retries=0 与 visual_retries=0"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【A/港收盘双主刊实盘封账 & SCORECARD 2 项结案】A 股封账 11/26 官收、11/25 两融终值、09:15 CFETS、09:20 央行 6,170 亿对冲、10:30 159509 复牌与中金所 20261126 官结/席位，客观结案 123080 海波转债末日与芯片小金属 2 项到期预判；港股封账 11:15 HIBOR、16:10 官收、南向终值、期指转仓与老铺含息收官并前瞻明日美团三季报",
+        "【美股切模式 2 休市守望简报（edition_type=\"holiday_watch\"）】严守感恩节全休契约出 1–2 页守望简报，清零 11/25 09:00 CST 盘后终盘、Farside 11/25 BTC/ETH ETF 官流、Cboe 11/25 CSV 终值与 11/24–25 FRED OAS，前瞻明晚黑五半日市与 11/30 2,180 亿美债交割",
+        "【零重试冲刺（first_pass_clean=true）】发前核验无色系混用、无 Gate C2 误伤、us10y_zone 边界精准、全部列表 <=160 字、主刊尾页 >=700 字，实现 lint_retries=0 且 visual_retries=0"
+      ]
     }
   ]
 }

@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-26 08:30 CST · `2026-11-26_0730` 一体化早刊跨轨核验与非阻塞缺口留痕
+
+- **跨项目零延迟 SSOT 与红队 6 大硬伤核验**：
+  - 严格只读消费 `../gold/data_snapshot.json`（`edition_id = 2026-11-26_0730`, `as_of_short = 2026-11-26 08:30`, `delta_h = 0.0h`），全量锁齐 `spot_ny_close_usd = 3588.78`、`us10y_pct = 4.85`、`us2y_pct = 4.61`、`us30y_pct = 5.24`、`dfii10_pct = 2.73`、`dxy = 103.71`、`brent_usd = 94.61`（`live 94.20`）、`wti_usd = 83.68`、`comex_copper_usd_lb = 5.3325 (-0.56%)`、`cfets_cny_fixing = 6.7088 (2026-11-25)`、`usd_cny_night = 6.6681`、`usd_hkd = 7.8389`、`hkma_agg_bal_hkd_100m = 540.83`、`on_rrp_usd_m = 300`、`vix_close = 28.29`（`vix_live = null`, `vix_intraday_high = null`）。
+  - 黄金维持 `Tier 0 / 1/4 关 / new_buy_allowed = false`，权益三刊、JSON、SVG 与 `INDEX.md` 全载体严守红灯互斥锁，零新买黄金指令；三市旗舰均 `0/5` 触发不重编。
+- **三市核心实盘与拦截记录**：
+  - **美股主刊（4–5p）**：完整复盘 `11/25` 官收（`DJI 50,182.95 +0.33%` 振幅 `1,481.5` 点、`SPX 7,182.78 -0.25%` 370 涨 / 128 跌、`IXIC 23,585.80 -0.62%`、`NDX 26,046.90 -0.64%`、`SOX 8,774.86 -0.65%`、`RSP $215.74 +0.83%`、`VTV $220.10 +0.18%`、`XLK -0.82%` 连续垫底）；封账 10 月核心 PCE `+3.3%`、Q3 GDP 二修 `+4.3%`、初请 `189K`、7Y 拍卖 `4.708% (+1.0bp, 2.43x)`、褐皮书；严格拦截午盘脏缓存与冲突未核个股（不硬引 `KRE`/`JPM`/`RTX`/`UNH` 11/25 收盘价），严守零 `09:00 CST` 盘后终盘红线；回填 `SCORECARD.md` 11/25 油价/通胀项为 `✅ 兑现`。
+  - **A 股轻刊（2–3p）**：精确拆分 `123080` 海波转债最后交易日税务与转股值（`120` 税前 / `119.44` 净到手 vs `300517` `7.78/11.28 = 68.97` 误转立亏 `-42.3%`）；精确区分深市已实证 `09:30–10:30` 停牌美股基（`159509 +37.69%`/`159632`/`159696`/`159501`/`159660`）与沪市 `513100`（美休暂停一级申赎 + 上交所溢价临停提示，不编造未读原文的 `09:30–10:30` 时钟）；核实 `09:20` 央行到期为 `6,170 亿` 1.25% 隔夜逆回购。
+  - **港股轻刊（2–3p）**：执行 `03:00` 恒指夜期（`22,149`，`+183` 点）→ `05:00` 港股 ADR 比例指数（`22,204.61`，`+238.6` 点，盲窗再补涨 `+55.6` 点）校正，经 HKEXnews PDF 直查确认 `06181` 今日最后含息日（明日除净 `HK$21.05`）、`03690` 明日盘后发三季报、`00005` 07:01 加码香港回购至 13 万股、`03750` 暴跌 `-12.23%` 后零异动澄清且 H 仍贵于 A `+21.3%`、`00700` 11 月零回购；拦截搜索摘要中滞留 `11/24` 的 `KWEB`/`FXI`/`^HXC` 旧值。
+- **本期透明挂账清零队列（统一归 `2026-11-26_1800` 晚刊，零编造）**：① Cboe `VIX_History.csv` `11/25` 日线终值（早报暂采 Cboe 官网 `16:15 EST` 收盘 `28.29`，未将第三方日高 `34.95` 归为官方）；② A 股 `11/25` 全市场两融终值、`11/26 09:15` CFETS 中间价与 `09:20` 央行对冲结果；③ 港股 `11/26 11:15` HKAB HIBOR 定盘与 `16:10` 官收/南向；④ 美股 `11/25 09:00 CST` 盘后终盘、Farside `11/25` BTC/ETH ETF 官流与 `11/24–25` FRED HY/CCC OAS。
+- **一手官方证据**：[UST 官方收益曲线](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv) · [NY Fed ON RRP](https://markets.newyorkfed.org/api/rp/reverserepo/propositions/search.json?startDate=2026-11-20) · [Cboe Spot VIX](https://www.cboe.com/tradable_products/vix/) · [HKMA 流动性 API](https://api.hkma.gov.hk/public/market-data-and-statistics/daily-monetary-statistics/daily-figures-interbank-liquidity?pagesize=5) · [HKAB HIBOR API](https://www.hkab.org.hk/api/hibor?year=2026&month=11&day=25) · [Nasdaq UTP 2026-34](https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34)。
+
+---
+
 ## 2026-11-25 晚刊勘误 · 统一修订场次 `2026-11-25_1800_r2`
 
 - **黄金镜像**：沿用 21:25 截点，VIX 30.99 较十个已完成交易日收盘峰 35.89 回落 13.65%，第三关通过。权益镜像修正为 1/4，新买黄金为零。

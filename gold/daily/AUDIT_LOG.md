@@ -4,6 +4,52 @@
 
 ---
 
+<!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-26_0730",
+  "as_of_short": "2026-11-26 08:30",
+  "note": "完成 2026-11-26 07:30 一体化早报红队交叉核验：美国财政部官方曲线确认 11/25 DFII10 2.73%（差 1bp 未过第 1 关）、US2Y 4.61% 减 NY Fed 11/24 EFFR 3.88% 等于 +73bp（未过第 2 关）；截至 08:24 BJT Cboe VIX_History.csv 仍止于 11/24（Last-Modified: Wed, 25 Nov 2026 02:11:05 GMT），依新规采信 Cboe 官网产品页 16:15 EST 官收 28.29（+7.32%）标 provisional_close 通过第 3 关（拒绝将第三方 34.95/27.49 归属 Cboe 官网，并清零 vix_live/vix_live_as_of），18:00 晚报用官方 CSV 复核清零；11/25 现货金深 V 后 NY 17:00 EST 官收 $3,588.78 未过周二高点 $3,678.15（第 4 关未过，且较主报告基线 $3,635.24 仅 -1.28% < 3%，主报告 0/5 保持锁定）；直查 SSGA 官方 .xlsx 纠偏 11/24 GLD 持仓为 1,027.31t (-3.99t)，三源锁定 11/25 GLD $327.45 驳回 StockAnalysis 滞后 $325.70。",
+  "sources": {
+    "real_yield": [
+      "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"
+    ],
+    "rate_spread": [
+      "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+      "https://markets.newyorkfed.org/api/rates/all/latest.json"
+    ],
+    "vix": [
+      "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+      "https://www.cboe.com/tradable_products/vix/"
+    ],
+    "ny_close": [
+      "https://www.investing.com/currencies/xau-usd-historical-data",
+      "https://www.morningstar.com/news/dow-jones/202611256404/comex-gold-settles-071-lower-at-353470-data-talk"
+    ]
+  },
+  "forecast_review": {
+    "status": "settled",
+    "note": "按事先锁定标准客观结案 11/25 07:30 两项到期追踪：① 美英数据三情景预案因核心 PCE 环比 +0.3%/同比 +3.3% 且 GDP +4.3% 属混合触发、盘中深探 $3,427.01 跌破情景二下沿 $3,520 后尾盘收 $3,588.78，严格判为“部分兑现”（不事后归入有利情景）；② 主报告 -3% 官收触发线（$3,526）因 NY 官收拉回 $3,588.78（-1.28%）未触发，诚实单列为“条件未触发”不计入胜率分母。",
+    "sources": [
+      "https://www.investing.com/currencies/xau-usd-historical-data",
+      "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+      "https://www.cboe.com/tradable_products/vix/"
+    ]
+  }
+} -->
+
+## 2026-11-26 08:30 早报增量红队法证档案（累计 78 项：34 拦谣 / 16 升级 / 28 校准，核心影响 0 / 28）
+
+- **新增拦谣 #34（累计 34 项）**：海外论坛与社媒流传“Tether 稳定币或中国央行暗中抛售黄金砸穿 3,500 美元”——经核查外管局/央行 10 月官报确认中国连续 24 个月增持至 2,435.4 吨零抛售，链上 `PAXG`（`$3,566.74`）/ `XAUT`（`$3,568.35`）折价仅 `-0.22%` 至 `-0.25%` 零脱锚且 Q3 BDO 鉴证 Tether 持金反增至 168.54 吨；已证实官方净卖仅俄罗斯 Q3 约 18.66 吨与哈萨克斯坦表态。
+- **新增系统升级 #16（累计 16 项）**：落地 `gold/edition_validation.py` 与双班次共享提示词的 Cboe `VIX_History.csv` 批处理滞后非阻塞 `provisional_close` / `pending` 校验及全数据缺口透明汇报机制，彻底消除冬夏令时 07:30 早报撞上 Cboe `~10:11 CST` 批处理延时的硬阻塞，并强制 18:00 晚报核对官方 CSV 终值。
+- **新增细节校准 #26–#28（累计 28 项，对核心买金结论影响 0 / 28）**：
+  - **#26**：直查 SSGA 官方 `.xlsx`（`https://www.ssga.com/us/en/intermediary/etfs/library-content/products/fund-data/etfs/us/navhist-us-en-gld.xlsx`）与 SPDR 官方历史档案，确认 11/24 `GLD` 份额由 `361.8M` 降至 **`360.4M`**、实物持仓实为 **`1,027.31 吨（-3.99 吨）`**，纠偏上期快照与第三方站点滞后 `1,031.30 吨 / 0.00 吨` 假象。
+  - **#27**：Investing UK / Yahoo Finance / 腾讯美股三源一致锁定 11/25 `GLD` 官收 **`$327.45 (+0.61%)`**，拦截 StockAnalysis 滞后 `3:39 PM EST` 盘中快照 `$325.70`；同时确认 `NEM` 于 11/25 除息 `$0.260`（复权 `+2.02%` / 原始 `+1.76%` 收 `$101.44`）。
+  - **#28**：直查美联储官网日历（`https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm`）明确 12 月 FOMC 会议美东日期为 **`12/08–09`（北京 `12/10 03:00` 公布决议）**；同时核实 `cboe.com/tradable_products/vix/` 不含日内高低 `34.95 / 27.49`，禁止将第三方摘要数字归属为 Cboe 官网官方数据。
+- **2026-11-26 08:30 一手直采核心链接与待晚报补核清单**：
+  - 直采一手源：[UST Real Yield CSV](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv) · [UST Nominal CSV](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv) · [NY Fed Rates](https://markets.newyorkfed.org/api/rates/all/latest.json) · [NY Fed ON RRP](https://markets.newyorkfed.org/api/rp/reverserepo/propositions/search.json?startDate=2026-11-20) · [Cboe VIX Product Page](https://www.cboe.com/tradable_products/vix/) · [Cboe VIX CSV](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv) · [SSGA GLD History](https://www.ssga.com/us/en/intermediary/etfs/library-content/products/fund-data/etfs/us/navhist-us-en-gld.xlsx) · [COMEX Gold Settle](https://www.morningstar.com/news/dow-jones/202611256404/comex-gold-settles-071-lower-at-353470-data-talk) · [COMEX Copper Settle](https://www.morningstar.com/news/dow-jones/202611256406/comex-copper-settles-056-lower-at-53325-data-talk) · [EIA WPSR](https://ir.eia.gov/wpsr/table1.csv) · [Fed Calendar](https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm)。
+  - 待 `2026-11-26_1800` 晚报补核项：① Cboe `VIX_History.csv` `11/25` 完整 OHLC 行；② SPDR `GLD` `11/25` 持仓吨数；③ VanEck `GDX` `11/25` 官方 NAV；④ LBMA `11/25` AM/PM 金银定盘价；⑤ FRED `11/24–25` `HY/CCC OAS`；⑥ `11/26 09:00–10:00` 国内银行金条/品牌金店最新牌价与 `09:15` CFETS 汇率中间价。
+
+---
+
 ## 2026-11-26 黄金晚刊与主报告勘误来源
 
 - **波动与交易时点**：[Cboe 现货指数日线](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv) 覆盖 11/11–11/24 十个完整交易日。11/20 同时是收盘峰值 35.89 和盘中高点 40.03；11/24 数据为收盘 26.36、日高 32.38。复算的 30.99 引用原刊 11/25 21:20 盘前观测，分钟原档待补。观察时点晚于当日 19:59 金价破位，不据此判断其原因。[Cboe 指数与期货规格](https://www.cboe.com/tradable_products/vix/vix_futures/specifications)
@@ -26,6 +72,8 @@
 ---
 
 ## 一、三大信任资产全景汇总（累计 73 项红队审计记录 · 截至 2026-11-25 21:25 BJT）
+
+> **最新累计同步提示（截至 2026-11-26 08:30 BJT）**：为遵循账本历史行不可删改审计铁律，上方及下列既有小节标题按原样留存；最新累计红队审计记录已增至 **78 项（34 拦谣 / 16 升级 / 28 校准，核心影响 0 / 28）**，新增明细 `#34`、`#16`、`#26–#28` 已追加于对应表格与列表末尾，最新 8 大类官方原始库索引见下方最新同步小节。
 
 ### 🛡️ 资产一：帮普通投资者拦下的 33 个全网流行误区、谣言与买金深坑
 
@@ -64,6 +112,7 @@
 | **31** | “菜百断货等于全球实物逼空 / PBOC 缩量 MLF 等于停买金 / 感恩节推迟 PCE 且 COMEX 全天休市” | 三处全误：① 菜百系周末散户集中抢购小克重导致的零售柜台补货瓶颈，而 COMEX 注册库存仍高达 1,430 万盎司（63%）且无现货挤仓；② PBOC 11/25 缩量续作 8,000 亿 MLF 同时投放 5,000 亿 7D 逆回购 + 6,170 亿隔夜逆回购，全口径净投放 **+3,210 亿**非收紧；③ 今晚 21:30 美国核心 PCE 准时发布，明日感恩节 CME 电子盘仅于周五 03:30–07:00 停盘 3.5 小时。 |
 | **32** | “CME 提保至 6% 是在恶意砸盘掩盖 COMEX 金库实物违约逼空” | 核查 `cmegroup.com` 清算公告 **`#26-389`**，本次将黄金保证金从 5% 调至 6%、白银从 8% 调至 9% 系按 2026 年名义价值比例框架执行的常规高波动风控复核，双向适用于多空双方；COMEX 注册库存仍高居 1,430 万盎司（63%），上金所 11/23 亦仅为常规波动提示，无实物违约迹象。 |
 | **33** | “中国央行秘密抛金、大行叫停实物金条，且周大福跌到 1,068 元已属原料抄底价” | 外汇局与央行 11/07 官方储备数据证实截至 10 月末中国黄金储备连增 24 月至 **7,830 万盎司（2,435.4 吨，单月增 +25.8 吨）**，零抛售；大行仅提示杠杆/延期交易风险，11/25 四大行实物金条正常销售且均价随大盘降至 **778.16 元/克**；品牌金饰虽破千一至 1,062–1,068 元，对比上金所 `Au99.99` 官收 757.35 元仍带 **+41%（~311 元/克）** 零售溢价，只适合婚庆佩戴不适合投资。 |
+| **34** | “Tether 稳定币或中国央行暗中抛售黄金砸穿 3,500 美元（11/26 08:30 新增）” | 外汇局与央行 10 月官报证实中国连续 24 个月增持至 2,435.4 吨零抛售；链上 `PAXG`（`$3,566.74`）/ `XAUT`（`$3,568.35`）折价仅 `-0.22%` 至 `-0.25%` 零脱锚且 Q3 BDO 鉴证 Tether 持金反增至 168.54 吨；已证实官方净卖仅俄罗斯 Q3 约 18.66 吨与哈萨克斯坦表态。 |
 
 *(注：另核实一条**非谣言**的链上与监管动态——WSJ 与 Bubblemaps 证实 16 个新注资 Polymarket 关联钱包在黄仁勋复职前数小时以 1.5%–3% 低赔率净赚 34–35 万美元，截至 11/24 午后尚无 CFTC/SEC 正式立案通报；但 SEC 已就英伟达自身信息披露与管理层沟通启动民事调查。)*
 
@@ -86,6 +135,7 @@
 13. **V2.2 / V7.2 全栈法证架构升级**：建立主报告独立快照 `master_snapshot.json` 与 `<!-- MASTER_BASELINE -->` 原子基线锁（根除跨日 `--strict` 死锁与主报告图数撕裂）；重塑 `docx_embed.py`（`settings.xml` 自动刷新页码、严格 ECMA-376 元素顺序、保留彩色矢量点与动态封面色）、`build_daily.py`（共享嵌套列表解析器、跨资产主角精准高亮、Chrome 超时护栏）、`build_report.py`（冻结历史案例图 3、顺排图 1–图 7、跨年蜡烛图支持）及 `lint_readability.py` 全覆盖校验。
 14. **07:30 早报 + 18:00 晚报双定时调度与三层安全 RSI 递归自优化闭环**：拆分为两套独立定时任务精准覆盖隔夜美欧与日终清算/龙虎榜/欧洲数据窗口，并建立 `daily/RSI_PLAYBOOK.md`（≤180 行防膨胀门禁）+ `daily/rsi_metrics.json`（每刊独立盲审 6 维定量打分 + 上期预判回验）+ Tier A/B/C 分级安全自进化与强制回滚机制。
 15. **2026-11-25 全栈治理与跨项目协同升级（Tier C #2 落地 + 外置日历 + 手机端 HTML + 公开记分卡 + 跨项目 SSOT）**：获用户审批正式结案 Tier C 提案 #2（官收白名单 `StockAnalysis`/`Investing`/`VanEck NAV`、禁用 `Barchart` 远月、`site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与北美冬/夏令时硬校验）；新建 60+ 天跨市场外置日历 `market_calendar.json` 与面向读者零工程词的公开预测记分卡 `daily/SCORECARD.md`；在 `build_daily.py` 移植原子生成的响应式单文件手机端 HTML（`daily/latest_gold.html`）；在 `lint_readability.py` 加固外置日历、公开记分卡、手机端 HTML 及 SSOT `new_buy_allowed` 强校验；全量修复 68 禁词 / 四轨矩阵 / 排障节号 / Step 5 Tier B 文档滞后项，并确立黄金项目 `07:30`/`18:00` 先跑的跨项目 SSOT 唯一写入权与无人值守禁 `edit_file` / 惰性主报告加载 / 同场 `_r2` 防覆写护栏。（*注：`trust_assets.model_upgrades` 将于 2026-11-25 18:00 晚报同步由 14 刷新至 15。*）
+16. **2026-11-26 非阻塞暂定官收与全缺口透明汇报升级（累计 16 项）**：获用户授权升级 `gold/edition_validation.py`、`gold/lint_readability.py`、`gold/AGENTS.md` 与双班次共享提示词，在 Cboe `VIX_History.csv` 07:30 批处理滞后时支持采信官方产品页 `16:15 EST` 官收标 `provisional_close` 或 `pending` 挂账、不阻塞早晚报准点刊发，并强制 18:00 晚报用官方 CSV 复核清零且在终报向用户逐项汇报全部未发布/暂不可取数据项。
 
 ---
 
@@ -118,6 +168,22 @@
 | **23** | 11/25 早报暂记 11/24 `GDX` 收盘 `$71.42 (-1.90%)` | StockAnalysis / FinanceCharts / 腾讯美股三源一致锁定 11/24 `GDX` 官收 **`$71.37 (-1.96%)`**，VanEck 官方 NAV **`$71.50`**（`GDX/GLD 0.2193`），完成终盘校准。 | **否 (0)** |
 | **24** | 11/25 部分早间渠道仍沿用 11/24 四大行金条 `801–803` 旧价、及个别行情源报老铺 `266.40` | 实时核验确认 11/25 四大行金条均价大跌 `-24.09` 至 **`778.16 元/克`**（工行 `779.25` / 农行 `778.00` / 建行 `777.90` / 中行 `777.48`）；港交所与腾讯直采锁定老铺黄金 11/25 官收 **`HK$265.40 (-2.64%)`**。 | **否 (0)** |
 | **25** | 11/25 调研出现商务部暂缓禁令公告号（58号 vs 59号）及 CME 提保编号（26-389 vs 26-388/378）冲突 | 一手核实商务部 11/24 暂缓 2024 年 46 号公告第二款（镓锗锑超硬/石墨，11/28–2027/01/27）确为 **2026 年第 59 号公告**（58 号系 11/09 稀土/锂电公告）；CME 清算提保令官方编号确为 **`#26-389`**。 | **否 (0)** |
+| **26** | 11/25 晚报与第三方站点沿用 11/24 SPDR `GLD` 持仓 `1,031.30 吨（0.00 吨持平）` | 直查 SSGA 官方 `.xlsx`（`navhist-us-en-gld.xlsx`）确认 11/24 `GLD` 份额实为 `360.4M`（减 1.4M）、实物持仓实为 **`1,027.31 吨（-3.99 吨）`**，彻底纠偏第三方持平滞后假象。 | **否 (0)** |
+| **27** | 11/26 调研中 StockAnalysis 报 11/25 `GLD` 为 `$325.70`（系 3:39 PM EST 盘中旧快照）及 `NEM` 除息口径差异 | Investing UK / Yahoo Finance / 腾讯美股三源一致锁定 11/25 `GLD` 官收 **`$327.45 (+0.61%)`**；核实 `NEM` 于 11/25 除息 `$0.260`（复权 `+2.02%` / 原始 `+1.76%` 收 `$101.44`）。 | **否 (0)** |
+| **28** | 12 月美联储会议美东日期偶见误标 12/09–10，且第三方站点将 VIX 日内高低 `34.95 / 27.49` 混归 Cboe 官网 | 直查美联储官网日历确认美东议息日为 **`12/08–09`（北京 `12/10 03:00` 决议）**；核查 `cboe.com/tradable_products/vix/` 仅披露 16:15 EST 官收 **`28.29 (+7.32%)`** 而不含日高/日低，禁止将第三方区间归属 Cboe 官方。 | **否 (0)** |
+
+---
+
+### 📌 最新 8 大类核心官方原始数据库铁证索引（截至 2026-11-26 08:30 BJT · 覆盖下方 11/25 归档）
+
+1. **历史峰值（2026.01.29）**：COMEX 期金 `$5,626.80`（结 `$5,318.40`）/ 现货 `$5,595.62` / LBMA PM `$5,405.00` / 上金所 `Au99.99` `1,243.02 元/克`；当前 11/25 NY 现货官收 `$3,588.78` 距峰回调 **`-35.86%`**，地上黄金总市值/美国 M2 按最新价校准为 **`110.5%`**。
+2. **11/25 纽约官收、夜盘实盘与 08:30 亚盘**：现货金 11/25 盘中深探 **`$3,427.01`**（较 11/24 官收 `$3,554.77` 跌 `$128`）后深 V 反抽，NY 17:00 EST 官收 **`$3,588.78 (+0.96%)`**（亚盘 08:30 暂报 **`$3,578.00`**）；COMEX 近月 `GCX26` 13:30 EST 官结 **`$3,534.70 (-0.71%)`**（远月主力 `GCZ26` 结 `$3,540.90`）；现货银收 **`$41.61 (+1.74%)`**（金银比 **`86.25`**），COMEX 铜官结 **`$5.3325 (-0.56%)`**，沪铜夜盘续跌 **`-2.24%` 收 `87,130 元/吨`**；国内 02:30 夜盘 `SGE Au(T+D) 758.06 (+0.15%)`、`SHFE au2702 761.12 (+0.49%)`（早盘 09:00 存补涨空间）；11/25 `LBMA` AM/PM 待 18:00 晚报补录。
+3. **美股深 V 反抽、恐慌官收与矿股**：11/25 美股道指盘中低见 `48,913`、日内最大振幅 `1,481` 点、自低点反弹 `1,270` 点官收 **`50,182.95 (+0.33%)`**，标普收 **`7,182.78 (-0.25%)`**（广度 370 涨 / 128 跌，等权 `RSP +0.83%`），纳指 `23,585.80 (-0.62%)`，费城半导体 `-0.65%`；Cboe 官网产品页 `16:15 EST` 官收 **`^VIX 28.29 (+7.32%)`**（标 `provisional_close`，`vix_live=null`，待 18:00 晚报用 `VIX_History.csv` 终表复核），较十日峰值 `35.89` 回落 **`21.18%`** 通过第 3 关；11/25 `GLD` 三源官收 **`$327.45 (+0.61%)`**、`GDX $73.89 (+3.53%)`（`GDX/GLD 0.2257`，VanEck 11/25 NAV 待 18:00 晚报补录）、`NEM $101.44`（除息 `$0.260`，复权 `+2.02%` / 原始 `+1.76%`）。
+4. **美英四连考、美债官方曲线与央行加息定价**：11/25 21:30 美国 10 月核心 PCE 环比 `+0.3%` / 同比 **`+3.3%`**（整体 `3.8%`）、Q3 GDP 二修 **`+4.3%`**、初请 **`18.9 万`**、耐用品 `+1.2%`；00:30 `$440 亿` 7Y 美债拍卖中标 **`4.708%`**（尾差 `+1.0bp`、倍数 `2.43x`、外资 `58.2%`）；美国财政部官方曲线确认 11/25 **`DFII10 2.73% (-6bp)`**（差 `1bp` 未过第 1 关 `≤2.72%`）、**`US10Y 4.85% (-6bp)`**、**`US2Y 4.61% (-6bp)`**（减 NY Fed 11/24 `EFFR 3.88%` = **`+73bp`** 未过第 2 关）、**`US30Y 5.24%`**；美联储官网日历确认美东 **`12/08–09`** 议息（北京 `12/10 03:00` 决议），12 月加息概率 Fed `94%–98%` / ECB `91%–92%` / BoE `75%–80%` / BOJ `75%–84%`。
+5. **汇率、原油飙升与地缘**：`DXY 103.71 (-0.11%)`、`USD/JPY 159.15`、在岸人民币 23:30 夜盘 **`6.6681`**、11/25 CFETS 中间价 **`6.7088`**（11/26 `09:15` 新中间价待 18:00 晚报封账）、`USD/HKD 7.8389`、金管局总结余 **`540.83 亿港元`**；霍尔木兹油轮再遇袭叠加 EIA 库欣降库 `-53.4 万桶` 推升布油 `BRNF27` 官结 **`$94.61 (+3.51%)`**、WTI **`$83.68 (+2.67%)`**，远离 `<$80` 尾部深熊红线。
+6. **信用配管与中美黄金 ETF 持仓**：NY Fed 11/25 **`ON RRP $3.00 亿`**（缓冲几近枯竭，11/30 撞 `$2,180 亿` 美债集中交割）、11/24 `SOFR 3.94%`、11/23 `HY OAS 363bp / CCC OAS 1,387bp`（FRED 11/24–25 待晚报更新）；SSGA 官方 `.xlsx` 铁证校准 11/24 `GLD` 持仓实为 **`1,027.31 吨（-3.99 吨）`**（11/25 `GLD` 吨数待晚报补录）；`CoreWeave` 5Y CDS 仍高悬纪录 `1,314bp`。
+7. **线下零售与感恩节休市安排**：截至 `08:30` 国内银行与金店尚未公布 `11/26` 新牌价，暂沿用 11/25 官价——四大行金条均价 **`778.16 元/克`**（加 18 元工费 `796.16`）、周大福 **`1,068 元/克`**（50g 婚庆省约 `272 元/克` / `13,592 元` / `25.5%`），`11/26 09:00–10:00` 新牌价待 18:00 晚报封账；**今晚 11/26 美国感恩节美股/美债全休，CME 贵金属仅明晨 `03:30–07:00 BJT` 停盘 3.5 小时**，今晚 `18:00` 与明早 `07:30` 切入感恩节 A 类局部休市模式。
+8. **机构目标中位与主报告触发线**：7 家可独立溯源的 2027 年末点位机构中位稳守 **`$5,000`**（另有 3 家 2027 年均价、1 家 6–12 月目标及 1 家德银旧稿）；11/25 纽约现货官收 `$3,588.78` 较主报告 V7.2 基线 `$3,635.24` 仅差 **`-1.28%`（远未及 `-3%` / `$3,526` 触发线）**，主报告 V7.2「5 大实质更新触发条件」**`0/5`** 继续严格锁定，买金四步红绿灯维持 **`Tier 0 · 🔴 红灯停（1/4 关 · 新仓 0%）`**。
 
 ---
 

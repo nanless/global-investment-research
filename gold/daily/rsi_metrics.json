@@ -252,6 +252,142 @@
         "【滞后表回补 + 感恩节切换预置】补录 11/25 LBMA AM/PM、GLD 持仓变化、国内黄金 ETF 11/25 份额流、11/25 ON RRP 与 11/24 FRED HY/CCC OAS；在 11/26 07:30 完整早报内预告 11/26 18:00 与 11/27 07:30 切入美国感恩节 A 类局部休市模式",
         "【零重试冲刺】Layer 0–1 严扫“提保”等 68 禁词、单条 <=3 数字、summary 62–78 字，冲刺 first_pass_strict=true（lint_retries=0, visual_retries=0）"
       ]
+    },
+    {
+      "run_id": "2026-11-26_0730",
+      "edition_type": "weekday_morning_unified",
+      "report_file": "daily/2026-11-26_0730_早报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-26 08:30",
+      "first_pass_strict": true,
+      "lint_retries": 0,
+      "visual_retries": 2,
+      "pdf_pages": 10,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "首次 --precheck --strict 与全量 7 门禁 --strict 均 0 错 0 警（lint_retries=0）；初编 PDF 抽检触发 2 次图 1 参考线防撞调优（visual_retries=2）；独立盲审（24/30）揪出 4 处实质偏差后全部修正并重编通过全量 7 门禁与 PDF 复核"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 3,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 24,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/25 18:00 追踪：【核心决断】收割 NY 官收/COMEX 官结裁定 $3,526 主报告触发线 & VIX 第 3 关",
+          "outcome": "hit",
+          "evidence": "锁定 11/25 NY 现货官收 $3,588.78（较基线 -1.28% < 3%，主报告 0/5 锁）与 COMEX GCX26 官结 $3,534.70；依新规采信 Cboe 官网 16:15 EST 官收 VIX 28.29（provisional_close，vix_live=null）通过第 3 关，维持 Tier 0（1/4 关）"
+        },
+        {
+          "claim": "11/25 18:00 追踪：【美英四连考结案与记分卡验真】封账 PCE/GDP/初请/耐用品/英央行/7Y 拍卖/褐皮书并回填 SCORECARD",
+          "outcome": "hit",
+          "evidence": "全量封账核心 PCE +0.3%/+3.3%、Q3 GDP +4.3%、初请 18.9 万、核心资本品 +1.2%、英央行贝利作证（英 10Y 降 5.76bp 至 5.136%）、7Y 拍卖 4.708%（+1.0bp/2.43x）与褐皮书；SCORECARD 严格判三情景“部分兑现”、$3,526“条件未触发”"
+        },
+        {
+          "claim": "11/25 18:00 追踪：【滞后表回补 + 感恩节切换预置】补录 11/25 滞后项并预告感恩节 Mode A",
+          "outcome": "partial",
+          "evidence": "已收割国内三大黄金 ETF 11/25 官方份额（-5.54 亿全线流出）、11/25 ON RRP $3.00 亿、SSGA .xlsx 法证纠偏 11/24 GLD 至 1,027.31t (-3.99t) 并预告 11/26 18:00 & 11/27 07:30 Mode A；11/25 LBMA/GLD 吨数/GDX NAV 与 11/24 OAS 在 08:30 尚未发布已透明挂账"
+        },
+        {
+          "claim": "11/25 18:00 追踪：【零重试冲刺】Layer 0–1 禁词/≤3数字/summary 62–78字、lint_retries=0, visual_retries=0",
+          "outcome": "partial",
+          "evidence": "实现 lint_retries=0 与 65 字 summary，但经历 visual_retries=2，Layer 0–1 仍含 5–8 个数字致 Signal #2 跨 p1→p2 断句，且初稿 p4 蓝标题含孤字“线）”（盲审后已缩短消除）"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "gold/daily/2026-11-26_0730_早报_黄金深度研报.md L196 图 1 低点 $3,427 标注“深砸163美元”混淆随后反弹全振幅与先期跌幅；同稿 L157 p4 一级标题末尾“线）”孤字折行",
+            "status": "resolved",
+            "evidence": "已将 L196 改为“较昨收跌$128”并将 L157 精简为“第二部分｜大白话深度专题详编（8–12 分钟看懂深V与感恩节防线）”，串行重编 10 页 PDF/DOCX/HTML 并通过 lint_readability.py --strict（0 errors, 0 warnings）及 PDF p4/p5 目检确认单行无孤字、标签无误"
+          },
+          {
+            "description": "gold/daily/2026-11-26_0730_早报_黄金深度研报.md L174 写“美股午后全面翻红”与次页图 2 标普 -0.25%、纳指100 -0.64% 矛盾",
+            "status": "resolved",
+            "evidence": "已将 L174 改为“随着美股午后大幅反抽、道指翻红且标普广度转强（标普 370 涨 / 128 跌，科技权重仍拖累标普收 -0.25%...）”，重编并通过 lint_readability.py --strict 及 PDF p4 目检验证"
+          },
+          {
+            "description": "gold/daily/AUDIT_LOG.md 第一节信任资产分表与第二节 8 大类官方原始数据库铁证索引仍停留在 11/25 21:25（缺 #34/#16/#26–#28 且与纠偏后的 GLD 1,027.31t 和 7 家机构口径冲突）",
+            "status": "resolved",
+            "evidence": "在严格保留全部历史非空行原样原序的前提下，于 gold/daily/AUDIT_LOG.md 追加 #34 拦谣、#16 升级、#26–#28 校准明细，并新增“截至 2026-11-26 08:30 BJT”完整 8 大类官方原始库铁证索引（同步 $3,588.78、DFII10 2.73%、VIX 28.29 provisional_close、ON RRP $3.00 亿、11/24 GLD 1,027.31t / -3.99t 与 7 家年末中位 $5,000），通过 lint_readability.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "gold/data_snapshot.json L149 gold_mcap_to_us_m2_pct 填 108.9 存在基数混乘偏差（按主报告 $3,635.24 = 111.9% 推算 11/25 $3,588.78 应为 110.5%）",
+            "status": "resolved",
+            "evidence": "已将 gold/data_snapshot.json L149 更正为 110.5（111.9 × 3588.78 / 3635.24 = 110.47%），同步写入 AUDIT_LOG.md 8 大类索引并通过 lint_readability.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "Cboe VIX_History.csv 2026-11-25 官方日线 OHLC 行截至 08:24 CST 尚未批处理刷新（Last-Modified: Wed, 25 Nov 2026 02:11:05 GMT）",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "依非阻塞新规采信 Cboe 官网产品页 16:15 EST 官收 28.29（+7.32%）记为 provisional_close、清零 vix_live/vix_live_as_of 且未采第三方未核日高 34.95，待 18:00 晚报核对官方 CSV 完整 OHLC 行"
+            }
+          },
+          {
+            "description": "SPDR GLD 2026-11-25 官方实物持仓吨数截至 08:30 CST 尚未更新",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.ssga.com/us/en/intermediary/etfs/library-content/products/fund-data/etfs/us/navhist-us-en-gld.xlsx",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "SSGA 官方 .xlsx 止于 11/24（已法证纠偏为 1,027.31 吨 / -3.99 吨）；本期明确标注 11/24 日期并挂账 11/25 持仓变动至 18:00 晚报"
+            }
+          },
+          {
+            "description": "VanEck GDX 2026-11-25 官方 NAV 截至 08:30 CST 尚未披露",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.vaneck.com/us/en/investments/gold-miners-etf-gdx/overview/",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "官网净值仍止于 11/24（$71.50）；本期采信四源 11/25 市价官收 $73.89 (+3.53%) 并明确标注 11/25 官方 NAV 待 18:00 晚报补录"
+            }
+          },
+          {
+            "description": "LBMA 2026-11-25 AM/PM 金银定盘价截至 08:30 CST 尚未可取（官网 JSON 返 403 且公开镜像未更新）",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.lbma.org.uk/prices-and-data/precious-metal-prices",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "未作估算省略并挂账至 18:00 晚报核查公开定盘记录"
+            }
+          },
+          {
+            "description": "FRED ICE BofA 美国高收益债与 CCC 信用利差 2026-11-24/25 数据尚未更新",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://fred.stlouisfed.org/series/BAMLH0A0HYM2",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "沿用最近已核 11/23 官方读数（HY OAS 363bp / CCC OAS 1,387bp）并注明原交易日，挂账 11/24–25 读数至 18:00 晚报"
+            }
+          },
+          {
+            "description": "国内 2026-11-26 09:00–10:00 四大行金条/品牌金店最新牌价与 09:15 CFETS 人民币中间价在 08:30 截点尚未开盘公布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.chinamoney.com.cn/english/bmkcpr/",
+              "due_edition": "2026-11-26_1800",
+              "disposition": "沿用已核 11/25 CFETS 中间价 6.7088 与线下牌价（四大行 778.16 / 周大福 1,068）并明示 09:00 后约 +6–10 元调价窗口，挂账 18:00 晚报实盘封账"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化 AUDIT_LOG.md 历史行不可删改下的“三区增量同步”铁律（顶区增量 + 第一节分表末尾追加 + 第二节上方新增最新 8 大类官方索引），并强制 gold_mcap_to_us_m2_pct 直接按 111.9 × (spot_ny_close / 3635.24) 从主报告基线直算，严禁对盘中旧比值连乘涨跌幅",
+        "固化图 1 顺时序标签校验（严格区分先期跌幅 vs 后续深V总振幅）、H1 标题 ≤34 字防孤字折行与 Layer 0–1 单条 ≤3 锚点数字防 Signal 跨 p1→p2 断句"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【感恩节 Mode A 切换与 6 项滞后表全清零】正式切入美国感恩节 A 类美盘局部休市模式（周四无 COMEX 官结、电子盘明晨 03:30–07:00 停盘 3.5h、vix_live=null），100% 清零早报挂账的 6 项官方表（Cboe VIX_History.csv 11/25 OHLC 终值、11/25 GLD 吨数、11/25 GDX NAV、11/25 LBMA 定盘、11/24–25 FRED OAS、11/26 国内银行金条/品牌金店新牌价与 09:15 CFETS 中间价）",
+        "【国内早盘补涨验真与 SCORECARD 结案】核对 11/26 15:30 SGE Au99.99/Au(T+D) 官收、SHFE pm20261126.dat 席位龙虎榜、四大行金条实盘调价与 16:00 山东黄金三季报说明会，客观结案 SCORECARD.md 今日到期项",
+        "【零重试与三区同步冲刺】发前核查 AUDIT_LOG.md 三区增量同步、图 1 顺时序标签、H1 ≤34 字及 Layer 0–1 ≤3 数字防 p1→p2 断句，冲刺 lint_retries=0 与 visual_retries=0"
+      ]
     }
   ]
 }

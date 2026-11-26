@@ -1,17 +1,17 @@
 {
   "schema_version": "2.1",
-  "as_of_cst": "2026-11-25T21:25:00+08:00",
-  "edition_id": "2026-11-25_1800_r2",
+  "as_of_cst": "2026-11-26T08:30:00+08:00",
+  "edition_id": "2026-11-26_0730",
   "period_slug": "2026_11",
   "schedule_cst": ["07:30", "18:00"],
   "edition_slugs_cst": ["07:30", "18:00"],
   "alert_level": "L1",
-  "alert_label": "关键节点临近 · 恐慌指数盘前冲破 30，静待今晚 21:30 美国核心通胀与 11/30 三市大撞车",
+  "alert_label": "关键节点临近 · 美股深V反抽仍守红灯，今晚感恩节休市严防薄量与 11/30 三市大撞车",
   "rsi_enabled": true,
   "ssot_links": {
     "gold_snapshot_path": "../gold/data_snapshot.json",
-    "gold_snapshot_as_of": "2026-11-25 21:25",
-    "gold_edition_id": "2026-11-25_1800_r2"
+    "gold_snapshot_as_of": "2026-11-26 08:30",
+    "gold_edition_id": "2026-11-26_0730"
   },
   "markets": {
     "a_share": {
@@ -34,7 +34,7 @@
       "erp_ttm_pct": 5.97,
       "erp_fwd_pct": 6.54,
       "stock_pool_count": 44,
-      "latest_daily": "daily/2026-11-25_1800_a_share_r2.md",
+      "latest_daily": "daily/2026-11-26_0730_a_share.md",
       "flagship_last_updated": "2026-11-25"
     },
     "hk_stock": {
@@ -53,7 +53,8 @@
       "hstech_200d": 3917,
       "hstech_ma200_gap_pct": -13.75,
       "hsi_52w_high": 28056.10,
-      "hsi_night_live": 21887,
+      "hsi_night_live": 22149,
+      "hsi_adr_implied": 22204.61,
       "turnover_hkd_b": 229.98,
       "short_sell_ratio_pct": 22.66,
       "southbound_daily_hkd_b": 6.434,
@@ -62,13 +63,13 @@
       "hsahp_index": 139.39,
       "pe_ttm": 10.18,
       "pe_fwd": 9.59,
-      "erp_usd_anchor_ttm_pct": 4.98,
+      "erp_usd_anchor_ttm_pct": 4.97,
       "erp_cny_anchor_ttm_pct": 8.23,
       "erp_usd_anchor_fwd_pct": 5.58,
       "erp_cny_anchor_fwd_pct": 8.84,
       "stock_pool_count": 45,
       "delisted_blocked_tickers": ["00011.HK"],
-      "latest_daily": "daily/2026-11-25_1800_hk_stock_r2.md",
+      "latest_daily": "daily/2026-11-26_0730_hk_stock.md",
       "flagship_last_updated": "2026-11-25"
     },
     "us_stock": {
@@ -82,55 +83,55 @@
       "tech_new_cap_pct": 0,
       "fomo_threshold": "标普500连续3日放量收站7,348点且10年美债回落至4.70%下方",
       "deep_pit_threshold": "标普跌破6,350点且VIX冲破45",
-      "benchmark_sp500": 7201.09,
+      "benchmark_sp500": 7182.78,
       "sp500_200d": 7348,
       "sp500_high": 7819,
-      "us10y_pct": 4.844,
+      "us10y_pct": 4.85,
       "us10y_fomo_below": 4.70,
-      "pe_ttm": 24.3,
-      "pe_fwd": 17.3,
-      "erp_ttm_pct": -0.73,
+      "pe_ttm": 24.24,
+      "pe_fwd": 17.26,
+      "erp_ttm_pct": -0.72,
       "erp_fwd_pct": 0.94,
       "stock_pool_count": 46,
-      "latest_daily": "daily/2026-11-25_1800_us_stock_r2.md",
+      "latest_daily": "daily/2026-11-26_0730_us_stock.md",
       "flagship_last_updated": "2026-11-25"
     },
     "gold_mirror_readonly": {
       "source": "../gold/data_snapshot.json",
-      "as_of_short": "2026-11-25 21:25",
+      "as_of_short": "2026-11-26 08:30",
       "tier_code": "Tier 0",
       "lamp": "red",
       "gates_passed": "1/4",
-      "edition_id": "2026-11-25_1800_r2",
+      "edition_id": "2026-11-26_0730",
       "new_buy_allowed": false,
-      "spot_ny_close_usd": 3554.77,
-      "spot_live_usd": 3506.12,
-      "spot_change_pct": -2.21,
-      "comex_front_settle_usd": 3559.90,
-      "comex_gcz26_settle_usd": 3561.90,
+      "spot_ny_close_usd": 3588.78,
+      "spot_live_usd": 3578.00,
+      "spot_change_pct": 0.96,
+      "comex_front_settle_usd": 3534.70,
+      "comex_gcz26_settle_usd": 3537.90,
       "sge_au9999_day_rmb": 757.35,
       "sge_autd_day_rmb": 756.90,
-      "sge_autd_night_rmb": 752.34,
-      "sge_same_ts_premium_rmb": 1.53,
-      "dfii10_pct": 2.79
+      "sge_autd_night_rmb": 758.06,
+      "sge_same_ts_premium_rmb": 0.51,
+      "dfii10_pct": 2.73
     }
   },
   "cross_market_linkages": {
     "rates_fx_chain": {
-      "us10y_pct": 4.844,
-      "us2y_pct": 4.604,
-      "us30y_pct": 5.256,
-      "dfii10_pct": 2.79,
+      "us10y_pct": 4.85,
+      "us2y_pct": 4.61,
+      "us30y_pct": 5.24,
+      "dfii10_pct": 2.73,
       "cgb10y_pct": 1.5914,
-      "cn_us_10y_spread_bp": -325,
-      "dxy": 103.97,
+      "cn_us_10y_spread_bp": -326,
+      "dxy": 103.71,
       "usd_cny_1630": 6.6736,
-      "usd_cny_night": 6.6723,
-      "usd_cnh": 6.6730,
+      "usd_cny_night": 6.6681,
+      "usd_cnh": 6.6670,
       "cfets_cny_fixing": 6.7088,
       "cfets_fixing_date": "2026-11-25",
       "pboc_fx_rrr_pct": 6.0,
-      "usd_hkd": 7.8380,
+      "usd_hkd": 7.8389,
       "hkma_base_rate_pct": 4.25,
       "hibor_1m_pct": 2.879,
       "hibor_3m_pct": 3.400,
@@ -138,7 +139,7 @@
       "sofr_hibor1m_carry_bp": 106.1,
       "hkma_agg_bal_hkd_100m": 540.83,
       "hkd_cny_mid": 0.85539,
-      "usd_jpy": 159.28
+      "usd_jpy": 159.15
     },
     "ah_premium_radar": {
       "hsahp_index": 139.39,
@@ -170,31 +171,32 @@
       ]
     },
     "commodity_mirror": {
-      "brent_usd": 91.40,
+      "brent_usd": 94.61,
       "brent_contract": "BRNF27",
-      "brent_chg_pct": 2.27,
-      "brent_live_usd": 92.47,
-      "brent_live_chg_pct": 1.17,
-      "wti_usd": 82.05,
-      "wti_live_usd": 82.50,
-      "comex_copper_usd_lb": 5.3625,
-      "comex_copper_chg_pct": -4.70,
+      "brent_chg_pct": 3.51,
+      "brent_live_usd": 94.20,
+      "brent_live_chg_pct": -0.43,
+      "wti_usd": 83.68,
+      "wti_live_usd": 84.03,
+      "comex_copper_usd_lb": 5.3325,
+      "comex_copper_chg_pct": -0.56,
       "shfe_copper_day_rmb": 87950,
       "shfe_copper_day_chg_pct": -6.34,
+      "shfe_copper_night_chg_pct": -2.24,
       "copper_regime": "technical_bear_market_shfe_broke_90k",
-      "gold_ny_close_usd": 3554.77,
-      "gold_live_usd": 3506.12,
-      "btc_usd": 58621,
-      "btc_chg_pct": -1.89
+      "gold_ny_close_usd": 3588.78,
+      "gold_live_usd": 3578.00,
+      "btc_usd": 58900,
+      "btc_chg_pct": -1.50
     },
     "erp_ruler": {
       "csi300_erp_ttm_pct": 5.97,
       "csi300_erp_fwd_pct": 6.54,
       "hsi_erp_cny_ttm_pct": 8.23,
-      "hsi_erp_usd_ttm_pct": 4.98,
+      "hsi_erp_usd_ttm_pct": 4.97,
       "hsi_erp_cny_fwd_pct": 8.84,
       "hsi_erp_usd_fwd_pct": 5.58,
-      "sp500_erp_ttm_pct": -0.73,
+      "sp500_erp_ttm_pct": -0.72,
       "sp500_erp_fwd_pct": 0.94
     },
     "household_composite_weights": {
@@ -212,18 +214,18 @@
     },
     "ai_tech_factor_cap": {
       "combined_household_cap_pct": 20,
-      "supply_chain_stress": "HBM/DRAM通胀延至2027(DELL盘前-5.66%至$278.56、CoreWeave CDS创1,314bp新高、华虹-13.89%/-17.27%、宁德H-12.23%)"
+      "supply_chain_stress": "HBM/DRAM通胀延至2027（CoreWeave 5年CDS稳居1,314bp、NVDA官收-3.91%至$149.30、ORCL跌约-5%、DELL自$265.27深V翻红+0.60%）"
     },
     "crisis_correlation_brake": {
-      "vix_close": 26.36,
-      "vix_live": 30.99,
-      "vix_intraday_high": 31.08,
+      "vix_close": 28.29,
+      "vix_live": null,
+      "vix_intraday_high": null,
       "vix_brake_threshold": 30.0,
-      "usdjpy_level": 159.28,
+      "usdjpy_level": 159.15,
       "usdjpy_3d_drop_brake_pct": -3.0,
       "us10y_brake_pct": 5.25,
       "hkma_agg_bal_brake_100m": 400.0,
-      "on_rrp_usd_m": 301,
+      "on_rrp_usd_m": 300,
       "brake_triggered": false
     },
     "action_consistency_locks": {
@@ -234,43 +236,43 @@
   "policy_radars": {
     "a_share": {
       "fiscal_top": "yellow_moderate_cpi_07_ppi_57",
-      "monetary_fx": "green_1125_pboc_net_321b_dr007_1374_fxrrr_6",
+      "monetary_fx": "green_1125_pboc_net_321b_dr007_1374_fxrrr_6_1126_617b_due",
       "capital_market_floor": "green_huijin_730b_etf_margin_80pct_1pct_relend",
       "anti_involution_property": "yellow_828_tier1_plus02_2ndhand_plus114",
       "tech_trade": "green_bigfund3_mofcom_notice59_wuxi_1260h_removed",
-      "next_anchors": ["2026-11-28 商务部59号公告暂缓生效", "2026-11-30 降保80%撞MSCI剔22A股", "2026-12 中央经济工作会议+4742亿解禁", "2027-01-10 中美休战大限", "2027-03 全国两会"]
+      "next_anchors": ["2026-11-26 09:20 央行6170亿隔夜到期+123080末日+159509停牌至10:30", "2026-11-27 10月工企利润+美的分红登记", "2026-11-28 商务部59号公告暂缓生效", "2026-11-30 降保80%撞MSCI剔22A股", "2026-12 中央经济工作会议+4742亿解禁", "2027-01-10 中美休战大限"]
     },
     "hk_stock": {
       "mainland_connect_policy": "green_10_measures_800b_bond_ah_wave",
       "hkex_microstructure": "green_cmu_dap_launch_usm_lot_reform_137b_buyback",
-      "peg_us_rate_valve": "red_7838_54083_100m_hibor1m_288_3m_340",
+      "peg_us_rate_valve": "red_7839_54083_100m_hibor1m_288_3m_340",
       "cross_border_geopolitics": "red_ustr_125pct_hk301_part851_1207_bis_apex_fedreg",
       "dividend_tax_cut_enacted": false,
-      "next_anchors": ["2026-11-27 美团Q3财报+老铺黄金除净", "2026-11-30 MSCI剔15港股及金沙", "2026-12-04 恒生系列合并季检(恒指+恒科30扩50)", "2026-12-07 美Part851截止", "2026-12-10 联储/HKMA联汇考"]
+      "next_anchors": ["2026-11-26 美感恩节薄盘+期指转仓+老铺最后含息日", "2026-11-27 11月期指结算+美团Q3财报+老铺除净", "2026-11-30 MSCI剔15港股及金沙", "2026-12-04 恒生系列合并季检(恒指+恒科30扩50)", "2026-12-07 美Part851截止", "2026-12-10 联储/HKMA联汇考"]
     },
     "us_stock": {
       "political_fiscal": "orange_divided_congress_56_44_259_173",
       "tariff_toolbox": "red_scotus_ieepa_to_301_16_and_232",
-      "fed_independence_qra": "red_warsh_hawk_218b_settle_onrrp_301m_coreweave_1314",
-      "tech_antitrust_ai_power": "yellow_bis_7_entities_nvda_1125_treasury_1204_10q",
+      "fed_independence_qra": "red_warsh_hawk_corepce_33_gdp_43_218b_settle_onrrp_300m_coreweave_1314",
+      "tech_antitrust_ai_power": "yellow_bis_7_entities_nvda_treasury_unanswered_1201_hearings_1204_10q",
       "sector_regulation": "yellow_cms_round3_settled_1123_abbv_win_unh_crush_rule",
-      "next_anchors": ["2026-11-25 21:30 10月核心PCE/GDP二修", "2026-11-26 感恩节全天休市", "2026-11-30 2180亿美债交割+MSCI剔MSTR", "2026-12-01/04 NVDA听证+10-Q/黑石BCRED赎回", "2026-12-10 沃什联储议息", "2026-12-12 政府停摆大限"]
+      "next_anchors": ["2026-11-26 感恩节全天休市（18:00与27早切守望简报）", "2026-11-27 黑五半日市（28日02:00股/03:00债/06:00盘后收）", "2026-11-30 2180亿美债交割+MSCI剔MSTR", "2026-12-01/04 NVDA听证+10-Q/黑石BCRED赎回", "2026-12-10 03:00 沃什联储议息（美东12/08–09）", "2026-12-12 政府停摆大限"]
     }
   },
   "pending_backfills": [
     {
-      "market": "us_stock",
-      "item": "2026-11-25 21:30 CST 美国 10 月核心 PCE / Q3 GDP 二修 / 初请 / 耐用品、22:15 英央行作证、00:30 7Y 美债拍卖及 03:00 褐皮书",
-      "due_session": "2026-11-26_0730"
+      "market": "a_share",
+      "item": "2026-11-25 全市场两融余额终值（次晨 08:00–09:00 披露）、11/26 09:15 CFETS 中间价 / 09:20 央行 6,170 亿对冲实况及海波转债 123080 最后交易日收官",
+      "due_session": "2026-11-26_1800"
     },
     {
-      "market": "a_share",
-      "item": "2026-11-25 全市场两融余额终值（次晨 08:00–09:00 披露）及 11/26 海波转债 123080 最后交易日收官",
+      "market": "hk_stock",
+      "item": "2026-11-26 11:15 HKAB HIBOR 定盘、16:10 港股官收、南向终值与 11 月期指转仓收官",
       "due_session": "2026-11-26_1800"
     },
     {
       "market": "us_stock",
-      "item": "2026-11-25 Farside 汇编比特币/以太坊 ETF 净流向（11/24 BTC -$231.4M / 11 月 -$4.94B 已核；基金分项全为空时继续挂账）",
+      "item": "2026-11-25 09:00 CST 盘后终盘、Farside 汇编比特币/以太坊 ETF 净流向（11/24 BTC -$231.4M / 11 月 -$4.94B 已核）、11/24–25 FRED HY/CCC OAS 与 Cboe VIX_History.csv 11/25 日线终值核销（早报暂采 Cboe 官网 16:15 EST 收盘 28.29）",
       "due_session": "2026-11-26_1800"
     }
   ],
