@@ -1,0 +1,53 @@
+{
+  "_comment": "复制本文件至 ~/.config/global-investment-research/notify.json 并执行 chmod 600；严禁提交真实密钥至 Git 仓库或放入 gold/、equity/ 目录。",
+  "timezone": "Asia/Shanghai",
+  "quiet_hours": {
+    "enabled": true,
+    "start": "23:30",
+    "end": "07:15"
+  },
+  "cooldown_seconds": {
+    "P0": 300,
+    "P1": 900,
+    "P2": 3600
+  },
+  "providers": {
+    "wxpusher": {
+      "enabled": false,
+      "min_severity": "P1",
+      "app_token": "AT_REPLACE_WITH_YOUR_WXPUSHER_APP_TOKEN",
+      "uids": [
+        "UID_REPLACE_WITH_YOUR_WXPUSHER_UID"
+      ],
+      "content_type": 3
+    },
+    "wecom_webhook": {
+      "enabled": false,
+      "min_severity": "P2",
+      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=REPLACE_WITH_YOUR_WECOM_BOT_KEY",
+      "msgtype": "markdown"
+    },
+    "pushplus": {
+      "enabled": false,
+      "min_severity": "P1",
+      "token": "REPLACE_WITH_YOUR_PUSHPLUS_TOKEN",
+      "channel": "wechat",
+      "template": "markdown"
+    },
+    "serverchan": {
+      "enabled": false,
+      "min_severity": "P0",
+      "sendkey": "SCT_REPLACE_WITH_YOUR_SERVERCHAN_SENDKEY"
+    },
+    "bark": {
+      "enabled": false,
+      "min_severity": "P0",
+      "base_url": "https://api.day.app",
+      "device_key": "REPLACE_WITH_YOUR_BARK_DEVICE_KEY"
+    },
+    "macos_osascript": {
+      "enabled": true,
+      "min_severity": "P1"
+    }
+  }
+}

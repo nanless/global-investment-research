@@ -120,6 +120,7 @@ FORBIDDEN_BINARY_LINK_RE = re.compile(
 )
 MULTI_ASSET_CHANNELS_PATH = REPO_ROOT / "equity" / "state" / "multi_asset_channels.json"
 ETF_UNIVERSE_PATH = REPO_ROOT / "equity" / "state" / "etf_universe.json"
+POLICY_CALENDAR_PATH = REPO_ROOT / "equity" / "state" / "policy_calendar.json"
 REQUIRED_MULTI_ASSET_CHANNELS: tuple[str, ...] = (
     "reverse_repo",
     "large_cds",
@@ -272,7 +273,8 @@ S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"(?<![A-Za-z0-9_-])(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
     r"data_snapshot\.json|master_snapshot\.json|market_state\.json|market_calendar\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|"
-    r"report_meta_[A-Za-z0-9_*]+\.json|edition-runs\.sqlite3|"
+    r"policy_calendar\.json|report_meta_[A-Za-z0-9_*]+\.json|edition-runs\.sqlite3|"
+    r"realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
@@ -280,6 +282,7 @@ S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
     r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|fetch_kline_data\.py|"
+    r"realtime_monitor\.py|wechat_notify\.py|"
     r"_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|"
     r"_rollover_patch\.json|_archive_patch\.json|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing)(?![A-Za-z0-9_])",
@@ -423,16 +426,16 @@ _GOLD_TARGET_RE_FRAG = (
     r"GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ|NEM|FCX)(?![A-Za-z0-9]))"
 )
 GOLD_ACTIVE_BUY_RE = re.compile(
-    rf"(?:趁急跌.{{0,12}}(?:补齐|买|低吸|定投|建仓).{{0,8}}{_GOLD_TARGET_RE_FRAG}|"
-    rf"(?:小批|分批|立刻|马上|立即|同步|今[日早晚]).{{0,8}}(?:补齐|补足|买入|买进|加仓|加配|建仓|配置|定投|抄底).{{0,8}}(?:[0-9一二两三半成%]*\s*)?{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:趁急跌.{{0,12}}(?:补齐|买|低吸|布局|上车|定投|建仓).{{0,8}}{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:小批|分批|立刻|马上|立即|同步|今[日早晚]).{{0,8}}(?:补齐|补足|买入|买进|加仓|加配|建仓|配置|定投|抄底|低吸|布局|上车).{{0,8}}(?:[0-9一二两三半成%]*\s*)?{_GOLD_TARGET_RE_FRAG}|"
     rf"(?:补齐|补足)\s*[0-9一二两三半成%]*\s*(?:黄金|金仓)|"
-    rf"(?:加配|逢低买|抄底|定投|建仓)\s*[0-9一二两三半成%]*\s*{_GOLD_TARGET_RE_FRAG}|"
-    rf"(?:立即|马上|现在|建议|可以|开启|启动).{{0,6}}(?:买入|买进|建仓|加仓|配置|定投|抄底).{{0,6}}{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:加配|逢低买|低吸|布局|上车|抄底|定投|建仓)\s*[0-9一二两三半成%]*\s*{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:立即|马上|现在|建议|可以|开启|启动).{{0,6}}(?:买入|买进|建仓|加仓|配置|定投|抄底|低吸|布局|上车).{{0,6}}{_GOLD_TARGET_RE_FRAG}|"
     r"\b(?:buy\s+gold|add\s+gold|accumulate\s+gold|dca\s+into\s+gold|buy\s+now[^\n]{0,20}gold)\b)",
     re.IGNORECASE,
 )
 GOLD_CTA_BUY_RE = re.compile(
-    rf"(?:(?:立即|马上|一键|去|开始)?(?:买入|买进|加仓|建仓|抄底|配置|定投)\s*{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:(?:立即|马上|一键|去|开始)?(?:买入|买进|加仓|建仓|抄底|配置|定投|低吸|布局|上车)\s*{_GOLD_TARGET_RE_FRAG}|"
     r"(?:立即|马上|去)买金|"
     r"\b(?:buy\s+gold|accumulate\s+gold|dca\s+into\s+gold)\b)",
     re.IGNORECASE,
@@ -440,7 +443,7 @@ GOLD_CTA_BUY_RE = re.compile(
 GOLD_DEFER_GUARD_RE = re.compile(
     r"(?:暂不|严禁|禁止|切忌|勿|停止|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|暂停|无需|不)"
     r"(?:现在|今天|今日|当下|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|进行|尝试|建议|允许|任何|新增|直接|冲动)*"
-    r"\s*(?:补|买|加|建|抄|配置|定投|低吸|开启|启动)"
+    r"\s*(?:补|买|加|建|抄|配置|定投|低吸|布局|上车|开启|启动)"
     r"|(?:待|等).{0,18}(?:黄灯|绿灯|解锁)|(?:黄灯|绿灯|解锁|过四关|全部过关)(?:亮起|确认)?后|"
     r"\b(?:do\s+not|never|should\s+not|must\s+not|hold\s+off|pause)\s+(?:buy|add|accumulat|dca)",
     re.IGNORECASE,
@@ -1121,6 +1124,116 @@ def _inspect_element_by_id(raw_html: str, target_id: str) -> _ElementSnapshot | 
     if not raw_html or target_id not in raw_html:
         return None
     parser = _ElementByIdParser(target_id)
+    parser.feed(raw_html)
+    parser.close()
+    return parser.result()
+
+
+PCAL_RAW_TIER_RE = re.compile(r"(?<![A-Za-z0-9])P[012](?![A-Za-z0-9])")
+
+
+@dataclass
+class _PolicyCalendarSnapshot:
+    inner_text: str
+    tier_pill_texts: list[str] = field(default_factory=list)
+
+
+class _PolicyCalendarSectionParser(HTMLParser):
+    """Extract visible text and all .pcal-tier-pill badge texts inside #sec-policy-calendar."""
+
+    def __init__(self, target_id: str = "sec-policy-calendar") -> None:
+        super().__init__(convert_charrefs=True)
+        self.target_id = target_id
+        self.found = False
+        self.done = False
+        self._tag_stack: list[str] = []
+        self._skip_depth = 0
+        self._text_chunks: list[str] = []
+        self._pill_frames: list[tuple[int, list[str]]] = []
+        self.tier_pill_texts: list[str] = []
+
+    def _on_open(self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool) -> None:
+        if self.done:
+            return
+        t = tag.lower()
+        attr_map = {k.lower(): ("" if v is None else v) for k, v in attrs if k}
+        classes = {c for c in attr_map.get("class", "").split() if c}
+
+        if not self.found:
+            if attr_map.get("id", "").strip() == self.target_id:
+                self.found = True
+                if self_closing or t in VOID_ELEMENTS:
+                    self.done = True
+                    return
+                self._tag_stack.append(t)
+                if t in ("script", "style", "template"):
+                    self._skip_depth += 1
+            return
+
+        if "pcal-tier-pill" in classes:
+            if self_closing:
+                self.tier_pill_texts.append("")
+            else:
+                self._pill_frames.append((len(self._tag_stack) + 1, []))
+
+        if t in BLOCK_TEXT_TAGS and self._skip_depth == 0:
+            self._text_chunks.append("\n")
+
+        if self_closing or t in VOID_ELEMENTS:
+            return
+        self._tag_stack.append(t)
+        if t in ("script", "style", "template"):
+            self._skip_depth += 1
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._on_open(tag, attrs, self_closing=False)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._on_open(tag, attrs, self_closing=True)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.found or self.done:
+            return
+        t = tag.lower()
+        if t in VOID_ELEMENTS:
+            return
+        for idx in range(len(self._tag_stack) - 1, -1, -1):
+            if self._tag_stack[idx] == t:
+                while self._pill_frames and self._pill_frames[-1][0] > idx:
+                    _, buf = self._pill_frames.pop()
+                    self.tier_pill_texts.append(" ".join("".join(buf).split()))
+                popped = self._tag_stack[idx:]
+                del self._tag_stack[idx:]
+                for pt in popped:
+                    if pt in ("script", "style", "template") and self._skip_depth > 0:
+                        self._skip_depth -= 1
+                if not self._tag_stack:
+                    self.done = True
+                break
+
+    def handle_data(self, data: str) -> None:
+        if not self.found or self.done or self._skip_depth > 0:
+            return
+        self._text_chunks.append(data)
+        for _, buf in self._pill_frames:
+            buf.append(data)
+
+    def result(self) -> _PolicyCalendarSnapshot | None:
+        if not self.found:
+            return None
+        while self._pill_frames:
+            _, buf = self._pill_frames.pop()
+            self.tier_pill_texts.append(" ".join("".join(buf).split()))
+        return _PolicyCalendarSnapshot(
+            inner_text="".join(self._text_chunks),
+            tier_pill_texts=self.tier_pill_texts,
+        )
+
+
+def _inspect_policy_calendar_section(raw_html: str) -> _PolicyCalendarSnapshot | None:
+    if not raw_html or "sec-policy-calendar" not in raw_html:
+        return None
+    parser = _PolicyCalendarSectionParser("sec-policy-calendar")
     parser.feed(raw_html)
     parser.close()
     return parser.result()
@@ -2872,6 +2985,59 @@ def run_gate_s6(
                 errors.append(
                     f"[S6] {path}: permanent invariant violation ({inv_label}) -> {win!r}"
                 )
+
+    # 10. Policy calendar & core policy briefs check (when equity/state/policy_calendar.json exists).
+    if POLICY_CALENDAR_PATH.is_file() and index_doc is not None:
+        if "sec-policy-calendar" not in index_doc.ids:
+            errors.append(
+                "[S6] index.html: equity/state/policy_calendar.json exists, but missing #sec-policy-calendar section"
+            )
+        else:
+            pcal_snap = _inspect_policy_calendar_section(index_doc.raw_text)
+            if pcal_snap is None:
+                errors.append(
+                    "[S6] index.html: failed to inspect #sec-policy-calendar section"
+                )
+            else:
+                if "核心时政" not in pcal_snap.inner_text:
+                    errors.append(
+                        "[S6] index.html: #sec-policy-calendar missing required heading/text '核心时政'"
+                    )
+                for pill_txt in pcal_snap.tier_pill_texts:
+                    if PCAL_RAW_TIER_RE.search(pill_txt):
+                        errors.append(
+                            f"[S6] index.html: #sec-policy-calendar .pcal-tier-pill leaked raw tier code: {pill_txt!r}"
+                        )
+                raw_tier_hits = sorted(set(PCAL_RAW_TIER_RE.findall(pcal_snap.inner_text)))
+                if raw_tier_hits:
+                    m_rt = PCAL_RAW_TIER_RE.search(pcal_snap.inner_text)
+                    win = (
+                        pcal_snap.inner_text[max(0, m_rt.start() - 25) : min(len(pcal_snap.inner_text), m_rt.end() + 25)]
+                        if m_rt
+                        else ""
+                    )
+                    errors.append(
+                        f"[S6] index.html: #sec-policy-calendar visible text leaked raw tier code(s) "
+                        f"{raw_tier_hits}: {win!r}"
+                    )
+                if gold_new_buy_blocked:
+                    pcal_gold_hits = 0
+                    for raw_line in re.split(r"[\n。！？；，,]+", pcal_snap.inner_text):
+                        line = " ".join(raw_line.split())
+                        if not line:
+                            continue
+                        for m_g in GOLD_ACTIVE_BUY_RE.finditer(line):
+                            if not _gold_action_is_guarded(line, m_g):
+                                win = line[max(0, m_g.start() - 40) : min(len(line), m_g.end() + 40)]
+                                errors.append(
+                                    f"[S6] index.html: #sec-policy-calendar Gold Tier 0 mutex violation — "
+                                    f"unguarded buy-gold directive: {win!r}"
+                                )
+                                pcal_gold_hits += 1
+                                if pcal_gold_hits >= 5:
+                                    break
+                        if pcal_gold_hits >= 5:
+                            break
 
 
 S7_FORBIDDEN_RAW_RE = re.compile(

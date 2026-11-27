@@ -73,23 +73,23 @@ SCORECARD_BANNED_RE = re.compile(
     r"\bTier\s*[ABC](?:\b|/[ABC])|\bV[2567]\.\d+\b|"
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"master_snapshot\.json|data_snapshot\.json|market_state\.json|permissions\.json|"
-    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
+    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|unified-edition\.prompt\.md|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|lint_(?:readability|equity|site)\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|svg_geometry\.py|patch_state_dbs\.py|fetch_kline_data\.py|"
+    r"chart_input\.py|install_sidecars\.py|svg_geometry\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|"
     r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"63\s*路|红队|法证|\bGate\s*[0-6]\b)",
     flags=re.IGNORECASE,
 )
 _INTERNAL_FILENAME_LEAK_RE = re.compile(
     r"(?:master_snapshot\.json|data_snapshot\.json|market_state\.json|"
-    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
+    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
     r"audit_ledger\.md|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
-    r"svg_geometry\.py|patch_state_dbs\.py|_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
+    r"svg_geometry\.py|patch_state_dbs\.py|realtime_monitor\.py|wechat_notify\.py|_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_-]*\.py(?![A-Za-z0-9_])|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|"

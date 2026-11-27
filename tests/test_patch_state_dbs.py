@@ -1506,6 +1506,227 @@ class AtomicRsiAuditAndInspectTests(unittest.TestCase):
                 self.assertEqual(psd.main(["--inspect", "nonexistent"]), 1)
             self.assertIn("Unknown --inspect target", err_buf.getvalue())
 
+    def test_policy_calendar_apply_upsert_prune_guards_and_inspect(self):
+        def _make_event(eid: str, start: str, end: str, *, region: str = "US", category: str = "central_bank", tier: str = "P0", precision: str = "exact", stance: str = "黄金维持红灯停新仓 0%，静待官方落地。") -> dict:
+            return {
+                "event_id": eid,
+                "date_cst": start,
+                "end_date_cst": end,
+                "date_precision": precision,
+                "time_cst": "03:00" if precision == "exact" else "全天窗口",
+                "region": region,
+                "category": category,
+                "impact_tier": tier,
+                "title": f"测试宏观政策事件 {eid}",
+                "affected_markets": ["us_stock", "rates_bonds_core", "gold"],
+                "expected_consensus": "市场关注政策节奏与利率路径。",
+                "market_transmission": "经美债收益率传导至股债与避险资产。",
+                "watch_triggers": {
+                    "upside_bull": "利率回落缓解估值压制。",
+                    "downside_bear": "鹰派指引推高美债压制风险资产。",
+                },
+                "pre_event_stance": stance,
+                "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+                "monitor_window_min": 60,
+            }
+
+        def _make_brief(bid: str, *, date_cst: str = "2026-11-27", region: str = "CN", category: str = "macro_data", tier: str = "P1") -> dict:
+            return {
+                "id": bid,
+                "date_cst": date_cst,
+                "region": region,
+                "category": category,
+                "impact_tier": tier,
+                "authority": "国家统计局",
+                "headline": "工业企业利润同比改善",
+                "summary": "10 月规上工业企业利润同比改善，提振午盘风偏。",
+                "affected_markets": ["a_share", "hk_stock"],
+                "market_impact": "红灯防守期严守股票上限，不追早盘脉冲。",
+                "source_url": "https://www.stats.gov.cn/",
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_clean_fixture(root, edition_id="2026-11-27_1130", as_of_date="2026-11-27")
+            pc_path = root / "equity/state/policy_calendar.json"
+            base_pc = {
+                "schema_version": "1.0",
+                "edition_id": "2026-11-27_0730",
+                "as_of_cst": "2026-11-27T07:55:00+08:00",
+                "horizon_days": 30,
+                "policy_briefs": [_make_brief("old_brief_1")],
+                "events": [
+                    _make_event("expired_ev_1", "2026-11-24", "2026-11-24", region="CN", tier="P2"),
+                    _make_event("boundary_ev_keep", "2026-11-25", "2026-11-25", region="CN", tier="P1"),
+                    _make_event("remove_me_ev", "2026-12-01", "2026-12-01", region="HK", category="market_structure", tier="P1"),
+                    _make_event("update_me_ev", "2026-12-10", "2026-12-10", region="US", tier="P0"),
+                    _make_event("far_ev_1", "2026-12-18", "2026-12-18", region="JP", tier="P0"),
+                ],
+            }
+            pc_path.write_text(json.dumps(base_pc, ensure_ascii=False), encoding="utf-8")
+
+            # 1. Clean --apply: upsert existing + add new + remove + replace briefs + auto-prune < 2026-11-25
+            patch_path = root / "equity/state/_edition_patch.json"
+            good_patch = {
+                "edition_id": "2026-11-27_1130",
+                "as_of_date": "2026-11-27",
+                "policy_calendar": {
+                    "top_level_updates": {"horizon_days": 30, "as_of_cst": "2026-11-27T12:30:00+08:00"},
+                    "policy_briefs_replace": [_make_brief("new_brief_1"), _make_brief("new_brief_2", region="US", tier="P0")],
+                    "events_remove": ["remove_me_ev"],
+                    "events_upsert": [
+                        {"event_id": "update_me_ev", "title": "美联储 12 月议息决议（更新版）", "monitor_window_min": 120},
+                        _make_event("added_ev_lpr", "2026-12-21", "2026-12-21", region="CN", tier="P1"),
+                    ],
+                },
+            }
+            patch_path.write_text(json.dumps(good_patch, ensure_ascii=False), encoding="utf-8")
+            out_ok, err_ok = StringIO(), StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_ok), redirect_stderr(err_ok):
+                rc_ok = psd.main(["--apply"])
+            self.assertEqual(rc_ok, 0, err_ok.getvalue())
+            self.assertFalse(patch_path.exists())
+
+            pc_after = json.loads(pc_path.read_text(encoding="utf-8"))
+            self.assertEqual(pc_after["edition_id"], "2026-11-27_1130")
+            self.assertEqual(pc_after["as_of_cst"], "2026-11-27T12:30:00+08:00")
+            self.assertEqual([b["id"] for b in pc_after["policy_briefs"]], ["new_brief_1", "new_brief_2"])
+            eids_after = [ev["event_id"] for ev in pc_after["events"]]
+            self.assertNotIn("expired_ev_1", eids_after)
+            self.assertNotIn("remove_me_ev", eids_after)
+            self.assertIn("boundary_ev_keep", eids_after)
+            self.assertIn("added_ev_lpr", eids_after)
+            upd_ev = next(ev for ev in pc_after["events"] if ev["event_id"] == "update_me_ev")
+            self.assertEqual(upd_ev["title"], "美联储 12 月议息决议（更新版）")
+            self.assertEqual(upd_ev["monitor_window_min"], 120)
+
+            # 2. --inspect policy-calendar returns compact summary by tier & region
+            insp_buf = StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(insp_buf):
+                rc_insp = psd.main(["--inspect", "policy-calendar"])
+            self.assertEqual(rc_insp, 0)
+            insp_data = json.loads(insp_buf.getvalue())
+            self.assertEqual(insp_data["edition_id"], "2026-11-27_1130")
+            self.assertEqual(insp_data["total_briefs"], 2)
+            self.assertEqual(insp_data["total_events"], 4)
+            self.assertEqual(insp_data["horizon_end_cst"], "2026-12-21")
+            self.assertEqual(insp_data["counts_by_tier"], {"P0": 2, "P1": 2})
+            self.assertEqual(insp_data["counts_by_region"], {"CN": 2, "JP": 1, "US": 1})
+
+            # 3. Reject bad enum, Gold buy verb under Tier-0 lock, <14-day horizon, and internal filename leaks atomically
+            snap_before = pc_path.read_bytes()
+            reject_cases = [
+                (
+                    "bad_region_enum",
+                    {"events_upsert": [{"event_id": "update_me_ev", "region": "MARS"}]},
+                    "invalid region",
+                ),
+                (
+                    "bad_category_enum",
+                    {"events_upsert": [{"event_id": "update_me_ev", "category": "crypto_pump"}]},
+                    "invalid category",
+                ),
+                (
+                    "bad_tier_enum",
+                    {"events_upsert": [{"event_id": "update_me_ev", "impact_tier": "P9"}]},
+                    "invalid impact_tier",
+                ),
+                (
+                    "bad_precision_enum",
+                    {"events_upsert": [{"event_id": "update_me_ev", "date_precision": "approx"}]},
+                    "invalid date_precision",
+                ),
+                (
+                    "bad_affected_markets_enum",
+                    {"events_upsert": [{"event_id": "update_me_ev", "affected_markets": ["us_stock", "crypto_mars"]}]},
+                    "invalid affected_markets",
+                ),
+                (
+                    "unknown_top_level_key",
+                    {"top_level_updates": {"rogue_field": "nope"}},
+                    "Unknown key(s) in policy_calendar.top_level_updates",
+                ),
+                (
+                    "pboc_crypto_buy_violation",
+                    {"events_upsert": [{"event_id": "update_me_ev", "pre_event_stance": "建议会前逢低买入 BTC 或配置比特币避险。"}]},
+                    "银发〔2026〕42号",
+                ),
+                (
+                    "gold_buy_under_tier0",
+                    {"events_upsert": [{"event_id": "update_me_ev", "pre_event_stance": "建议会前逢低买入黄金 518880 避险。"}]},
+                    "Gold Tier-0 互斥冲突",
+                ),
+                (
+                    "gold_buy_aligned_verb_under_tier0",
+                    {"events_upsert": [{"event_id": "update_me_ev", "pre_event_stance": "可趁震荡布局黄金或上车 518880。"}]},
+                    "Gold Tier-0 互斥冲突",
+                ),
+                (
+                    "horizon_under_14d",
+                    {"events_remove": ["far_ev_1", "added_ev_lpr"]},
+                    "forward horizon coverage",
+                ),
+                (
+                    "internal_filename_leak",
+                    {"events_upsert": [{"event_id": "update_me_ev", "pre_event_stance": "详见 realtime_monitor.py 与 policy_calendar.json。"}]},
+                    "leaked internal term",
+                ),
+            ]
+            for label, pc_patch_body, expected_err in reject_cases:
+                with self.subTest(case=label):
+                    patch_path.write_text(
+                        json.dumps({"edition_id": "2026-11-27_1130", "as_of_date": "2026-11-27", "policy_calendar": pc_patch_body}, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    out_b, err_b = StringIO(), StringIO()
+                    with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_b), redirect_stderr(err_b):
+                        rc_b = psd.main(["--apply"])
+                    self.assertEqual(rc_b, 1, label)
+                    self.assertIn(expected_err, err_b.getvalue())
+                    self.assertEqual(pc_path.read_bytes(), snap_before)
+
+            # Negated PBOC Doc 42 & Gold red-light phrasing passes cleanly
+            neg_ok_patch = {
+                "edition_id": "2026-11-27_1130",
+                "as_of_date": "2026-11-27",
+                "policy_calendar": {
+                    "events_upsert": [
+                        {
+                            "event_id": "update_me_ev",
+                            "pre_event_stance": "遵照央行银发〔2026〕42号严禁配置比特币与买入 BTC；黄金红灯停期暂不布局黄金、不要上车 518880。",
+                        }
+                    ]
+                },
+            }
+            patch_path.write_text(json.dumps(neg_ok_patch, ensure_ascii=False), encoding="utf-8")
+            out_n, err_n = StringIO(), StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_n), redirect_stderr(err_n):
+                rc_n = psd.main(["--apply"])
+            self.assertEqual(rc_n, 0, err_n.getvalue())
+
+            # 4. BANNED_INTERNAL_RE explicitly catches new filenames
+            for banned_fn in (
+                "policy_calendar.json",
+                "realtime_monitor.py",
+                "wechat_notify.py",
+                "realtime-monitor.sqlite3",
+                "notify.example.json",
+                "notify.json",
+            ):
+                with self.subTest(banned_fn=banned_fn):
+                    self.assertIsNotNone(psd.BANNED_INTERNAL_RE.search(f"禁止输出 {banned_fn}"))
+
+            # 5. Live repo --inspect policy-calendar succeeds and stays compact (< 15 KB)
+            real_root = Path(__file__).resolve().parent.parent
+            live_buf = StringIO()
+            with patch.object(psd, "REPO_ROOT", real_root), redirect_stdout(live_buf):
+                rc_live = psd.main(["--inspect", "policy-calendar"])
+            self.assertEqual(rc_live, 0)
+            self.assertLess(len(live_buf.getvalue().encode("utf-8")), 15000)
+            live_summary = json.loads(live_buf.getvalue())
+            self.assertGreaterEqual(live_summary["total_briefs"], 3)
+            self.assertEqual(live_summary["total_events"], 17)
+
 
 class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
     def test_edition_run_records_phase_timestamps_and_durations(self):

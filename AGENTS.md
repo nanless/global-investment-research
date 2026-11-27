@@ -15,7 +15,7 @@ global-investment-research/
 ├── AGENTS.md                        # 本文件：单仓库顶层编排宪章与跨轨硬约束
 ├── README.md                        # 仓库总览、纯网页三班次 10+1 节拍、交互 K 线终端与本地构建说明
 ├── .agents/skills/                  # 全仓库统一工作区三 Skill（黄金出版 + 权益出版 + 权益编辑审校）
-├── automations/                     # 共用提示词、56 项精确权限清单和三个定时模板（07:30/11:30/18:00，Tier C 只读）
+├── automations/                     # 共用提示词、56 项精确权限清单、三个定时模板（07:30/11:30/18:00，Tier C 只读）与微信推送配置样例 notify.example.json
 ├── gold/                            # 黄金深度研报体系（跨轨 SSOT 唯一写入源）
 │   ├── AGENTS.md                    # 黄金子轨永久规则
 │   ├── data_snapshot.json           # 日报实时数据源、多指数锚点、跨项目红绿灯裁决 SSOT 与 data_caveats 披露源
@@ -26,18 +26,20 @@ global-investment-research/
 ├── equity/                          # 全球三市权益、181+ 正交标注 ETF 雷达与 12 大多元渠道研报体系
 │   ├── GEMINI.md                    # 权益子轨永久宪法
 │   ├── DAILY_REPORT_SPEC.md         # 7 维大盘、多指数优先级、7 维个股/ETF 深研、12 大多元渠道与全主刊唯一详规
-│   ├── state/                       # market_state.json、multi_asset_channels.json、etf_universe.json、deep_dossiers.json、klines/*.json、audit_ledger.md、RSI 台账
+│   ├── state/                       # market_state.json、multi_asset_channels.json、etf_universe.json、deep_dossiers.json、policy_calendar.json、klines/*.json、audit_ledger.md、RSI 台账
 │   ├── edition_plan.py / lint_equity.py（及 21 张矢量 SVG 图表与网页渲染模块）
 │   └── daily/                       # 三市早/午/晚日报、总看板 INDEX、SCORECARD、CHANGELOG
-├── scripts/                         # 零依赖静态门户构建、交互 K 线抓取、严格门禁、纯网页发布与本地定时安装引擎
+├── scripts/                         # 零依赖静态门户构建、交互 K 线抓取、严格门禁、纯网页发布、本地定时安装与伴随实时监测引擎
 │   ├── fetch_kline_data.py          # 零第三方依赖全市场 480+ 标的静态分片 K 线抓取引擎（写入 equity/state/klines/*.json）
-│   ├── build_site.py                # 零第三方依赖生成双端响应式门户（首页驾驶舱/charts.html/12 独立渠道页/ETF 雷达/231 股 7 维/27 对 AH 矩阵/钱包试算/新手指南/记分卡/档案）
+│   ├── build_site.py                # 零第三方依赖生成双端响应式门户（首页驾驶舱/#sec-policy-calendar/charts.html/12 独立渠道页/ETF 雷达/231 股 7 维/27 对 AH 矩阵/钱包试算/新手指南/记分卡/档案）
 │   ├── svg_geometry.py              # SVG 矢量文本边界框解析与零碰撞/零越界几何校验引擎
-│   ├── patch_state_dbs.py           # 权益三库原子合并、双账本/审计无损头插、双轨 RSI 无损追加、月初原子滚存/归档与 --inspect <target> 查库工具（防 300s 超时）
+│   ├── patch_state_dbs.py           # 权益三库与 policy_calendar.json 原子合并、双账本/审计无损头插、双轨 RSI 无损追加、月初原子滚存/归档与 --inspect <target> 查库工具（防 300s 超时）
 │   ├── lint_site.py                 # 7 道法证与安全门禁（S1–S7，--strict 零容忍，含 K 线分片与黄金红灯锁验收，禁用离线附件链接）
 │   ├── publish_site.py              # 源稿严检 -> 静态站构建严检 -> 限域提交推送（GitHub Pages 自动部署）
 │   ├── install_sidecars.py          # 将 3 份脱敏定时模板（07:30/11:30/18:00）渲染/原子安装至本机并做漂移校验
 │   ├── edition_run.py               # 三个班次共用的运行记录、阶段锁、僵尸锁安全清理与 Pages 验收
+│   ├── realtime_monitor.py          # 伴随本机实时行情/政策/时政监测守护引擎（只读消费 SSOT，去重状态写入 .git/realtime-monitor.sqlite3 零仓库污染）
+│   ├── wechat_notify.py             # 合规微信推送分发器（WxPusher/企业微信机器人/PushPlus/Server酱，零个人号 Hook 风险，密钥外置 ~/.config）
 │   └── web_assets/                  # 站点样式与零依赖交互脚本（app.js + kline.js 双层 HiDPI Canvas K 线、技术指标、钱包试算、自选清单与术语浮窗）
 ├── tests/                           # 零依赖全链路回归测试集
 └── .github/workflows/
@@ -71,9 +73,9 @@ global-investment-research/
 
 ### 3.1 对称 `3×2` 六大市场驾驶舱与全球多指数优先级标准（严禁单指数播报）
 全站门户驾驶舱采用 **对称 `3×2` 六大市场格局（5 大核心市场 + 1 个统一非美全球卫星；仍保持黄金/A 股/港股/美股 4 条每日全主刊正文轨不变）**，日报封面 KPI、正文数据速查表与 `market_state.json` / `gold/data_snapshot.json` 的 `index_matrix` 数组，必须严格按机构终端优先级排序（`rank` 升序、读者可见纯中文 `tier_label`，严禁泄露 `Tier 0–3`）：
-- **核心 1 · 中国 A 股（大盘为先，12 指数）**：**第 1 必须领衔上证指数（`000001`）** → 沪深 300（`000300`）→ 深证成指（`399001`）→ 中证 A500（`000510`）→ 上证 50（`000016`）→ 创业板指（`399006`）→ 科创 50（`000688`）→ 中证 500（`000905`）→ 中证 1000（`000852`）→ 中证红利（`000922`）→ 北证 50（`899050`）→ 中证转债（`000832`）。
-- **核心 2 · 中国香港股市（5 基准 · 中国离岸折价腿，非海外分散）**：恒生指数（`HSI`）→ 恒生科技（`HSTECH`）→ 恒生国企（`HSCEI`）→ 恒生综合（`HSCI`）+ 恒生 AH 溢价（`HSAHP`）。
-- **核心 3 · 美国股市（8 基准 + 直达 QDII 申购入口 CTA）**：标普 500（`SPX`）→ 纳斯达克综合（`IXIC`）→ 纳斯达克 100（`NDX`）→ 道琼斯工业（`DJI`）→ 罗素 2000（`IWM`）→ 标普 500 等权（`RSP`）→ 费城半导体（`SOX`）→ VIX 恐慌指数。
+- **核心 1 · 中国 A 股（政策驱动型核心市场 · 大盘为先，12 指数）**：**第 1 必须领衔上证指数（`000001`）** → 沪深 300（`000300`）→ 深证成指（`399001`）→ 中证 A500（`000510`）→ 上证 50（`000016`）→ 创业板指（`399006`）→ 科创 50（`000688`）→ 中证 500（`000905`）→ 中证 1000（`000852`）→ 中证红利（`000922`）→ 北证 50（`899050`）→ 中证转债（`000832`）；紧扣央行/财政/产业/监管政策市主线。
+- **核心 2 · 中国香港股市（5 基准 · 中国离岸折价腿，A 股政策基本面 + 美股流动性/政策双轨驱动卫星，非海外分散）**：恒生指数（`HSI`）→ 恒生科技（`HSTECH`）→ 恒生国企（`HSCEI`）→ 恒生综合（`HSCI`）+ 恒生 AH 溢价（`HSAHP`）。
+- **核心 3 · 美国股市（联储/财政/关税与地缘政策驱动 · 8 基准 + 直达 QDII 申购入口 CTA）**：标普 500（`SPX`）→ 纳斯达克综合（`IXIC`）→ 纳斯达克 100（`NDX`）→ 道琼斯工业（`DJI`）→ 罗素 2000（`IWM`）→ 标普 500 等权（`RSP`）→ 费城半导体（`SOX`）→ VIX 恐慌指数。
 - **核心 4 · 债券/现金与中美利率（`rates_bonds_core`）**：中国国债 2Y/10Y/30Y、美债 2Y/10Y/30Y/TIPS、中美 10Y 利差、`GC001`/`DR001`、中证 REITs（`932047`/`932006`）与短融/长债基锚点。
 - **核心 5 · 黄金、大宗与宏观汇率（独立货币避险多锚点）**：伦敦现货金（`XAU`）→ COMEX 金（`GC`）→ 沪金主连（`AU0`）→ 上金所 `Au99.99`/`Au(T+D)` → 伦敦银/沪银 → 布伦特/WTI 原油、铜、美元指数（`DXY`）、`EURUSD`/`GBPUSD`/`USDHKD`/人民币/日元；**BTC 遵照央行 `银发〔2026〕42号` 中国大陆 0% 严禁配仓，仅作 Layer 1 只读全球流动性温度计**。
 - **卫星 6 · 非美全球卫星市场（`non_us_global_satellite` + 直达 QDII 入口 CTA）**：覆盖 9 大非美全球指数——**日本 #1（`513800`）**、**欧洲 #2（`159561`）**、台湾/韩国 AI 景气晴雨表、印度场外观察清单及 `164824` LOF 退市警示。
@@ -82,6 +84,10 @@ global-investment-research/
 - **零依赖静态分片抓取（`scripts/fetch_kline_data.py --scope all`）**：仅用 Python 标准库按多源路由（腾讯 `fqkline`/`usfqkline`、新浪期货/外汇/北交所/美股、FT 批量 POST 覆盖爱尔兰 UCITS、上金所 `Dailyhq`、中债/美国财政部官方利率 CSV、CBOE VIX 官方 CSV、Coinbase）抓取全市场 **480+ 标的**（核心指数/9 大非美全球指数/中国国债 2Y·10Y·30Y 收益率/中证 REITs `932047`·`932006`/港股 `HSCI`·`HSAHP`/`EURUSD`·`GBPUSD`·`USDHKD` 与大宗汇债 + 181+ 正交标注 ETF + 231 股）写入 `equity/state/klines/*.json`（纳入既有 `AUTOMATED_STAGE_PATHS = ("gold", "equity")` 零扩权），由 `scripts/build_site.py` 复制至 `_site/assets/klines/*.json`。
 - **双层 HiDPI Canvas 交互引擎（`scripts/web_assets/kline.js`）**：支持主图叠加（`MA` / `BOLL` / `EMA` / 基本面 `安全锚`）、副图指标（`VOL` / `MACD` / `RSI` / `KDJ` / `ATR` / `BIAS`）、`红涨绿跌`/`绿涨红跌` 切换及 **「技术面 10 秒白话体检条」**（仅输出客观技术状态词，**严禁任何主动买进动词并严格执行黄金红灯锁**）；贯穿全屏 K 线终端 **`charts.html`**、首页 **6 市场交互 K 线切换区**、日报 K 线带及 `screener.html` / `etfs.html` 弹窗 K 线标签页。
 - **门户交互增强与 Gate S7**：同期提供 **Layer 1 7 枚宏观气象与危机熔断邻近条**（含中美 10Y 利差与 `银发〔2026〕42号` BTC 只读流动性温度计）、**「我的钱包一键试算器」**（直连实时红绿灯与零金规则、纯本地零上传）、**全站统一自选清单 `★`** 与 **27 对 A/H 税后股息交互比价矩阵**；静态站严检升级为 **S1–S7（7 道门禁）**，Gate S7 专检 480+ K 线分片清单、`charts.html` 完整性、零 NaN 污染与黄金红灯锁一致。
+
+### 3.3 三班次政策/时政要闻精读、前瞻财经政策日历与本机伴随实时监测
+- **日报必含政策精读与 4 列前瞻日历（`07:30 / 11:30 / 18:00` 统一口径）**：黄金与 A/港/美每篇三班主刊均须包含 **1–2 条一手官源政策/时政/地缘财经要闻精读**（A 股紧扣政策市核心、港股紧扣 A+美双轨政策与流动性催化、美股紧扣联储/财政/关税与地缘政策）以及 **4 列未来 7–14 天全北京时间财经与政策日历表**（与 **`equity/state/policy_calendar.json`** 14–30 天前瞻底座及首页 `#sec-policy-calendar` 逐项同步；读者可见纯中文级别徽章如「重磅/重要」，严禁裸露 `P0`/`P1`，严格遵守黄金红灯锁）。增量更新经 `equity/state/_edition_patch.json` 可选 `policy_calendar` 键走 `scripts/patch_state_dbs.py --apply` 同步 `edition_id`，只读查库用 `--inspect policy-calendar`。
+- **本机伴随实时监测与合规微信推送（零扩权、零仓库污染）**：`scripts/realtime_monitor.py` 与 `scripts/wechat_notify.py` 作为本机伴随工具独立运行于 56 项定时出版权限清单之外（`automations/permissions.json` 严格锁定 56 项不变），以**严格只读**方式消费 `gold/data_snapshot.json`、`equity/state/market_state.json` 与 `equity/state/policy_calendar.json`（严格继承黄金红灯锁），告警去重与冷却状态仅写入 **`.git/realtime-monitor.sqlite3`**（零 Git 工作树污染），推送密钥外置于 `~/.config/global-investment-research/notify.json`（`chmod 600`），通过 WxPusher / 企业微信机器人 / PushPlus / Server酱合规推送（零个人微信 Hook 封号风险）。
 
 ---
 

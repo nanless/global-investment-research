@@ -19,7 +19,7 @@
 
 | 页面入口 | 在线直达链接 | 核心内容与使用场景 |
 | :--- | :--- | :--- |
-| **1. 首页总控驾驶舱** | [index.html](https://nanless.github.io/global-investment-research/) | **Layer 1 7 枚宏观气象与危机熔断邻近条**（含中美 10Y 利差与 `银发〔2026〕42号` BTC 只读流动性温度计）、**Layer 2 对称 `3×2` 六大市场驾驶舱**（5 核心 + 1 非美全球卫星，A 股上证指数 #1 领衔）、**6 市场交互 K 线切换区**、**「我的钱包一键试算器」**、**全站统一自选速览 `★`**、4 大执行角色分层 12 渠道概览卡、181+ 正交标注 ETF 概览卡与 `data_caveats` 透明提示 |
+| **1. 首页总控驾驶舱** | [index.html](https://nanless.github.io/global-investment-research/) | **Layer 1 7 枚宏观气象与危机熔断邻近条**（含中美 10Y 利差与 `银发〔2026〕42号` BTC 只读流动性温度计）、**Layer 2 对称 `3×2` 六大市场驾驶舱**（5 核心 + 1 非美全球卫星，A 股政策主线·上证指数 #1 领衔）、**财经与政策前瞻日历（`#sec-policy-calendar`）**、**6 市场交互 K 线切换区**、**「我的钱包一键试算器」**、**全站统一自选速览 `★`**、4 大执行角色分层 12 渠道概览卡、181+ 正交标注 ETF 概览卡与 `data_caveats` 透明提示 |
 | **2. 全屏交互 K 线终端** | [charts.html](https://nanless.github.io/global-investment-research/charts.html) | 覆盖 **480+ 全球核心指数、9 大非美全球指数、中国国债 2Y/10Y/30Y、中证 REITs `932047`/`932006`、港股 `HSCI`/`HSAHP`、`EURUSD`/`GBPUSD`/`USDHKD`、贵金属、大宗、181+ ETF 与 231 只个股**；双层 HiDPI Canvas、`MA`/`BOLL`/`EMA`/`安全锚` 叠加、`VOL`/`MACD`/`RSI`/`KDJ`/`ATR`/`BIAS` 副图、`红涨绿跌`/`绿涨红跌` 切换与 **10 秒白话技术体检条** |
 | **3. 新手 3 分钟指南** | [guide.html](https://nanless.github.io/global-investment-research/guide.html) | 四笔钱框架、交互式钱包试算、四灯四色锁仓速读、三步怎么买与 **48 词高频金融术语白话速查** |
 | **4. 12 大多元渠道与独立详情页** | [channels.html](https://nanless.github.io/global-investment-research/channels.html) | 按 **4 大执行角色分层**呈现中国大陆 12 大个人合规投资渠道总览 + 12 个独立详情页 `channels/<id>.html`（含 10 元起 **QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通**）+ 横向「全市场打新工具箱」与「双层风控警示墙」 |
@@ -169,13 +169,52 @@ python3 scripts/edition_run.py status
 
 ---
 
+## 实时行情·政策·时政监测与微信推送（本地运行）
+
+除每日 `07:30 / 11:30 / 18:00` 三班次定时主刊外，仓库配套零第三方依赖的**本机伴随实时监测与合规微信推送工具**（`scripts/realtime_monitor.py` + `scripts/wechat_notify.py`）。它**完全独立于 56 项定时自动化权限清单**，以**严格只读**方式消费仓库 SSOT（`gold/data_snapshot.json`、`equity/state/market_state.json`、`equity/state/policy_calendar.json`），告警去重与冷却状态统一落盘至 **`.git/realtime-monitor.sqlite3`（零仓库工作树污染、永不误提交）**，并**100% 继承黄金红灯互斥锁**（红灯期严禁触发任何买金提示）。
+
+### 1. 30 秒外置密钥配置（密钥永不入库）
+
+将仓库内的脱敏样例复制至本机用户配置目录并锁定 `600` 权限，按需填入任一合规微信推送通道凭证：
+
+```bash
+mkdir -p ~/.config/global-investment-research
+cp automations/notify.example.json ~/.config/global-investment-research/notify.json
+chmod 600 ~/.config/global-investment-research/notify.json
+```
+
+> **合规安全承诺（零封号风险）**：原生支持 **WxPusher**、**企业微信群机器人（Webhook）**、**PushPlus**、**Server酱（Turbo）** 四大官方/合规 HTTPS 推送通道，**绝不依赖任何个人微信协议 Hook、非官方桌面外挂或模拟登录**，零个人微信封号风险。
+
+### 2. 常用运行命令（体检 · 演练 · 常驻守护 · 开机自启）
+
+```bash
+# 1. 环境、SSOT、红灯锁与推送通道一键体检
+python3 scripts/realtime_monitor.py --doctor
+
+# 2. 单次干跑演练（实时抓取行情/政策/日历并打印告警卡片，不真实发送微信）
+python3 scripts/realtime_monitor.py --once --dry-run
+
+# 3. 启动本地常驻守护进程（按盘口时段轮询异动、政策新闻与临近财经日历提醒）
+python3 scripts/realtime_monitor.py --daemon
+
+# 4. 导出 macOS launchd 开机/后台保活 plist 模板（自行落盘至 ~/Library/LaunchAgents/）
+python3 scripts/realtime_monitor.py --print-launchd
+```
+
+### 3. 可选 Tier-2 大模型突发快解与门户 `#sec-policy-calendar` 联动
+
+- **可选 Tier-2 LLM 突发深度白话解读**：默认零外部依赖，仅用本地规则引擎与结构化模板生成 5 段式微信建议卡；若在本机环境变量中配置 **`GEMINI_API_KEY`** 或 **`OPENROUTER_API_KEY`**（按需二选一，不写入仓库）并通过 **`--enable-llm`**（或设置 **`GIR_MONITOR_LLM=1`**）开启，捕获重磅央行/财政/关税/地缘突发时自动追加深度白话拆解与双类人群建议，且出站仍强制经过黄金红灯锁与 `银发〔2026〕42号` 虚拟货币防火墙二次过滤。
+- **与首页 `#sec-policy-calendar` 及三班次日报的闭环联动**：三班次（`07:30` / `11:30` / `18:00` CST）经 `equity/state/_edition_patch.json` 的可选 `policy_calendar` 键把未来 **14–30 天**全球重要财经数据与政策议程同步写入 `equity/state/policy_calendar.json`——**向上**统一驱动门户首页 **[#sec-policy-calendar](https://nanless.github.io/global-investment-research/#sec-policy-calendar)** 交互日历卡与每篇黄金/A 股/港股/美股日报文内的 **「1–2 条政策/时政要闻深读 + 4 列未来 7–14 天全北京时间日历表」**（纯中文级别徽章，零裸 `P0`/`P1`）；**向下**实时喂给本机 `scripts/realtime_monitor.py`，在重大议息、通胀、关税、政治局/两会等窗口临近前主动微信提醒，实现「盘前日历预警 → 盘中异动推送 → 早/午/晚深度复盘」完整闭环。
+
+---
+
 ## 精简目录地图与权威宪章索引 · Repository Map & Contracts
 
 ```text
 global-investment-research/
-├── AGENTS.md                        # 单仓库顶层统一编排宪章（三班次 10+1、多指数标准、K 线管线、12 渠道与跨轨红线）
+├── AGENTS.md                        # 单仓库顶层统一编排宪章（三班次 10+1、多指数标准、K 线管线、政策日历、12 渠道与跨轨红线）
 ├── .agents/skills/                  # 统一工作区三 Skill（黄金出版 + 权益出版 + 权益编辑审校）
-├── automations/                     # 共享三班次提示词、56 项无通配符精确权限清单与 3 份脱敏定时模板
+├── automations/                     # 共享三班次提示词、56 项无通配符精确权限清单、3 份定时模板与 notify.example.json 推送样例
 ├── gold/                            # 黄金深度研报体系（跨项目 SSOT 唯一写入源）
 │   ├── AGENTS.md / market_calendar.json / data_snapshot.json / master_snapshot.json
 │   ├── lint_readability.py / edition_validation.py / chart_input.py
@@ -183,15 +222,17 @@ global-investment-research/
 ├── equity/                          # 全球三市权益、181+ 正交标注 ETF 雷达与 12 大多元渠道研报体系
 │   ├── GEMINI.md / DAILY_REPORT_SPEC.md / {a_share,hk_stock,us_stock}_market_report_{YYYY_MM,latest}.md
 │   ├── edition_plan.py / lint_equity.py（及 21 张矢量 SVG 图表渲染模块）
-│   ├── state/                       # market_state / multi_asset_channels / etf_universe / deep_dossiers / klines/*.json / audit_ledger / RSI
+│   ├── state/                       # market_state / multi_asset_channels / etf_universe / deep_dossiers / policy_calendar / klines/*.json / audit_ledger / RSI
 │   └── daily/                       # 三市早/午/晚主刊与守望刊、总看板 INDEX、SCORECARD 与 CHANGELOG
-├── scripts/                         # 零第三方依赖纯网页门户、交互 K 线抓取、几何检验、大库原子补丁与发布引擎
+├── scripts/                         # 零第三方依赖纯网页门户、交互 K 线抓取、几何检验、大库原子补丁、发布与本机实时监测引擎
 │   ├── fetch_kline_data.py          # 480+ 标的静态分片 K 线零依赖抓取器（输出至 equity/state/klines/）
-│   ├── build_site.py                # 静态门户构建器（首页 7 枚宏观条与 3×2 六市驾驶舱/charts.html/12 独立渠道页/181+ ETF 雷达/231 股/27 对 AH/钱包试算/新手指南/记分卡/档案）
+│   ├── build_site.py                # 静态门户构建器（首页 7 枚宏观条与 3×2 六市驾驶舱/#sec-policy-calendar/charts.html/12 独立渠道页/181+ ETF 雷达/231 股/27 对 AH/钱包试算/新手指南/记分卡/档案）
 │   ├── svg_geometry.py              # SVG 矢量文本边界框解析与零碰撞/零越界几何校验引擎
-│   ├── patch_state_dbs.py           # 三库原子合并、账本头插、双轨 RSI 无损追加、月初原子滚存/归档与 --inspect <target> 只读查库工具
+│   ├── patch_state_dbs.py           # 三库与 policy_calendar 原子合并、账本头插、双轨 RSI 无损追加、月初原子滚存/归档与 --inspect <target> 只读查库工具
 │   ├── lint_site.py                 # 静态站 S1–S7 法证、安全与 K 线分片严格门禁
 │   ├── publish_site.py / edition_run.py / install_sidecars.py
+│   ├── realtime_monitor.py          # 本机伴随实时行情/政策/时政监测守护引擎（只读消费 SSOT，去重落 .git/realtime-monitor.sqlite3）
+│   ├── wechat_notify.py             # 合规微信推送分发器（WxPusher/企业微信机器人/PushPlus/Server酱，密钥外置 ~/.config）
 │   └── web_assets/                  # WCAG 深浅色样式 + app.js（48 词术语浮窗/钱包试算/自选 ★/AH 比价）+ kline.js（双层 Canvas K 线引擎）
 ├── tests/                           # 全链路零依赖回归测试集
 └── .github/workflows/deploy-pages.yml

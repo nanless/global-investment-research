@@ -22,6 +22,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from math import isfinite
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import edition_plan as _edition_plan_mod
 from edition_plan import MARKETS, calendar_rules, edition_plan, parse_edition_id
@@ -33,6 +34,7 @@ STATE_PATH = BASE_DIR / "state" / "market_state.json"
 MULTI_ASSET_PATH = BASE_DIR / "state" / "multi_asset_channels.json"
 ETF_UNIVERSE_PATH = BASE_DIR / "state" / "etf_universe.json"
 DEEP_DOSSIERS_PATH = BASE_DIR / "state" / "deep_dossiers.json"
+POLICY_CALENDAR_PATH = BASE_DIR / "state" / "policy_calendar.json"
 KLINES_MANIFEST_PATH = BASE_DIR / "state" / "klines" / "manifest.json"
 BEIJING = timezone(timedelta(hours=8))
 MAX_EDITION_EARLY = timedelta(minutes=5)
@@ -98,6 +100,30 @@ _ETF_ALLOWED_REGIONS = frozenset({
     "global",
 })
 _COCKPIT_ALLOWED_LAMPS = frozenset({"red", "yellow", "green"})
+_POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "JP", "GLOBAL"})
+_POLICY_CAL_ALLOWED_CATEGORIES = frozenset({
+    "top_politics",
+    "central_bank",
+    "macro_data",
+    "fiscal_policy",
+    "regulation_trade",
+    "geopolitics_energy",
+    "liquidity_treasury",
+    "market_structure",
+    "holiday_schedule",
+})
+_POLICY_CAL_ALLOWED_TIERS = frozenset({"P0", "P1", "P2"})
+_POLICY_CAL_ALLOWED_PRECISIONS = frozenset({"exact", "window_tbd"})
+_POLICY_CAL_ALLOWED_MARKETS = frozenset({
+    "a_share",
+    "hk_stock",
+    "us_stock",
+    "rates_bonds_core",
+    "gold",
+    "non_us_global_satellite",
+})
+_POLICY_CAL_MIN_HORIZON_DAYS = 14
+_DATE_ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _HK_4DIGIT_RE = re.compile(r"(?<![0-9])\d{4}\.HK(?![A-Za-z0-9])")
 _DOSSIER_DIMENSIONS = (
     "moat",
@@ -130,6 +156,7 @@ RESTRICTED_WARN_RE = re.compile(
     r"不可|不买|不推|莫买|别买|别碰|慎碰|高危|雷区|警示|清盘|剔除|弃用|改以|替代)"
 )
 _MA_RESTRICTED_WARN_RE = RESTRICTED_WARN_RE
+_LOCAL_PATH_RE = re.compile(r"(?:file:///|/Users/|/home/|[A-Za-z]:\\Users\\|/opt/homebrew/)")
 EQUITY_RETRACTED_FACT_GUARDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Blue Owl 误写为新增 5% 赎回", re.compile(r"Blue\s*Owl[^。\n]{0,20}新增\s*5%\s*赎回", re.IGNORECASE)),
     ("工银黄金联接 008143 误写为 7 天免赎回", re.compile(r"008143[^。\n]{0,25}7\s*天免赎回")),
@@ -220,7 +247,7 @@ _FLAGSHIP_CUTOFF_RE = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{4}年\d{1,2}月\d{1,2}�
 
 _CHART_PLACEHOLDER_RE = re.compile(r"<!--\s*CHART_[AHU]\d+\s*-->")
 _GOLD_ACTIVE_BUY_RE = re.compile(
-    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|新买|买|定投|配置|建仓|吸纳)"
+    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|建仓|吸纳)"
     r"\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?"
     r"(?:(?:现货|实物|纸|积存)?(?:黄金|金仓|金矿股?|黄金股)|"
     r"(?:518660|518880|518850|159934|159937|518800|517520|159562|02840|03081|"
@@ -230,7 +257,7 @@ _GOLD_ACTIVE_BUY_RE = re.compile(
 _GOLD_DEFER_GUARD_RE = re.compile(
     r"(?:暂不|严禁|禁止|切忌|勿|停止|暂停|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|未在黄金红灯停期|不)"
     r"(?:追高芯片[与或])?(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|直接|冲动|抢跑)*"
-    r"(?:(?:新买|买入|加仓|抄底|定投|配置|建仓|补齐)[/／、与或])?[\s“‘「\x22*_]*$"
+    r"(?:(?:新买|买入|加仓|抄底|定投|配置|建仓|补齐|低吸|布局|上车)[/／、与或])?[\s“‘「\x22*_]*$"
     r"|(?:等到?|待).{0,14}(?:黄灯|绿灯|解锁)(?:亮起|确认)?(?:后)?(?:再|才)?(?:分批|择机|恢复|重启|再)*[\s“‘「\x22]*$"
     r"|(?:黄灯|绿灯|解锁|过四关|全部过关)(?:亮起|确认)?后(?:再|才)?(?:分批|择机|恢复|重启|再)*[\s“‘「\x22]*$"
     r"|(?:原稿曾建议|原稿曾考虑|过去曾建议|曾建议)[\s“‘「\x22]*$"
@@ -238,6 +265,22 @@ _GOLD_DEFER_GUARD_RE = re.compile(
 _GOLD_MINER_TICKERS_RE = re.compile(
     r"(?:NEM|纽蒙特|山东黄金|中金黄金|赤峰黄金|山金国际|紫金黄金|紫金矿业|招金|老铺黄金|周大福|"
     r"GLD|GLDM|IAU|IAUM|IGLN|GDX|GDXJ|518660|518880|518850|518800|517520|159934|159937|159562|02840|03081|02899|06181|01929)",
+    flags=re.IGNORECASE,
+)
+_CRYPTO_ACTIVE_BUY_RE = re.compile(
+    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|配仓|建仓|吸纳|购入|做多)"
+    r"\s*(?:[0-9一二两三半成%–\-~约近超少量小批分批]*\s*)?"
+    r"(?:(?:现货|数字|虚拟|加密)?(?:比特币|以太坊|虚拟货币|加密货币|加密资产|稳定币)|"
+    r"(?<![A-Za-z0-9])(?:BTC|ETH|USDT|USDC|IBIT|FBTC)(?![A-Za-z0-9]))"
+    r"|\b(?:buy|add|accumulate|allocate(?:\s+to)?|dca\s+into)\s+(?:btc|bitcoin|eth|ethereum|crypto(?:currency)?)\b",
+    flags=re.IGNORECASE,
+)
+_CRYPTO_NEGATION_GUARD_RE = re.compile(
+    r"(?:严禁|禁止|切忌|勿|不得|不可|不能|不宜|不要|绝不|决不|暂不|停止|拒绝|不允许|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
+    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相)*"
+    r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|低吸|布局|上车|交易|炒作|买卖|持有)[/／、与及和或])?[\s“‘「\x22*_]*$"
+    r"|(?:严禁|禁止|不得|切忌|不可|绝不)(?:[^。！？；，,|但可应须宜]{0,14})(?:与|及|和|或|、)[\s“‘「\x22*_]*$"
+    r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?)\s+(?:from\s+)?(?:buy|add|accumulat|allocat|dca|trad)[\w\s]{0,16}$",
     flags=re.IGNORECASE,
 )
 _TEN_DOT_RE = re.compile(r"[●○]{10}")
@@ -1099,6 +1142,20 @@ def _scan_text_for_gold_buy(label: str, text: str) -> list[str]:
     return found
 
 
+def _scan_text_for_crypto_buy(label: str, text: str) -> list[str]:
+    found: list[str] = []
+    for idx, ln in enumerate(text.splitlines(), 1):
+        for action in _CRYPTO_ACTIVE_BUY_RE.finditer(ln):
+            prefix = re.split(r"[。！？；，,|]", ln[:action.start()])[-1]
+            if not _CRYPTO_NEGATION_GUARD_RE.search(prefix):
+                found.append(
+                    f"Gate 4 失败 ({label}:L{idx})：违反央行银发〔2026〕42号合规红线，"
+                    f"中国大陆严禁个人配仓/买入虚拟货币 -> {ln.strip()[:72]}"
+                )
+                break
+    return found
+
+
 def _check_release_snapshot(gold: dict, state: dict, targets: list[Path]) -> list[str]:
     errors: list[str] = []
     edition_id = state.get("edition_id")
@@ -1443,6 +1500,13 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
                                 break
             except (OSError, ValueError) as exc:
                 errs.append(f"Gate C2 失败：{DEEP_DOSSIERS_PATH.name} 解析异常: {exc}")
+        if POLICY_CALENDAR_PATH.exists():
+            try:
+                pc_obj = json.loads(POLICY_CALENDAR_PATH.read_text(encoding="utf-8"))
+                for jpath, sval in _walk_json_strings(pc_obj, POLICY_CALENDAR_PATH.name, skip_keys=frozenset()):
+                    errs.extend(_scan_text_for_gold_buy(jpath, sval))
+            except (OSError, ValueError) as exc:
+                errs.append(f"Gate C2 失败：{POLICY_CALENDAR_PATH.name} 解析异常: {exc}")
         for mkt_k, chart_k, mf in (
             ("a_share", "a7", BASE_DIR / "report_meta_a_share.json"),
             ("hk_stock", "h7", BASE_DIR / "report_meta_hk_stock.json"),
@@ -2341,6 +2405,241 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
 
                     if enforce_g5_g7:
                         errs.extend(_check_dossiers_ah_and_dividends(dossiers, state))
+
+    # 4. policy_calendar.json (validated whenever present; >=14-day horizon enforced on live production state)
+    if POLICY_CALENDAR_PATH.exists():
+        errs.extend(
+            _check_policy_calendar(
+                state_edition_id,
+                state_ed_date,
+                require_horizon=require_presence,
+                enforce_g5_g7=enforce_g5_g7,
+            )
+        )
+    return errs
+
+
+def _is_strict_https_url(value: object) -> bool:
+    if not isinstance(value, str) or not value or any(c.isspace() for c in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname or ""
+        return (
+            parsed.scheme == "https"
+            and bool(host)
+            and "." in host
+            and not host.startswith(".")
+            and not host.endswith(".")
+            and parsed.username is None
+        )
+    except ValueError:
+        return False
+
+
+def _check_policy_calendar(
+    state_edition_id: str | None,
+    state_ed_date: str | None,
+    *,
+    require_horizon: bool,
+    enforce_g5_g7: bool,
+) -> list[str]:
+    """Validate equity/state/policy_calendar.json schema, enums, edition_id parity, horizon, and hygiene."""
+    errs: list[str] = []
+    try:
+        pc = json.loads(POLICY_CALENDAR_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"Gate 4 失败：policy_calendar.json 解析失败: {exc}"]
+    if not isinstance(pc, dict):
+        return ["Gate 4 失败：policy_calendar.json 根元素须为对象"]
+
+    if not isinstance(pc.get("schema_version"), str) or not pc["schema_version"].strip():
+        errs.append("Gate 4 失败：policy_calendar.json 缺少非空 schema_version")
+    if state_edition_id and pc.get("edition_id") != state_edition_id:
+        errs.append(
+            f"Gate 4 失败：policy_calendar.json edition_id ({pc.get('edition_id')!r}) "
+            f"≠ market_state.json ({state_edition_id!r})"
+        )
+    as_of_raw = pc.get("as_of_cst")
+    try:
+        if not isinstance(as_of_raw, str) or not as_of_raw.strip():
+            raise ValueError("missing")
+        as_of_dt = datetime.fromisoformat(as_of_raw.strip())
+        if as_of_dt.utcoffset() != BEIJING.utcoffset(as_of_dt):
+            raise ValueError("offset != +08:00")
+    except ValueError:
+        errs.append(f"Gate 4 失败：policy_calendar.json as_of_cst 须为有效 +08:00 时间戳 ({as_of_raw!r})")
+    hdays = pc.get("horizon_days")
+    if type(hdays) is not int or hdays < _POLICY_CAL_MIN_HORIZON_DAYS:
+        errs.append(f"Gate 4 失败：policy_calendar.json horizon_days 须为 >= {_POLICY_CAL_MIN_HORIZON_DAYS} 的整数 ({hdays!r})")
+
+    briefs = pc.get("policy_briefs")
+    if not isinstance(briefs, list):
+        errs.append("Gate 4 失败：policy_calendar.json 须包含 policy_briefs 数组")
+    else:
+        seen_bids: set[str] = set()
+        for idx, b in enumerate(briefs):
+            if not isinstance(b, dict):
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}] 须为对象")
+                continue
+            bid = str(b.get("id", "")).strip()
+            if not bid:
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}] 缺少非空 id")
+            elif bid in seen_bids:
+                errs.append(f"Gate 4 失败：policy_calendar.json 存在重复 policy_brief id: {bid}")
+            else:
+                seen_bids.add(bid)
+            for fk in ("date_cst", "region", "category", "impact_tier", "authority", "headline", "summary", "market_impact"):
+                val = b.get(fk)
+                if not isinstance(val, str) or not val.strip():
+                    errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}) 缺少非空 {fk}")
+            bd_raw = b.get("date_cst")
+            if isinstance(bd_raw, str) and bd_raw.strip():
+                try:
+                    if not _DATE_ISO_RE.fullmatch(bd_raw.strip()):
+                        raise ValueError
+                    date.fromisoformat(bd_raw.strip())
+                except ValueError:
+                    errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).date_cst 日期非法 ({bd_raw!r})")
+            if isinstance(b.get("region"), str) and b["region"].strip() and b["region"].strip() not in _POLICY_CAL_ALLOWED_REGIONS:
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).region 非法枚举 ({b['region']!r})")
+            if isinstance(b.get("category"), str) and b["category"].strip() and b["category"].strip() not in _POLICY_CAL_ALLOWED_CATEGORIES:
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).category 非法枚举 ({b['category']!r})")
+            if isinstance(b.get("impact_tier"), str) and b["impact_tier"].strip() and b["impact_tier"].strip() not in _POLICY_CAL_ALLOWED_TIERS:
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).impact_tier 非法枚举 ({b['impact_tier']!r})")
+            aff = b.get("affected_markets")
+            if not isinstance(aff, list) or not aff or any(not isinstance(m, str) or not m.strip() for m in aff):
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}) 缺少非空 affected_markets 数组")
+            else:
+                bad_mkts = sorted({m.strip() for m in aff if m.strip() not in _POLICY_CAL_ALLOWED_MARKETS})
+                if bad_mkts:
+                    errs.append(
+                        f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).affected_markets 非法枚举 ({bad_mkts})"
+                    )
+            if "source_url" in b and b["source_url"] is not None and not _is_strict_https_url(b["source_url"]):
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).source_url 须为有效 HTTPS 链接")
+
+    events = pc.get("events")
+    max_end_d: date | None = None
+    if not isinstance(events, list) or not events:
+        errs.append("Gate 4 失败：policy_calendar.json 须包含非空 events 数组")
+    else:
+        seen_eids: set[str] = set()
+        for idx, ev in enumerate(events):
+            if not isinstance(ev, dict):
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}] 须为对象")
+                continue
+            eid = str(ev.get("event_id", "")).strip()
+            if not eid:
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}] 缺少非空 event_id")
+            elif eid in seen_eids:
+                errs.append(f"Gate 4 失败：policy_calendar.json 存在重复 event_id: {eid}")
+            else:
+                seen_eids.add(eid)
+            for fk in (
+                "date_cst", "end_date_cst", "date_precision", "time_cst",
+                "region", "category", "impact_tier", "title",
+                "expected_consensus", "market_transmission", "pre_event_stance", "source_url",
+            ):
+                val = ev.get(fk)
+                if not isinstance(val, str) or not val.strip():
+                    errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}) 缺少非空 {fk}")
+            start_d = end_d = None
+            sd_raw = ev.get("date_cst")
+            if isinstance(sd_raw, str) and sd_raw.strip():
+                try:
+                    if not _DATE_ISO_RE.fullmatch(sd_raw.strip()):
+                        raise ValueError
+                    start_d = date.fromisoformat(sd_raw.strip())
+                except ValueError:
+                    errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).date_cst 日期非法 ({sd_raw!r})")
+            ed_raw = ev.get("end_date_cst")
+            if isinstance(ed_raw, str) and ed_raw.strip():
+                try:
+                    if not _DATE_ISO_RE.fullmatch(ed_raw.strip()):
+                        raise ValueError
+                    end_d = date.fromisoformat(ed_raw.strip())
+                except ValueError:
+                    errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).end_date_cst 日期非法 ({ed_raw!r})")
+            if start_d is not None and end_d is not None:
+                if end_d < start_d:
+                    errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}) end_date_cst 早于 date_cst")
+                if max_end_d is None or end_d > max_end_d:
+                    max_end_d = end_d
+            if isinstance(ev.get("date_precision"), str) and ev["date_precision"].strip() and ev["date_precision"].strip() not in _POLICY_CAL_ALLOWED_PRECISIONS:
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).date_precision 非法枚举 ({ev['date_precision']!r})")
+            if isinstance(ev.get("region"), str) and ev["region"].strip() and ev["region"].strip() not in _POLICY_CAL_ALLOWED_REGIONS:
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).region 非法枚举 ({ev['region']!r})")
+            if isinstance(ev.get("category"), str) and ev["category"].strip() and ev["category"].strip() not in _POLICY_CAL_ALLOWED_CATEGORIES:
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).category 非法枚举 ({ev['category']!r})")
+            if isinstance(ev.get("impact_tier"), str) and ev["impact_tier"].strip() and ev["impact_tier"].strip() not in _POLICY_CAL_ALLOWED_TIERS:
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).impact_tier 非法枚举 ({ev['impact_tier']!r})")
+            aff = ev.get("affected_markets")
+            if not isinstance(aff, list) or not aff or any(not isinstance(m, str) or not m.strip() for m in aff):
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}) 缺少非空 affected_markets 数组")
+            else:
+                bad_mkts = sorted({m.strip() for m in aff if m.strip() not in _POLICY_CAL_ALLOWED_MARKETS})
+                if bad_mkts:
+                    errs.append(
+                        f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).affected_markets 非法枚举 ({bad_mkts})"
+                    )
+            wt = ev.get("watch_triggers")
+            if (
+                not isinstance(wt, dict)
+                or not isinstance(wt.get("upside_bull"), str) or not wt["upside_bull"].strip()
+                or not isinstance(wt.get("downside_bear"), str) or not wt["downside_bear"].strip()
+            ):
+                errs.append(
+                    f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).watch_triggers 须含非空 upside_bull 与 downside_bear"
+                )
+            if not _is_strict_https_url(ev.get("source_url")):
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).source_url 须为有效 HTTPS 链接")
+            mwin = ev.get("monitor_window_min")
+            if type(mwin) is not int or mwin < 0:
+                errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).monitor_window_min 须为非负整数 ({mwin!r})")
+
+    if require_horizon and max_end_d is not None and state_ed_date:
+        try:
+            ref_d = date.fromisoformat(state_ed_date)
+            covered_days = (max_end_d - ref_d).days
+            if covered_days < _POLICY_CAL_MIN_HORIZON_DAYS:
+                errs.append(
+                    f"Gate 4 失败：policy_calendar.json 前瞻覆盖仅 {covered_days} 天（最远事件 {max_end_d}，须 ≥ {_POLICY_CAL_MIN_HORIZON_DAYS} 天）"
+                )
+        except ValueError:
+            pass
+
+    for jpath, sval in _walk_json_strings(pc, "policy_calendar.json", skip_keys=frozenset()):
+        if _DOSSIER_RAW_MARKUP_RE.search(sval):
+            errs.append(f"Gate 4 失败：{jpath} 残留原始 Markdown/HTML 标记")
+        hits = _BANNED_INTERNAL_RE.findall(sval)
+        if hits:
+            errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
+        if _LOCAL_PATH_RE.search(sval):
+            errs.append(f"Gate 4 失败：{jpath} 泄露本机文件系统路径")
+        for m_rc in RESTRICTED_CODES_RE.finditer(sval):
+            win = sval[max(0, m_rc.start() - 40) : min(len(sval), m_rc.end() + 40)]
+            if not RESTRICTED_WARN_RE.search(win):
+                errs.append(
+                    f"Gate 4 失败：{jpath} 提及受限代码 {m_rc.group(0)} 但 ±40 字内缺少暂停/限购/警示说明 -> {win!r}"
+                )
+                break
+        errs.extend(_scan_text_for_crypto_buy(jpath, sval))
+        errs.extend(_check_retracted_facts(jpath, sval))
+        hk4 = _HK_4DIGIT_RE.findall(sval)
+        if hk4:
+            errs.append(f"Gate 4 失败：{jpath} 出现非法 4 位港股代码: {sorted(set(hk4))}")
+        for m_iopv in _BARE_IOPV_RE.finditer(sval):
+            win = sval[max(0, m_iopv.start() - 20) : min(len(sval), m_iopv.end() + 20)]
+            if not _IOPV_GLOSS_RE.search(win):
+                errs.append(
+                    f"Gate G5 失败：{jpath} 出现未配白话释义（参考净值/实时净值/盘中净值）的裸 IOPV -> {win!r}"
+                )
+                break
+        if enforce_g5_g7 and state_ed_date:
+            errs.extend(_check_shfe_night_close(jpath, sval))
+            errs.extend(_check_tense_drift(jpath, sval, state_ed_date))
+            errs.extend(_check_year_end_countdown(jpath, sval, state_ed_date))
     return errs
 
 

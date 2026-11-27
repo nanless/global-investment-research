@@ -34,6 +34,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+EQUITY_STATE_DIR = REPO_ROOT / "equity" / "state"
+POLICY_CALENDAR_PATH = EQUITY_STATE_DIR / "policy_calendar.json"
 
 EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\d+))?")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -134,6 +136,62 @@ DOSSIER_DIMENSIONS = (
     "action_etf",
 )
 
+POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "JP", "GLOBAL"})
+POLICY_CAL_ALLOWED_CATEGORIES = frozenset({
+    "top_politics",
+    "central_bank",
+    "macro_data",
+    "fiscal_policy",
+    "regulation_trade",
+    "geopolitics_energy",
+    "liquidity_treasury",
+    "market_structure",
+    "holiday_schedule",
+})
+POLICY_CAL_ALLOWED_TIERS = frozenset({"P0", "P1", "P2"})
+POLICY_CAL_ALLOWED_PRECISIONS = frozenset({"exact", "window_tbd"})
+POLICY_CAL_ALLOWED_MARKETS = frozenset({
+    "a_share",
+    "hk_stock",
+    "us_stock",
+    "rates_bonds_core",
+    "gold",
+    "non_us_global_satellite",
+})
+ALLOWED_POLICY_CALENDAR_TOP_KEYS = frozenset({"as_of_cst", "horizon_days", "schema_version"})
+POLICY_CAL_MIN_HORIZON_DAYS = 14
+POLICY_CAL_REQUIRED_BRIEF_STR_FIELDS = (
+    "id",
+    "date_cst",
+    "region",
+    "category",
+    "impact_tier",
+    "authority",
+    "headline",
+    "summary",
+    "market_impact",
+)
+POLICY_CAL_REQUIRED_EVENT_STR_FIELDS = (
+    "event_id",
+    "date_cst",
+    "end_date_cst",
+    "date_precision",
+    "time_cst",
+    "region",
+    "category",
+    "impact_tier",
+    "title",
+    "expected_consensus",
+    "market_transmission",
+    "pre_event_stance",
+    "source_url",
+)
+POLICY_CAL_EVENT_REQUIRED_KEYS = frozenset(POLICY_CAL_REQUIRED_EVENT_STR_FIELDS) | frozenset({
+    "affected_markets",
+    "watch_triggers",
+    "monitor_window_min",
+})
+
 RAW_MARKUP_RE = re.compile(r"\*\*|<br\s*/?>|`", flags=re.IGNORECASE)
 EXACT_PCT_RE = re.compile(r"^(\d+(?:\.\d+)?)%$")
 RANGE_PCT_RE = re.compile(r"\d+(?:\.\d+)?%\s*[–\-~至]\s*\d+(?:\.\d+)?%")
@@ -223,7 +281,7 @@ GOLD_BASE_NEGATION_RE = re.compile(
     r"(?:列为|标为|作为|当成|视为|纳入|归为|定为)?[\s“‘「\x22*_]*$"
 )
 GOLD_ACTIVE_BUY_RE = re.compile(
-    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|新买|买|定投|配置|建仓|吸纳)"
+    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|建仓|吸纳)"
     r"\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?"
     r"(?:(?:现货|实物|纸|积存)?(?:黄金|金仓|金矿股?|黄金股)|"
     r"(?:518660|518880|518850|159934|159937|518800|517520|159562|02840|03081|"
@@ -233,7 +291,7 @@ GOLD_ACTIVE_BUY_RE = re.compile(
 GOLD_DEFER_GUARD_RE = re.compile(
     r"(?:暂不|严禁|禁止|切忌|勿|停止|暂停|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|未在黄金红灯停期|不)"
     r"(?:追高芯片[与或])?(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|直接|冲动|抢跑)*"
-    r"(?:(?:新买|买入|加仓|抄底|定投|配置|建仓|补齐)[/／、与或])?[\s“‘「\x22*_]*$"
+    r"(?:(?:新买|买入|加仓|抄底|定投|配置|建仓|补齐|低吸|布局|上车)[/／、与或])?[\s“‘「\x22*_]*$"
     r"|(?:等到?|待).{0,14}(?:黄灯|绿灯|解锁)(?:亮起|确认)?(?:后)?(?:再|才)?(?:分批|择机|恢复|重启|再)*[\s“‘「\x22]*$"
     r"|(?:黄灯|绿灯|解锁|过四关|全部过关)(?:亮起|确认)?后(?:再|才)?(?:分批|择机|恢复|重启|再)*[\s“‘「\x22]*$"
     r"|(?:原稿曾建议|原稿曾考虑|过去曾建议|曾建议)[\s“‘「\x22]*$"
@@ -243,14 +301,31 @@ GOLD_MINER_TICKERS_RE = re.compile(
     r"GLD|GLDM|IAU|IAUM|IGLN|GDX|GDXJ|518660|518880|518850|518800|517520|159934|159937|159562|02840|03081|02899|06181|01929)",
     flags=re.IGNORECASE,
 )
+CRYPTO_ACTIVE_BUY_RE = re.compile(
+    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|配仓|建仓|吸纳|购入|做多)"
+    r"\s*(?:[0-9一二两三半成%–\-~约近超少量小批分批]*\s*)?"
+    r"(?:(?:现货|数字|虚拟|加密)?(?:比特币|以太坊|虚拟货币|加密货币|加密资产|稳定币)|"
+    r"(?<![A-Za-z0-9])(?:BTC|ETH|USDT|USDC|IBIT|FBTC)(?![A-Za-z0-9]))"
+    r"|\b(?:buy|add|accumulate|allocate(?:\s+to)?|dca\s+into)\s+(?:btc|bitcoin|eth|ethereum|crypto(?:currency)?)\b",
+    flags=re.IGNORECASE,
+)
+CRYPTO_NEGATION_GUARD_RE = re.compile(
+    r"(?:严禁|禁止|切忌|勿|不得|不可|不能|不宜|不要|绝不|决不|暂不|停止|拒绝|不允许|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
+    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相)*"
+    r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|低吸|布局|上车|交易|炒作|买卖|持有)[/／、与及和或])?[\s“‘「\x22*_]*$"
+    r"|(?:严禁|禁止|不得|切忌|不可|绝不)(?:[^。！？；，,|但可应须宜]{0,14})(?:与|及|和|或|、)[\s“‘「\x22*_]*$"
+    r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?)\s+(?:from\s+)?(?:buy|add|accumulat|allocat|dca|trad)[\w\s]{0,16}$",
+    flags=re.IGNORECASE,
+)
 
 BANNED_INTERNAL_RE = re.compile(
     r"(?:\bV\d+\.\d+\b|Subagent|红队|法证|\bTier\s*[0-3]\b|\bSSOT\b|"
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
-    r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|fetch_kline_data\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|svg_geometry\.py|"
+    r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|svg_geometry\.py|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
-    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
+    r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
+    r"realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"master_snapshot\.json|data_snapshot\.json|_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|_rollover_patch\.json|_archive_patch\.json|"
     r"unified-edition\.prompt\.md|permissions\.json|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|sidecar\.json|"
@@ -277,12 +352,19 @@ ALLOWED_EQUITY_PATCH_TOP_KEYS = frozenset({
     "multi_asset_channels",
     "etf_universe",
     "deep_dossiers",
+    "policy_calendar",
     "note",
     "summary",
 })
 ALLOWED_MULTI_ASSET_PATCH_KEYS = frozenset({"top_level_updates", "channels_patch"})
 ALLOWED_ETF_PATCH_KEYS = frozenset({"top_level_updates", "etfs_upsert", "etfs_remove"})
 ALLOWED_DOSSIERS_PATCH_KEYS = frozenset({"top_level_updates", "dossiers_patch"})
+ALLOWED_POLICY_CALENDAR_PATCH_KEYS = frozenset({
+    "top_level_updates",
+    "policy_briefs_replace",
+    "events_upsert",
+    "events_remove",
+})
 ALLOWED_LEDGER_PATCH_KEYS = frozenset({
     "edition_id",
     "changelog_entry_md",
@@ -359,6 +441,19 @@ def _validate_date(value: object, label: str) -> str:
     return val
 
 
+def _validate_iso_cst_timestamp(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be an ISO-8601 +08:00 timestamp string, got {value!r}")
+    val = value.strip()
+    try:
+        dt = datetime.fromisoformat(val)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {label} ISO-8601 timestamp {val!r}: {exc}") from exc
+    if dt.utcoffset() != timedelta(hours=8):
+        raise ValueError(f"{label} must specify +08:00 timezone offset, got {val!r}")
+    return val
+
+
 def _normalize_etf_code(code: object) -> str:
     raw = str(code or "").strip().upper()
     base = re.sub(r"\.(?:HK|L|SS|SZ|US)$", "", raw)
@@ -401,6 +496,19 @@ def _scan_text_for_gold_buy(label: str, text: str) -> list[str]:
             found.append(
                 f"Gold Tier-0 互斥冲突 ({label}:L{idx})：黄金红灯停期严禁下达新买/补齐黄金指令 -> {ln.strip()[:72]}"
             )
+    return found
+
+
+def _scan_text_for_crypto_buy(label: str, text: str) -> list[str]:
+    found: list[str] = []
+    for idx, ln in enumerate(text.splitlines(), 1):
+        for action in CRYPTO_ACTIVE_BUY_RE.finditer(ln):
+            prefix = re.split(r"[。！？；，,|]", ln[: action.start()])[-1]
+            if not CRYPTO_NEGATION_GUARD_RE.search(prefix):
+                found.append(
+                    f"银发〔2026〕42号虚拟货币合规冲突 ({label}:L{idx})：中国大陆严禁个人配仓/买入虚拟货币 -> {ln.strip()[:72]}"
+                )
+                break
     return found
 
 
@@ -1127,6 +1235,391 @@ def _merge_deep_dossiers(
     return dd, stats
 
 
+def _merge_policy_calendar(
+    orig: dict[str, Any],
+    patch_root: dict[str, Any],
+    edition_id: str,
+    as_of_date: str,
+    *,
+    market_state: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    pc = copy.deepcopy(orig)
+    pc["edition_id"] = edition_id
+
+    ms_as_of = market_state.get("as_of_cst") if isinstance(market_state, dict) else None
+    if isinstance(ms_as_of, str):
+        try:
+            pc["as_of_cst"] = _validate_iso_cst_timestamp(ms_as_of, "market_state.as_of_cst")
+        except ValueError:
+            pc["as_of_cst"] = f"{as_of_date}T{edition_id[11:13]}:{edition_id[13:15]}:00+08:00"
+    else:
+        pc["as_of_cst"] = f"{as_of_date}T{edition_id[11:13]}:{edition_id[13:15]}:00+08:00"
+
+    briefs = pc.get("policy_briefs")
+    if not isinstance(briefs, list):
+        raise ValueError("policy_calendar.json missing 'policy_briefs' list.")
+    events = pc.get("events")
+    if not isinstance(events, list):
+        raise ValueError("policy_calendar.json missing 'events' list.")
+
+    stats: dict[str, Any] = {
+        "top_keys_updated": 0,
+        "briefs_replaced": 0,
+        "events_updated": 0,
+        "events_added": 0,
+        "events_removed": 0,
+        "events_pruned": 0,
+        "pruned_event_ids": [],
+    }
+
+    sec = patch_root.get("policy_calendar")
+    if sec is not None:
+        if not isinstance(sec, dict):
+            raise ValueError("patch.policy_calendar must be an object.")
+        unknown_sec = set(sec.keys()) - ALLOWED_POLICY_CALENDAR_PATCH_KEYS
+        if unknown_sec:
+            raise ValueError(
+                f"Unknown key(s) in policy_calendar patch: {sorted(unknown_sec)} "
+                f"(allowed: {sorted(ALLOWED_POLICY_CALENDAR_PATCH_KEYS)})"
+            )
+
+        top_upd = sec.get("top_level_updates")
+        if top_upd is not None:
+            if not isinstance(top_upd, dict):
+                raise ValueError("policy_calendar.top_level_updates must be an object.")
+            forbidden_top = {"policy_briefs", "events", "edition_id"}
+            overlap = forbidden_top & set(top_upd.keys())
+            if overlap:
+                raise ValueError(
+                    f"Cannot override auto-managed policy_calendar keys via top_level_updates: {sorted(overlap)}"
+                )
+            unknown_top = set(top_upd.keys()) - ALLOWED_POLICY_CALENDAR_TOP_KEYS
+            if unknown_top:
+                raise ValueError(
+                    f"Unknown key(s) in policy_calendar.top_level_updates: {sorted(unknown_top)} "
+                    f"(allowed: {sorted(ALLOWED_POLICY_CALENDAR_TOP_KEYS)})"
+                )
+            for k, v in top_upd.items():
+                if k == "as_of_cst":
+                    pc[k] = _validate_iso_cst_timestamp(v, "policy_calendar.top_level_updates.as_of_cst")
+                else:
+                    pc[k] = copy.deepcopy(v)
+                stats["top_keys_updated"] += 1
+
+        briefs_rep = sec.get("policy_briefs_replace")
+        if briefs_rep is not None:
+            if not isinstance(briefs_rep, list) or not all(isinstance(b, dict) for b in briefs_rep):
+                raise ValueError("policy_calendar.policy_briefs_replace must be a list of brief objects.")
+            pc["policy_briefs"] = copy.deepcopy(briefs_rep)
+            stats["briefs_replaced"] = len(briefs_rep)
+
+        rem_raw = sec.get("events_remove")
+        if rem_raw is not None:
+            if not isinstance(rem_raw, list) or not all(isinstance(eid, str) and eid.strip() for eid in rem_raw):
+                raise ValueError("policy_calendar.events_remove must be a list of non-empty event_id strings.")
+            rem_set = {eid.strip() for eid in rem_raw}
+            kept: list[Any] = []
+            for ev in events:
+                if isinstance(ev, dict) and str(ev.get("event_id", "")).strip() in rem_set:
+                    stats["events_removed"] += 1
+                    continue
+                kept.append(ev)
+            events = kept
+            pc["events"] = events
+
+        ups_raw = sec.get("events_upsert")
+        if ups_raw is not None:
+            ups_list: list[dict[str, Any]] = []
+            if isinstance(ups_raw, list):
+                for idx, entry in enumerate(ups_raw):
+                    if not isinstance(entry, dict) or not isinstance(entry.get("event_id"), str) or not entry["event_id"].strip():
+                        raise ValueError(
+                            f"policy_calendar.events_upsert[{idx}] must be an object with non-empty 'event_id'."
+                        )
+                    ups_list.append(entry)
+            elif isinstance(ups_raw, dict):
+                for eid_k, entry in ups_raw.items():
+                    if not isinstance(entry, dict):
+                        raise ValueError(f"policy_calendar.events_upsert[{eid_k!r}] must be an object.")
+                    merged_e = dict(entry)
+                    merged_e.setdefault("event_id", str(eid_k))
+                    ups_list.append(merged_e)
+            else:
+                raise ValueError("policy_calendar.events_upsert must be a list of event objects (or object keyed by event_id).")
+
+            by_eid: dict[str, dict[str, Any]] = {}
+            for ev in events:
+                if isinstance(ev, dict) and isinstance(ev.get("event_id"), str) and ev["event_id"].strip():
+                    by_eid[ev["event_id"].strip()] = ev
+
+            for entry in ups_list:
+                eid = entry["event_id"].strip()
+                if eid in by_eid:
+                    target = by_eid[eid]
+                    for k, v in entry.items():
+                        if k == "event_id":
+                            continue
+                        if k == "watch_triggers" and isinstance(v, dict) and isinstance(target.get("watch_triggers"), dict):
+                            merged_wt = copy.deepcopy(target["watch_triggers"])
+                            merged_wt.update(copy.deepcopy(v))
+                            target["watch_triggers"] = merged_wt
+                        else:
+                            target[k] = copy.deepcopy(v)
+                    stats["events_updated"] += 1
+                else:
+                    missing = sorted(POLICY_CAL_EVENT_REQUIRED_KEYS - set(entry.keys()))
+                    if missing:
+                        raise ValueError(
+                            f"New event {eid!r} in policy_calendar.events_upsert missing required key(s): {missing}"
+                        )
+                    new_ev = copy.deepcopy(entry)
+                    new_ev["event_id"] = eid
+                    events.append(new_ev)
+                    by_eid[eid] = new_ev
+                    stats["events_added"] += 1
+
+    # Auto-prune expired events whose end_date_cst < edition_date - 2d
+    ed_dt = datetime.strptime(as_of_date, "%Y-%m-%d").date()
+    prune_cutoff = (ed_dt - timedelta(days=2)).isoformat()
+    active_events: list[Any] = []
+    for ev in events:
+        if isinstance(ev, dict):
+            end_raw = ev.get("end_date_cst") or ev.get("date_cst")
+            if isinstance(end_raw, str) and DATE_RE.fullmatch(end_raw.strip()):
+                try:
+                    datetime.strptime(end_raw.strip(), "%Y-%m-%d")
+                except ValueError:
+                    pass
+                else:
+                    if end_raw.strip() < prune_cutoff:
+                        stats["events_pruned"] += 1
+                        stats["pruned_event_ids"].append(str(ev.get("event_id", "")).strip())
+                        continue
+        active_events.append(ev)
+
+    active_events.sort(
+        key=lambda ev: (
+            str(ev.get("date_cst", "")) if isinstance(ev, dict) else "",
+            str(ev.get("time_cst", "")) if isinstance(ev, dict) else "",
+            str(ev.get("event_id", "")) if isinstance(ev, dict) else "",
+        )
+    )
+    pc["events"] = active_events
+    return pc, stats
+
+
+def _validate_policy_calendar(
+    pc: dict[str, Any],
+    *,
+    edition_id: str,
+    as_of_date: str,
+    gold_tier0_active: bool,
+) -> list[str]:
+    errs: list[str] = []
+    if not isinstance(pc.get("schema_version"), str) or not pc["schema_version"].strip():
+        errs.append("policy_calendar.json: missing non-empty schema_version.")
+    if pc.get("edition_id") != edition_id:
+        errs.append(f"policy_calendar.json: edition_id ({pc.get('edition_id')!r}) != {edition_id!r}")
+    try:
+        _validate_iso_cst_timestamp(pc.get("as_of_cst"), "policy_calendar.json.as_of_cst")
+    except ValueError as exc:
+        errs.append(f"policy_calendar.json: {exc}")
+    hdays = pc.get("horizon_days")
+    if type(hdays) is not int or hdays < POLICY_CAL_MIN_HORIZON_DAYS:
+        errs.append(
+            f"policy_calendar.json: horizon_days must be an int >= {POLICY_CAL_MIN_HORIZON_DAYS} (got {hdays!r})."
+        )
+
+    briefs = pc.get("policy_briefs")
+    if not isinstance(briefs, list):
+        errs.append("policy_calendar.json: policy_briefs must be a list.")
+    else:
+        seen_bids: set[str] = set()
+        for idx, b in enumerate(briefs):
+            if not isinstance(b, dict):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}] must be an object.")
+                continue
+            bid = str(b.get("id", "")).strip()
+            if not bid:
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}] missing non-empty id.")
+            elif bid in seen_bids:
+                errs.append(f"policy_calendar.json: duplicate policy_brief id {bid!r}.")
+            else:
+                seen_bids.add(bid)
+            for field in POLICY_CAL_REQUIRED_BRIEF_STR_FIELDS:
+                val = b.get(field)
+                if not isinstance(val, str) or not val.strip():
+                    errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) missing non-empty {field}.")
+            if isinstance(b.get("date_cst"), str) and b["date_cst"].strip():
+                try:
+                    _validate_date(b["date_cst"], f"policy_briefs[{idx}]({bid}).date_cst")
+                except ValueError as exc:
+                    errs.append(f"policy_calendar.json: {exc}")
+            reg = str(b.get("region", "")).strip()
+            if reg and reg not in POLICY_CAL_ALLOWED_REGIONS:
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid region {reg!r}.")
+            cat = str(b.get("category", "")).strip()
+            if cat and cat not in POLICY_CAL_ALLOWED_CATEGORIES:
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid category {cat!r}.")
+            tier = str(b.get("impact_tier", "")).strip()
+            if tier and tier not in POLICY_CAL_ALLOWED_TIERS:
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid impact_tier {tier!r}.")
+            aff = b.get("affected_markets")
+            if not isinstance(aff, list) or not aff or any(not isinstance(m, str) or not m.strip() for m in aff):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) missing non-empty affected_markets list.")
+            else:
+                bad_mkts = sorted({m.strip() for m in aff if m.strip() not in POLICY_CAL_ALLOWED_MARKETS})
+                if bad_mkts:
+                    errs.append(
+                        f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid affected_markets {bad_mkts} "
+                        f"(allowed: {sorted(POLICY_CAL_ALLOWED_MARKETS)})."
+                    )
+            if "source_url" in b and b["source_url"] is not None and not _is_strict_https_url(b["source_url"]):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid https source_url {b['source_url']!r}.")
+
+    events = pc.get("events")
+    max_end_date = None
+    if not isinstance(events, list) or not events:
+        errs.append("policy_calendar.json: events must be a non-empty list.")
+    else:
+        seen_eids: set[str] = set()
+        for idx, ev in enumerate(events):
+            if not isinstance(ev, dict):
+                errs.append(f"policy_calendar.json: events[{idx}] must be an object.")
+                continue
+            eid = str(ev.get("event_id", "")).strip()
+            if not eid:
+                errs.append(f"policy_calendar.json: events[{idx}] missing non-empty event_id.")
+            elif eid in seen_eids:
+                errs.append(f"policy_calendar.json: duplicate event_id {eid!r}.")
+            else:
+                seen_eids.add(eid)
+            for field in POLICY_CAL_REQUIRED_EVENT_STR_FIELDS:
+                val = ev.get(field)
+                if not isinstance(val, str) or not val.strip():
+                    errs.append(f"policy_calendar.json: events[{idx}]({eid}) missing non-empty {field}.")
+            start_d = end_d = None
+            if isinstance(ev.get("date_cst"), str) and ev["date_cst"].strip():
+                try:
+                    start_d = datetime.strptime(_validate_date(ev["date_cst"], f"events[{idx}]({eid}).date_cst"), "%Y-%m-%d").date()
+                except ValueError as exc:
+                    errs.append(f"policy_calendar.json: {exc}")
+            if isinstance(ev.get("end_date_cst"), str) and ev["end_date_cst"].strip():
+                try:
+                    end_d = datetime.strptime(_validate_date(ev["end_date_cst"], f"events[{idx}]({eid}).end_date_cst"), "%Y-%m-%d").date()
+                except ValueError as exc:
+                    errs.append(f"policy_calendar.json: {exc}")
+            if start_d is not None and end_d is not None:
+                if end_d < start_d:
+                    errs.append(
+                        f"policy_calendar.json: events[{idx}]({eid}) end_date_cst ({end_d}) < date_cst ({start_d})."
+                    )
+                if max_end_date is None or end_d > max_end_date:
+                    max_end_date = end_d
+            prec = str(ev.get("date_precision", "")).strip()
+            if prec and prec not in POLICY_CAL_ALLOWED_PRECISIONS:
+                errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid date_precision {prec!r}.")
+            reg = str(ev.get("region", "")).strip()
+            if reg and reg not in POLICY_CAL_ALLOWED_REGIONS:
+                errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid region {reg!r}.")
+            cat = str(ev.get("category", "")).strip()
+            if cat and cat not in POLICY_CAL_ALLOWED_CATEGORIES:
+                errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid category {cat!r}.")
+            tier = str(ev.get("impact_tier", "")).strip()
+            if tier and tier not in POLICY_CAL_ALLOWED_TIERS:
+                errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid impact_tier {tier!r}.")
+            aff = ev.get("affected_markets")
+            if not isinstance(aff, list) or not aff or any(not isinstance(m, str) or not m.strip() for m in aff):
+                errs.append(f"policy_calendar.json: events[{idx}]({eid}) missing non-empty affected_markets list.")
+            else:
+                bad_mkts = sorted({m.strip() for m in aff if m.strip() not in POLICY_CAL_ALLOWED_MARKETS})
+                if bad_mkts:
+                    errs.append(
+                        f"policy_calendar.json: events[{idx}]({eid}) invalid affected_markets {bad_mkts} "
+                        f"(allowed: {sorted(POLICY_CAL_ALLOWED_MARKETS)})."
+                    )
+            wt = ev.get("watch_triggers")
+            if (
+                not isinstance(wt, dict)
+                or not isinstance(wt.get("upside_bull"), str) or not wt["upside_bull"].strip()
+                or not isinstance(wt.get("downside_bear"), str) or not wt["downside_bear"].strip()
+            ):
+                errs.append(
+                    f"policy_calendar.json: events[{idx}]({eid}).watch_triggers requires non-empty upside_bull and downside_bear."
+                )
+            if not _is_strict_https_url(ev.get("source_url")):
+                errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid https source_url {ev.get('source_url')!r}.")
+            mwin = ev.get("monitor_window_min")
+            if type(mwin) is not int or mwin < 0:
+                errs.append(
+                    f"policy_calendar.json: events[{idx}]({eid}).monitor_window_min must be a non-negative integer (got {mwin!r})."
+                )
+
+    # 14-day forward coverage requirement
+    if max_end_date is not None and DATE_RE.fullmatch(as_of_date):
+        ed_date = datetime.strptime(as_of_date, "%Y-%m-%d").date()
+        covered_days = (max_end_date - ed_date).days
+        if covered_days < POLICY_CAL_MIN_HORIZON_DAYS:
+            errs.append(
+                f"policy_calendar.json: forward horizon coverage is only {covered_days} day(s) "
+                f"(latest event {max_end_date} vs edition_date {ed_date}; requires >= {POLICY_CAL_MIN_HORIZON_DAYS} days)."
+            )
+
+    # Global string hygiene + Gold Tier-0 red-light scan across ALL strings in policy_calendar.json
+    rel_date_patterns: list[tuple[str, re.Pattern[str]]] = []
+    if DATE_RE.fullmatch(as_of_date):
+        try:
+            dt_cur = datetime.strptime(as_of_date, "%Y-%m-%d")
+            dt_prev1 = dt_cur - timedelta(days=1)
+            dt_prev2 = dt_cur - timedelta(days=2)
+            rel_date_patterns = [
+                ("stale '明日' matching as_of_date", re.compile(rf"明日\s*[（(]?\s*0?{dt_cur.month}/0?{dt_cur.day}(?!\d)[）)]?")),
+                ("stale '今日' matching yesterday", re.compile(rf"今日\s*[（(]?\s*0?{dt_prev1.month}/0?{dt_prev1.day}(?!\d)[）)]?")),
+                ("stale '昨日' matching 2 days ago", re.compile(rf"昨日\s*[（(]?\s*0?{dt_prev2.month}/0?{dt_prev2.day}(?!\d)[）)]?")),
+            ]
+        except ValueError:
+            rel_date_patterns = []
+
+    for jpath, sval in _walk_json_strings(pc, "policy_calendar.json", skip_keys=frozenset()):
+        if RAW_MARKUP_RE.search(sval):
+            errs.append(f"{jpath}: contains raw Markdown/HTML markup.")
+        hits = BANNED_INTERNAL_RE.findall(sval)
+        if hits:
+            errs.append(f"{jpath}: leaked internal term(s): {sorted(set(hits))}")
+        if LOCAL_PATH_RE.search(sval):
+            errs.append(f"{jpath}: leaked local filesystem path.")
+        for rel_label, rel_re in rel_date_patterns:
+            m_rel = rel_re.search(sval)
+            if m_rel:
+                errs.append(
+                    f"{jpath}: relative-date tense drift ({rel_label} on {as_of_date}) -> {m_rel.group(0)!r}"
+                )
+        m_hk4 = HK_4DIGIT_RE.search(sval)
+        if m_hk4:
+            errs.append(
+                f"{jpath}: bare 4-digit HK ticker {m_hk4.group(0)!r} must use canonical 5-digit format (e.g. 0{m_hk4.group(0)})."
+            )
+        for m_iopv in IOPV_RE.finditer(sval):
+            win = sval[max(0, m_iopv.start() - 20) : min(len(sval), m_iopv.end() + 20)]
+            if not IOPV_GLOSS_RE.search(win):
+                errs.append(
+                    f"{jpath}: bare 'IOPV' without '参考净值'/'实时净值'/'盘中净值' within ±20 chars -> {win!r}"
+                )
+                break
+        for m_rc in RESTRICTED_CODES_RE.finditer(sval):
+            win = sval[max(0, m_rc.start() - 40) : min(len(sval), m_rc.end() + 40)]
+            if not RESTRICTED_WARN_RE.search(win):
+                errs.append(
+                    f"{jpath}: restricted code {m_rc.group(0)} mentioned without warning within ±40 chars -> {win!r}"
+                )
+                break
+        errs.extend(_scan_text_for_crypto_buy(jpath, sval))
+        if gold_tier0_active:
+            errs.extend(_scan_text_for_gold_buy(jpath, sval))
+
+    return errs
+
+
 def _validate_merged_equity_dbs(
     ma: dict[str, Any],
     eu: dict[str, Any],
@@ -1611,6 +2104,7 @@ def apply_equity_patch(
     ma_path = _safe_repo_path(repo_root, "equity", "state", "multi_asset_channels.json")
     eu_path = _safe_repo_path(repo_root, "equity", "state", "etf_universe.json")
     dd_path = _safe_repo_path(repo_root, "equity", "state", "deep_dossiers.json")
+    pc_path = _safe_repo_path(repo_root, "equity", "state", "policy_calendar.json")
     gold_path = _safe_repo_path(repo_root, "gold", "data_snapshot.json")
     state_path = _safe_repo_path(repo_root, "equity", "state", "market_state.json")
 
@@ -1683,6 +2177,18 @@ def apply_equity_patch(
         market_state=market_state,
     )
 
+    merged_pc: dict[str, Any] | None = None
+    pc_stats: dict[str, Any] | None = None
+    if patch_root.get("policy_calendar") is not None or pc_path.is_file():
+        orig_pc = _read_json_obj(pc_path, "equity/state/policy_calendar.json")
+        merged_pc, pc_stats = _merge_policy_calendar(
+            orig_pc,
+            patch_root,
+            edition_id,
+            as_of_date,
+            market_state=market_state,
+        )
+
     untouched_channel_siblings = ma_stats.pop("untouched_channel_siblings", {})
     unpatched_ah_twins = dd_stats.pop("unpatched_ah_twins", {})
 
@@ -1700,6 +2206,15 @@ def apply_equity_patch(
         as_of_date=as_of_date,
         market_state=market_state,
     )
+    if merged_pc is not None:
+        errors.extend(
+            _validate_policy_calendar(
+                merged_pc,
+                edition_id=edition_id,
+                as_of_date=as_of_date,
+                gold_tier0_active=gold_tier0_active,
+            )
+        )
     if errors:
         preview = "\n  - ".join(errors[:20])
         more = f"\n  ... (+{len(errors) - 20} more)" if len(errors) > 20 else ""
@@ -1710,6 +2225,8 @@ def apply_equity_patch(
         (eu_path, _serialize_json(merged_eu)),
         (dd_path, _serialize_json(merged_dd)),
     ]
+    if merged_pc is not None:
+        writes.append((pc_path, _serialize_json(merged_pc)))
 
     summary = {
         "mode": "apply",
@@ -1730,6 +2247,12 @@ def apply_equity_patch(
         },
         "patch_deleted": False,
     }
+    if merged_pc is not None and pc_stats is not None:
+        summary["policy_calendar"] = {
+            **pc_stats,
+            "total_briefs": len(merged_pc["policy_briefs"]),
+            "total_events": len(merged_pc["events"]),
+        }
 
     if not dry_run:
         _atomic_write_transaction(writes)
@@ -2787,7 +3310,7 @@ def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str
     raw_target = str(target or "").strip()
     if not raw_target:
         raise ValueError(
-            "Empty --inspect target (allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks)."
+            "Empty --inspect target (allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar)."
         )
 
     if raw_target == "channels":
@@ -2923,9 +3446,69 @@ def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str
             "benchmarks": rows,
         }
 
+    if raw_target == "policy-calendar":
+        pc = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "policy_calendar.json"), "policy_calendar.json")
+        briefs = pc.get("policy_briefs") if isinstance(pc.get("policy_briefs"), list) else []
+        events = pc.get("events") if isinstance(pc.get("events"), list) else []
+        tier_counter: Counter[str] = Counter()
+        region_counter: Counter[str] = Counter()
+        end_dates: list[str] = []
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            tier = str(ev.get("impact_tier", "")).strip()
+            reg = str(ev.get("region", "")).strip()
+            if tier:
+                tier_counter[tier] += 1
+            if reg:
+                region_counter[reg] += 1
+            end_d = str(ev.get("end_date_cst") or ev.get("date_cst") or "").strip()
+            if DATE_RE.fullmatch(end_d):
+                end_dates.append(end_d)
+        return {
+            "schema_version": pc.get("schema_version"),
+            "edition_id": pc.get("edition_id"),
+            "as_of_cst": pc.get("as_of_cst"),
+            "horizon_days": pc.get("horizon_days"),
+            "horizon_end_cst": max(end_dates) if end_dates else None,
+            "total_briefs": len(briefs),
+            "total_events": len(events),
+            "counts_by_tier": {k: tier_counter[k] for k in ("P0", "P1", "P2") if tier_counter.get(k, 0) > 0},
+            "counts_by_region": dict(sorted(region_counter.items())),
+            "policy_briefs": [
+                {
+                    "id": b.get("id"),
+                    "date_cst": b.get("date_cst"),
+                    "region": b.get("region"),
+                    "category": b.get("category"),
+                    "impact_tier": b.get("impact_tier"),
+                    "authority": b.get("authority"),
+                    "headline": b.get("headline"),
+                }
+                for b in briefs
+                if isinstance(b, dict)
+            ],
+            "upcoming_events": [
+                {
+                    "event_id": ev.get("event_id"),
+                    "date_cst": ev.get("date_cst"),
+                    "end_date_cst": ev.get("end_date_cst"),
+                    "date_precision": ev.get("date_precision"),
+                    "time_cst": ev.get("time_cst"),
+                    "region": ev.get("region"),
+                    "category": ev.get("category"),
+                    "impact_tier": ev.get("impact_tier"),
+                    "title": ev.get("title"),
+                    "affected_markets": ev.get("affected_markets"),
+                }
+                for ev in events
+                if isinstance(ev, dict)
+            ],
+        }
+
     raise ValueError(
         f"Unknown --inspect target {raw_target!r} "
-        "(allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks)."
+        "(allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar)."
     )
 
 
@@ -2970,7 +3553,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     mode.add_argument(
         "--inspect",
         metavar="TARGET",
-        help="Read-only JSON summary: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks.",
+        help="Read-only JSON summary: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar.",
     )
     parser.add_argument(
         "--dry-run",

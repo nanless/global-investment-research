@@ -3771,4 +3771,111 @@
     });
     renderQdiiCalc();
   }
+
+  /* ------------------------------------------------------------------------
+     18. Core Policy & Upcoming 14–30d Financial Calendar (#sec-policy-calendar)
+     ------------------------------------------------------------------------ */
+  function initPolicyCalendar() {
+    const sec = document.getElementById("sec-policy-calendar");
+    if (!sec) return;
+    const regionBtns = Array.from(sec.querySelectorAll(".pcal-filter-row [data-pcal-region]"));
+    const tierBtn = sec.querySelector(".pcal-filter-row [data-pcal-tier]");
+    const toggle30dBtn = document.getElementById("pcal-toggle-30d");
+    const items = Array.from(sec.querySelectorAll(".pcal-event-item"));
+    const emptyEl = document.getElementById("pcal-empty");
+    const countEl = document.getElementById("pcal-count-status");
+
+    let activeRegion = "all";
+    let onlyTopTier = false;
+    let show30d = !toggle30dBtn || toggle30dBtn.getAttribute("data-expanded") === "1";
+
+    function matchesRegion(itemReg, filterReg) {
+      if (filterReg === "all") return true;
+      const r = String(itemReg || "").trim().toUpperCase();
+      if (filterReg === "GLOBAL_EX") {
+        return r === "GLOBAL_EX" || r === "EU" || r === "JP" || r === "UK" || r === "GLOBAL" || (r !== "CN" && r !== "HK" && r !== "US");
+      }
+      return r === filterReg;
+    }
+
+    function applyFilter() {
+      regionBtns.forEach(function (btn) {
+        const isAct = (btn.getAttribute("data-pcal-region") || "all") === activeRegion;
+        btn.classList.toggle("active", isAct);
+        btn.setAttribute("aria-pressed", isAct ? "true" : "false");
+      });
+      if (tierBtn) {
+        tierBtn.classList.toggle("active", onlyTopTier);
+        tierBtn.setAttribute("aria-pressed", onlyTopTier ? "true" : "false");
+      }
+
+      const targetTier = tierBtn ? (tierBtn.getAttribute("data-pcal-tier") || "P0") : "P0";
+      let shown = 0;
+      let hidden30d = 0;
+
+      items.forEach(function (el) {
+        const reg = el.getAttribute("data-pcal-region") || "";
+        const tier = el.getAttribute("data-pcal-tier") || "";
+        const horizon = el.getAttribute("data-pcal-horizon") || "14d";
+        const okReg = matchesRegion(reg, activeRegion);
+        const okTier = !onlyTopTier || tier === targetTier;
+        const okBase = okReg && okTier;
+        if (okBase && horizon === "30d" && !show30d) {
+          hidden30d++;
+        }
+        const vis = okBase && (show30d || horizon !== "30d");
+        el.hidden = !vis;
+        el.style.display = vis ? "" : "none";
+        if (vis) shown++;
+      });
+
+      if (toggle30dBtn) {
+        const hideToggle = !show30d && hidden30d === 0;
+        toggle30dBtn.hidden = hideToggle;
+        toggle30dBtn.style.display = hideToggle ? "none" : "";
+        toggle30dBtn.setAttribute("data-expanded", show30d ? "1" : "0");
+        toggle30dBtn.setAttribute("aria-expanded", show30d ? "true" : "false");
+        if (show30d) {
+          toggle30dBtn.textContent = "收起 15–30 天前瞻日程";
+        } else if (hidden30d > 0) {
+          toggle30dBtn.textContent = "展开 15–30 天前瞻日程（+" + hidden30d + " 项）";
+        }
+      }
+      if (countEl) {
+        countEl.textContent =
+          "显示 " + shown + " / " + items.length + " 项日程" +
+          (hidden30d > 0 ? "（另有 " + hidden30d + " 项 15–30 天）" : "");
+      }
+      if (emptyEl) {
+        emptyEl.hidden = shown > 0;
+        emptyEl.style.display = shown === 0 ? "" : "none";
+        if (shown === 0) {
+          emptyEl.textContent = hidden30d > 0
+            ? "未来 14 天暂无匹配日程，15–30 天前瞻区有 " + hidden30d + " 项，可点击下方按钮展开。"
+            : "当前筛选条件下暂无匹配日程，试试切换地区或取消「仅看一级关键」。";
+        }
+      }
+    }
+
+    regionBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        activeRegion = btn.getAttribute("data-pcal-region") || "all";
+        applyFilter();
+      });
+    });
+    if (tierBtn) {
+      tierBtn.addEventListener("click", function () {
+        onlyTopTier = !onlyTopTier;
+        applyFilter();
+      });
+    }
+    if (toggle30dBtn) {
+      toggle30dBtn.addEventListener("click", function () {
+        show30d = !show30d;
+        applyFilter();
+      });
+    }
+    applyFilter();
+  }
+  initPolicyCalendar();
 })();

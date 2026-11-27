@@ -858,5 +858,357 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
             self.assertEqual(ok_warns, [])
 
 
+class TestPolicyCalendarSectionAndGates(unittest.TestCase):
+    def _sample_policy_cal(self) -> dict:
+        return {
+            "schema_version": "1.0",
+            "edition_id": "2026-11-27_1130",
+            "as_of_cst": "2026-11-27T12:28:00+08:00",
+            "policy_briefs": [
+                {
+                    "id": "brief_cn_1",
+                    "region": "CN",
+                    "impact_tier": "P0",
+                    "authority": "中国央行 / 国家统计局",
+                    "timestamp_cst": "2026-11-27 09:30 CST",
+                    "headline": "央行单日净投放 2,225 亿元叠加 10 月工企利润同比高增",
+                    "plain_takeaway": "短期资金面偏暖、企业盈利环比改善，但红灯防守纪律未改。",
+                    "cross_market_transmission": "利好 A 股科技与红利承接，同时缓解港股中资权重估值压力。",
+                    "action_guardrail": "严守 A 股股票上限 40%，不追高情绪脉冲，黄金新仓维持 0%。",
+                },
+                {
+                    "id": "brief_us_1",
+                    "region": "US",
+                    "impact_tier": "P1",
+                    "authority": "美国财政部 / 美联储",
+                    "timestamp_cst": "2026-11-27 06:00 CST",
+                    "headline": "2,180 亿美元国债集中交割临近，10Y 美债重返 4.91%",
+                    "plain_takeaway": "发债抽水推升长债收益率，压制高估值科技股。",
+                    "cross_market_transmission": "美债利率走高同时施压港股联汇拆息与黄金真实利率。",
+                    "action_guardrail": "新钱优先超短美债防弹衣，暂不加仓高估值美股科技。",
+                },
+                {
+                    "id": "brief_gl_1",
+                    "region": "GLOBAL",
+                    "impact_tier": "P2",
+                    "authority": "OPEC+ 秘书处",
+                    "timestamp_cst": "2026-11-27 10:00 CST",
+                    "headline": "第 42 届部长级会议临近，市场观察增产配额表态",
+                    "plain_takeaway": "能源供需节奏牵动全球通胀预期。",
+                    "cross_market_transmission": "油价若急涨会再度推高美债收益率。",
+                    "action_guardrail": "远离高溢价场内商品 LOF，仅做宏观景气观察。",
+                },
+            ],
+            "upcoming_events": [
+                {
+                    "id": "ev_today",
+                    "region": "HK",
+                    "impact_tier": "P1",
+                    "date_cst": "2026-11-27",
+                    "time_cst": "16:00 CST",
+                    "date_precision": "exact",
+                    "title": "港股 11 月期指结算与美团三季报披露",
+                    "expected_consensus": "关注盘后业绩指引与核心本地商业利润率",
+                    "cross_market_transmission": "牵动恒生科技权重与南向资金风偏。",
+                    "upside_trigger": "业绩超预期且指引积极，带动恒科放量企稳。",
+                    "downside_trigger": "竞争加剧压制利润率引发科技权重回踩。",
+                    "pre_event_discipline": "盘中不赌财报方向，等正式公告落地再评估。",
+                },
+                {
+                    "id": "ev_tomorrow",
+                    "region": "US",
+                    "impact_tier": "P0",
+                    "date_cst": "2026-11-28",
+                    "time_cst": "13:00 CST",
+                    "date_precision": "exact",
+                    "title": "美联储进入 12 月议息前缄默期",
+                    "expected_consensus": "市场押注高利率维持更久，关注最后官员表态",
+                    "cross_market_transmission": "影响美债 10Y 与美元指数波动区间。",
+                    "upside_trigger": "鸽派信号带动美债收益率回落至 4.70% 下方。",
+                    "downside_trigger": "鹰派表态令 10Y 美债逼近 5.0% 警戒区。",
+                    "pre_event_discipline": "保持美股防弹衣与超短债组合，严禁杠杆。",
+                },
+                {
+                    "id": "ev_eu_14d",
+                    "region": "EU",
+                    "impact_tier": "P1",
+                    "date_cst": "2026-12-03",
+                    "time_cst": "18:00 CST",
+                    "date_precision": "exact",
+                    "title": "欧元区 11 月调和 CPI 初值公布",
+                    "expected_consensus": "核心通胀环比温和回落",
+                    "cross_market_transmission": "影响欧央行降息节奏与德股 DAX 估值。",
+                    "upside_trigger": "通胀温和回落利好欧股低费直投工具。",
+                    "downside_trigger": "服务业通胀黏性超预期推高欧债收益率。",
+                    "pre_event_discipline": "境内跨境工具买前必核参考净值溢价。",
+                },
+                {
+                    "id": "ev_tbd_30d",
+                    "region": "CN",
+                    "impact_tier": "P0",
+                    "date_cst": "2026-12-15",
+                    "time_cst": "",
+                    "date_precision": "window_tbd",
+                    "title": "中央经济工作会议定调 2027 年宏观政策",
+                    "expected_consensus": "关注赤字率、扩内需与科技自主可控定调",
+                    "cross_market_transmission": "直接定调 A 股与港股跨年主线及中债久期。",
+                    "upside_trigger": "财政发力与消费托举力度超预期。",
+                    "downside_trigger": "总量刺激克制导致高弹性题材获利回吐。",
+                    "pre_event_discipline": "会议窗口前严控追高，保留红利与债券压舱石。",
+                },
+                {
+                    "id": "ev_jp_30d",
+                    "region": "JP",
+                    "impact_tier": "P0",
+                    "date_cst": "2026-12-18",
+                    "time_cst": "11:00 CST",
+                    "date_precision": "exact",
+                    "title": "日本央行 12 月议息决议与美股四巫日",
+                    "expected_consensus": "市场高度警惕日元 160 关口附近政策加息与汇市干预",
+                    "cross_market_transmission": "日元若急升易触发套息平仓波及全球科技股。",
+                    "upside_trigger": "节奏渐进透明，汇市平稳过渡。",
+                    "downside_trigger": "超预期鹰派引发美元兑日元 3 日急跌触发危机熔断观察。",
+                    "pre_event_discipline": "提前核查组合波动承受力，严守现金缓冲。",
+                },
+            ],
+        }
+
+    def test_policy_calendar_renders_live_state_and_fallback_cleanly(self):
+        gold_snap = json.loads((ROOT / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
+        eq_state = json.loads((ROOT / "equity" / "state" / "market_state.json").read_text(encoding="utf-8"))
+        sample_pcal = self._sample_policy_cal()
+
+        cockpit_live = build_site.build_cockpit_page(
+            gold_snap,
+            eq_state,
+            {},
+            {"a-share": 76, "hk-stock": 75, "us-stock": 80},
+            policy_calendar=sample_pcal,
+        )
+        # Placed right above #sec-risk-radar & jump-bar pill present
+        pos_pcal = cockpit_live.find('id="sec-policy-calendar"')
+        pos_risk = cockpit_live.find('id="sec-risk-radar"')
+        self.assertGreater(pos_pcal, 0)
+        self.assertGreater(pos_risk, pos_pcal)
+        self.assertIn('<a class="home-jump-pill" href="#sec-policy-calendar">🧭 时政深解与日历</a>', cockpit_live)
+        self.assertIn("🧭 核心时政政策深解 · 未来 14–30 天金融时政日历", cockpit_live)
+        self.assertIn("上证指数（000001.SH · 大盘总舵）", cockpit_live)
+
+        # Pure-Chinese badges & zero raw P0/P1/P2 in .pcal-tier-pill
+        snap = lint_site._inspect_policy_calendar_section(cockpit_live)
+        self.assertIsNotNone(snap)
+        self.assertIn("核心时政", snap.inner_text)
+        self.assertGreaterEqual(len(snap.tier_pill_texts), 6)
+        self.assertTrue(any("🔴 一级关键" in t for t in snap.tier_pill_texts))
+        self.assertTrue(any("🟠 二级重点" in t for t in snap.tier_pill_texts))
+        self.assertTrue(any("⚪ 三级常规" in t for t in snap.tier_pill_texts))
+        for t in snap.tier_pill_texts:
+            self.assertIsNone(lint_site.PCAL_RAW_TIER_RE.search(t), f"Raw tier leaked in pill: {t!r}")
+
+        # Countdown labels, window_tbd, filter bar & 15-30d toggle button
+        self.assertIn(">今日<", cockpit_live)
+        self.assertIn(">明日<", cockpit_live)
+        self.assertIn("T+6 天", cockpit_live)
+        self.assertIn("窗口待定", cockpit_live)
+        self.assertIn('id="pcal-toggle-30d"', cockpit_live)
+        self.assertIn('data-pcal-region="GLOBAL_EX"', cockpit_live)
+        self.assertIn('data-pcal-tier="P0"', cockpit_live)
+
+        # cmd-nav-data includes policy calendar entry & 48 glossary terms preserved
+        cmd_items = build_site._build_cmd_nav_items("", 231)
+        self.assertTrue(
+            any(
+                it.get("title") == "🧭 核心时政深解与未来 30 天金融日历"
+                and it.get("href") == "index.html#sec-policy-calendar"
+                for it in cmd_items
+            )
+        )
+        self.assertEqual(len(build_site.GLOSSARY_TERMS), 48)
+
+        # Verify real live equity/state/policy_calendar.json fields (watch_triggers/market_transmission/pre_event_stance) render cleanly
+        live_pcal_path = ROOT / "equity" / "state" / "policy_calendar.json"
+        if live_pcal_path.is_file():
+            live_pcal = json.loads(live_pcal_path.read_text(encoding="utf-8"))
+            self.assertEqual(live_pcal.get("as_of_cst"), eq_state.get("as_of_cst"))
+            self.assertEqual(len(live_pcal.get("events") or []), 17)
+            live_eids = {ev.get("event_id") for ev in live_pcal.get("events") or []}
+            for req_eid in (
+                "us_treasury_part851_deadline_20261207",
+                "us_nov_cpi_inflation_20261210",
+                "us_govt_shutdown_deadline_20261212",
+            ):
+                self.assertIn(req_eid, live_eids)
+            live_html = build_site._render_policy_calendar_section(live_pcal, eq_state, gold_blocked=True)
+            live_snap = lint_site._inspect_policy_calendar_section(live_html)
+            self.assertIsNotNone(live_snap)
+            self.assertIn("核心时政", live_snap.inner_text)
+            for t in live_snap.tier_pill_texts:
+                self.assertIsNone(lint_site.PCAL_RAW_TIER_RE.search(t), f"Raw tier leaked on live policy_calendar: {t!r}")
+            self.assertIsNone(
+                lint_site.PCAL_RAW_TIER_RE.search(live_snap.inner_text),
+                "Raw P0/P1/P2 leaked inside live #sec-policy-calendar inner_text",
+            )
+            # Exact multi-day span renders end_date_cst cleanly & 实操边界 never starts with awkward 但/但是/不过
+            self.assertIn("2026-11-30–12-01 21:30", live_html)
+            self.assertNotIn("<strong>实操边界：</strong>但", live_html)
+            self.assertNotIn("<strong>实操边界：</strong>不过", live_html)
+            first_ev = (live_pcal.get("events") or live_pcal.get("upcoming_events") or [{}])[0]
+            if isinstance(first_ev.get("watch_triggers"), dict) and first_ev["watch_triggers"].get("upside_bull"):
+                self.assertIn(first_ev["watch_triggers"]["upside_bull"][:16], live_html)
+            if first_ev.get("pre_event_stance"):
+                self.assertIn(first_ev["pre_event_stance"][:16], live_html)
+
+        # Leading 但/但是/不过 is stripped cleanly when market_impact splits into 实操边界
+        conj_pcal = {
+            "as_of_cst": "2026-11-27T12:28:00+08:00",
+            "policy_briefs": [
+                {
+                    "id": "b_conj",
+                    "region": "CN",
+                    "impact_tier": "P1",
+                    "authority": "央行",
+                    "headline": "测试转折词剥离",
+                    "summary": "摘要。",
+                    "affected_markets": ["a_share"],
+                    "market_impact": "短线情绪回暖；但是，沪深 300 仍在年线下严守仓位上限。",
+                }
+            ],
+            "events": sample_pcal.get("events") or sample_pcal.get("upcoming_events") or [],
+        }
+        conj_html = build_site._render_policy_calendar_section(conj_pcal, eq_state, gold_blocked=True)
+        self.assertIn("<strong>实操边界：</strong>沪深 300 仍在年线下严守仓位上限。", conj_html)
+
+        # Sticky desktop left column CSS & smart 15-30d toggle hiding in app.js
+        app_css = (ROOT / "scripts" / "web_assets" / "app.css").read_text(encoding="utf-8")
+        app_js = (ROOT / "scripts" / "web_assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("@media (min-width: 961px)", app_css)
+        self.assertIn(".pcal-col:first-child", app_css)
+        self.assertIn("const hideToggle = !show30d && hidden30d === 0;", app_js)
+
+        # Graceful fallback when policy_calendar is None (live market_state.policy_radars & minimal fixture)
+        cockpit_fb = build_site.build_cockpit_page(
+            gold_snap,
+            eq_state,
+            {},
+            {"a-share": 76, "hk-stock": 75, "us-stock": 80},
+            policy_calendar=None,
+        )
+        fb_snap = lint_site._inspect_policy_calendar_section(cockpit_fb)
+        self.assertIsNotNone(fb_snap)
+        self.assertIn("核心时政", fb_snap.inner_text)
+        self.assertNotIn("NaN", fb_snap.inner_text)
+        for t in fb_snap.tier_pill_texts:
+            self.assertIsNone(lint_site.PCAL_RAW_TIER_RE.search(t))
+
+        min_cockpit = build_site.build_cockpit_page(
+            {"new_buy_allowed": False, "tier_code": "Tier 0", "as_of_short": "2026-11-27 07:30"},
+            {"as_of_cst": "2026-11-27T07:30:00+08:00", "markets": {"a_share": {"benchmark_sse": 3486.0}}},
+            {},
+            {"a-share": 76},
+            policy_calendar=None,
+        )
+        min_snap = lint_site._inspect_policy_calendar_section(min_cockpit)
+        self.assertIsNotNone(min_snap)
+        self.assertIn("核心时政", min_snap.inner_text)
+        self.assertNotIn("NaN", min_snap.inner_text)
+
+    def test_gate_s3_and_s6_policy_calendar_guards(self):
+        # Gate S3 blocks policy_calendar.json, realtime_monitor.py, wechat_notify.py, sqlite & notify config leaks
+        for leak_tok in (
+            "policy_calendar.json",
+            "realtime_monitor.py",
+            "wechat_notify.py",
+            "realtime-monitor.sqlite3",
+            "notify.example.json",
+            "notify.json",
+        ):
+            self.assertIsNotNone(
+                lint_site.S3_INTERNAL_ENG_LEAK_RE.search(f"请检查 {leak_tok} 输出"),
+                f"Gate S3 missed leak token: {leak_tok}",
+            )
+            self.assertIsNotNone(
+                build_site._HARD_INFRA_RE.search(f"请检查 {leak_tok} 输出"),
+                f"build_site._HARD_INFRA_RE missed leak token: {leak_tok}",
+            )
+
+        # Aligned GOLD_ACTIVE_BUY_RE catches 低吸/布局/上车 while preserving negation guards
+        for bad_line in ("会前可低吸黄金防通胀", "建议布局黄金ETF 518880", "趁回调上车 518880"):
+            m = lint_site.GOLD_ACTIVE_BUY_RE.search(bad_line)
+            self.assertIsNotNone(m, f"Missed gold active buy phrase: {bad_line}")
+            self.assertFalse(lint_site._gold_action_is_guarded(bad_line, m), bad_line)
+        for safe_line in ("红灯停期暂不布局黄金", "严禁低吸黄金ETF 518880", "不要上车 518880"):
+            for m in lint_site.GOLD_ACTIVE_BUY_RE.finditer(safe_line):
+                self.assertTrue(lint_site._gold_action_is_guarded(safe_line, m), safe_line)
+
+        # Gate S6 enforces #sec-policy-calendar checks when POLICY_CALENDAR_PATH exists
+        with tempfile.TemporaryDirectory() as tmp:
+            pcal_file = Path(tmp) / "policy_calendar.json"
+            pcal_file.write_text(json.dumps(self._sample_policy_cal(), ensure_ascii=False), encoding="utf-8")
+
+            bad_index = (
+                "<!doctype html><html><body><h1>驾驶舱</h1>"
+                '<section id="sec-policy-calendar">'
+                '<h2>普通日程表</h2>'
+                '<span class="pcal-tier-pill pcal-tier-p0">P0 关键</span>'
+                "<p>政策落地后可立即买入黄金ETF 518880 抢反弹。</p>"
+                "</section></body></html>"
+            )
+            parsed = {
+                "index.html": lint_site.parse_html_file("index.html", Path("index.html"), bad_index),
+            }
+            errs, warns = [], []
+            with patch.object(lint_site, "POLICY_CALENDAR_PATH", pcal_file):
+                lint_site.run_gate_s6(
+                    parsed,
+                    {"tier_code": "Tier 0", "new_buy_allowed": False},
+                    {"markets": {"a_share": {}, "hk_stock": {}, "us_stock": {}}},
+                    errs,
+                    warns,
+                    already_checked_json_gold=True,
+                )
+            joined = "\n".join(errs)
+            self.assertIn("missing required heading/text '核心时政'", joined)
+            self.assertIn("leaked raw tier code", joined)
+            self.assertIn("#sec-policy-calendar Gold Tier 0 mutex violation", joined)
+
+            # Gate S6 full inner_text scan catches raw P0/P1/P2 leaked OUTSIDE .pcal-tier-pill!
+            prose_tier_leak_index = (
+                "<!doctype html><html><body><h1>驾驶舱</h1>"
+                '<section id="sec-policy-calendar">'
+                "<h2>🧭 核心时政政策深解</h2>"
+                '<span class="pcal-tier-pill pcal-tier-p0">🔴 一级关键</span>'
+                "<p>本周重点盯紧 P1 级别财政会议与 P0 联储决议。</p>"
+                "</section></body></html>"
+            )
+            errs_prose, warns_prose = [], []
+            with patch.object(lint_site, "POLICY_CALENDAR_PATH", pcal_file):
+                lint_site.run_gate_s6(
+                    {"index.html": lint_site.parse_html_file("index.html", Path("index.html"), prose_tier_leak_index)},
+                    {"tier_code": "Tier 0", "new_buy_allowed": False},
+                    {"markets": {"a_share": {}, "hk_stock": {}, "us_stock": {}}},
+                    errs_prose,
+                    warns_prose,
+                    already_checked_json_gold=True,
+                )
+            self.assertTrue(
+                any("visible text leaked raw tier code(s)" in e and "P0" in e and "P1" in e for e in errs_prose),
+                errs_prose,
+            )
+
+            # Missing #sec-policy-calendar completely is also caught
+            missing_index = "<!doctype html><html><body><h1>驾驶舱</h1></body></html>"
+            errs2, warns2 = [], []
+            with patch.object(lint_site, "POLICY_CALENDAR_PATH", pcal_file):
+                lint_site.run_gate_s6(
+                    {"index.html": lint_site.parse_html_file("index.html", Path("index.html"), missing_index)},
+                    {"tier_code": "Tier 0", "new_buy_allowed": False},
+                    {"markets": {"a_share": {}, "hk_stock": {}, "us_stock": {}}},
+                    errs2,
+                    warns2,
+                    already_checked_json_gold=True,
+                )
+            self.assertTrue(any("missing #sec-policy-calendar" in e for e in errs2), errs2)
+
+
 if __name__ == "__main__":
     unittest.main()

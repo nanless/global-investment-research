@@ -1143,6 +1143,183 @@ class EquityWorkflowTests(unittest.TestCase):
         self.assertEqual(res_nonus.returncode, 1, res_nonus.stdout)
         self.assertIn("Gate C2", res_nonus.stdout)
 
+    def test_policy_calendar_validation_gold_lock_and_filename_leak_guards(self):
+        # 1. Internal filename leak regexes block policy_calendar.json, realtime_monitor.py, wechat_notify.py in prose
+        for leaked in ("policy_calendar.json", "realtime_monitor.py", "wechat_notify.py"):
+            with self.subTest(prose_leak=leaked):
+                errs_md, _ = pdf_common.lint_markdown_report(
+                    f"详情参见 {leaked} 自动更新。", "2026-11-27_1130_a_share.md"
+                )
+                self.assertTrue(any(leaked in e for e in errs_md), errs_md)
+
+        # 2. End-to-end lint_equity.py validation on policy_calendar.json under Gold Tier 0
+        self.advance("2026-11-29_1800")
+        self.gold.update(tier_code="Tier 0", new_buy_allowed=False, tier1_passed=1)
+        self.state["markets"]["gold_mirror_readonly"].update(
+            tier_code="Tier 0", new_buy_allowed=False, gates_passed="1/4",
+        )
+        self._install_clean_ssot_dbs()
+
+        pc_path = self.root / "equity/state/policy_calendar.json"
+        clean_pc = {
+            "schema_version": "1.0",
+            "edition_id": "2026-11-29_1800",
+            "as_of_cst": "2026-11-29T18:00:00+08:00",
+            "horizon_days": 30,
+            "policy_briefs": [
+                {
+                    "id": "brief_clean_1",
+                    "date_cst": "2026-11-29",
+                    "region": "CN",
+                    "category": "macro_data",
+                    "impact_tier": "P1",
+                    "authority": "国家统计局",
+                    "headline": "工业利润回升支撑风偏",
+                    "summary": "规上工业企业利润同比走强，黄金维持红灯停新仓 0%。",
+                    "affected_markets": ["a_share", "gold"],
+                    "market_impact": "红灯防守期严守股票仓位上限。",
+                    "source_url": "https://www.stats.gov.cn/",
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "fomc_dec_test",
+                    "date_cst": "2026-12-10",
+                    "end_date_cst": "2026-12-10",
+                    "date_precision": "exact",
+                    "time_cst": "03:00",
+                    "region": "US",
+                    "category": "central_bank",
+                    "impact_tier": "P0",
+                    "title": "美联储 12 月议息决议（FOMC）",
+                    "affected_markets": ["us_stock", "rates_bonds_core", "gold"],
+                    "expected_consensus": "市场高度关注点阵图与利率路径。",
+                    "market_transmission": "经美债曲线传导至权益与贵金属。",
+                    "watch_triggers": {
+                        "upside_bull": "利率回落缓和估值压制。",
+                        "downside_bear": "鹰派措辞推升美债砸盘风险资产。",
+                    },
+                    "pre_event_stance": "黄金维持红灯停新仓 0%，静待决议落地。",
+                    "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+                    "monitor_window_min": 120,
+                },
+                {
+                    "event_id": "boj_dec_test",
+                    "date_cst": "2026-12-18",
+                    "end_date_cst": "2026-12-18",
+                    "date_precision": "exact",
+                    "time_cst": "11:00",
+                    "region": "JP",
+                    "category": "central_bank",
+                    "impact_tier": "P0",
+                    "title": "日本央行 12 月议息会议",
+                    "affected_markets": ["non_us_global_satellite", "us_stock"],
+                    "expected_consensus": "紧盯加息节奏与日元汇率波动。",
+                    "market_transmission": "套息波动影响全球科技与日股。",
+                    "watch_triggers": {
+                        "upside_bull": "汇率有序企稳消除套息踩踏。",
+                        "downside_bear": "日元急升触发全球杠杆回撤。",
+                    },
+                    "pre_event_stance": "控制仓位上限、防汇率剧震。",
+                    "source_url": "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm",
+                    "monitor_window_min": 120,
+                },
+            ],
+        }
+        pc_path.write_text(json.dumps(clean_pc, ensure_ascii=False), encoding="utf-8")
+        res_ok = self.lint("--precheck", "--strict")
+        self.assertEqual(res_ok.returncode, 0, res_ok.stdout + res_ok.stderr)
+
+        # (a) Gate C2 catches Gold active buy verb inside policy_calendar.json events & briefs
+        pc_gold_ev = deepcopy(clean_pc)
+        pc_gold_ev["events"][0]["pre_event_stance"] = "建议会前立即买入黄金 518880 对冲波动。"
+        pc_path.write_text(json.dumps(pc_gold_ev, ensure_ascii=False), encoding="utf-8")
+        res_gold_ev = self.lint("--precheck", "--strict")
+        self.assertEqual(res_gold_ev.returncode, 1, res_gold_ev.stdout)
+        self.assertIn("Gate C2", res_gold_ev.stdout)
+
+        pc_gold_br = deepcopy(clean_pc)
+        pc_gold_br["policy_briefs"][0]["market_impact"] = "可逢低布局黄金 ETF 518660 或上车 518880 防御。"
+        pc_path.write_text(json.dumps(pc_gold_br, ensure_ascii=False), encoding="utf-8")
+        res_gold_br = self.lint("--precheck", "--strict")
+        self.assertEqual(res_gold_br.returncode, 1, res_gold_br.stdout)
+        self.assertIn("Gate C2", res_gold_br.stdout)
+
+        # (b) Bad enum (incl. affected_markets) & edition_id drift caught by Gate 4
+        pc_bad_enum = deepcopy(clean_pc)
+        pc_bad_enum["events"][0]["region"] = "INVALID_REG"
+        pc_bad_enum["events"][0]["category"] = "invalid_cat"
+        pc_bad_enum["events"][0]["impact_tier"] = "P9"
+        pc_bad_enum["events"][0]["date_precision"] = "fuzzy"
+        pc_bad_enum["events"][0]["affected_markets"] = ["us_stock", "invalid_mkt"]
+        pc_path.write_text(json.dumps(pc_bad_enum, ensure_ascii=False), encoding="utf-8")
+        res_enum = self.lint("--precheck", "--strict")
+        self.assertEqual(res_enum.returncode, 1, res_enum.stdout)
+        for token in (
+            ".region 非法枚举",
+            ".category 非法枚举",
+            ".impact_tier 非法枚举",
+            ".date_precision 非法枚举",
+            ".affected_markets 非法枚举",
+        ):
+            self.assertIn(token, res_enum.stdout)
+
+        # (b2) PBOC Doc No. 42 crypto active-buy, local path, and unguarded restricted code caught by Gate 4
+        pc_hygiene = deepcopy(clean_pc)
+        pc_hygiene["events"][0]["pre_event_stance"] = "建议趁波动买入 BTC 避险，路径 /Users/demo/notes.txt，关注 968118 表现。"
+        pc_path.write_text(json.dumps(pc_hygiene, ensure_ascii=False), encoding="utf-8")
+        res_hyg = self.lint("--precheck", "--strict")
+        self.assertEqual(res_hyg.returncode, 1, res_hyg.stdout)
+        self.assertIn("银发〔2026〕42号", res_hyg.stdout)
+        self.assertIn("泄露本机文件系统路径", res_hyg.stdout)
+        self.assertIn("968118", res_hyg.stdout)
+
+        # Negated PBOC crypto warning & negated Gold buy verbs pass cleanly
+        pc_neg_ok = deepcopy(clean_pc)
+        pc_neg_ok["events"][0]["pre_event_stance"] = "遵照银发〔2026〕42号严禁配置比特币与买入 BTC；黄金红灯停期暂不布局黄金、不要上车 518880。"
+        pc_path.write_text(json.dumps(pc_neg_ok, ensure_ascii=False), encoding="utf-8")
+        res_neg = self.lint("--precheck", "--strict")
+        self.assertEqual(res_neg.returncode, 0, res_neg.stdout + res_neg.stderr)
+
+        pc_bad_ed = deepcopy(clean_pc)
+        pc_bad_ed["edition_id"] = "2026-11-28_0730"
+        pc_path.write_text(json.dumps(pc_bad_ed, ensure_ascii=False), encoding="utf-8")
+        res_ed = self.lint("--precheck", "--strict")
+        self.assertEqual(res_ed.returncode, 1, res_ed.stdout)
+        self.assertIn("policy_calendar.json edition_id", res_ed.stdout)
+
+        # (c) Internal filename leak inside policy_calendar.json & report prose both caught
+        pc_leak = deepcopy(clean_pc)
+        pc_leak["events"][0]["pre_event_stance"] = "参考 realtime_monitor.py 与 wechat_notify.py 推送。"
+        pc_path.write_text(json.dumps(pc_leak, ensure_ascii=False), encoding="utf-8")
+        res_leak = self.lint("--precheck", "--strict")
+        self.assertEqual(res_leak.returncode, 1, res_leak.stdout)
+        self.assertIn("realtime_monitor.py", res_leak.stdout)
+        self.assertIn("wechat_notify.py", res_leak.stdout)
+
+        pc_path.write_text(json.dumps(clean_pc, ensure_ascii=False), encoding="utf-8")
+        self.advance("2026-11-26_1800")
+        pc_26 = deepcopy(clean_pc)
+        pc_26["edition_id"] = "2026-11-26_1800"
+        pc_26["as_of_cst"] = "2026-11-26T18:00:00+08:00"
+        pc_path.write_text(json.dumps(pc_26, ensure_ascii=False), encoding="utf-8")
+        for db in ("multi_asset_channels.json", "etf_universe.json", "deep_dossiers.json"):
+            p_db = self.root / "equity/state" / db
+            obj = json.loads(p_db.read_text(encoding="utf-8"))
+            obj["edition_id"] = "2026-11-26_1800"
+            p_db.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        a_daily = self.issue("a_share", "main")
+        self.issue("hk_stock", "main")
+        self.issue("us_stock", "holiday_watch")
+        a_daily.write_text(
+            a_daily.read_text(encoding="utf-8").replace("覆盖期铜。", "覆盖期铜，详情见 policy_calendar.json 与 realtime_monitor.py。"),
+            encoding="utf-8",
+        )
+        res_prose = self.lint("--precheck", "--strict")
+        self.assertEqual(res_prose.returncode, 1, res_prose.stdout)
+        self.assertIn("policy_calendar.json", res_prose.stdout)
+        self.assertIn("realtime_monitor.py", res_prose.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -412,6 +412,7 @@ _REL_MD_LINK_RE = re.compile(
 _HARD_INFRA_RE = re.compile(
     r"(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
     r"master_snapshot\.json|multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|"
+    r"policy_calendar\.json|realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
@@ -419,6 +420,7 @@ _HARD_INFRA_RE = re.compile(
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
     r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|fetch_kline_data\.py|"
+    r"realtime_monitor\.py|wechat_notify\.py|"
     r"_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|"
     r"_rollover_patch\.json|_archive_patch\.json|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing|"
@@ -2646,6 +2648,12 @@ def _build_cmd_nav_items(
             "meta": "卫星 · 日/欧平价低费分散、台韩 AI 晴雨表与印度 LOF 防退市",
             "href": f"{base_prefix}index.html#card-nonus",
             "keywords": "非美 发达 亚太 日本 东证 日经 欧洲 德国 台湾 韩国 印度 513800 159561 159687 vxus vgk iemg nonus global",
+        },
+        {
+            "title": "🧭 核心时政深解与未来 30 天金融日历",
+            "meta": "时政日历 · 央行/财政/联储/地缘政策白话深解与未来 14–30 天节点倒计时",
+            "href": f"{base_prefix}index.html#sec-policy-calendar",
+            "keywords": "时政 政策 日历 央行 财政 美联储 议息 关税 财报 窗口 倒计时 policy calendar pcal",
         },
         {
             "title": "新手 3 分钟入门指南与高频关键词速查",
@@ -5420,6 +5428,542 @@ def build_charts_page(
     """
 
 
+def _pcal_norm_region(raw: Any) -> tuple[str, str]:
+    """Normalize policy/calendar region into (filter_code, pure-Chinese badge)."""
+    tok = str(raw or "").strip().upper().replace("-", "_")
+    if tok in ("CN", "A_SHARE", "CHINA", "ASHARE", "中国", "中国A股", "A股"):
+        return "CN", "中国A股"
+    if tok in ("HK", "HK_STOCK", "HKSTOCK", "HONGKONG", "中国香港", "中国港股", "港股"):
+        return "HK", "中国港股"
+    if tok in ("US", "US_STOCK", "USSTOCK", "USA", "美国", "美国政策", "美股"):
+        return "US", "美国政策"
+    if tok in ("EU", "EURO", "EUROPE", "欧洲"):
+        return "EU", "全球宏观 · 欧洲"
+    if tok in ("JP", "JAPAN", "日本"):
+        return "JP", "全球宏观 · 日本"
+    if tok in ("UK", "BRITAIN", "英国"):
+        return "UK", "全球宏观 · 英国"
+    return "GLOBAL", "全球宏观"
+
+
+def _pcal_norm_tier(raw: Any) -> tuple[str, str, str]:
+    """Normalize impact tier into (machine_code, css_cls, pure-Chinese visible badge)."""
+    tok = str(raw or "").strip().upper()
+    if tok in ("P0", "0", "CRITICAL", "HIGH", "一级", "一级关键"):
+        return "P0", "pcal-tier-p0", "🔴 一级关键"
+    if tok in ("P1", "1", "MEDIUM", "IMPORTANT", "二级", "二级重点"):
+        return "P1", "pcal-tier-p1", "🟠 二级重点"
+    return "P2", "pcal-tier-p2", "⚪ 三级常规"
+
+
+def _pcal_pick(obj: dict[str, Any], *keys: str, default: str = "") -> str:
+    for k in keys:
+        v = obj.get(k)
+        if isinstance(v, str) and v.strip():
+            return clean_md_inline_plain(v)
+    return default
+
+
+def _pcal_parse_base_date(policy_cal: dict[str, Any] | None, eq_state: dict[str, Any]) -> date:
+    for raw in (
+        (policy_cal or {}).get("as_of_cst"),
+        (policy_cal or {}).get("as_of_date"),
+        eq_state.get("as_of_cst"),
+    ):
+        iso = _extract_iso_date(raw)
+        if iso:
+            try:
+                return date.fromisoformat(iso)
+            except ValueError:
+                pass
+    return date.today()
+
+
+def _pcal_fallback_from_radars(
+    eq_state: dict[str, Any], base_date: date, gold_blocked: bool
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build clean pure-Chinese policy briefs & upcoming events from market_state.policy_radars."""
+    radars = eq_state.get("policy_radars")
+    radars = radars if isinstance(radars, dict) else {}
+    as_of_compact = fmt_cst_compact(str(eq_state.get("as_of_cst") or "")) or base_date.isoformat()
+    alert_label = clean_md_inline_plain(str(eq_state.get("alert_label") or ""))
+
+    mkt_specs = (
+        (
+            "a_share",
+            "CN",
+            "央行/财政部/沪深交易所政策雷达",
+            "A 股政策与流动性托底主线",
+            "政策稳增长、货币净投放与资本市场托底组合协同发力，重点紧盯量能续航与红利承接。",
+            "联动中债 10Y 收益率、A 股两融情绪及港股中资权重估值修复。",
+            "遵循红灯防守仓位上限，优先低费宽基与红利底座，不因单日脉冲情绪化追高。",
+        ),
+        (
+            "hk_stock",
+            "HK",
+            "香港金管局/港交所/跨境政策雷达",
+            "港股联汇利率与跨境资金主线",
+            "南向互联互通政策延续托举，但联汇水位、拆息变动与地缘合规期限仍主导波动。",
+            "港汇贴近 7.85 或拆息抬升会压制恒科高弹性估值，并与 A/H 溢价联动传导。",
+            "严守离岸与港股通双轨仓位上限，重大指数调仓与规则截止日前留足现金缓冲。",
+        ),
+        (
+            "us_stock",
+            "US",
+            "美联储/美国财政部/贸易政策雷达",
+            "美债发债、联储路径与关税工具箱",
+            "美债长端利率高企、财政发债抽水与关税贸易工具切换共同约束高估值科技扩张。",
+            "美债 10Y 收益率与美元指数牵动全球科技估值、港股联汇压力及黄金真实利率压制。",
+            "新钱优先美元超短债防弹衣，严控高估值科技新增敞口并核对 QDII 场内溢价。",
+        ),
+    )
+
+    briefs: list[dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
+    seen_ev: set[tuple[str, str]] = set()
+    p0_kw = re.compile(r"议息|联储|央行|中央经济|MSCI|恒生|Part\s*851|停摆|OPEC|关税|四巫|降保")
+
+    for mkey, rcode, auth, default_hl, plain, trans, guard in mkt_specs:
+        robj = radars.get(mkey)
+        if not isinstance(robj, dict) or not robj:
+            continue
+        statuses = [
+            str(v).lower()
+            for k, v in robj.items()
+            if k not in ("next_anchors", "dividend_tax_cut_enacted") and isinstance(v, str)
+        ]
+        has_red = any(s.startswith("red_") for s in statuses)
+        has_amber = any(s.startswith(("orange_", "yellow_")) for s in statuses)
+        tier = "P0" if has_red else ("P1" if has_amber else "P2")
+        anchors = [
+            clean_md_inline_plain(str(a))
+            for a in (robj.get("next_anchors") or [])
+            if isinstance(a, str) and str(a).strip()
+        ]
+        headline = f"{default_hl}：{anchors[0]}" if anchors else default_hl
+        briefs.append(
+            {
+                "region": rcode,
+                "impact_tier": tier,
+                "authority": auth,
+                "timestamp_cst": as_of_compact,
+                "headline": headline,
+                "plain_takeaway": plain,
+                "cross_market_transmission": trans,
+                "action_guardrail": guard,
+            }
+        )
+        for anc in anchors:
+            m_full = re.match(r"^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*(.+)$", anc)
+            m_mon = re.match(r"^(\d{4}-\d{2})\s+(.+)$", anc)
+            if m_full:
+                d_str, t_str, title_txt = m_full.group(1), m_full.group(2) or "", m_full.group(3).strip()
+                prec = "exact"
+            elif m_mon:
+                d_str, t_str, title_txt = m_mon.group(1), "", m_mon.group(2).strip()
+                prec = "window_tbd"
+            else:
+                continue
+            dedup_key = (d_str, title_txt[:18])
+            if dedup_key in seen_ev:
+                continue
+            seen_ev.add(dedup_key)
+            ev_tier = "P0" if p0_kw.search(title_txt) else "P1"
+            events.append(
+                {
+                    "region": rcode,
+                    "impact_tier": ev_tier,
+                    "date_cst": d_str,
+                    "time_cst": t_str,
+                    "date_precision": prec,
+                    "title": title_txt,
+                    "expected_consensus": "紧盯官方公告口径、落地节奏与市场预期差",
+                    "cross_market_transmission": trans,
+                    "upside_trigger": "落地措辞温和、资金面平稳或盈利/政策超预期托底",
+                    "downside_trigger": "流动性抽水超预期、关税或合规口径收紧引发风险偏好回落",
+                    "pre_event_discipline": guard,
+                }
+            )
+
+    # Supplement from calendar_overrides within the upcoming 35-day window
+    for ov in eq_state.get("calendar_overrides") or []:
+        if not isinstance(ov, dict):
+            continue
+        d_str = _extract_iso_date(ov.get("date_cst"))
+        note = clean_md_inline_plain(str(ov.get("note") or ""))
+        if not d_str or not note:
+            continue
+        try:
+            delta = (date.fromisoformat(d_str) - base_date).days
+        except ValueError:
+            continue
+        if delta < 0 or delta > 35:
+            continue
+        dedup_key = (d_str, note[:18])
+        if dedup_key in seen_ev:
+            continue
+        seen_ev.add(dedup_key)
+        mkts = ov.get("markets_affected") or []
+        if len(mkts) == 1:
+            rcode = _pcal_norm_region(mkts[0])[0]
+        elif len(mkts) > 1:
+            rcode = "GLOBAL"
+        else:
+            rcode = "GLOBAL"
+        mode_s = str(ov.get("mode") or "")
+        ev_tier = "P0" if ("high_alert" in mode_s or p0_kw.search(note)) else "P1"
+        events.append(
+            {
+                "region": rcode,
+                "impact_tier": ev_tier,
+                "date_cst": d_str,
+                "time_cst": "",
+                "date_precision": "exact",
+                "title": note,
+                "expected_consensus": "按交易所休市/调仓或官方日程提前做好仓位与资金衔接",
+                "cross_market_transmission": "跨市场休市与指数调仓易放大尾盘波动与离岸/在岸价差。",
+                "upside_trigger": "调仓或节点平稳过渡，成交有序承接",
+                "downside_trigger": "薄量时段大幅跳空或集中抽水触发短线波动放大",
+                "pre_event_discipline": "节点前严禁市价盲扫与临时追高，保持稳健现金缓冲。",
+            }
+        )
+
+    if not briefs:
+        briefs.append(
+            {
+                "region": "GLOBAL",
+                "impact_tier": "P2",
+                "authority": "全球宏观与三市政策跟踪",
+                "timestamp_cst": as_of_compact,
+                "headline": alert_label or "三市政策雷达常规跟踪中（A/港/美与宏观利率同步巡检）",
+                "plain_takeaway": "当前按早/午/晚三班持续核验央行、财政、美联储与交易所官方公告，严守先看红绿灯再行动纪律。",
+                "cross_market_transmission": "中美利率差、美元汇率与三市政策节奏共同决定权益与债市仓位上限。",
+                "action_guardrail": (
+                    "严守各市场仓位上限与单股不超过 8% 纪律；黄金处于红灯观察期，老仓稳拿、暂不新开仓。"
+                    if gold_blocked
+                    else "严守各市场仓位上限与单股不超过 8% 纪律，远离高溢价追涨。"
+                ),
+            }
+        )
+    return briefs, events
+
+
+def _render_policy_calendar_section(
+    policy_cal: dict[str, Any] | None,
+    eq_state: dict[str, Any],
+    gold_blocked: bool,
+) -> str:
+    """Render #sec-policy-calendar on index.html with graceful fallback to market_state.policy_radars."""
+    base_date = _pcal_parse_base_date(policy_cal, eq_state)
+    cal_obj = policy_cal if isinstance(policy_cal, dict) else None
+
+    raw_briefs = (cal_obj.get("policy_briefs") if cal_obj else None) or []
+    raw_events = (
+        (cal_obj.get("upcoming_events") if cal_obj else None)
+        or (cal_obj.get("events") if cal_obj else None)
+        or (cal_obj.get("calendar_events") if cal_obj else None)
+        or []
+    )
+    raw_briefs = [b for b in raw_briefs if isinstance(b, dict)]
+    raw_events = [e for e in raw_events if isinstance(e, dict)]
+
+    used_fallback = False
+    if not raw_briefs or not raw_events:
+        fb_briefs, fb_events = _pcal_fallback_from_radars(eq_state, base_date, gold_blocked)
+        if not raw_briefs:
+            raw_briefs = fb_briefs
+            used_fallback = True
+        if not raw_events:
+            raw_events = fb_events
+            used_fallback = True
+
+    as_of_disp = (
+        fmt_cst_compact(str((cal_obj or {}).get("as_of_cst") or ""))
+        or fmt_cst_compact(str(eq_state.get("as_of_cst") or ""))
+        or base_date.isoformat()
+    )
+
+    _mkt_cn_map = {
+        "a_share": "A股",
+        "hk_stock": "港股",
+        "us_stock": "美股",
+        "rates_bonds_core": "中美债率",
+        "gold": "黄金",
+        "non_us_global_satellite": "非美全球",
+    }
+
+    def _fmt_affected(raw_mkts: Any) -> str:
+        if not isinstance(raw_mkts, list):
+            return ""
+        labels = [_mkt_cn_map.get(str(m).strip(), str(m).strip()) for m in raw_mkts if str(m).strip()]
+        return " / ".join(dict.fromkeys(labels))
+
+    brief_cards: list[str] = []
+    for b in raw_briefs:
+        _, reg_lbl = _pcal_norm_region(b.get("region"))
+        _, tier_cls, tier_lbl = _pcal_norm_tier(
+            b.get("impact_tier") or b.get("tier") or b.get("impact") or b.get("priority")
+        )
+        auth = _pcal_pick(b, "authority", "source_authority", "source", "agency", default="官方政策追踪")
+        ts = _pcal_pick(b, "timestamp_cst", "published_cst", "published_at", "date_cst", "as_of", default=as_of_disp)
+        src_disp = f"{auth} · {ts}" if (auth and ts) else (auth or ts)
+        headline = _pcal_pick(b, "headline", "title", default="核心政策动态跟踪")
+        plain = _pcal_pick(b, "plain_takeaway", "plain_chinese", "plain_summary", "beginner_summary", "summary", default="持续跟踪官方口径与落地节奏。")
+        trans = _pcal_pick(b, "cross_market_transmission", "market_transmission", "transmission", "cross_market_impact", "impact_chain")
+        guard = _pcal_pick(b, "action_guardrail", "action_boundary", "practical_boundary", "pre_event_stance", "guardrail", "discipline")
+        mkt_imp = _pcal_pick(b, "market_impact")
+        aff_txt = _fmt_affected(b.get("affected_markets"))
+        if mkt_imp and not trans and not guard:
+            if "；" in mkt_imp:
+                p1, p2 = mkt_imp.split("；", 1)
+                trans = f"波及 {aff_txt}：{p1.strip()}" if aff_txt else p1.strip()
+                guard = re.sub(r"^(?:但是|但|不过)[，,：:\s]*", "", p2.strip())
+            else:
+                trans = f"波及 {aff_txt}：{mkt_imp}" if aff_txt else mkt_imp
+                guard = "严守各市场红灯防守仓位上限，不追情绪脉冲。"
+        elif mkt_imp and not trans:
+            trans = f"波及 {aff_txt}：{mkt_imp}" if aff_txt else mkt_imp
+        elif mkt_imp and not guard:
+            guard = re.sub(r"^(?:但是|但|不过)[，,：:\s]*", "", mkt_imp.strip())
+        if not trans:
+            trans = (
+                f"联动传导至 {aff_txt} 核心定价锚与风险偏好。"
+                if aff_txt
+                else "关注对汇率、长债收益率与核心权益板块的联动传导。"
+            )
+        if not guard:
+            guard = "严守仓位红线，不因单条消息情绪化追涨杀跌。"
+        brief_cards.append(
+            '<article class="pcal-brief-card">'
+            '<div class="pcal-brief-meta">'
+            f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
+            f'<span class="pcal-tier-pill {tier_cls}">{esc(tier_lbl)}</span>'
+            f'<span class="pcal-src">{esc(src_disp)}</span>'
+            "</div>"
+            f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
+            f'<div class="pcal-brief-row"><strong>白话看懂：</strong>{esc(plain)}</div>'
+            f'<div class="pcal-brief-row"><strong>跨市传导：</strong>{esc(trans)}</div>'
+            f'<div class="pcal-brief-guard"><strong>实操边界：</strong>{esc(guard)}</div>'
+            "</article>"
+        )
+
+    prepared_events: list[tuple[tuple[int, str, str], str, str]] = []
+    for ev in raw_events:
+        reg_code, reg_lbl = _pcal_norm_region(ev.get("region"))
+        tier_code, tier_cls, tier_lbl = _pcal_norm_tier(
+            ev.get("impact_tier") or ev.get("tier") or ev.get("impact") or ev.get("priority")
+        )
+        date_raw = str(ev.get("date_cst") or ev.get("date") or "").strip()
+        end_date_raw = str(ev.get("end_date_cst") or "").strip()
+        time_raw = str(ev.get("time_cst") or ev.get("time") or "").strip()
+        prec = str(ev.get("date_precision") or "exact").strip().lower()
+        win_lbl = _pcal_pick(ev, "window_label", "date_window", "window_cst", default="")
+
+        iso_d = _extract_iso_date(date_raw)
+        delta_days: int | None = None
+        if iso_d:
+            try:
+                delta_days = (date.fromisoformat(iso_d) - base_date).days
+            except ValueError:
+                delta_days = None
+        elif re.match(r"^\d{4}-\d{2}$", date_raw):
+            try:
+                y, m = int(date_raw[:4]), int(date_raw[5:7])
+                delta_days = (date(y, m, 15) - base_date).days
+            except ValueError:
+                delta_days = None
+
+        explicit_horizon = str(ev.get("horizon") or "").strip().lower()
+        if explicit_horizon in ("14d", "30d"):
+            horizon = explicit_horizon
+        elif delta_days is not None and delta_days <= 14:
+            horizon = "14d"
+        else:
+            horizon = "30d"
+
+        is_soon = False
+        if prec == "window_tbd":
+            if delta_days is not None and 0 <= delta_days <= 3:
+                countdown_lbl = "今日" if delta_days == 0 else ("明日" if delta_days == 1 else f"T+{delta_days} 天")
+                is_soon = True
+            elif delta_days is not None and delta_days > 3:
+                countdown_lbl = f"T+{delta_days} 天"
+            else:
+                countdown_lbl = "窗口待定"
+            if win_lbl:
+                time_disp = win_lbl if "窗口待定" in win_lbl else f"{win_lbl}（窗口待定）"
+            elif date_raw and end_date_raw and end_date_raw != date_raw:
+                end_short = end_date_raw[5:] if end_date_raw[:4] == date_raw[:4] else end_date_raw
+                time_disp = f"{date_raw}–{end_short} · 窗口待定"
+            elif date_raw:
+                time_disp = f"{date_raw} · 窗口待定"
+            else:
+                time_disp = "窗口待定"
+            sort_delta = delta_days if delta_days is not None else 20
+        else:
+            if delta_days is None:
+                countdown_lbl = "近期"
+                sort_delta = 15
+            elif delta_days < 0:
+                countdown_lbl = "近期已落地"
+                sort_delta = delta_days
+            elif delta_days == 0:
+                countdown_lbl = "今日"
+                is_soon = True
+                sort_delta = 0
+            elif delta_days == 1:
+                countdown_lbl = "明日"
+                is_soon = True
+                sort_delta = 1
+            else:
+                countdown_lbl = f"T+{delta_days} 天"
+                is_soon = delta_days <= 3
+                sort_delta = delta_days
+            date_span = date_raw
+            if date_raw and end_date_raw and end_date_raw != date_raw:
+                end_short = end_date_raw[5:] if end_date_raw[:4] == date_raw[:4] else end_date_raw
+                date_span = f"{date_raw}–{end_short}"
+            if date_span and time_raw:
+                time_disp = f"{date_span} {time_raw}"
+            else:
+                time_disp = date_span or time_raw or "待公布"
+
+        title = _pcal_pick(ev, "title", "headline", "event", "name", default="关键金融时政节点")
+        consensus = _pcal_pick(
+            ev, "expected_consensus", "consensus", "expectation", "market_expectation",
+            default="市场重点观察官方口径与预期差",
+        )
+        trans = _pcal_pick(
+            ev, "market_transmission", "cross_market_transmission", "transmission", "cross_market_impact", "impact_chain",
+            default="关注对股指、国债收益率与汇率的跨市场共振。",
+        )
+        wt = ev.get("watch_triggers") if isinstance(ev.get("watch_triggers"), dict) else {}
+        upside = _pcal_pick(
+            wt, "upside_bull", "upside_trigger", "bullish_trigger", "warm_trigger", "upside_watch", "bullish_watch",
+        ) or _pcal_pick(
+            ev, "upside_bull", "upside_trigger", "bullish_trigger", "warm_trigger", "upside_watch", "bullish_watch",
+            default="数据温和向好或政策表态超预期偏暖。",
+        )
+        downside = _pcal_pick(
+            wt, "downside_bear", "downside_trigger", "bearish_trigger", "cold_trigger", "downside_watch", "bearish_watch",
+        ) or _pcal_pick(
+            ev, "downside_bear", "downside_trigger", "bearish_trigger", "cold_trigger", "downside_watch", "bearish_watch",
+            default="通胀/利率反跳或政策收紧超预期引发风险偏好回撤。",
+        )
+        discipline = _pcal_pick(
+            ev, "pre_event_stance", "pre_event_discipline", "discipline", "action_guardrail", "action_boundary",
+            default="节点公布前严控仓位与杠杆，等落地确认再按纪律执行。",
+        )
+
+        cd_cls = "pcal-countdown pcal-countdown-soon" if is_soon else "pcal-countdown"
+        item_html = (
+            f'<article class="pcal-event-item" data-pcal-region="{esc(reg_code)}" '
+            f'data-pcal-tier="{esc(tier_code)}" data-pcal-horizon="{esc(horizon)}">'
+            '<div class="pcal-event-top">'
+            f'<span class="{cd_cls}">{esc(countdown_lbl)}</span>'
+            f'<span class="pcal-event-time">{esc(time_disp)}</span>'
+            f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
+            f'<span class="pcal-tier-pill {tier_cls}">{esc(tier_lbl)}</span>'
+            "</div>"
+            f'<div class="pcal-event-title">{esc(title)}</div>'
+            f'<div class="pcal-event-cons"><strong>市场预期：</strong>{esc(consensus)}</div>'
+            '<details class="pcal-event-more">'
+            '<summary class="pcal-event-sum">展开跨市传导、双向哨点与事前纪律</summary>'
+            '<div class="pcal-event-detail">'
+            f'<div><strong>跨市传导：</strong>{esc(trans)}</div>'
+            f'<div><strong>上行/偏暖哨点：</strong>{esc(upside)}</div>'
+            f'<div><strong>下行/偏空哨点：</strong>{esc(downside)}</div>'
+            f'<div><strong>事前纪律：</strong>{esc(discipline)}</div>'
+            "</div>"
+            "</details>"
+            "</article>"
+        )
+        time_sort = time_raw if re.match(r"^\d{2}:\d{2}$", time_raw) else "99:99"
+        prepared_events.append(((sort_delta, date_raw, time_sort, title), horizon, item_html))
+
+    prepared_events.sort(key=lambda x: x[0])
+    count_14d = sum(1 for _, h, _ in prepared_events if h == "14d")
+    count_30d = sum(1 for _, h, _ in prepared_events if h == "30d")
+    total_ev = len(prepared_events)
+    use_30d_toggle = count_30d > 0 and count_14d > 0
+
+    rendered_events: list[str] = []
+    for _, horizon, html_item in prepared_events:
+        if use_30d_toggle and horizon == "30d":
+            html_item = html_item.replace(
+                '<article class="pcal-event-item"',
+                '<article class="pcal-event-item" hidden',
+                1,
+            )
+        rendered_events.append(html_item)
+
+    initial_shown = count_14d if use_30d_toggle else total_ev
+    count_txt = (
+        f"显示 {initial_shown} / {total_ev} 项日程（另有 {count_30d} 项 15–30 天）"
+        if use_30d_toggle
+        else f"共 {total_ev} 项前瞻日程"
+    )
+    toggle_btn_html = (
+        f'<button type="button" class="btn btn-sm" id="pcal-toggle-30d" data-expanded="0" '
+        f'aria-expanded="false">展开 15–30 天前瞻日程（+{count_30d} 项）</button>'
+        if use_30d_toggle
+        else ""
+    )
+    gold_note = (
+        " · 黄金红灯观察锁生效中（金价受事件波动亦严守新仓 0% 纪律）"
+        if gold_blocked
+        else ""
+    )
+    foot_note = (
+        f"基线 {as_of_disp}"
+        + (" · 由三市政策雷达自动汇整" if used_fallback else " · 同步早/午/晚三班滚动核验")
+        + gold_note
+    )
+    empty_hidden = " hidden" if initial_shown > 0 else ""
+
+    return f"""
+    <section class="pcal-section" id="sec-policy-calendar" aria-labelledby="pcal-heading">
+      <div class="sec-head">
+        <h2 id="pcal-heading">🧭 核心时政政策深解 · 未来 14–30 天金融时政日历</h2>
+        <span class="sec-sub">央行/财政/联储/地缘政策白话深解 · 未来 30 天关键节点倒计时与事前纪律</span>
+      </div>
+      <div class="pcal-grid">
+        <div class="pcal-col">
+          <div class="pcal-col-head">
+            <h3>今日核心时政与政策深解</h3>
+            <span class="sec-sub">{len(brief_cards)} 条重点</span>
+          </div>
+          <div class="pcal-brief-list">
+            {"".join(brief_cards)}
+          </div>
+        </div>
+        <div class="pcal-col">
+          <div class="pcal-col-head">
+            <h3>未来 14–30 天关键金融时政日历</h3>
+            <span class="sec-sub" id="pcal-count-status" role="status">{esc(count_txt)}</span>
+          </div>
+          <div class="pcal-filter-row" role="toolbar" aria-label="按地区与重要性筛选时政日历">
+            <button type="button" class="filter-pill active" data-pcal-region="all" aria-pressed="true">全部</button>
+            <button type="button" class="filter-pill" data-pcal-region="CN" aria-pressed="false">中国A股</button>
+            <button type="button" class="filter-pill" data-pcal-region="HK" aria-pressed="false">中国港股</button>
+            <button type="button" class="filter-pill" data-pcal-region="US" aria-pressed="false">美国政策</button>
+            <button type="button" class="filter-pill" data-pcal-region="GLOBAL_EX" aria-pressed="false">欧日英与全球</button>
+            <button type="button" class="filter-pill" data-pcal-tier="P0" aria-pressed="false">🔴 仅看一级关键</button>
+          </div>
+          <div class="pcal-event-list" id="pcal-event-list">
+            {"".join(rendered_events)}
+          </div>
+          <div class="pcal-empty" id="pcal-empty"{empty_hidden}>当前筛选条件下暂无匹配日程，试试切换地区或展开 15–30 天前瞻日程。</div>
+          <div class="pcal-foot-row">
+            {toggle_btn_html}
+            <span class="sec-sub">{esc(foot_note)}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    """
+
+
 def build_cockpit_page(
     gold_snap: dict,
     eq_state: dict,
@@ -5431,6 +5975,7 @@ def build_cockpit_page(
     kline_manifest: dict[str, Any] | None = None,
     kline_core: dict[str, Any] | None = None,
     stocks: list[dict[str, Any]] | None = None,
+    policy_calendar: dict[str, Any] | None = None,
 ) -> str:
     markets = eq_state.get("markets") or {}
     a_m = markets.get("a_share") or {}
@@ -6382,9 +6927,13 @@ def build_cockpit_page(
         jump_pills.append(f'<a class="home-jump-pill" href="#sec-multi-channels">③ {ch_count_num} 大执行层渠道</a>')
     if home_etf_section_html:
         jump_pills.append('<a class="home-jump-pill" href="#sec-etf-radar">④ 6 大正交 ETF 雷达</a>')
+    jump_pills.append('<a class="home-jump-pill" href="#sec-policy-calendar">🧭 时政深解与日历</a>')
     jump_pills.append('<a class="home-jump-pill" href="#sec-risk-radar">⑤ 风险雷达与家庭总账</a>')
     jump_pills.append('<a class="home-jump-pill" href="#sec-latest-dailies">⑥ 最新早午晚报与手册</a>')
     jump_bar_html = f'<nav class="home-jump-bar" aria-label="首页版块快捷导航">{"".join(jump_pills)}</nav>'
+    policy_calendar_html = _render_policy_calendar_section(
+        policy_calendar, eq_state, gold_blocked=(not gold_new_buy or gold_tier_code == "Tier 0")
+    )
 
     coverage_parts = [f"{total_pool} 家跨市场核心公司"]
     if ch_count_num:
@@ -6732,6 +7281,7 @@ def build_cockpit_page(
     {four_buckets_html}
     {home_channels_section_html}
     {home_etf_section_html}
+    {policy_calendar_html}
 
     <div class="sec-head" id="sec-risk-radar">
       <h2>跨市场风险雷达与家庭总账</h2>
@@ -9038,9 +9588,18 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
     channels_path = EQUITY_DIR / "state" / "multi_asset_channels.json"
     etf_path = EQUITY_DIR / "state" / "etf_universe.json"
     dossiers_path = EQUITY_DIR / "state" / "deep_dossiers.json"
+    policy_cal_path = EQUITY_DIR / "state" / "policy_calendar.json"
     channels_data = json.loads(channels_path.read_text(encoding="utf-8")) if channels_path.is_file() else None
     etf_data = json.loads(etf_path.read_text(encoding="utf-8")) if etf_path.is_file() else None
     dossiers_data = json.loads(dossiers_path.read_text(encoding="utf-8")) if dossiers_path.is_file() else None
+    policy_calendar_data: dict[str, Any] | None = None
+    if policy_cal_path.is_file():
+        try:
+            raw_pc = json.loads(policy_cal_path.read_text(encoding="utf-8"))
+            if isinstance(raw_pc, dict):
+                policy_calendar_data = raw_pc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            policy_calendar_data = None
 
     all_chs: list[dict[str, Any]] = (
         [c for c in (channels_data.get("channels") or []) if isinstance(c, dict) and str(c.get("id", "")).strip()]
@@ -9648,6 +10207,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
             kline_manifest=kline_manifest,
             kline_core=kline_core,
             stocks=stocks,
+            policy_calendar=policy_calendar_data,
         ),
     )
     (out_dir / "index.html").write_text(cockpit_html, encoding="utf-8")
