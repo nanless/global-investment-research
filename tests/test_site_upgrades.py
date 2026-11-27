@@ -1210,5 +1210,55 @@ class TestPolicyCalendarSectionAndGates(unittest.TestCase):
             self.assertTrue(any("missing #sec-policy-calendar" in e for e in errs2), errs2)
 
 
+class TestFullSiteRedesignBugFixesAndIA(unittest.TestCase):
+    def test_parse_scorecard_stats_ignores_at_least_partial_percentage(self):
+        gold_md = (
+            "| 统计口径 | 项数 | 兑现 | 部分兑现 | 证伪 | 未触发 | 完全兑现率 | 至少部分兑现（已评分） |\n"
+            "| --- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+            "| 已到期（投资项） | 14（投资计分 12） | 7 | 5 | 0 | 2 | 58.3% | 100.0% |\n"
+            "| 持续追踪 | 4 | — | — | — | — | — | — |\n"
+        )
+        stats = build_site.parse_scorecard_stats(gold_md, "")
+        self.assertEqual(stats["gold"]["hit"], 7)
+        self.assertEqual(stats["gold"]["partial"], 5)
+        self.assertEqual(stats["gold"]["miss"], 0)
+        self.assertAlmostEqual(stats["gold"]["at_least_partial_pct"], 100.0)
+        # Also confirm real live SCORECARD.md never confuses 100% rate with partial count
+        live_gold = (ROOT / "gold" / "daily" / "SCORECARD.md").read_text(encoding="utf-8")
+        live_eq = (ROOT / "equity" / "daily" / "SCORECARD.md").read_text(encoding="utf-8")
+        live_stats = build_site.parse_scorecard_stats(live_gold, live_eq)
+        self.assertLess(live_stats["gold"]["partial"], 50)
+
+    def test_inject_glossary_tips_skips_badge_and_pill_classes(self):
+        html = (
+            '<div class="ch-card">'
+            '<span class="ch-badge">34只LOF退市线</span>'
+            '<p>购买跨境基金时必须避开场内溢价与 LOF 退市陷阱。</p>'
+            "</div>"
+        )
+        out = build_site.inject_glossary_tips(html)
+        self.assertIn('<span class="ch-badge">34只LOF退市线</span>', out)
+        self.assertIn('data-term="lof_delist"', out)
+        self.assertIn('data-term="premium_discount"', out)
+
+    def test_redesign_assets_prevent_provider_leak_and_mobile_overflow(self):
+        kline_js = (ROOT / "scripts" / "web_assets" / "kline.js").read_text(encoding="utf-8")
+        app_css = (ROOT / "scripts" / "web_assets" / "app.css").read_text(encoding="utf-8")
+        app_js = (ROOT / "scripts" / "web_assets" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("PROVIDER_LABELS", kline_js)
+        self.assertIn("tencent_newfqkline", kline_js)
+        self.assertIn("function fmtProviderLabel(", kline_js)
+
+        self.assertIn(".compact-alert-pill", app_css)
+        self.assertIn("white-space: normal;", app_css)
+        self.assertIn(".mobile-tabbar", app_css)
+        self.assertIn(".nav-drop-item", app_css)
+        self.assertIn("justify-content: flex-start;", app_css)
+        self.assertIn(".watch-drawer", app_css)
+
+        self.assertIn("formatCount: formatCount", app_js)
+
+
 if __name__ == "__main__":
     unittest.main()

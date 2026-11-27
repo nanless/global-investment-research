@@ -96,6 +96,49 @@
   centerActiveScrollPill(".ch-switcher", ".ch-switch-pill.active");
 
   /* ------------------------------------------------------------------------
+     2B. Grouped Desktop Nav Dropdowns (.nav-group / .nav-drop-btn / .nav-dropdown)
+     ------------------------------------------------------------------------ */
+  const navGroups = Array.from(document.querySelectorAll(".nav-group"));
+
+  function closeAllNavDropdowns(exceptGroup) {
+    let closedAny = false;
+    navGroups.forEach(function (grp) {
+      if (exceptGroup && grp === exceptGroup) return;
+      const btn = grp.querySelector(".nav-drop-btn");
+      const menu = grp.querySelector(".nav-dropdown");
+      const wasOpen = (menu && !menu.hidden) || grp.classList.contains("open");
+      if (wasOpen) closedAny = true;
+      if (menu) menu.hidden = true;
+      if (btn) btn.setAttribute("aria-expanded", "false");
+      grp.classList.remove("open");
+    });
+    return closedAny;
+  }
+
+  if (navGroups.length > 0) {
+    navGroups.forEach(function (grp) {
+      const btn = grp.querySelector(".nav-drop-btn");
+      const menu = grp.querySelector(".nav-dropdown");
+      if (!btn || !menu) return;
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const willOpen = menu.hidden;
+        closeAllNavDropdowns(willOpen ? grp : null);
+        menu.hidden = !willOpen;
+        btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        grp.classList.toggle("open", willOpen);
+      });
+    });
+
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".nav-group")) {
+        closeAllNavDropdowns(null);
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------------------
      3. Font Size Scaler (A- / A+)
      ------------------------------------------------------------------------ */
   const MIN_SCALE = 0.88;
@@ -348,7 +391,7 @@
     }
   }
   if (cmdItems.length === 0) {
-    cmdItems = Array.from(document.querySelectorAll(".main-nav .nav-pill")).map(function (a) {
+    cmdItems = Array.from(document.querySelectorAll(".main-nav .nav-pill, .main-nav .nav-dropdown a")).map(function (a) {
       return {
         title: (a.textContent || "").trim(),
         meta: "导航",
@@ -929,18 +972,33 @@
     }
   }, { passive: true });
 
-  /* Global Keyboard Dispatcher (Cmd/Ctrl+K, Chart Shortcuts, Modal Escape/Tab) */
+  /* Global Keyboard Dispatcher (Cmd/Ctrl+K, Chart Shortcuts, Modal Escape/Tab/Arrows) */
+  function closeAllModalsAndDrawers() {
+    closeAllNavDropdowns(null);
+    closeTermPopover();
+    closeCmdPalette();
+    closeChartModal();
+    setTocDrawer(false);
+    if (typeof closeWatchDrawer === "function") closeWatchDrawer();
+    const dModal = document.getElementById("dossier-modal");
+    if (dModal) {
+      if (typeof dModal._girClose === "function") dModal._girClose();
+      else hideDialog(dModal);
+    }
+    const eModal = document.getElementById("etf-modal");
+    if (eModal) {
+      if (typeof eModal._girClose === "function") eModal._girClose();
+      else hideDialog(eModal);
+    }
+  }
+
   document.addEventListener("keydown", function (e) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && cmdPalette) {
       e.preventDefault();
       if (cmdPalette.classList.contains("open")) {
         closeCmdPalette();
       } else {
-        closeTermPopover();
-        closeChartModal();
-        setTocDrawer(false);
-        hideDialog(document.getElementById("dossier-modal"));
-        hideDialog(document.getElementById("etf-modal"));
+        closeAllModalsAndDrawers();
         openCmdPalette();
       }
       return;
@@ -968,12 +1026,15 @@
     if (dialog) {
       if (e.key === "Escape") {
         e.preventDefault();
-        closeTermPopover();
-        closeCmdPalette();
-        closeChartModal();
-        setTocDrawer(false);
-        hideDialog(document.getElementById("dossier-modal"));
-        hideDialog(document.getElementById("etf-modal"));
+        closeAllModalsAndDrawers();
+      } else if (
+        (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+        !e.metaKey && !e.ctrlKey && !e.altKey &&
+        !isEditableElement(document.activeElement) &&
+        typeof dialog._girStep === "function"
+      ) {
+        e.preventDefault();
+        dialog._girStep(e.key === "ArrowDown" ? 1 : -1);
       } else if (e.key === "Tab") {
         const targets = dialog.querySelectorAll(modalFocusable);
         const first = targets[0];
@@ -991,10 +1052,34 @@
       return;
     }
 
+    const watchDrawerEl = document.getElementById("watch-drawer");
+    if (e.key === "Escape" && watchDrawerEl && (!watchDrawerEl.hidden || watchDrawerEl.classList.contains("open"))) {
+      e.preventDefault();
+      if (typeof closeWatchDrawer === "function") closeWatchDrawer();
+      return;
+    }
+
     if (e.key === "Escape" && activeTermPop) {
       e.preventDefault();
       closeTermPopover();
       return;
+    }
+
+    if (e.key === "Escape") {
+      const openNavGrp = navGroups.find(function (g) {
+        const m = g.querySelector(".nav-dropdown");
+        return (m && !m.hidden) || g.classList.contains("open");
+      });
+      if (openNavGrp) {
+        e.preventDefault();
+        const focusedInside = openNavGrp.contains(document.activeElement);
+        closeAllNavDropdowns(null);
+        if (focusedInside) {
+          const dropBtn = openNavGrp.querySelector(".nav-drop-btn");
+          if (dropBtn) dropBtn.focus();
+        }
+        return;
+      }
     }
 
     if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditableElement(document.activeElement)) {
@@ -1175,9 +1260,150 @@
       .join("");
   }
 
+  function syncHeaderWatchCount() {
+    const cnt = WatchlistStore.getAll().length;
+    const badge = document.getElementById("hdr-watch-cnt");
+    if (badge) {
+      badge.textContent = String(cnt);
+    }
+    const openBtn = document.getElementById("watch-drawer-open");
+    if (openBtn) {
+      openBtn.classList.toggle("has-items", cnt > 0);
+      openBtn.setAttribute("aria-label", cnt > 0 ? "打开我的自选（" + cnt + " 项）" : "打开我的自选");
+    }
+  }
+
+  /* Global Right Slide-Over Watchlist Drawer (#watch-drawer) */
+  const watchDrawer = document.getElementById("watch-drawer");
+  const watchDrawerOpenBtn = document.getElementById("watch-drawer-open");
+  const watchDrawerBody = document.getElementById("watch-drawer-body");
+
+  function renderWatchDrawerBody() {
+    if (!watchDrawerBody) return;
+    const items = WatchlistStore.getAll();
+    const basePrefix = document.body.getAttribute("data-base-prefix") || "";
+    if (items.length === 0) {
+      watchDrawerBody.innerHTML =
+        '<div class="empty-state watch-drawer-empty" style="padding:28px 16px;">' +
+        '<div class="empty-title">☆ 自选清单暂无标的</div>' +
+        '<div class="empty-sub">在 231 股池、ETF 雷达或全屏 K 线终端点击任意标的旁的 <strong>☆</strong> 即可加入自选，跨页面自动同步（仅保存在本机浏览器）。</div>' +
+        '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px;">' +
+        '<a class="btn btn-sm" href="' + escHtml(basePrefix + "screener.html") + '">浏览 231 股池 →</a>' +
+        '<a class="btn btn-sm" href="' + escHtml(basePrefix + "etfs.html") + '">浏览 ETF 雷达 →</a>' +
+        '<a class="btn btn-sm" href="' + escHtml(basePrefix + "charts.html") + '">K 线终端 →</a>' +
+        "</div>" +
+        "</div>";
+      return;
+    }
+
+    const rowsHtml = items
+      .map(function (w) {
+        const name = w.name || w.code || w.id;
+        const code = w.code || "";
+        const kHref = basePrefix + "charts.html#sym=" + encodeURIComponent(w.klineId || w.id);
+        const isEtf = w.kind === "etf";
+        const isStock = w.kind === "stock";
+        const detailHref = isEtf
+          ? basePrefix + "etfs.html#q=" + encodeURIComponent(code || name)
+          : isStock
+          ? basePrefix + "screener.html#q=" + encodeURIComponent(code || name)
+          : "";
+        const detailLbl = isEtf ? "ETF 详情" : isStock ? "7 维档案" : "";
+        const kindLbl = isEtf ? "ETF" : isStock ? "个股" : "基准";
+        return (
+          '<div class="watch-drawer-item" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-warm);">' +
+          '<div style="min-width:0;display:flex;flex-direction:column;gap:5px;">' +
+          '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:13.5px;color:var(--ink);">' +
+          '<span class="etf-chan-tag">' + escHtml(kindLbl) + "</span>" +
+          "<strong>" + escHtml(name) + "</strong>" +
+          (code ? '<span class="code-tag">' + escHtml(code) + "</span>" : "") +
+          "</div>" +
+          '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;">' +
+          '<a class="kline-quick-btn" href="' + escHtml(kHref) + '">📈 K线</a>' +
+          (detailHref
+            ? '<a href="' + escHtml(detailHref) + '" style="font-weight:700;">' + escHtml(detailLbl) + " →</a>"
+            : "") +
+          "</div>" +
+          "</div>" +
+          '<button type="button" class="ctrl-btn watch-drawer-remove" data-watch-remove="1" ' +
+          'data-watch-kind="' + escHtml(w.kind) + '" data-watch-id="' + escHtml(w.id) + '" ' +
+          'data-watch-kline="' + escHtml(w.klineId) + '" data-watch-code="' + escHtml(code) + '" ' +
+          'data-watch-name="' + escHtml(name) + '" aria-label="从自选移除 ' + escHtml(name) + '">移除</button>' +
+          "</div>"
+        );
+      })
+      .join("");
+
+    watchDrawerBody.innerHTML =
+      '<div class="watch-drawer-meta" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);padding-bottom:6px;border-bottom:1px solid var(--border);">' +
+      '<span>已收藏 <strong style="color:var(--ink);">' + items.length + "</strong> 项标的</span>" +
+      '<a href="' + escHtml(basePrefix + "charts.html#group=watchlist") + '" style="font-weight:700;">在 K 线终端全屏查看 →</a>' +
+      "</div>" +
+      '<div class="watch-drawer-list" style="display:flex;flex-direction:column;gap:8px;">' + rowsHtml + "</div>" +
+      '<div class="watch-drawer-foot" style="display:flex;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--border);">' +
+      '<button type="button" class="btn btn-sm" data-watch-clear-all="1">清空全部自选</button>' +
+      "</div>";
+  }
+
+  function openWatchDrawer() {
+    if (!watchDrawer) return;
+    closeAllNavDropdowns(null);
+    closeTermPopover();
+    renderWatchDrawerBody();
+    watchDrawer.hidden = false;
+    void watchDrawer.offsetWidth;
+    showDialog(watchDrawer, watchDrawer.querySelector("[data-action='close-watch-drawer']"));
+    if (watchDrawerOpenBtn) watchDrawerOpenBtn.setAttribute("aria-expanded", "true");
+  }
+
+  function closeWatchDrawer() {
+    if (!watchDrawer) return;
+    watchDrawer.hidden = true;
+    hideDialog(watchDrawer);
+    if (watchDrawerOpenBtn) watchDrawerOpenBtn.setAttribute("aria-expanded", "false");
+  }
+
+  if (watchDrawerOpenBtn && watchDrawer) {
+    watchDrawerOpenBtn.addEventListener("click", function () {
+      if (watchDrawer.hidden) openWatchDrawer();
+      else closeWatchDrawer();
+    });
+  }
+  if (watchDrawer) {
+    document.querySelectorAll("[data-action='close-watch-drawer']").forEach(function (b) {
+      b.addEventListener("click", closeWatchDrawer);
+    });
+    watchDrawer.addEventListener("click", function (e) {
+      if (e.target === watchDrawer || e.target.classList.contains("watch-drawer-backdrop")) {
+        closeWatchDrawer();
+        return;
+      }
+      const rmBtn = e.target.closest("[data-watch-remove]");
+      if (rmBtn) {
+        e.preventDefault();
+        WatchlistStore.toggle({
+          kind: rmBtn.getAttribute("data-watch-kind") || "stock",
+          id: rmBtn.getAttribute("data-watch-id") || "",
+          klineId: rmBtn.getAttribute("data-watch-kline") || "",
+          code: rmBtn.getAttribute("data-watch-code") || "",
+          name: rmBtn.getAttribute("data-watch-name") || "",
+        });
+        return;
+      }
+      if (e.target.closest("[data-watch-clear-all]")) {
+        e.preventDefault();
+        WatchlistStore.clear();
+      }
+    });
+  }
+
   window.addEventListener("gir:watchlist-change", function () {
     WatchlistStore.syncButtons();
+    syncHeaderWatchCount();
     renderHomeWatchlistBar();
+    if (watchDrawer && !watchDrawer.hidden) {
+      renderWatchDrawerBody();
+    }
   });
   window.addEventListener("storage", function (e) {
     if (e.key === WATCH_STORAGE_KEY) {
@@ -1185,7 +1411,183 @@
     }
   });
   WatchlistStore.syncButtons();
+  syncHeaderWatchCount();
   renderHomeWatchlistBar();
+
+  /* ------------------------------------------------------------------------
+     9C. Collapsible Advanced Filter Tray ([data-toggle-adv-filter] / .filter-adv-tray)
+     ------------------------------------------------------------------------ */
+  function setAdvFilterTrayOpen(panel, open) {
+    if (!panel) return;
+    const tray = panel.querySelector(".filter-adv-tray");
+    const btn = panel.querySelector("[data-toggle-adv-filter], .filter-adv-btn");
+    if (!tray) return;
+    tray.hidden = !open;
+    if (btn) {
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.textContent = open ? "收起精细筛选 ▴" : "展开精细筛选 ▾";
+      btn.classList.toggle("active", !!open);
+    }
+  }
+
+  document.querySelectorAll("[data-toggle-adv-filter], .filter-adv-btn").forEach(function (btn) {
+    if (btn.dataset.advBound) return;
+    btn.dataset.advBound = "1";
+    btn.addEventListener("click", function () {
+      const panel = btn.closest(".filter-panel") || btn.parentElement;
+      const tray = panel ? panel.querySelector(".filter-adv-tray") : null;
+      if (!tray) return;
+      setAdvFilterTrayOpen(panel, tray.hidden);
+    });
+  });
+
+  /* ------------------------------------------------------------------------
+     9D. Client-Side Table & Card Paginator (25 rows/page + 显示全部)
+     ------------------------------------------------------------------------ */
+  function createPaginator(opts) {
+    const pageSize = opts.pageSize || 25;
+    const barEl = document.getElementById(opts.barId);
+    const tbodyEl = opts.tbodyEl;
+    const cardsEl = opts.cardsEl;
+    const cardSel = opts.cardSelector;
+    const scrollTargetEl = opts.scrollTargetEl || null;
+    const onPageChange = typeof opts.onPageChange === "function" ? opts.onPageChange : null;
+    const st = { page: 1, showAll: false, total: 0 };
+
+    function getBounds(total) {
+      if (!barEl || st.showAll || total <= pageSize) {
+        return { start: 0, end: total, totalPages: 1 };
+      }
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      if (st.page > totalPages) st.page = totalPages;
+      if (st.page < 1) st.page = 1;
+      const start = (st.page - 1) * pageSize;
+      const end = Math.min(total, start + pageSize);
+      return { start: start, end: end, totalPages: totalPages };
+    }
+
+    function applyClasses(total) {
+      const bounds = getBounds(total);
+      if (tbodyEl && total > 0) {
+        const trs = tbodyEl.querySelectorAll("tr");
+        for (let i = 0; i < trs.length; i++) {
+          trs[i].classList.toggle("pg-hidden", i < bounds.start || i >= bounds.end);
+        }
+      }
+      if (cardsEl && total > 0) {
+        const cards = cardsEl.querySelectorAll(cardSel);
+        for (let i = 0; i < cards.length; i++) {
+          cards[i].classList.toggle("pg-hidden", i < bounds.start || i >= bounds.end);
+        }
+      }
+      return bounds;
+    }
+
+    function renderBar(total) {
+      st.total = total;
+      if (!barEl) return;
+      if (total <= pageSize) {
+        barEl.hidden = true;
+        barEl.innerHTML = "";
+        return;
+      }
+      const bounds = getBounds(total);
+      barEl.hidden = false;
+      const infoTxt = st.showAll
+        ? "第 1–" + total + " / 共 " + total + " 项"
+        : "第 " + (bounds.start + 1) + "–" + bounds.end + " / 共 " + total + " 项";
+      const ctrlHtml = st.showAll
+        ? '<button type="button" class="pg-btn pg-all-btn active" data-pg-act="collapse">恢复分页</button>'
+        : '<button type="button" class="pg-btn" data-pg-act="prev"' +
+          (st.page <= 1 ? " disabled" : "") +
+          ">上一页</button>" +
+          '<span class="pg-info" style="padding:0 4px;">' + st.page + " / " + bounds.totalPages + "</span>" +
+          '<button type="button" class="pg-btn" data-pg-act="next"' +
+          (st.page >= bounds.totalPages ? " disabled" : "") +
+          ">下一页</button>" +
+          '<button type="button" class="pg-btn pg-all-btn" data-pg-act="show-all">显示全部 (' +
+          total +
+          ")</button>";
+      barEl.innerHTML =
+        '<span class="pg-info">' + escHtml(infoTxt) + "</span>" +
+        '<div class="pg-actions" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' + ctrlHtml + "</div>";
+    }
+
+    function scrollToListTop() {
+      const target = scrollTargetEl || (tbodyEl && tbodyEl.closest(".screener-table-wrap, .etf-table-wrap")) || barEl;
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      const hdr = document.querySelector(".site-header");
+      const hdrH = hdr ? hdr.offsetHeight : 64;
+      if (rect.top < hdrH) {
+        const top = window.scrollY + rect.top - hdrH - 12;
+        window.scrollTo({ top: Math.max(0, top), behavior: prefersReducedMotion ? "auto" : "smooth" });
+      }
+    }
+
+    if (barEl && !barEl.dataset.pgBound) {
+      barEl.dataset.pgBound = "1";
+      barEl.addEventListener("click", function (e) {
+        const btn = e.target.closest("[data-pg-act]");
+        if (!btn || btn.disabled) return;
+        const act = btn.getAttribute("data-pg-act");
+        const totalPages = Math.max(1, Math.ceil(st.total / pageSize));
+        if (act === "prev" && st.page > 1) {
+          st.page -= 1;
+          const b = applyClasses(st.total);
+          renderBar(st.total);
+          if (onPageChange) onPageChange(b, st.total, st.showAll);
+          scrollToListTop();
+        } else if (act === "next" && st.page < totalPages) {
+          st.page += 1;
+          const b = applyClasses(st.total);
+          renderBar(st.total);
+          if (onPageChange) onPageChange(b, st.total, st.showAll);
+          scrollToListTop();
+        } else if (act === "show-all") {
+          st.showAll = true;
+          const b = applyClasses(st.total);
+          renderBar(st.total);
+          if (onPageChange) onPageChange(b, st.total, st.showAll);
+        } else if (act === "collapse") {
+          st.showAll = false;
+          st.page = 1;
+          const b = applyClasses(st.total);
+          renderBar(st.total);
+          if (onPageChange) onPageChange(b, st.total, st.showAll);
+          scrollToListTop();
+        }
+      });
+    }
+
+    function formatCount(filteredLen, totalAll, unitLabel) {
+      if (filteredLen <= 0) {
+        return "显示 0 / " + totalAll + " " + unitLabel;
+      }
+      const b = getBounds(filteredLen);
+      if (barEl && !st.showAll && filteredLen > pageSize) {
+        if (filteredLen === totalAll) {
+          return "显示第 " + (b.start + 1) + "–" + b.end + " / 共 " + totalAll + " " + unitLabel;
+        }
+        return "显示第 " + (b.start + 1) + "–" + b.end + " / 匹配 " + filteredLen + "（共 " + totalAll + " " + unitLabel + "）";
+      }
+      return "显示 " + filteredLen + " / " + totalAll + " " + unitLabel;
+    }
+
+    return {
+      reset: function () {
+        st.page = 1;
+        st.showAll = false;
+      },
+      getBounds: getBounds,
+      formatCount: formatCount,
+      apply: function (total) {
+        applyClasses(total);
+        renderBar(total);
+      },
+      renderBar: renderBar,
+    };
+  }
 
   /* ------------------------------------------------------------------------
      10. Supercharged 231-Stock Global Screener (#screener-data)
@@ -1226,6 +1628,19 @@
     const cardsEl = document.getElementById("scr-cards");
     const resetBtn = document.getElementById("scr-reset");
     const hasData = allStocks.length > 0;
+    let currentFilteredStocks = allStocks.slice();
+    const scrPager = createPaginator({
+      barId: "scr-pg-bar",
+      tbodyEl: tbody,
+      cardsEl: cardsEl,
+      cardSelector: ".scr-mcard, .stock-card",
+      scrollTargetEl: document.querySelector("#scr-view-pool .screener-bar") || countEl,
+      onPageChange: function () {
+        if (countEl) {
+          countEl.textContent = scrPager.formatCount(currentFilteredStocks.length, allStocks.length, "家龙头公司");
+        }
+      },
+    });
 
     const COLOR_ORDER = { g: 1, b: 2, y: 3, r: 4 };
     const COLOR_MARK = { g: "●", b: "◆", y: "▲", r: "×" };
@@ -1427,6 +1842,17 @@
         state.preset = "all";
       }
       if (qInput) qInput.value = state.q;
+      const scrAdvPanel = document.querySelector("#scr-view-pool .filter-panel") || document.querySelector(".filter-panel");
+      if (scrAdvPanel) {
+        const advTray = scrAdvPanel.querySelector(".filter-adv-tray");
+        if (advTray) {
+          const hasAdvHash =
+            state.sectors.size > 0 ||
+            (state.color !== "all" && !!advTray.querySelector("[data-filter-color]")) ||
+            (state.market !== "all" && !!advTray.querySelector("[data-filter-market]"));
+          if (hasAdvHash) setAdvFilterTrayOpen(scrAdvPanel, true);
+        }
+      }
       return true;
     }
 
@@ -1529,8 +1955,9 @@
       renderScreener(true);
     }
 
-    function renderScreener(syncHash) {
+    function renderScreener(syncHash, keepPage) {
       if (!hasData) return;
+      if (!keepPage) scrPager.reset();
       syncControlStates();
       renderActiveFilters();
       if (syncHash !== false) syncUrlHash();
@@ -1575,10 +2002,12 @@
           return sa.localeCompare(sb, "zh-Hans-CN", { numeric: true }) * dir;
         });
       }
+      currentFilteredStocks = rows;
       syncSortHeaders();
 
+      const pgBounds = scrPager.getBounds(rows.length);
       if (countEl) {
-        countEl.textContent = "显示 " + rows.length + " / " + allStocks.length + " 家龙头公司";
+        countEl.textContent = scrPager.formatCount(rows.length, allStocks.length, "家龙头公司");
       }
 
       if (tbody) {
@@ -1591,7 +2020,8 @@
             "</div></td></tr>";
         } else {
           tbody.innerHTML = rows
-            .map(function (st) {
+            .map(function (st, idx) {
+              const pgCls = idx < pgBounds.start || idx >= pgBounds.end ? " pg-hidden" : "";
               const mark = COLOR_MARK[st.color] || "●";
               const dKey = st.market + ":" + st.code;
               const isStar = WatchlistStore.has(dKey) || WatchlistStore.has("stk_" + st.code);
@@ -1605,7 +2035,7 @@
                   ' <button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(dKey) + '" data-open-tab="kline" title="查看交互 K 线">📈 K线</button>'
                 : "";
               return (
-                '<tr class="row-' + escHtml(st.color) + '" data-market="' + escHtml(st.market) + '">' +
+                '<tr class="row-' + escHtml(st.color) + pgCls + '" data-market="' + escHtml(st.market) + '">' +
                 '<td class="col-sticky"><span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span></td>" +
                 '<td>' + starBtn + ' <strong>' + escHtml(st.name) + '</strong> <span class="code-tag">' + escHtml(st.code) + "</span></td>" +
                 '<td class="nw">' + escHtml(st.sector) + "</td>" +
@@ -1630,7 +2060,8 @@
             "</div>";
         } else {
           cardsEl.innerHTML = rows
-            .map(function (st) {
+            .map(function (st, idx) {
+              const pgCls = idx < pgBounds.start || idx >= pgBounds.end ? " pg-hidden" : "";
               const mark = COLOR_MARK[st.color] || "●";
               const divAh = formatDivAhCell(st);
               const hasDivAh = divAh.indexOf("val-chips") !== -1;
@@ -1642,7 +2073,7 @@
                 'data-watch-code="' + escHtml(st.code) + '" data-watch-name="' + escHtml(st.name) + '" aria-label="切换自选">' +
                 (isStar ? "★" : "☆") + "</button>";
               return (
-                '<div class="stock-card sc-' + escHtml(st.color) + '">' +
+                '<div class="stock-card scr-mcard sc-' + escHtml(st.color) + pgCls + '">' +
                 '<div class="sc-top">' +
                 '<div class="sc-title">' +
                 starBtn +
@@ -1675,6 +2106,7 @@
             .join("");
         }
       }
+      scrPager.renderBar(rows.length);
     }
 
     let searchTimer = 0;
@@ -1832,6 +2264,8 @@
     ];
 
     let activeDossierChart = null;
+    let currentDossierKey = "";
+    let currentDossierTab = "dossier";
     function destroyDossierChart() {
       if (activeDossierChart) {
         try { activeDossierChart.destroy(); } catch (_) {}
@@ -1839,13 +2273,46 @@
       }
     }
 
-    function openStockDossier(key, initialTab) {
+    function getStockNavList() {
+      const filtered = currentFilteredStocks.filter(function (s) { return !!(s && s.dossier); });
+      if (filtered.some(function (s) { return s.market + ":" + s.code === currentDossierKey; })) {
+        return filtered;
+      }
+      return allStocks.filter(function (s) { return !!(s && s.dossier); });
+    }
+
+    function syncStockStepButtons() {
+      if (!dossierModal) return;
+      const navList = getStockNavList();
+      const idx = navList.findIndex(function (s) { return s.market + ":" + s.code === currentDossierKey; });
+      const prevBtn = dossierModal.querySelector('[data-drawer-step="-1"]');
+      const nextBtn = dossierModal.querySelector('[data-drawer-step="1"]');
+      const posEl = dossierModal.querySelector("[data-drawer-pos]");
+      if (prevBtn) prevBtn.disabled = idx <= 0;
+      if (nextBtn) nextBtn.disabled = idx < 0 || idx >= navList.length - 1;
+      if (posEl) posEl.textContent = idx >= 0 ? (idx + 1) + " / " + navList.length : "";
+    }
+
+    function stepStockDossier(delta) {
+      if (!dossierModal || !dossierModal.classList.contains("open")) return;
+      const navList = getStockNavList();
+      if (navList.length <= 1) return;
+      const idx = navList.findIndex(function (s) { return s.market + ":" + s.code === currentDossierKey; });
+      if (idx < 0) return;
+      const nextIdx = idx + delta;
+      if (nextIdx < 0 || nextIdx >= navList.length) return;
+      const nextSt = navList[nextIdx];
+      openStockDossier(nextSt.market + ":" + nextSt.code, currentDossierTab, true);
+    }
+
+    function openStockDossier(key, initialTab, keepOpen) {
       const st = stockByKey.get(key);
       if (!st || !st.dossier || !dossierModal) return;
       destroyDossierChart();
       const d = st.dossier;
       const mark = COLOR_MARK[st.color] || "●";
       const dKey = st.market + ":" + st.code;
+      currentDossierKey = dKey;
       const klineSym = "stk_" + st.code;
       const isStar = WatchlistStore.has(dKey) || WatchlistStore.has(klineSym);
       if (dossierTitle) dossierTitle.textContent = st.name + " (" + st.code + ")";
@@ -1867,6 +2334,7 @@
           (isStar ? "★" : "☆") + "</button>";
       }
       const startTab = initialTab === "kline" ? "kline" : "dossier";
+      currentDossierTab = startTab;
       if (dossierBody) {
         const dossierGridHtml =
           '<div class="dossier-grid">' +
@@ -1889,6 +2357,7 @@
           '<div class="modal-tab-pane" data-modal-pane="dossier"' + (startTab === "kline" ? " hidden" : "") + ">" + dossierGridHtml + "</div>" +
           '<div class="modal-tab-pane" data-modal-pane="kline"' + (startTab !== "kline" ? " hidden" : "") + ">" +
           '<div class="kline-mount" id="dossier-kline-mount"></div></div>';
+        dossierBody.scrollTop = 0;
 
         function mountDossierKline() {
           const mountEl = document.getElementById("dossier-kline-mount");
@@ -1910,6 +2379,7 @@
         dossierBody.querySelectorAll("[data-modal-tab]").forEach(function (tBtn) {
           tBtn.addEventListener("click", function () {
             const target = tBtn.getAttribute("data-modal-tab");
+            currentDossierTab = target === "kline" ? "kline" : "dossier";
             dossierBody.querySelectorAll("[data-modal-tab]").forEach(function (b) {
               b.classList.toggle("active", b === tBtn);
             });
@@ -1931,15 +2401,27 @@
         const bmPrefix = st.benchmark_time ? "主表基线（旗舰基准）：" + st.benchmark_time + " ｜ " : "";
         dossierFootDate.textContent = bmPrefix + "7 维档案刷新日：" + (d.updated_at || fallbackDate);
       }
-      showDialog(dossierModal);
+      syncStockStepButtons();
+      if (!keepOpen || !dossierModal.classList.contains("open")) {
+        showDialog(dossierModal);
+      }
     }
 
     if (dossierModal) {
+      dossierModal._girStep = stepStockDossier;
+      dossierModal._girClose = function () { destroyDossierChart(); hideDialog(dossierModal); };
       document.querySelectorAll("[data-action='close-dossier']").forEach(function (b) {
-        b.addEventListener("click", function () { destroyDossierChart(); hideDialog(dossierModal); });
+        b.addEventListener("click", dossierModal._girClose);
       });
       dossierModal.addEventListener("click", function (e) {
-        if (e.target === dossierModal) { destroyDossierChart(); hideDialog(dossierModal); }
+        const stepBtn = e.target.closest("[data-drawer-step]");
+        if (stepBtn && !stepBtn.disabled) {
+          e.preventDefault();
+          const delta = parseInt(stepBtn.getAttribute("data-drawer-step") || "0", 10);
+          if (delta) stepStockDossier(delta);
+          return;
+        }
+        if (e.target === dossierModal) { dossierModal._girClose(); }
       });
     }
 
@@ -1953,6 +2435,15 @@
         const dBtn = e.target.closest("[data-dossier-key]");
         if (dBtn) {
           openStockDossier(dBtn.getAttribute("data-dossier-key"), dBtn.getAttribute("data-open-tab") || "dossier");
+          return;
+        }
+        if (container === tbody && !e.target.closest("button, a, input, select, label, .star-btn")) {
+          if (window.getSelection && String(window.getSelection()).trim()) return;
+          const tr = e.target.closest("tr");
+          const rowBtn = tr ? tr.querySelector("[data-dossier-key]") : null;
+          if (rowBtn) {
+            openStockDossier(rowBtn.getAttribute("data-dossier-key"), "dossier");
+          }
         }
       });
     });
@@ -2081,7 +2572,7 @@
     }
 
     window.addEventListener("gir:watchlist-change", function () {
-      if (state.preset === "watchlist") renderScreener(false);
+      if (state.preset === "watchlist") renderScreener(false, true);
     });
 
     window.addEventListener("hashchange", function () {
@@ -2726,7 +3217,7 @@
     return "role-watch";
   }
 
-  function createEtfModalController(etfList) {
+  function createEtfModalController(etfList, getNavList) {
     const etfModal = document.getElementById("etf-modal");
     const etfModalTitle = document.getElementById("etf-modal-title");
     const etfModalSub = document.getElementById("etf-modal-sub");
@@ -2738,6 +3229,8 @@
     });
 
     let activeEtfChart = null;
+    let currentEtfCode = "";
+    let currentEtfTab = "detail";
     function destroyEtfChart() {
       if (activeEtfChart) {
         try { activeEtfChart.destroy(); } catch (_) {}
@@ -2745,10 +3238,42 @@
       }
     }
 
-    function openEtfModal(code, initialTab) {
+    function resolveEtfNavList() {
+      const candidate = typeof getNavList === "function" ? getNavList() : etfList;
+      if (Array.isArray(candidate) && candidate.some(function (x) { return x && String(x.code) === currentEtfCode; })) {
+        return candidate;
+      }
+      return etfList;
+    }
+
+    function syncEtfStepButtons() {
+      if (!etfModal) return;
+      const navList = resolveEtfNavList();
+      const idx = navList.findIndex(function (x) { return x && String(x.code) === currentEtfCode; });
+      const prevBtn = etfModal.querySelector('[data-drawer-step="-1"]');
+      const nextBtn = etfModal.querySelector('[data-drawer-step="1"]');
+      const posEl = etfModal.querySelector("[data-drawer-pos]");
+      if (prevBtn) prevBtn.disabled = idx <= 0;
+      if (nextBtn) nextBtn.disabled = idx < 0 || idx >= navList.length - 1;
+      if (posEl) posEl.textContent = idx >= 0 ? (idx + 1) + " / " + navList.length : "";
+    }
+
+    function stepEtf(delta) {
+      if (!etfModal || !etfModal.classList.contains("open")) return;
+      const navList = resolveEtfNavList();
+      if (navList.length <= 1) return;
+      const idx = navList.findIndex(function (x) { return x && String(x.code) === currentEtfCode; });
+      if (idx < 0) return;
+      const nextIdx = idx + delta;
+      if (nextIdx < 0 || nextIdx >= navList.length) return;
+      openEtfModal(navList[nextIdx].code, currentEtfTab, true);
+    }
+
+    function openEtfModal(code, initialTab, keepOpen) {
       const it = etfByCode.get(String(code || ""));
       if (!it || !etfModal) return;
       destroyEtfChart();
+      currentEtfCode = String(it.code);
       const basePrefix = document.body.getAttribute("data-base-prefix") || "";
       const klineSym = "etf_" + it.code;
       const isStar = WatchlistStore.has(it.code) || WatchlistStore.has(klineSym);
@@ -2771,6 +3296,7 @@
           (isStar ? "★" : "☆") + "</button>";
       }
       const startTab = initialTab === "kline" ? "kline" : "detail";
+      currentEtfTab = startTab;
       if (etfModalBody) {
         const blocks = [
           ["① 核心投资逻辑与定位", it.thesis_deep],
@@ -2802,6 +3328,7 @@
           '<div class="modal-tab-pane" data-etf-modal-pane="detail"' + (startTab === "kline" ? " hidden" : "") + ">" + detailGridHtml + "</div>" +
           '<div class="modal-tab-pane" data-etf-modal-pane="kline"' + (startTab !== "kline" ? " hidden" : "") + ">" +
           '<div class="kline-mount" id="etf-kline-mount"></div></div>';
+        etfModalBody.scrollTop = 0;
 
         function mountEtfKline() {
           const mountEl = document.getElementById("etf-kline-mount");
@@ -2821,6 +3348,7 @@
         etfModalBody.querySelectorAll("[data-etf-modal-tab]").forEach(function (tBtn) {
           tBtn.addEventListener("click", function () {
             const target = tBtn.getAttribute("data-etf-modal-tab");
+            currentEtfTab = target === "kline" ? "kline" : "detail";
             etfModalBody.querySelectorAll("[data-etf-modal-tab]").forEach(function (b) {
               b.classList.toggle("active", b === tBtn);
             });
@@ -2836,16 +3364,34 @@
           window.requestAnimationFrame(mountEtfKline);
         }
       }
-      showDialog(etfModal);
+      etfModal._girStep = stepEtf;
+      etfModal._girClose = function () { destroyEtfChart(); hideDialog(etfModal); };
+      syncEtfStepButtons();
+      if (!keepOpen || !etfModal.classList.contains("open")) {
+        showDialog(etfModal);
+      }
     }
 
     if (etfModal && !etfModal.dataset.boundClose) {
       etfModal.dataset.boundClose = "1";
       document.querySelectorAll("[data-action='close-etf']").forEach(function (b) {
-        b.addEventListener("click", function () { destroyEtfChart(); hideDialog(etfModal); });
+        b.addEventListener("click", function () {
+          if (typeof etfModal._girClose === "function") etfModal._girClose();
+          else hideDialog(etfModal);
+        });
       });
       etfModal.addEventListener("click", function (e) {
-        if (e.target === etfModal) { destroyEtfChart(); hideDialog(etfModal); }
+        const stepBtn = e.target.closest("[data-drawer-step]");
+        if (stepBtn && !stepBtn.disabled) {
+          e.preventDefault();
+          const delta = parseInt(stepBtn.getAttribute("data-drawer-step") || "0", 10);
+          if (delta && typeof etfModal._girStep === "function") etfModal._girStep(delta);
+          return;
+        }
+        if (e.target === etfModal) {
+          if (typeof etfModal._girClose === "function") etfModal._girClose();
+          else hideDialog(etfModal);
+        }
       });
     }
 
@@ -2885,7 +3431,8 @@
       allEtfs = [];
     }
 
-    const openEtfModal = createEtfModalController(allEtfs);
+    let currentFilteredEtfs = allEtfs.slice();
+    const openEtfModal = createEtfModalController(allEtfs, function () { return currentFilteredEtfs; });
     const etfState = {
       q: "",
       market: "all",
@@ -2903,6 +3450,18 @@
     const etfCount = document.getElementById("etf-count");
     const etfTbody = document.getElementById("etf-tbody");
     const etfCardsEl = document.getElementById("etf-cards");
+    const etfPager = createPaginator({
+      barId: "etf-pg-bar",
+      tbodyEl: etfTbody,
+      cardsEl: etfCardsEl,
+      cardSelector: ".etf-mcard, .etf-card",
+      scrollTargetEl: document.querySelector(".screener-bar") || etfCount,
+      onPageChange: function () {
+        if (etfCount) {
+          etfCount.textContent = etfPager.formatCount(currentFilteredEtfs.length, allEtfs.length, "只重点 ETF");
+        }
+      },
+    });
     const etfStatOrthoTiles = Array.from(document.querySelectorAll("[data-etf-stat-ortho]"));
     const etfStatTiles = Array.from(document.querySelectorAll("[data-etf-stat-market]"));
     const etfMktBtns = Array.from(document.querySelectorAll("[data-etf-market]"));
@@ -2981,7 +3540,8 @@
       renderEtfs(true);
     }
 
-    function renderEtfs(syncHash) {
+    function renderEtfs(syncHash, keepPage) {
+      if (!keepPage) etfPager.reset();
       if (syncHash !== false) syncEtfUrlHash();
 
       etfMktBtns.forEach(function (b) {
@@ -3099,10 +3659,12 @@
           return String(a[key] || "").localeCompare(String(b[key] || ""), "zh-Hans-CN", { numeric: true }) * dir;
         });
       }
+      currentFilteredEtfs = rows;
       syncEtfSortHeaders();
 
+      const etfPgBounds = etfPager.getBounds(rows.length);
       if (etfCount) {
-        etfCount.textContent = "显示 " + rows.length + " / " + allEtfs.length + " 只重点 ETF";
+        etfCount.textContent = etfPager.formatCount(rows.length, allEtfs.length, "只重点 ETF");
       }
       const etfQdiiPanel = document.getElementById("etf-qdii-panel");
       if (etfQdiiPanel) {
@@ -3118,7 +3680,8 @@
             '<button type="button" class="btn btn-sm" data-action="etf-reset-all">清空所有筛选条件</button>' +
             "</div></td></tr>";
         } else {
-          etfTbody.innerHTML = rows.map(function (it) {
+          etfTbody.innerHTML = rows.map(function (it, idx) {
+            const pgCls = idx < etfPgBounds.start || idx >= etfPgBounds.end ? " pg-hidden" : "";
             const dispName = cleanEtfDisplayText(it.name);
             const dispCat = cleanEtfDisplayText(it.category);
             const kSym = "etf_" + it.code;
@@ -3130,7 +3693,7 @@
               'data-watch-code="' + escHtml(it.code) + '" data-watch-name="' + escHtml(dispName) + '" aria-label="切换自选">' +
               (isStar ? "★" : "☆") + "</button>";
             return (
-              "<tr>" +
+              "<tr" + (pgCls ? ' class="pg-hidden"' : "") + ">" +
               '<td><div>' + starBtn + ' <strong>' + escHtml(dispName) + '</strong></div><div><span class="code-tag">' + escHtml(it.code) + '</span> <span class="etf-chan-tag">' + escHtml(dispCat) + "</span></div></td>" +
               '<td><div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + '</span></div><div><span class="etf-chan-tag">' + escHtml(it.channel) + "</span>" + (orthoTag ? " " + orthoTag : "") + "</div></td>" +
               "<td><div>" + escHtml(it.tracking_index) + '</div><div class="sec-sub">' + escHtml(it.yield_or_pe) + "</div></td>" +
@@ -3153,7 +3716,8 @@
             '<button type="button" class="btn btn-sm" data-action="etf-reset-all">清空所有筛选条件</button>' +
             "</div>";
         } else {
-          etfCardsEl.innerHTML = rows.map(function (it) {
+          etfCardsEl.innerHTML = rows.map(function (it, idx) {
+            const pgCls = idx < etfPgBounds.start || idx >= etfPgBounds.end ? " pg-hidden" : "";
             const dispName = cleanEtfDisplayText(it.name);
             const kSym = "etf_" + it.code;
             const isStar = WatchlistStore.has(it.code) || WatchlistStore.has(kSym);
@@ -3164,7 +3728,7 @@
               'data-watch-code="' + escHtml(it.code) + '" data-watch-name="' + escHtml(dispName) + '" aria-label="切换自选">' +
               (isStar ? "★" : "☆") + "</button>";
             return (
-              '<div class="etf-card">' +
+              '<div class="etf-card etf-mcard' + pgCls + '">' +
               '<div class="etf-card-top">' +
               '<div>' + starBtn + ' <span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(dispName) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
               '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
@@ -3178,6 +3742,7 @@
           }).join("");
         }
       }
+      etfPager.renderBar(rows.length);
     }
 
     let etfTimer = 0;
@@ -3321,7 +3886,18 @@
           return;
         }
         const btn = e.target.closest("[data-etf-code]");
-        if (btn) openEtfModal(btn.getAttribute("data-etf-code"), btn.getAttribute("data-open-tab") || "detail");
+        if (btn) {
+          openEtfModal(btn.getAttribute("data-etf-code"), btn.getAttribute("data-open-tab") || "detail");
+          return;
+        }
+        if (container === etfTbody && !e.target.closest("button, a, input, select, label, .star-btn")) {
+          if (window.getSelection && String(window.getSelection()).trim()) return;
+          const tr = e.target.closest("tr");
+          const rowBtn = tr ? tr.querySelector("[data-etf-code]") : null;
+          if (rowBtn) {
+            openEtfModal(rowBtn.getAttribute("data-etf-code"), "detail");
+          }
+        }
       });
     });
 
@@ -3361,6 +3937,18 @@
         }
       });
       if (etfSearch) etfSearch.value = etfState.q;
+      const etfAdvPanel = (etfSearch && etfSearch.closest(".filter-panel")) || document.querySelector(".filter-panel");
+      if (etfAdvPanel) {
+        const advTray = etfAdvPanel.querySelector(".filter-adv-tray");
+        if (advTray) {
+          const hasAdvHash =
+            etfState.assetClass !== "all" ||
+            etfState.region !== "all" ||
+            etfState.channel !== "all" ||
+            (etfState.market !== "all" && !!advTray.querySelector("[data-etf-market]"));
+          if (hasAdvHash) setAdvFilterTrayOpen(etfAdvPanel, true);
+        }
+      }
     }
 
     if (allEtfs.length > 0) {
@@ -3368,7 +3956,7 @@
       renderEtfs(false);
       root.classList.add("etf-enhanced");
       window.addEventListener("gir:watchlist-change", function () {
-        if (etfState.preset === "watchlist") renderEtfs(false);
+        if (etfState.preset === "watchlist") renderEtfs(false, true);
       });
       window.addEventListener("hashchange", function () {
         applyEtfHash();
@@ -3780,13 +4368,21 @@
     if (!sec) return;
     const regionBtns = Array.from(sec.querySelectorAll(".pcal-filter-row [data-pcal-region]"));
     const tierBtn = sec.querySelector(".pcal-filter-row [data-pcal-tier]");
+    const onlyMajorEl = document.getElementById("pcal-only-major");
+    const isMajorCheckbox = !!(onlyMajorEl && onlyMajorEl.tagName === "INPUT" && onlyMajorEl.type === "checkbox");
+    const isSameTierBtn = !!(tierBtn && onlyMajorEl && tierBtn === onlyMajorEl);
     const toggle30dBtn = document.getElementById("pcal-toggle-30d");
     const items = Array.from(sec.querySelectorAll(".pcal-event-item"));
     const emptyEl = document.getElementById("pcal-empty");
     const countEl = document.getElementById("pcal-count-status");
 
     let activeRegion = "all";
-    let onlyTopTier = false;
+    let onlyTopTier = isMajorCheckbox
+      ? !!onlyMajorEl.checked
+      : !!(
+          (onlyMajorEl && (onlyMajorEl.classList.contains("active") || onlyMajorEl.getAttribute("aria-pressed") === "true")) ||
+          (tierBtn && (tierBtn.classList.contains("active") || tierBtn.getAttribute("aria-pressed") === "true"))
+        );
     let show30d = !toggle30dBtn || toggle30dBtn.getAttribute("data-expanded") === "1";
 
     function matchesRegion(itemReg, filterReg) {
@@ -3808,17 +4404,34 @@
         tierBtn.classList.toggle("active", onlyTopTier);
         tierBtn.setAttribute("aria-pressed", onlyTopTier ? "true" : "false");
       }
+      if (onlyMajorEl && !isSameTierBtn) {
+        if (isMajorCheckbox) {
+          onlyMajorEl.checked = onlyTopTier;
+        } else {
+          onlyMajorEl.classList.toggle("active", onlyTopTier);
+          onlyMajorEl.setAttribute("aria-pressed", onlyTopTier ? "true" : "false");
+        }
+      }
 
-      const targetTier = tierBtn ? (tierBtn.getAttribute("data-pcal-tier") || "P0") : "P0";
+      const targetTier =
+        (tierBtn && tierBtn.getAttribute("data-pcal-tier")) ||
+        (onlyMajorEl && onlyMajorEl.getAttribute("data-pcal-tier")) ||
+        "P0";
+      const targetTierLow = String(targetTier).trim().toLowerCase();
       let shown = 0;
       let hidden30d = 0;
 
       items.forEach(function (el) {
         const reg = el.getAttribute("data-pcal-region") || "";
         const tier = el.getAttribute("data-pcal-tier") || "";
+        const tierLow = tier.trim().toLowerCase();
         const horizon = el.getAttribute("data-pcal-horizon") || "14d";
         const okReg = matchesRegion(reg, activeRegion);
-        const okTier = !onlyTopTier || tier === targetTier;
+        const okTier =
+          !onlyTopTier ||
+          tier === targetTier ||
+          (targetTierLow === "p0" && tierLow === "major") ||
+          (targetTierLow === "major" && tierLow === "p0");
         const okBase = okReg && okTier;
         if (okBase && horizon === "30d" && !show30d) {
           hidden30d++;
@@ -3852,7 +4465,7 @@
         if (shown === 0) {
           emptyEl.textContent = hidden30d > 0
             ? "未来 14 天暂无匹配日程，15–30 天前瞻区有 " + hidden30d + " 项，可点击下方按钮展开。"
-            : "当前筛选条件下暂无匹配日程，试试切换地区或取消「仅看一级关键」。";
+            : "当前筛选条件下暂无匹配日程，试试切换地区或取消「只看重磅」。";
         }
       }
     }
@@ -3868,6 +4481,19 @@
         onlyTopTier = !onlyTopTier;
         applyFilter();
       });
+    }
+    if (onlyMajorEl && !isSameTierBtn) {
+      if (isMajorCheckbox) {
+        onlyMajorEl.addEventListener("change", function () {
+          onlyTopTier = !!onlyMajorEl.checked;
+          applyFilter();
+        });
+      } else {
+        onlyMajorEl.addEventListener("click", function () {
+          onlyTopTier = !onlyTopTier;
+          applyFilter();
+        });
+      }
     }
     if (toggle30dBtn) {
       toggle30dBtn.addEventListener("click", function () {

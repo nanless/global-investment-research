@@ -2451,6 +2451,51 @@ def _term_tip(term_key: str, label: str) -> str:
 _GLOSSARY_SKIP_TAGS: frozenset[str] = frozenset(
     {"svg", "a", "button", "h1", "h2", "h3", "h4", "code", "pre", "script", "style", "summary", "title", "option", "textarea"}
 )
+_GLOSSARY_VOID_TAGS: frozenset[str] = frozenset(
+    {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+)
+_GLOSSARY_SKIP_CLASSES: frozenset[str] = frozenset(
+    {
+        "ch-badge",
+        "ch-pill",
+        "ch-status",
+        "ch-bucket-pill",
+        "ch-hnw-badge",
+        "ch-num",
+        "ch-kpi",
+        "ch-kpi-lbl",
+        "ch-kpi-val",
+        "ch-detail-hero",
+        "channels-mutex",
+        "etf-lock-banner",
+        "lamp-pill",
+        "meta-pill",
+        "live-pill",
+        "compact-alert-pill",
+        "stance-pill",
+        "cover-tag",
+        "cover-kpi",
+        "cover-banner",
+        "exec-masthead",
+        "kpi-card",
+        "kpi-grid",
+        "status-chip",
+        "prem-pill",
+        "role-pill",
+        "etf-chan-tag",
+        "etf-ortho-tag",
+        "code-tag",
+        "mkt-badge",
+        "session-pill",
+        "ed-pill",
+        "pcal-tier-pill",
+        "pcal-region-tag",
+        "pcal-countdown",
+        "doc-meta-pills",
+        "breadcrumb",
+    }
+)
+_GLOSSARY_CLASS_ATTR_RE = re.compile(r'\bclass\s*=\s*(?:"([^"]*)"|\'([^\']*)\')', flags=re.IGNORECASE)
 _GLOSSARY_RAW_BLOCKS_RE = re.compile(
     r"(<(?:svg|script|style)\b[^>]*>.*?</(?:svg|script|style)>)",
     flags=re.DOTALL | re.IGNORECASE,
@@ -2538,8 +2583,10 @@ def inject_glossary_tips(html_str: str) -> str:
             out_blocks.append(block)
             continue
         tokens = _GLOSSARY_TOKEN_RE.split(block)
+        # Stack entries: (tag_name, is_skip_tag, is_skip_class, is_collapsed_details)
+        elem_stack: list[tuple[str, bool, bool, bool]] = []
         skip_depth = 0
-        collapsed_details_stack: list[bool] = []
+        skip_cls_depth = 0
         collapsed_details_depth = 0
         out_tokens: list[str] = []
         for tok in tokens:
@@ -2553,26 +2600,37 @@ def inject_glossary_tips(html_str: str) -> str:
                 if tm:
                     is_close = bool(tm.group(1))
                     tname = tm.group(2).lower()
-                    is_self_close = tok.rstrip().endswith("/>")
-                    if tname == "details" and not is_self_close:
-                        if is_close:
-                            if collapsed_details_stack and collapsed_details_stack.pop():
-                                collapsed_details_depth = max(0, collapsed_details_depth - 1)
-                        else:
-                            is_collapsed = not bool(re.search(r"\bopen\b", tok, flags=re.IGNORECASE))
-                            collapsed_details_stack.append(is_collapsed)
-                            if is_collapsed:
-                                collapsed_details_depth += 1
-                    elif tname in _GLOSSARY_SKIP_TAGS and not is_self_close:
-                        if is_close:
-                            if skip_depth > 0:
-                                skip_depth -= 1
-                        else:
+                    is_self_close = tok.rstrip().endswith("/>") or (tname in _GLOSSARY_VOID_TAGS)
+                    if is_close:
+                        for idx_s in range(len(elem_stack) - 1, -1, -1):
+                            if elem_stack[idx_s][0] == tname:
+                                while len(elem_stack) > idx_s:
+                                    _, was_sk_t, was_sk_c, was_col_d = elem_stack.pop()
+                                    if was_sk_t and skip_depth > 0:
+                                        skip_depth -= 1
+                                    if was_sk_c and skip_cls_depth > 0:
+                                        skip_cls_depth -= 1
+                                    if was_col_d and collapsed_details_depth > 0:
+                                        collapsed_details_depth -= 1
+                                break
+                    elif not is_self_close:
+                        is_sk_t = tname in _GLOSSARY_SKIP_TAGS
+                        m_cls = _GLOSSARY_CLASS_ATTR_RE.search(tok)
+                        cls_str = (m_cls.group(1) or m_cls.group(2) or "") if m_cls else ""
+                        is_sk_c = bool(cls_str and any(c in _GLOSSARY_SKIP_CLASSES for c in cls_str.split()))
+                        is_col_d = (tname == "details") and not bool(re.search(r"\bopen\b", tok, flags=re.IGNORECASE))
+                        elem_stack.append((tname, is_sk_t, is_sk_c, is_col_d))
+                        if is_sk_t:
                             skip_depth += 1
+                        if is_sk_c:
+                            skip_cls_depth += 1
+                        if is_col_d:
+                            collapsed_details_depth += 1
                 out_tokens.append(tok)
                 continue
             if (
                 skip_depth > 0
+                or skip_cls_depth > 0
                 or collapsed_details_depth > 0
                 or len(used_keys) >= _GLOSSARY_ALL_KEYS_COUNT
                 or not tok.strip()
@@ -2836,32 +2894,111 @@ def render_page_shell(
 ) -> str:
     pool_label = f"{total_pool}股池" if total_pool > 0 else "龙头股池"
     ch_footer_lbl = f"{channel_count}大多元渠道" if channel_count > 0 else "多元渠道"
-    nav_items = [
-        ("overview", f"{base_prefix}index.html", "总览"),
-        ("guide", f"{base_prefix}guide.html", "新手指南"),
-        ("charts", f"{base_prefix}charts.html", "K线图表"),
-        ("gold", f"{base_prefix}daily/gold-latest.html", "黄金"),
-        ("a-share", f"{base_prefix}daily/a-share-latest.html", "A股"),
-        ("hk-stock", f"{base_prefix}daily/hk-stock-latest.html", "港股"),
-        ("us-stock", f"{base_prefix}daily/us-stock-latest.html", "美股"),
-        ("channels", f"{base_prefix}channels.html", "多元渠道"),
-        ("etfs", f"{base_prefix}etfs.html", "ETF雷达"),
-        ("screener", f"{base_prefix}screener.html", pool_label),
-        ("scorecard", f"{base_prefix}scorecard.html", "记分卡"),
-        ("archive", f"{base_prefix}archive.html", "档案"),
-    ]
-    nav_parts: list[str] = []
-    for key, href, lbl in nav_items:
-        dot_html = (
-            f'<span class="nav-dot nav-dot-{key}" aria-hidden="true"></span>'
-            if key in ("gold", "a-share", "hk-stock", "us-stock")
-            else ""
+    reports_group = ("gold", "a-share", "hk-stock", "us-stock", "scorecard", "archive")
+    screeners_group = ("etfs", "screener")
+    rep_active = " active" if active_nav in reports_group else ""
+    scr_active = " active" if active_nav in screeners_group else ""
+
+    nav_html = (
+        f'<a class="nav-pill{" active" if active_nav == "overview" else ""}" data-nav="overview" href="{base_prefix}index.html">总览</a>'
+        '<div class="nav-group">'
+        f'<button type="button" class="nav-pill nav-drop-btn{rep_active}" data-nav="reports" aria-expanded="false" aria-haspopup="true">深度研报 ▾</button>'
+        '<div class="nav-dropdown" hidden>'
+        f'<a class="nav-drop-item{" active" if active_nav == "gold" else ""}" href="{base_prefix}daily/gold-latest.html"><span class="nav-dot nav-dot-gold" aria-hidden="true"></span>黄金日报</a>'
+        f'<a class="nav-drop-item{" active" if active_nav == "a-share" else ""}" href="{base_prefix}daily/a-share-latest.html"><span class="nav-dot nav-dot-a-share" aria-hidden="true"></span>A股日报</a>'
+        f'<a class="nav-drop-item{" active" if active_nav == "hk-stock" else ""}" href="{base_prefix}daily/hk-stock-latest.html"><span class="nav-dot nav-dot-hk-stock" aria-hidden="true"></span>港股日报</a>'
+        f'<a class="nav-drop-item{" active" if active_nav == "us-stock" else ""}" href="{base_prefix}daily/us-stock-latest.html"><span class="nav-dot nav-dot-us-stock" aria-hidden="true"></span>美股日报</a>'
+        '<div class="nav-drop-sep"></div>'
+        f'<a class="nav-drop-item{" active" if active_nav == "archive" else ""}" href="{base_prefix}archive.html">历史档案与旗舰手册</a>'
+        f'<a class="nav-drop-item{" active" if active_nav == "scorecard" else ""}" href="{base_prefix}scorecard.html">公开预测记分卡</a>'
+        "</div></div>"
+        f'<a class="nav-pill{" active" if active_nav == "charts" else ""}" data-nav="charts" href="{base_prefix}charts.html">K线图表</a>'
+        '<div class="nav-group">'
+        f'<button type="button" class="nav-pill nav-drop-btn{scr_active}" data-nav="screeners" aria-expanded="false" aria-haspopup="true">选基选股 ▾</button>'
+        '<div class="nav-dropdown" hidden>'
+        f'<a class="nav-drop-item{" active" if active_nav == "etfs" else ""}" href="{base_prefix}etfs.html">全球 ETF 雷达</a>'
+        f'<a class="nav-drop-item{" active" if active_nav == "screener" else ""}" href="{base_prefix}screener.html">{pool_label} 7维筛选</a>'
+        f'<a class="nav-drop-item" href="{base_prefix}screener.html#view=ah-matrix">27 对 A/H 税后比价</a>'
+        "</div></div>"
+        f'<a class="nav-pill{" active" if active_nav == "channels" else ""}" data-nav="channels" href="{base_prefix}channels.html">多元渠道</a>'
+        f'<a class="nav-pill nav-pill-guide{" active" if active_nav == "guide" else ""}" data-nav="guide" href="{base_prefix}guide.html">新手指南</a>'
+    )
+
+    subnav_html = ""
+    if active_nav in reports_group:
+        sub_links = [
+            ("gold", f"{base_prefix}daily/gold-latest.html", "黄金日报"),
+            ("a-share", f"{base_prefix}daily/a-share-latest.html", "A股日报"),
+            ("hk-stock", f"{base_prefix}daily/hk-stock-latest.html", "港股日报"),
+            ("us-stock", f"{base_prefix}daily/us-stock-latest.html", "美股日报"),
+            ("scorecard", f"{base_prefix}scorecard.html", "记分卡"),
+            ("archive", f"{base_prefix}archive.html", "历史档案"),
+        ]
+        subnav_html = (
+            '<nav class="subnav-bar no-print" aria-label="研报与档案快捷导航"><div class="subnav-inner">'
+            + "".join(
+                f'<a class="subnav-link{" active" if k == active_nav else ""}" href="{h}">{l}</a>'
+                for k, h, l in sub_links
+            )
+            + "</div></nav>"
         )
-        extra_cls = " nav-pill-guide" if key == "guide" else ""
-        nav_parts.append(
-            f'<a class="nav-pill{extra_cls}{" active" if key == active_nav else ""}" data-nav="{key}" href="{href}">{dot_html}{lbl}</a>'
+    elif active_nav in screeners_group:
+        etf_sub_lbl = f"全球 ETF 雷达 ({etf_count})" if etf_count > 0 else "全球 ETF 雷达"
+        pool_sub_lbl = f"核心龙头股池 ({total_pool})" if total_pool > 0 else "核心龙头股池"
+        subnav_html = (
+            '<nav class="subnav-bar no-print" aria-label="选基选股快捷导航"><div class="subnav-inner">'
+            f'<a class="subnav-link{" active" if active_nav == "etfs" else ""}" href="{base_prefix}etfs.html">{esc(etf_sub_lbl)}</a>'
+            f'<a class="subnav-link{" active" if active_nav == "screener" else ""}" href="{base_prefix}screener.html">{esc(pool_sub_lbl)}</a>'
+            f'<a class="subnav-link" href="{base_prefix}screener.html#view=ah-matrix">27 对 A/H 税后比价</a>'
+            "</div></nav>"
         )
-    nav_html = "".join(nav_parts)
+    elif active_nav == "channels":
+        ch_ov_lbl = f"{channel_count}大渠道总览" if channel_count > 0 else "12大渠道总览"
+        is_ch_root = (base_prefix == "")
+        subnav_html = (
+            '<nav class="subnav-bar no-print" aria-label="多元渠道快捷导航"><div class="subnav-inner">'
+            f'<a class="subnav-link{" active" if is_ch_root else ""}" href="{base_prefix}channels.html">{esc(ch_ov_lbl)}</a>'
+            f'<a class="subnav-link" href="{base_prefix}channels/qdii_mrf.html#sec-qdii-compare">QDII溢价与限购专窗</a>'
+            f'<a class="subnav-link" href="{base_prefix}channels.html#sec-ipo-toolbox">打新工具箱</a>'
+            f'<a class="subnav-link" href="{base_prefix}channels.html#sec-warning-wall">风险警示墙</a>'
+            "</div></nav>"
+        )
+
+    show_font_ctrl = (doc_kind in ("daily", "flagship", "guide", "scorecard")) or (active_nav in ("guide", "scorecard"))
+    font_ctrl_html = (
+        '<div class="ctrl-seg">'
+        '<button type="button" class="ctrl-btn" id="font-dec" title="缩小字号" aria-label="缩小字号">A-</button>'
+        '<button type="button" class="ctrl-btn" id="font-inc" title="放大字号" aria-label="放大字号">A+</button>'
+        "</div>"
+        if show_font_ctrl
+        else ""
+    )
+
+    watch_drawer_html = (
+        '<div class="drawer-backdrop no-print" id="watch-drawer" hidden role="dialog" aria-modal="true" aria-label="我的自选清单">'
+        '<div class="drawer-panel">'
+        '<div class="drawer-head">'
+        '<div class="drawer-title">★ 我的自选清单</div>'
+        '<button type="button" class="ctrl-btn" data-action="close-watch-drawer" aria-label="关闭自选">关闭 ✕</button>'
+        "</div>"
+        '<div class="drawer-body" id="watch-drawer-body"></div>'
+        "</div></div>"
+    )
+
+    mobile_tabbar_html = (
+        '<nav class="mobile-tabbar no-print" aria-label="移动端主导航">'
+        f'<a class="mtab-item{" active" if active_nav == "overview" else ""}" href="{base_prefix}index.html">'
+        '<span class="mtab-icon" aria-hidden="true">◉</span><span class="mtab-lbl">总览</span></a>'
+        f'<a class="mtab-item{" active" if active_nav in reports_group else ""}" href="{base_prefix}daily/a-share-latest.html">'
+        '<span class="mtab-icon" aria-hidden="true">▤</span><span class="mtab-lbl">研报</span></a>'
+        f'<a class="mtab-item{" active" if active_nav == "charts" else ""}" href="{base_prefix}charts.html">'
+        '<span class="mtab-icon" aria-hidden="true">📈</span><span class="mtab-lbl">K线</span></a>'
+        f'<a class="mtab-item{" active" if active_nav in screeners_group else ""}" href="{base_prefix}etfs.html">'
+        '<span class="mtab-icon" aria-hidden="true">⌕</span><span class="mtab-lbl">筛选</span></a>'
+        f'<a class="mtab-item{" active" if active_nav == "channels" else ""}" href="{base_prefix}channels.html">'
+        '<span class="mtab-icon" aria-hidden="true">⊞</span><span class="mtab-lbl">渠道</span></a>'
+        "</nav>"
+    )
 
     has_toc = bool(toc_items)
     toc_drawer_html = ""
@@ -2960,14 +3097,16 @@ def render_page_shell(
       </a>
       <div class="main-nav-wrap"><nav class="main-nav" aria-label="主导航">{nav_html}</nav></div>
       <div class="header-controls">
-        <button type="button" class="ctrl-btn ctrl-cmd" id="cmd-open" title="快速跳转 (⌘K)" aria-label="快速跳转">跳转 <kbd class="kbd-chip">⌘K</kbd></button>
-        <div class="ctrl-seg"><button type="button" class="ctrl-btn" id="font-dec" title="缩小字号" aria-label="缩小字号">A-</button><button type="button" class="ctrl-btn" id="font-inc" title="放大字号" aria-label="放大字号">A+</button></div>
+        <button type="button" class="ctrl-btn ctrl-watch" id="watch-drawer-open" title="打开我的自选清单" aria-label="我的自选">★ 自选 <span class="watch-badge" id="hdr-watch-cnt">0</span></button>
+        <button type="button" class="ctrl-btn ctrl-cmd" id="cmd-open" title="快速搜索与跳转 (⌘K)" aria-label="快速搜索与跳转">搜索 <kbd class="kbd-chip">⌘K</kbd></button>
+        {font_ctrl_html}
         <button type="button" class="ctrl-btn ctrl-theme" id="theme-toggle" title="切换深浅色模式" aria-label="切换深浅色模式">{sun_svg}{moon_svg}</button>
       </div>
     </div>
   </header>
 
   <main class="page-main">
+    {subnav_html}
     {content_html}
   </main>
 
@@ -3003,7 +3142,9 @@ def render_page_shell(
     </div>
   </footer>
 
+  {mobile_tabbar_html}
   {back_to_top_html}
+  {watch_drawer_html}
   {cmd_palette_html}
   {toc_drawer_html}
   {chart_modal_html}
@@ -3046,6 +3187,18 @@ def render_doc_with_toc(
         sidebar = ""
         layout_cls = "doc-layout no-toc"
 
+    kline_wrapped_html = ""
+    if kline_strip_html:
+        kline_wrapped_html = (
+            '<details class="kline-daily-collapse no-print">'
+            '<summary class="kline-collapse-sum">'
+            '<span>📈 展开本市多指数交互 K 线与 10 秒技术体检</span>'
+            '<span class="kline-collapse-cta">点击展开 ▾</span>'
+            "</summary>"
+            f"{kline_strip_html}"
+            "</details>"
+        )
+
     art_cls = "doc-flagship" if doc_kind == "flagship" else "doc-daily"
     return (
         f"{toolbar_html}"
@@ -3055,7 +3208,7 @@ def render_doc_with_toc(
         f'<article class="article-card {art_cls}">'
         f"{cover_html}"
         f"{disclosure_html}"
-        f"{kline_strip_html}"
+        f"{kline_wrapped_html}"
         f'<div class="article-body">{body_html}</div>'
         f"{footer_div}"
         f"</article>"
@@ -3749,9 +3902,9 @@ _CHANNEL_ROLE_GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     ),
     (
         "fixed_tax",
-        "第二层 · 固收压舱与养老税优",
-        "1–10 年稳健票息 · 节税锁息（国债债基 / 理财公募 / 储蓄险 / 个人养老金）",
-        ("bonds", "funds_wm", "savings_insurance", "tax_advantaged_accounts"),
+        "第二层 · 固收压舱与锁息保障",
+        "1–10 年稳健票息 · 低波压舱（国债债基 / 理财公募 / 储蓄险）",
+        ("bonds", "funds_wm", "savings_insurance"),
     ),
     (
         "crossborder_hybrid",
@@ -3761,15 +3914,17 @@ _CHANNEL_ROLE_GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     ),
     (
         "alt_hnw",
-        "第四层 · 非金大宗对冲与 300 万专享",
-        "滞胀战术仓 · 合格投资者高门槛（非金商品与白银排雷 / 私募与标品信托）",
-        ("commodity_etfs", "private_funds_trust"),
+        "第四层 · 税优养老、非金大宗与 300 万专享",
+        "节税规划 · 滞胀战术仓 · 合格投资者门槛（个人养老金 / 非金商品排雷 / 私募信托）",
+        ("tax_advantaged_accounts", "commodity_etfs", "private_funds_trust"),
     ),
 )
 
 
-def _render_channel_overview_cards(channels: list[Any], *, base_prefix: str = "") -> str:
-    """Render 5-element golden-density beginner-friendly overview cards grouped by Layer-3 execution role."""
+def _render_channel_overview_cards(
+    channels: list[Any], *, base_prefix: str = "", compact: bool = False
+) -> str:
+    """Render beginner-friendly overview cards grouped into 4 symmetric 3-card Layer-3 execution roles."""
     cards_by_id: dict[str, str] = {}
     ordered_ids: list[str] = []
     for idx, ch in enumerate(channels, start=1):
@@ -3800,35 +3955,58 @@ def _render_channel_overview_cards(channels: list[Any], *, base_prefix: str = ""
         hnw_badge = '<span class="ch-hnw-badge">300万门槛</span>' if is_hnw else ""
         hnw_cls = " ch-hnw" if is_hnw else ""
 
-        cards_by_id[cid] = (
-            f'<article class="ch-overview-card{hnw_cls}" id="ch-{esc(cid)}" '
-            f'data-channel-cat="{esc(cat)}" data-channel-bucket="{esc(bucket)}" data-min-tier="{esc(min_tier)}">'
-            f'<div class="ch-ov-top">'
-            f'<div class="ch-ov-title-row">'
-            f'<span class="ch-num">{esc(num_str)}</span>'
-            f'<h3 class="ch-ov-title"><a href="{esc(href)}">{esc(ch.get("name", ""))}</a></h3>'
-            f"</div>"
-            f'<div class="ch-ov-badges">'
-            f'<span class="ch-bucket-pill">{bucket_short}</span>'
-            f"{hnw_badge}"
-            f'<span class="ch-status ch-tone-{tone}">{esc(ch.get("status_tag", ""))}</span>'
-            f"</div>"
-            f"</div>"
-            f'<p class="ch-ov-oneliner">{esc(one_liner)}</p>'
-            f'<div class="ch-ov-ruler">'
-            f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">参考年化</span><span class="ch-ruler-val">{esc(short_yield)}</span></div>'
-            f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">风险体感</span><span class="ch-ruler-val"><span class="ch-risk-stars" aria-label="{esc(stars_lbl)}">{stars_str}</span> {esc(stars_lbl)}</span></div>'
-            f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">门槛与流动性</span><span class="ch-ruler-val">{esc(short_thr)}</span></div>'
-            f"</div>"
-            f'<div class="ch-ov-alert"><strong>今日避坑：</strong>{esc(today_alert)}</div>'
-            f'<div class="ch-ov-foot">'
-            f'<span class="ch-ov-meta">{len(prods)} 项标的 · {len(rules)} 条红线 · 含 3 步买法</span>'
-            f'<a class="btn btn-sm btn-primary" href="{esc(href)}">看 1 分钟指南 →</a>'
-            f"</div>"
-            f"</article>"
-        )
+        if compact:
+            cards_by_id[cid] = (
+                f'<article class="ch-overview-card ch-compact-card{hnw_cls}" id="ch-{esc(cid)}" '
+                f'data-channel-cat="{esc(cat)}" data-channel-bucket="{esc(bucket)}" data-min-tier="{esc(min_tier)}">'
+                f'<div class="ch-ov-top">'
+                f'<div class="ch-ov-title-row">'
+                f'<span class="ch-num">{esc(num_str)}</span>'
+                f'<h3 class="ch-ov-title"><a href="{esc(href)}">{esc(ch.get("name", ""))}</a></h3>'
+                f"</div>"
+                f'<div class="ch-ov-badges">'
+                f"{hnw_badge}"
+                f'<span class="ch-status ch-tone-{tone}">{esc(ch.get("status_tag", ""))}</span>'
+                f"</div>"
+                f"</div>"
+                f'<p class="ch-ov-oneliner">{esc(one_liner)}</p>'
+                f'<div class="ch-ov-foot">'
+                f'<span class="ch-ov-meta">{esc(short_yield)} · {esc(short_thr)}</span>'
+                f'<a class="btn btn-sm" href="{esc(href)}">详情 →</a>'
+                f"</div>"
+                f"</article>"
+            )
+        else:
+            cards_by_id[cid] = (
+                f'<article class="ch-overview-card{hnw_cls}" id="ch-{esc(cid)}" '
+                f'data-channel-cat="{esc(cat)}" data-channel-bucket="{esc(bucket)}" data-min-tier="{esc(min_tier)}">'
+                f'<div class="ch-ov-top">'
+                f'<div class="ch-ov-title-row">'
+                f'<span class="ch-num">{esc(num_str)}</span>'
+                f'<h3 class="ch-ov-title"><a href="{esc(href)}">{esc(ch.get("name", ""))}</a></h3>'
+                f"</div>"
+                f'<div class="ch-ov-badges">'
+                f'<span class="ch-bucket-pill">{bucket_short}</span>'
+                f"{hnw_badge}"
+                f'<span class="ch-status ch-tone-{tone}">{esc(ch.get("status_tag", ""))}</span>'
+                f"</div>"
+                f"</div>"
+                f'<p class="ch-ov-oneliner">{esc(one_liner)}</p>'
+                f'<div class="ch-ov-ruler">'
+                f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">参考年化</span><span class="ch-ruler-val">{esc(short_yield)}</span></div>'
+                f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">风险体感</span><span class="ch-ruler-val"><span class="ch-risk-stars" aria-label="{esc(stars_lbl)}">{stars_str}</span> {esc(stars_lbl)}</span></div>'
+                f'<div class="ch-ruler-cell"><span class="ch-ruler-lbl">门槛与流动性</span><span class="ch-ruler-val">{esc(short_thr)}</span></div>'
+                f"</div>"
+                f'<div class="ch-ov-alert"><strong>今日避坑：</strong>{esc(today_alert)}</div>'
+                f'<div class="ch-ov-foot">'
+                f'<span class="ch-ov-meta">{len(prods)} 项标的 · {len(rules)} 条红线 · 含 3 步买法</span>'
+                f'<a class="btn btn-sm btn-primary" href="{esc(href)}">看 1 分钟指南 →</a>'
+                f"</div>"
+                f"</article>"
+            )
         ordered_ids.append(cid)
 
+    grid_cls = "ch-compact-grid" if compact else "ch-overview-grid"
     used: set[str] = set()
     sections: list[str] = []
     for gid, gtitle, gdesc, member_ids in _CHANNEL_ROLE_GROUPS:
@@ -3839,11 +4017,11 @@ def _render_channel_overview_cards(channels: list[Any], *, base_prefix: str = ""
         sections.append(
             f'<div class="ch-role-group" data-ch-role-group="{esc(gid)}">'
             f'<div class="ch-role-head">'
-            f'<div><span class="ch-role-title">{esc(gtitle)}</span>'
-            f'<span class="ch-role-desc">{esc(gdesc)}</span></div>'
+            f'<span class="ch-role-title">{esc(gtitle)}</span>'
+            f'<span class="ch-role-sub">{esc(gdesc)}</span>'
             f'<span class="ch-role-count">{len(gcards)} 大渠道</span>'
             f"</div>"
-            f'<div class="ch-overview-grid">{"".join(gcards)}</div>'
+            f'<div class="{grid_cls}">{"".join(gcards)}</div>'
             f"</div>"
         )
     leftovers = [cards_by_id[cid] for cid in ordered_ids if cid not in used]
@@ -3851,11 +4029,11 @@ def _render_channel_overview_cards(channels: list[Any], *, base_prefix: str = ""
         sections.append(
             '<div class="ch-role-group" data-ch-role-group="other">'
             '<div class="ch-role-head">'
-            '<div><span class="ch-role-title">其他合规投资渠道</span>'
-            '<span class="ch-role-desc">扩展个人合规配置通道</span></div>'
+            '<span class="ch-role-title">其他合规投资渠道</span>'
+            '<span class="ch-role-sub">扩展个人合规配置通道</span>'
             f'<span class="ch-role-count">{len(leftovers)} 大渠道</span>'
             "</div>"
-            f'<div class="ch-overview-grid">{"".join(leftovers)}</div>'
+            f'<div class="{grid_cls}">{"".join(leftovers)}</div>'
             "</div>"
         )
     return "".join(sections)
@@ -4079,7 +4257,7 @@ def build_channel_detail_page(
             '<div class="table-wrap etf-table-wrap"><table class="etf-table" id="ch-related-etf-table">'
             "<thead><tr><th>ETF 名称与代码</th><th>通道与指数</th><th>年费率</th><th>规模与特征</th><th>折溢价状态</th><th>定位与 7 维拆解</th></tr></thead>"
             f"<tbody>{etf_rows}</tbody></table></div>"
-            '<div class="dossier-backdrop no-print" id="etf-modal" role="dialog" aria-modal="true" aria-label="ETF 深度拆解">'
+            '<div class="dossier-backdrop drawer-modal no-print" id="etf-modal" role="dialog" aria-modal="true" aria-label="ETF 深度拆解">'
             '<div class="dossier-dialog">'
             '<div class="dossier-head">'
             '<div class="dossier-head-main">'
@@ -4087,7 +4265,11 @@ def build_channel_detail_page(
             '<div class="dossier-sub" id="etf-modal-sub"></div>'
             '<div class="dossier-badges" id="etf-modal-badges"></div>'
             "</div>"
+            '<div class="drawer-nav-btns">'
+            '<button type="button" class="ctrl-btn" data-drawer-step="-1" title="上一个 (↑)" aria-label="上一个">↑</button>'
+            '<button type="button" class="ctrl-btn" data-drawer-step="1" title="下一个 (↓)" aria-label="下一个">↓</button>'
             '<button type="button" class="ctrl-btn" data-action="close-etf" aria-label="关闭 ETF 详情">关闭 ✕</button>'
+            "</div>"
             "</div>"
             '<div class="dossier-body" id="etf-modal-body"></div>'
             '<div class="dossier-foot">'
@@ -4115,14 +4297,37 @@ def build_channel_detail_page(
         else ""
     )
     qdii_hero_cta = (
-        '<div class="hero-cta-row" style="margin:10px 0 10px 0;">'
-        '<a class="hero-cta hero-cta-qdii" href="#sec-qdii-compare">⚡ 直达 QDII 溢价与限购对照表 →</a>'
+        '<div class="hero-cta-row" style="margin:12px 0 10px 0;">'
+        '<a class="btn btn-qdii" href="#sec-qdii-compare">⚡ 直达 QDII 溢价与限购对照表 →</a>'
         '<a class="hero-cta" href="../etfs.html#preset=qdii">查看境内 QDII ETF 排雷清单 →</a>'
         "</div>"
         if cid == "qdii_mrf"
         else ""
     )
     hnw_hero_badge = '<span class="ch-hnw-badge">300万合格投资者专享</span>' if is_hnw else ""
+    raw_summary = str(ch.get("summary") or "").strip()
+    if len(raw_summary) > 180:
+        sent_m = re.search(r"[。！？]", raw_summary[:180])
+        if sent_m and sent_m.end() >= 35:
+            lead_summary = raw_summary[: sent_m.end()].strip()
+            rest_summary = raw_summary[sent_m.end() :].strip()
+        else:
+            semi_m = re.search(r"[；;。！？]", raw_summary[45:180])
+            cut_at = (45 + semi_m.end()) if semi_m else 140
+            lead_summary = raw_summary[:cut_at].rstrip(" ，,；;：:") + ("…" if cut_at == 140 else "")
+            rest_summary = raw_summary[cut_at:].strip()
+        if rest_summary:
+            hero_summary_html = (
+                f'<p class="channels-hero-sub" style="margin-bottom:8px;">{esc(lead_summary)}</p>'
+                '<details class="ch-hero-more">'
+                "<summary>展开完整当日动态与盘口明细</summary>"
+                f"<p>{esc(rest_summary)}</p>"
+                "</details>"
+            )
+        else:
+            hero_summary_html = f'<p class="channels-hero-sub" style="margin-bottom:10px;">{esc(raw_summary)}</p>'
+    else:
+        hero_summary_html = f'<p class="channels-hero-sub" style="margin-bottom:10px;">{esc(raw_summary)}</p>'
 
     detail_page_html = f"""
     <div class="doc-toolbar no-print">
@@ -4162,7 +4367,7 @@ def build_channel_detail_page(
         </div>
         <span class="ch-status ch-tone-{tone}">{esc(ch.get("status_tag", ""))}</span>
       </div>
-      <p class="channels-hero-sub" style="margin-bottom:10px;">{esc(ch.get("summary", ""))}</p>
+      {hero_summary_html}
       {qdii_hero_cta}
       {f'<div class="channels-mutex" style="margin-bottom:0;">🛑 跨市场风控同步：{esc(mutex_note)}</div>' if mutex_note else ''}
     </section>
@@ -4760,6 +4965,7 @@ def _render_crisis_ribbon(
 
     vix_val = _safe_float(brake.get("vix_close")) or _safe_float(gold_snap.get("vix_close"))
     us10y_val = _safe_float(rb_us.get("us10y_pct")) or _safe_float(rates.get("us10y_pct"))
+    us10y_live = _safe_float(rb_us.get("us10y_asia_live_pct")) or _safe_float(rates.get("us10y_live_pct"))
     cgb10y_val = _safe_float(rb_cn.get("cgb10y_pct")) or _safe_float(rates.get("cgb10y_pct")) or _safe_float((eq_state.get("markets") or {}).get("a_share", {}).get("cgb10y_pct"))
     spread_bp = _safe_float(rb_core.get("cn_us_10y_spread_bp"))
     if spread_bp is None:
@@ -4767,6 +4973,7 @@ def _render_crisis_ribbon(
     if spread_bp is None and cgb10y_val is not None and us10y_val is not None:
         spread_bp = round((cgb10y_val - us10y_val) * 100.0)
     brent_val = _safe_float(comm.get("brent_usd")) or _safe_float(gold_snap.get("brent_settle_usd"))
+    brent_live = _safe_float(comm.get("brent_live_usd"))
     jpy_val = _safe_float(brake.get("usdjpy_level")) or _safe_float(rates.get("usd_jpy"))
     jpy_3d = _safe_float(brake.get("usdjpy_3d_change_pct"))
     jpy_3d_txt = f" · 3日{jpy_3d:+.1f}%" if jpy_3d is not None else ""
@@ -4775,6 +4982,16 @@ def _render_crisis_ribbon(
 
     vix_cls = "cr-danger" if (vix_val is not None and vix_val >= 30.0) else ("cr-warn" if (vix_val is not None and vix_val >= 24.0) else "cr-ok")
     us10y_cls = "cr-danger" if (us10y_val is not None and us10y_val >= 5.25) else ("cr-warn" if (us10y_val is not None and us10y_val >= 4.7) else "cr-ok")
+    us10y_sub = (
+        f"实盘 {us10y_live:.2f}% · 红线 5.25%"
+        if (us10y_val is not None and us10y_live is not None and abs(us10y_live - us10y_val) >= 0.01)
+        else "官收基准 · 红线 5.25%"
+    )
+    brent_sub = (
+        f"官结 · 实盘 ${brent_live:.2f}"
+        if (brent_val is not None and brent_live is not None and abs(brent_live - brent_val) >= 0.05)
+        else "通胀脉冲锚"
+    )
     spread_cls = "cr-danger" if (spread_bp is not None and spread_bp <= -350.0) else ("cr-warn" if (spread_bp is not None and spread_bp <= -250.0) else "cr-ok")
     spread_disp = f"{int(round(spread_bp)):+d}bp" if spread_bp is not None else "待核"
     cgb_sub = f"中债 {cgb10y_val:.2f}% · 汇损锚" if cgb10y_val is not None else "中美利差 · 汇损锚"
@@ -4797,7 +5014,7 @@ def _render_crisis_ribbon(
         f'<a class="cr-pill {us10y_cls}" href="charts.html#sym=rate_US10Y">'
         '<span class="cr-lbl">美债 10Y</span>'
         f'<span class="cr-val">{_fmt_num(us10y_val, ".2f", suffix="%")}</span>'
-        '<span class="cr-sub">红线 5.25%</span>'
+        f'<span class="cr-sub">{esc(us10y_sub)}</span>'
         "</a>"
         f'<a class="cr-pill {spread_cls}" href="charts.html#sym=rate_CN10Y">'
         '<span class="cr-lbl">中美 10Y 利差</span>'
@@ -4807,7 +5024,7 @@ def _render_crisis_ribbon(
         f'<a class="cr-pill cr-neutral" href="charts.html#sym=cmd_OIL">'
         '<span class="cr-lbl">布伦特原油</span>'
         f'<span class="cr-val">{_fmt_num(brent_val, ".2f", prefix="$")}</span>'
-        '<span class="cr-sub">通胀脉冲锚</span>'
+        f'<span class="cr-sub">{esc(brent_sub)}</span>'
         "</a>"
         f'<a class="cr-pill {jpy_cls}" href="charts.html#sym=fx_USDJPY">'
         '<span class="cr-lbl">美元 / 日元</span>'
@@ -4904,7 +5121,7 @@ def _render_home_kline_deck(multi_idx: dict[str, list[dict[str, Any]]], total_kl
         f'<div class="kline-deck-tabs" role="tablist">{tab_btns}</div>'
         f'{"".join(panels)}'
         '<div class="kline-card">'
-        '<div class="kline-mount" data-kline-deck-mount="1" data-init-sym="idx_sh000001" data-kline-height="390"></div>'
+        '<div class="kline-mount" data-kline-deck-mount="1" data-init-sym="idx_sh000001" data-kline-height="340"></div>'
         "</div>"
         "</section>"
     )
@@ -5372,22 +5589,24 @@ def build_charts_page(
                 f'<div class="kline-sym-chg {chg_cls}">{esc(chg_txt)}</div></div>'
                 "</div>"
             )
-    gold_banner = (
-        '<div class="etf-lock-banner">🛑 当前黄金处于风控红灯观察期：黄金及金矿标的 K 线仅供趋势跟踪与旧仓参考，不构成新买建议。</div>'
+    gold_pill = (
+        '<span class="compact-alert-pill">🛑 黄金红灯观察期：金及金矿 K 线仅供趋势跟踪与旧仓参考，暂不新买</span>'
         if gold_blocked
         else ""
     )
     return f"""
     <div class="sec-head" style="margin-top:4px;">
-      <h1>全市场交互 K 线与技术指标终端</h1>
-      <span class="sec-sub">覆盖全球 {total_cnt} 项标的（A/港/美/日欧台韩印多指数 · 中美债率与REITs · 黄金大宗汇率 · 重点 ETF · 231 股深研池）· 行情刷新：{esc(gen_ts or "最新班次")}</span>
+      <div>
+        <h1>全市场交互 K 线与技术指标终端</h1>
+        <span class="sec-sub">覆盖全球 {total_cnt} 项标的（A/港/美/日欧台韩印多指数 · 中美债率与REITs · 黄金大宗汇率 · 重点 ETF · 231 股）· 刷新：{esc(gen_ts or "最新班次")}</span>
+      </div>
+      {gold_pill}
     </div>
-    {gold_banner}
 
     <section class="kline-terminal-grid" data-kline-terminal="1">
       <aside class="kline-watchlist" id="kline-terminal-sidebar" aria-label="全市场 K 线标的检索">
         <div class="search-wrap" style="margin-bottom:8px;">
-          <input type="search" id="kline-search" class="search-input" placeholder="搜代码或简称（如 000001 / 日经 / 中债 / 黄金 / NVDA）…" autocomplete="off">
+          <input type="search" id="kline-search" class="search-input" placeholder="搜代码 / 简称（如 000001 / 日经）" autocomplete="off">
           <button type="button" id="kline-search-clear" class="search-clear" aria-label="清空搜索" hidden>×</button>
           <kbd class="kbd-hint" aria-hidden="true">/</kbd>
         </div>
@@ -5698,10 +5917,18 @@ def _render_policy_calendar_section(
         labels = [_mkt_cn_map.get(str(m).strip(), str(m).strip()) for m in raw_mkts if str(m).strip()]
         return " / ".join(dict.fromkeys(labels))
 
+    def _pcal_meter_html(tier_code: str) -> str:
+        lit = 3 if tier_code == "P0" else (2 if tier_code == "P1" else 1)
+        bars = "".join(
+            f'<span class="pcal-bar{" active" if i <= lit else ""}"></span>'
+            for i in range(1, 4)
+        )
+        return f'<span class="pcal-meter" aria-hidden="true">{bars}</span>'
+
     brief_cards: list[str] = []
     for b in raw_briefs:
         _, reg_lbl = _pcal_norm_region(b.get("region"))
-        _, tier_cls, tier_lbl = _pcal_norm_tier(
+        b_tier_code, tier_cls, tier_lbl = _pcal_norm_tier(
             b.get("impact_tier") or b.get("tier") or b.get("impact") or b.get("priority")
         )
         auth = _pcal_pick(b, "authority", "source_authority", "source", "agency", default="官方政策追踪")
@@ -5737,7 +5964,7 @@ def _render_policy_calendar_section(
             '<article class="pcal-brief-card">'
             '<div class="pcal-brief-meta">'
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
-            f'<span class="pcal-tier-pill {tier_cls}">{esc(tier_lbl)}</span>'
+            f'<span class="pcal-tier-pill {tier_cls}">{_pcal_meter_html(b_tier_code)}{esc(tier_lbl)}</span>'
             f'<span class="pcal-src">{esc(src_disp)}</span>'
             "</div>"
             f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
@@ -5863,7 +6090,7 @@ def _render_policy_calendar_section(
             f'<span class="{cd_cls}">{esc(countdown_lbl)}</span>'
             f'<span class="pcal-event-time">{esc(time_disp)}</span>'
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
-            f'<span class="pcal-tier-pill {tier_cls}">{esc(tier_lbl)}</span>'
+            f'<span class="pcal-tier-pill {tier_cls}">{_pcal_meter_html(tier_code)}{esc(tier_lbl)}</span>'
             "</div>"
             f'<div class="pcal-event-title">{esc(title)}</div>'
             f'<div class="pcal-event-cons"><strong>市场预期：</strong>{esc(consensus)}</div>'
@@ -5927,17 +6154,17 @@ def _render_policy_calendar_section(
         <h2 id="pcal-heading">🧭 核心时政政策深解 · 未来 14–30 天金融时政日历</h2>
         <span class="sec-sub">央行/财政/联储/地缘政策白话深解 · 未来 30 天关键节点倒计时与事前纪律</span>
       </div>
-      <div class="pcal-grid">
-        <div class="pcal-col">
+      <div class="pcal-stack">
+        <div>
           <div class="pcal-col-head">
             <h3>今日核心时政与政策深解</h3>
             <span class="sec-sub">{len(brief_cards)} 条重点</span>
           </div>
-          <div class="pcal-brief-list">
+          <div class="pcal-briefs-row">
             {"".join(brief_cards)}
           </div>
         </div>
-        <div class="pcal-col">
+        <div class="pcal-agenda-card">
           <div class="pcal-col-head">
             <h3>未来 14–30 天关键金融时政日历</h3>
             <span class="sec-sub" id="pcal-count-status" role="status">{esc(count_txt)}</span>
@@ -5948,7 +6175,7 @@ def _render_policy_calendar_section(
             <button type="button" class="filter-pill" data-pcal-region="HK" aria-pressed="false">中国港股</button>
             <button type="button" class="filter-pill" data-pcal-region="US" aria-pressed="false">美国政策</button>
             <button type="button" class="filter-pill" data-pcal-region="GLOBAL_EX" aria-pressed="false">欧日英与全球</button>
-            <button type="button" class="filter-pill" data-pcal-tier="P0" aria-pressed="false">🔴 仅看一级关键</button>
+            <button type="button" class="filter-pill" id="pcal-only-major" data-pcal-tier="P0" aria-pressed="false">▮▮▮ 只看重磅</button>
           </div>
           <div class="pcal-event-list" id="pcal-event-list">
             {"".join(rendered_events)}
@@ -6027,11 +6254,12 @@ def build_cockpit_page(
             live_chg = ((gold_live / gold_spot) - 1.0) * 100.0
         live_chg_txt = f" ({live_chg:+.2f}%)" if live_chg is not None else ""
         ts_prefix = f"{gold_hhmm} " if gold_hhmm else ""
-        gold_asia_sub = f"{ts_prefix}实盘 ${gold_live:,.0f}{live_chg_txt}"
+        ny_prefix = f"纽约官收 ${gold_spot:,.2f} · " if gold_spot is not None else ""
+        gold_asia_sub = f"{ny_prefix}{ts_prefix}实盘 ${gold_live:,.2f}{live_chg_txt}"
     elif gold_hour >= 15 and lbma_pm is not None:
-        gold_asia_sub = f"伦敦午定盘 ${lbma_pm:,.0f}"
+        gold_asia_sub = f"纽约官收基准 · 伦敦午定盘 ${lbma_pm:,.2f}"
     elif gold_hour < 12 and gold_asia_open is not None and (gold_spot is None or abs(gold_asia_open - gold_spot) >= 0.5):
-        gold_asia_sub = f"亚盘约 ${gold_asia_open:,.0f}"
+        gold_asia_sub = f"纽约官收基准 · 亚盘约 ${gold_asia_open:,.0f}"
     else:
         gold_asia_sub = "纽约官收基准"
     gold_autd_night = _positive_quote(gold_snap.get("sge_autd_night_rmb"))
@@ -6225,6 +6453,8 @@ def build_cockpit_page(
     us10y = _safe_float(rates.get("us10y_pct"))
     if us10y is None:
         us10y = _safe_float(us_m.get("us10y_pct"))
+    _rb_us_tmp = (eq_state.get("rates_bonds_core") or {}).get("us_rates") if isinstance(eq_state.get("rates_bonds_core"), dict) else {}
+    us10y_live_br = _safe_float((_rb_us_tmp or {}).get("us10y_asia_live_pct")) or _safe_float(rates.get("us10y_live_pct"))
     us10y_thr = _safe_float(brake.get("us10y_brake_pct"))
     if us10y_thr is None:
         us10y_thr = 5.25
@@ -6237,6 +6467,11 @@ def build_cockpit_page(
         )
         us10y_meter_pct = max(4.0, min(100.0, ((us10y - 3.0) / max(us10y_thr - 3.0, 0.5)) * 100.0))
     us10y_val = _fmt_num(us10y, ".3f", suffix="%")
+    us10y_thr_line = (
+        f"官收基准（实盘 {us10y_live_br:.2f}%）｜熔断线：突破 {us10y_thr:.2f}%"
+        if (us10y is not None and us10y_live_br is not None and abs(us10y_live_br - us10y) >= 0.01)
+        else f"熔断线：突破 {us10y_thr:.2f}%"
+    )
 
     hkma_bal = _safe_float(rates.get("hkma_agg_bal_hkd_100m"))
     hkma_thr = _safe_float(brake.get("hkma_agg_bal_brake_100m"))
@@ -6633,42 +6868,50 @@ def build_cockpit_page(
     </section>
     """
 
-    def _lamp_plain_explain(lamp_cls: str, is_gold_mkt: bool = False) -> str:
+    def _stance_badge_cls(lamp_cls: str, *, is_gold_mkt: bool = False) -> str:
         if is_gold_mkt:
-            if gold_blocked:
-                return "灯态含义：老持仓稳拿不乱割，新钱先放稳钱池暂不新买黄金，静待四关信号明确"
-            return "灯态含义：满足过关门槛，按家庭上限 10%–15% 分批稳健推进，不加杠杆"
+            return "stance-stop" if gold_blocked else "stance-go"
         if lamp_cls == "lamp-red":
-            return "灯态含义：老底仓保留高股息防弹衣，新钱严守仓位上限不追高，待信号转暖再分批"
+            return "stance-defend"
         if lamp_cls == "lamp-amber":
-            return "灯态含义：多空拉锯观察期，严格按安全锚小步分批，不情绪化追涨杀跌"
-        return "灯态含义：估值性价比与趋势共振，可按个人资金期限分批稳步配置"
+            return "stance-watch"
+        return "stance-go"
+
+    us_eq_cap_s = _fmt_num(us_m.get("equity_cap_pct"), ".0f", prefix="≤ ", suffix="%")
+    a_stance_txt = (
+        f"防守建底期 · 股票上限 {a_eq_cap_val}（空仓可分批建底，不追高）"
+        if a_lamp_cls == "lamp-red"
+        else ("分歧观察期 · 按安全锚小步分批" if a_lamp_cls == "lamp-amber" else "条件齐备 · 按期限分批配置")
+    )
+    hk_stance_txt = (
+        f"中国离岸折价腿（非海外分散）· 离岸 {hk_off_cap_val} / 港股通 {hk_on_cap_val}"
+        if hk_lamp_cls == "lamp-red"
+        else f"中国离岸折价腿（非海外分散）· 按安全锚分批"
+    )
+    us_stance_txt = (
+        f"防守建底期 · 防弹衣 {us_eq_cap_s} / 科技新仓严控 {us_tech_cap_val}（不追高）"
+        if us_lamp_cls == "lamp-red"
+        else ("分歧观察期 · 聚焦低估防弹衣" if us_lamp_cls == "lamp-amber" else "条件齐备 · 宽基分批配置")
+    )
+    gold_stance_txt = (
+        "红灯停 · 新仓严格 0%（存量稳拿不乱割，静待四关）"
+        if gold_blocked
+        else "条件齐备 · 按档分批（家庭总上限 10%–15%）"
+    )
 
     home_channels_section_html = ""
     if ch_list:
         ch_as_of = str((channels_data or {}).get("as_of_label") or eq_as_of or "最新班次")
-        ch_anchors = (channels_data or {}).get("macro_anchors") if isinstance((channels_data or {}).get("macro_anchors"), list) else []
-        home_macro_cards = "".join(
-            f'<div class="home-macro-card">'
-            f'<div class="home-macro-lbl">{esc(a.get("label", ""))}</div>'
-            f'<div class="home-macro-val">{esc(a.get("value", ""))}</div>'
-            f"</div>"
-            for a in ch_anchors
-            if isinstance(a, dict)
-        )
-        ch_filter_html = _render_channel_filter_panel(ch_list)
         home_channels_section_html = f"""
     <div class="sec-head" id="sec-multi-channels">
-      <h2>中国大陆 {ch_count_num} 大个人合规多元投资渠道（点击进 1 分钟指南）</h2>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <span class="sec-sub">基准：{esc(ch_as_of)}</span>
-        <a href="channels.html" class="btn btn-sm">全渠道对比总表与风控墙 →</a>
+      <div>
+        <h2>中国大陆 {ch_count_num} 大个人合规多元投资渠道（4 角色分层 · 3×4 速览）</h2>
+        <span class="sec-sub" id="ch-count" role="status">共 {ch_count_num} 大渠道 · 基准 {esc(ch_as_of)}</span>
       </div>
+      <a href="channels.html" class="btn btn-sm btn-primary">打开 {ch_count_num} 大渠道完整对比与筛选 →</a>
     </div>
-    {f'<div class="home-macro-bar"><div class="home-macro-grid">{home_macro_cards}</div></div>' if home_macro_cards else ''}
-    {ch_filter_html}
     <section class="channel-list">
-      {_render_channel_overview_cards(ch_list)}
+      {_render_channel_overview_cards(ch_list, compact=True)}
     </section>
     """
 
@@ -6730,10 +6973,19 @@ def build_cockpit_page(
     )
 
     def _macro_sub_html(row: dict[str, Any]) -> str:
+        rid = str(row.get("id") or "")
+        rv = _safe_float(row.get("value"))
         chg_v = row.get("change_pct")
-        if isinstance(chg_v, (int, float)) and isfinite(chg_v):
-            return f"{_fmt_chg_span(chg_v)} · {esc(row['tier'])} · 📈 K线"
-        return f"{esc(row['tier'])} · 📈 K线"
+        chg_part = _fmt_chg_span(chg_v) if (isinstance(chg_v, (int, float)) and isfinite(chg_v)) else ""
+        ref_part = ""
+        if rid == "rate_US10Y" and us10y is not None and rv is not None and abs(rv - us10y) >= 0.01:
+            ref_part = f"官收 {us10y:.2f}%"
+        elif rid == "cmd_OIL" and brent_usd is not None and rv is not None and abs(rv - brent_usd) >= 0.05:
+            ref_part = f"官结 ${brent_usd:.2f}"
+        elif rid == "cmd_CL" and wti_usd is not None and rv is not None and abs(rv - wti_usd) >= 0.05:
+            ref_part = f"官结 ${wti_usd:.2f}"
+        parts = [p for p in (ref_part, chg_part, esc(row["tier"]), "📈 K线") if p]
+        return " · ".join(parts)
 
     verified_fx_chips = (
         f'<a class="mirror-chip mirror-chip-link" href="charts.html#sym=fx_USDCNH" '
@@ -6753,10 +7005,21 @@ def build_cockpit_page(
     def _mirror_name_lbl(row: dict[str, Any]) -> str:
         rid = str(row.get("id") or "")
         nm = str(row.get("name") or "")
+        rv = _safe_float(row.get("value"))
         if rid in ("crypto_BTC", "crypto_ETH") and "禁交易" not in nm:
             nm = re.sub(r"[（(]只读[）)]", "", nm).strip() + "（只读·禁交易）"
+        elif rid == "rate_US10Y" and us10y is not None and rv is not None and abs(rv - us10y) >= 0.01:
+            nm = "美债10Y（盘中实盘）"
+        elif rid == "cmd_OIL" and brent_usd is not None and rv is not None and abs(rv - brent_usd) >= 0.05:
+            nm = "布伦特原油（盘中实盘）"
+        elif rid == "cmd_CL" and wti_usd is not None and rv is not None and abs(rv - wti_usd) >= 0.05:
+            nm = "WTI原油（盘中实盘）"
         return nm
 
+    mirror_rows = [r for r in multi_idx["macro"] if r.get("id") not in ("fx_USDCNH", "fx_USDHKD")]
+    xag_row = next((r for r in (multi_idx.get("gold") or []) if r.get("id") == "cmd_XAG"), None)
+    if xag_row is not None:
+        mirror_rows.append(xag_row)
     macro_mirror_cards = verified_fx_chips + "".join(
         f'<a class="mirror-chip mirror-chip-link" href="charts.html#sym={esc(r["id"])}" '
         f'data-kline-jump="{esc(r["id"])}" data-kline-tab="gold_macro">'
@@ -6764,8 +7027,7 @@ def build_cockpit_page(
         f'<div class="mirror-val">{esc(r["value_disp"])}</div>'
         f'<div class="mirror-sub">{_macro_sub_html(r)}</div>'
         "</a>"
-        for r in multi_idx["macro"]
-        if r.get("id") not in ("fx_USDCNH", "fx_USDHKD")
+        for r in mirror_rows
     )
 
     # Build null-safe Core #4 (Rates/Bonds) and Satellite #6 (Non-US Global Equities) cards
@@ -6918,87 +7180,42 @@ def build_cockpit_page(
     )
 
     jump_pills: list[str] = [
-        '<a class="home-jump-pill" href="#sec-core-markets">① 六大核心市场（A/港/美 · 债/金/非美）</a>',
-        '<a class="home-jump-pill home-jump-pill-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">⚡ QDII 溢价与限购速查</a>',
-        '<a class="home-jump-pill" href="#sec-kline-deck">📈 六标签 K 线看板</a>',
-        '<a class="home-jump-pill" href="#sec-four-buckets">② 钱怎么分四笔与试算</a>',
+        '<a class="home-jump-pill" href="#sec-core-markets">六大市场</a>',
+        '<a class="home-jump-pill" href="#sec-policy-calendar">🧭 时政深解与日历</a>',
+        '<a class="home-jump-pill" href="#sec-kline-deck">交互K线</a>',
+        '<a class="home-jump-pill" href="#sec-four-buckets">钱包试算</a>',
     ]
     if home_channels_section_html:
-        jump_pills.append(f'<a class="home-jump-pill" href="#sec-multi-channels">③ {ch_count_num} 大执行层渠道</a>')
-    if home_etf_section_html:
-        jump_pills.append('<a class="home-jump-pill" href="#sec-etf-radar">④ 6 大正交 ETF 雷达</a>')
-    jump_pills.append('<a class="home-jump-pill" href="#sec-policy-calendar">🧭 时政深解与日历</a>')
-    jump_pills.append('<a class="home-jump-pill" href="#sec-risk-radar">⑤ 风险雷达与家庭总账</a>')
-    jump_pills.append('<a class="home-jump-pill" href="#sec-latest-dailies">⑥ 最新早午晚报与手册</a>')
+        jump_pills.append(f'<a class="home-jump-pill" href="#sec-multi-channels">{ch_count_num}大渠道</a>')
+    jump_pills.append('<a class="home-jump-pill" href="#sec-latest-dailies">最新日报</a>')
     jump_bar_html = f'<nav class="home-jump-bar" aria-label="首页版块快捷导航">{"".join(jump_pills)}</nav>'
     policy_calendar_html = _render_policy_calendar_section(
         policy_calendar, eq_state, gold_blocked=(not gold_new_buy or gold_tier_code == "Tier 0")
     )
 
-    coverage_parts = [f"{total_pool} 家跨市场核心公司"]
+    coverage_parts = [f"{total_pool} 股"]
     if ch_count_num:
-        coverage_parts.append(f"{ch_count_num} 大个人多元渠道")
+        coverage_parts.append(f"{ch_count_num} 渠道")
     if etf_count_num:
-        coverage_parts.append(f"{etf_count_num} 只全球重点 ETF")
+        coverage_parts.append(f"{etf_count_num} ETF")
     coverage_summary = " · ".join(coverage_parts)
-    live_pill_short = _short_live_pill(alert_label, max_len=28)
+    live_pill_short = _short_live_pill(alert_label, max_len=26)
 
     return f"""
-    <section class="hero-deck">
-      <div class="hero-main">
-        <div class="hero-top">
-          <span class="live-pill" title="{esc(alert_label)}"><span class="live-pulse"></span>{esc(live_pill_short)}</span>
-          <span class="live-cadence">每日 07:30 早报 · 11:30 午报 · 18:00 晚报（北京时间）</span>
-        </div>
-        <h1 class="live-title">全球全渠道投资 10 秒水温驾驶舱</h1>
-        <p class="hero-verdict">{esc(hero_verdict)}</p>
-        <div class="live-meta-row">
-          <span><strong>黄金快照</strong>：{esc(gold_as_of or "待核")}</span>
-          <span><strong>三市与渠道快照</strong>：{esc(eq_as_of or "待核")}</span>
-          <span><strong>覆盖全版图</strong>：{esc(coverage_summary)}</span>
-        </div>
-        <div class="hero-cta-row">
-          {f'<a class="hero-cta hero-cta-primary" href="#sec-multi-channels">直看 {ch_count_num} 大多元渠道卡片 ↓</a>' if home_channels_section_html else f'<a class="hero-cta hero-cta-primary" href="screener.html">打开 {total_pool} 股交互筛选器 →</a>'}
-          <a class="hero-cta hero-cta-qdii" href="etfs.html#preset=qdii">⚡ QDII 溢价限购雷达</a>
-          <a class="hero-cta" href="charts.html">📈 全市场 K 线终端</a>
-          <a class="hero-cta" href="guide.html">新手 3 分钟指南</a>
-          <a class="hero-cta" href="etfs.html">全球 ETF 雷达</a>
-          <a class="hero-cta" href="screener.html">{total_pool} 股 7 维筛选器</a>
-        </div>
+    <section class="exec-masthead">
+      <div class="exec-top">
+        <span class="compact-alert-pill" title="{esc(alert_label)}"><span class="live-pulse"></span>{esc(live_pill_short)}</span>
+        <span class="sec-sub">每日 07:30 · 11:30 · 18:00 CST · 更新 {esc(eq_as_of or gold_as_of or "待核")} · {esc(coverage_summary)}</span>
       </div>
-      <div class="hero-pulse" aria-label="六大市场实时水温速览">
-        <div class="pulse-group-lbl">核心权益三市（A · 港 · 美）</div>
-        <a class="pulse-row pulse-a-share" href="daily/a-share-latest.html">
-          <span class="pulse-mkt">A 股 · 上证指数</span>
-          <span class="pulse-val">{a_sse_val}</span>
-          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(a_lamp_cls)}"></span><span class="pulse-score">沪深300 {a_csi300_val} · {esc(a_score)}</span></span>
-        </a>
-        <a class="pulse-row pulse-hk-stock" href="daily/hk-stock-latest.html">
-          <span class="pulse-mkt">港股 · 恒生指数</span>
-          <span class="pulse-val">{hk_hsi_val}</span>
-          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(hk_lamp_cls)}"></span><span class="pulse-score">恒科 {hk_hstech_val} · {esc(hk_score)}</span></span>
-        </a>
-        <a class="pulse-row pulse-us-stock" href="daily/us-stock-latest.html">
-          <span class="pulse-mkt">美股 · 标普500</span>
-          <span class="pulse-val">{us_sp_val}</span>
-          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(us_lamp_cls)}"></span><span class="pulse-score">VIX {vix_close_val} · {esc(us_score)}</span></span>
-        </a>
-        <div class="pulse-group-lbl">压舱债率 · 避险黄金 · 非美卫星</div>
-        <a class="pulse-row pulse-rates" href="#card-rates">
-          <span class="pulse-mkt">中美债率 · 10Y利差</span>
-          <span class="pulse-val">{esc(rb_spread_disp)}</span>
-          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(rb_lamp_cls)}"></span><span class="pulse-score">中 {esc(rb_cgb10_s)} / 美 {esc(rb_us10_s)}</span></span>
-        </a>
-        <a class="pulse-row pulse-gold" href="daily/gold-latest.html">
-          <span class="pulse-mkt">黄金 XAU</span>
-          <span class="pulse-val">{_fmt_num(gold_spot, ",.2f", prefix="$")}</span>
-          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(gold_lamp_cls)}"></span><span class="pulse-score">{esc(gold_tier_short)} · {esc(gold_pass)}</span></span>
-        </a>
-        <a class="pulse-row pulse-nonus" href="#card-nonus">
-          <span class="pulse-mkt">非美全球 · 日欧台韩印</span>
-          <span class="pulse-val">4 区域卫星</span>
-          <span class="pulse-meta"><span class="pulse-dot {_dot_css_class(nonus_lamp_cls)}"></span><span class="pulse-score">东证平价 · 严防溢价</span></span>
-        </a>
+      <div class="exec-main">
+        <div class="exec-copy">
+          <h1>全球大类资产投研驾驶舱</h1>
+          <p class="exec-verdict">{esc(hero_verdict)}</p>
+        </div>
+        <div class="exec-actions">
+          <a class="btn btn-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">⚡ QDII 溢价与限购</a>
+          <a class="btn btn-primary" href="#sec-four-buckets">试算我的配置 →</a>
+        </div>
       </div>
     </section>
 
@@ -7007,9 +7224,9 @@ def build_cockpit_page(
     {jump_bar_html}
     {disclosure_html}
 
-    <div class="sec-head" id="sec-core-markets" style="margin-top:10px;">
-      <h2>六大核心市场红绿灯水温卡片（5 核心 × 1 非美全球卫星）</h2>
-      <span class="sec-sub">第 1 行核心权益（A/港/美）· 第 2 行压舱/避险/非美（债率/黄金/日欧台韩印）· 点击瓦片直看 K 线</span>
+    <div class="sec-head" id="sec-core-markets" style="margin-top:8px;">
+      <h2>六大核心市场红绿灯驾驶舱（5 核心 × 1 非美卫星）</h2>
+      <span class="sec-sub">第 1 行权益三市（A/港/美）· 第 2 行压舱/避险/非美（债率/黄金/日欧台韩印）· 点瓦片直看 K 线</span>
     </div>
 
     <section class="market-grid">
@@ -7017,16 +7234,16 @@ def build_cockpit_page(
         <div class="m-card-head">
           <div>
             <div class="m-card-name">🇨🇳 中国 A 股</div>
-            <div class="m-card-sub">核心 #1 · 大盘为先（上证总舵 + 12 宽基风格）· {a_pool} 股池</div>
+            <div class="m-card-sub">核心 #1 · 上证领衔 12 指数 · {a_pool} 股</div>
           </div>
           <span class="lamp-pill {a_lamp_cls}"><span class="lamp-dot"></span>{esc(a_lamp_lbl)} · {esc(a_score)}</span>
         </div>
-        <div class="m-lamp-explain">{esc(_lamp_plain_explain(a_lamp_cls))}</div>
+        <div class="stance-pill {_stance_badge_cls(a_lamp_cls)}">{esc(a_stance_txt)}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">上证指数（000001.SH · 大盘总舵）</div>
             <div class="m-hero-num">{a_sse_val}</div>
-            <div class="m-hero-sub">沪深300 {a_csi300_val}（200周线 {a_200w_val}）· 上证200周线 {a_sse_200w_val}</div>
+            <div class="m-hero-sub">沪深300 {a_csi300_val} · 200周线 {a_200w_val}</div>
           </div>
           {_render_score_meter(a_score_num, a_score)}
         </div>
@@ -7050,10 +7267,9 @@ def build_cockpit_page(
         </div>
         <div class="m-verdict"><strong>防踏空升级线：</strong>{esc(a_m.get("fomo_threshold", ""))}</div>
         <div class="m-actions">
-          <a class="btn btn-primary" href="daily/a-share-latest.html">最新日报 →</a>
-          <a class="btn" href="charts.html#sym=idx_sh000001">📈 K线</a>
-          <a class="btn" href="reports/a-share.html">全景手册 ({a_pool}股)</a>
-          <a class="btn" href="screener.html#market=a-share">A 股 7 维股池</a>
+          <a class="btn btn-primary" href="daily/a-share-latest.html">读日报 →</a>
+          <a class="btn" href="charts.html#sym=idx_sh000001">看K线</a>
+          <a class="btn" href="screener.html#market=a-share">7维股池</a>
         </div>
       </article>
 
@@ -7061,12 +7277,11 @@ def build_cockpit_page(
         <div class="m-card-head">
           <div>
             <div class="m-card-name">🇭🇰 中国香港股市</div>
-            <div class="m-card-sub">核心 #2 · 联汇双通道体检 · {hk_pool} 只核心龙头池</div>
+            <div class="m-card-sub">核心 #2 · 联汇双通道体检 · {hk_pool} 股池</div>
           </div>
           <span class="lamp-pill {hk_lamp_cls}"><span class="lamp-dot"></span>{esc(hk_lamp_lbl)} · {esc(hk_score)}</span>
         </div>
-        <div class="m-role-tag m-role-tag-hk">定位说明：中国离岸折价腿（非海外分散）· 盈利与内需高度同源，重在 AH 折价与互联网科技</div>
-        <div class="m-lamp-explain">{esc(_lamp_plain_explain(hk_lamp_cls))}</div>
+        <div class="stance-pill {_stance_badge_cls(hk_lamp_cls)}">{esc(hk_stance_txt)}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">恒生指数（HSI · 港股总舵）</div>
@@ -7095,10 +7310,9 @@ def build_cockpit_page(
         </div>
         <div class="m-verdict"><strong>防踏空升级线：</strong>{esc(hk_m.get("fomo_threshold", ""))}</div>
         <div class="m-actions">
-          <a class="btn btn-primary" href="daily/hk-stock-latest.html">最新日报 →</a>
-          <a class="btn" href="charts.html#sym=idx_hkHSI">📈 K线</a>
-          <a class="btn" href="reports/hk-stock.html">全景手册 ({hk_pool}股)</a>
-          <a class="btn" href="screener.html#market=hk-stock">港股 7 维股池</a>
+          <a class="btn btn-primary" href="daily/hk-stock-latest.html">读日报 →</a>
+          <a class="btn" href="charts.html#sym=idx_hkHSI">看K线</a>
+          <a class="btn" href="screener.html#market=hk-stock">7维股池</a>
         </div>
       </article>
 
@@ -7106,16 +7320,16 @@ def build_cockpit_page(
         <div class="m-card-head">
           <div>
             <div class="m-card-name">🇺🇸 美国股市</div>
-            <div class="m-card-sub">核心 #3 · 全球 64% 市值母舰 · {us_pool} 只全板块龙头</div>
+            <div class="m-card-sub">核心 #3 · 全球 64% 市值 · {us_pool} 股池</div>
           </div>
           <span class="lamp-pill {us_lamp_cls}"><span class="lamp-dot"></span>{esc(us_lamp_lbl)} · {esc(us_score)}</span>
         </div>
-        <div class="m-lamp-explain">{esc(_lamp_plain_explain(us_lamp_cls))}</div>
+        <div class="stance-pill {_stance_badge_cls(us_lamp_cls)}">{esc(us_stance_txt)}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">标普 500（SPX · 美股总舵）</div>
             <div class="m-hero-num">{us_sp_val}</div>
-            <div class="m-hero-sub">10Y 美债 {us10y_val} · 200日线 {us_200d_val}</div>
+            <div class="m-hero-sub">10Y 美债官收 {us10y_val} · 200日线 {us_200d_val}</div>
           </div>
           {_render_score_meter(us_score_num, us_score)}
         </div>
@@ -7139,11 +7353,9 @@ def build_cockpit_page(
         </div>
         <div class="m-verdict"><strong>防踏空升级线：</strong>{esc(us_m.get("fomo_threshold", ""))}</div>
         <div class="m-actions">
-          <a class="btn btn-primary" href="daily/us-stock-latest.html">最新日报 →</a>
-          <a class="btn btn-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">⚡ QDII 溢价与限购速查 →</a>
-          <a class="btn" href="charts.html#sym=idx_SPX">📈 K线</a>
-          <a class="btn" href="reports/us-stock.html">全景手册 ({us_pool}股)</a>
-          <a class="btn" href="screener.html#market=us-stock">美股 7 维股池</a>
+          <a class="btn btn-primary" href="daily/us-stock-latest.html">读日报 →</a>
+          <a class="btn btn-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">QDII查溢价</a>
+          <a class="btn" href="screener.html#market=us-stock">7维股池</a>
         </div>
       </article>
 
@@ -7155,12 +7367,12 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {rb_lamp_cls}"><span class="lamp-dot"></span>{esc(rb_lamp_lbl)}</span>
         </div>
-        <div class="m-role-tag">{esc(rb_role_tag)}</div>
+        <div class="stance-pill {_stance_badge_cls(rb_lamp_cls)}">{esc(rb_role_tag)}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
             <div class="m-hero-lbl">中美 10 年国债利差（中债 − 美债）</div>
             <div class="m-hero-num">{esc(rb_spread_disp)}</div>
-            <div class="m-hero-sub">中债10Y {esc(rb_cgb10_s)} / 30Y {esc(rb_cgb30_s)} · 美债10Y {esc(rb_us10_s)} / TIPS {esc(rb_dfii_s)}</div>
+            <div class="m-hero-sub">中债10Y {esc(rb_cgb10_s)} / 30Y {esc(rb_cgb30_s)} · 美债10Y官收 {esc(rb_us10_s)} / TIPS {esc(rb_dfii_s)}</div>
           </div>
         </div>
         <div class="m-sub-grid">
@@ -7175,7 +7387,7 @@ def build_cockpit_page(
             <span class="m-sub-meta">短融 511360 银行间免底层 20% 息税</span>
           </button>
           <button type="button" class="m-sub-tile" data-kline-jump="rate_US10Y" data-kline-tab="bonds_reits" title="点击查看美债 10Y 收益率 K 线">
-            <span class="m-sub-head"><span>🇺🇸 美债 2Y / 10Y / 30Y</span><span class="m-sub-grade">全球锚</span></span>
+            <span class="m-sub-head"><span>🇺🇸 美债 2Y / 10Y / 30Y</span><span class="m-sub-grade">官收基准</span></span>
             <span class="m-sub-val">2Y {esc(rb_us2_s)} · 10Y {esc(rb_us10_s)}</span>
             <span class="m-sub-meta">30Y {esc(rb_us30_s)} · 短盾 SGOV / IB01</span>
           </button>
@@ -7204,10 +7416,9 @@ def build_cockpit_page(
         </div>
         <div class="m-verdict"><strong>压舱与防坑指南：</strong>{esc(rb_verdict)}</div>
         <div class="m-actions">
-          <a class="btn btn-primary" href="channels/bonds.html">债券渠道详规 →</a>
-          <a class="btn" href="charts.html#sym=rate_CN10Y">📈 债市K线</a>
-          <a class="btn" href="etfs.html#asset_class=fixed_income_plus">债券/现金ETF</a>
-          <a class="btn" href="channels/reverse_repo.html">活钱池</a>
+          <a class="btn btn-primary" href="channels/bonds.html">债券详规 →</a>
+          <a class="btn" href="charts.html#sym=rate_CN10Y">看K线</a>
+          <a class="btn" href="etfs.html#asset_class=fixed_income_plus">债现ETF</a>
         </div>
       </article>
 
@@ -7219,10 +7430,10 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {gold_lamp_cls}"><span class="lamp-dot"></span>{esc(gold_tier_short)} · {esc(gold_pass)}</span>
         </div>
-        <div class="m-lamp-explain">{esc(_lamp_plain_explain(gold_lamp_cls, is_gold_mkt=True))}</div>
+        <div class="stance-pill {_stance_badge_cls(gold_lamp_cls, is_gold_mkt=True)}">{esc(gold_stance_txt)}</div>
         <div class="m-hero-row">
           <div class="m-hero-main">
-            <div class="m-hero-lbl">纽约现货金（美元/盎司）</div>
+            <div class="m-hero-lbl">纽约现货金（纽约官收 · 美元/盎司）</div>
             <div class="m-hero-num">{gold_spot_val}</div>
             <div class="m-hero-sub">{esc(gold_asia_sub)}</div>
           </div>
@@ -7248,10 +7459,9 @@ def build_cockpit_page(
         </div>
         <div class="m-verdict"><strong>核心指令：</strong>{esc(gold_verdict)}</div>
         <div class="m-actions">
-          <a class="btn btn-primary" href="daily/gold-latest.html">最新日报 →</a>
-          <a class="btn" href="charts.html#sym=cmd_XAU">📈 K线</a>
-          <a class="btn" href="reports/gold.html">跨世纪主报告</a>
-          <a class="btn" href="scorecard.html#gold-scorecard">记分卡</a>
+          <a class="btn btn-primary" href="daily/gold-latest.html">读日报 →</a>
+          <a class="btn" href="charts.html#sym=cmd_XAU">看K线</a>
+          <a class="btn" href="reports/gold.html">主报告</a>
         </div>
       </article>
 
@@ -7263,25 +7473,24 @@ def build_cockpit_page(
           </div>
           <span class="lamp-pill {nonus_lamp_cls}"><span class="lamp-dot"></span>{esc(nonus_lamp_lbl)}</span>
         </div>
-        <div class="m-role-tag">{esc(nonus_role_tag)}</div>
+        <div class="stance-pill {_stance_badge_cls(nonus_lamp_cls)}">{esc(nonus_role_tag)}</div>
         <div class="m-sub-grid">{nonus_tiles_html}</div>
         <div class="m-stat-strip">{nonus_stats_html}</div>
         <div class="m-verdict"><strong>QDII / LOF 排雷：</strong>{esc(nonus_verdict)}</div>
         <div class="m-actions">
-          <a class="btn btn-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">⚡ QDII 溢价与限购速查 →</a>
-          <a class="btn" href="charts.html#sym=idx_N225">📈 非美K线</a>
-          <a class="btn" href="etfs.html#asset_class=equity&amp;region=non_us">非美ETF筛选</a>
-          <a class="btn" href="etfs.html#preset=qdii">全部 QDII ETF</a>
+          <a class="btn btn-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">QDII查溢价 →</a>
+          <a class="btn" href="charts.html#sym=idx_N225">看K线</a>
+          <a class="btn" href="etfs.html#asset_class=equity&amp;region=non_us">非美ETF</a>
         </div>
       </article>
     </section>
 
-    {home_kline_deck_html}
+    {policy_calendar_html}
     {action_lights_html}
+    {home_kline_deck_html}
     {four_buckets_html}
     {home_channels_section_html}
     {home_etf_section_html}
-    {policy_calendar_html}
 
     <div class="sec-head" id="sec-risk-radar">
       <h2>跨市场风险雷达与家庭总账</h2>
@@ -7320,7 +7529,7 @@ def build_cockpit_page(
             </div>
             <div class="breaker-val">{us10y_val}</div>
             <div class="breaker-meter"><div class="breaker-meter-fill {_breaker_fill_cls(us10y_chip[0])}" style="width:{us10y_meter_pct:.0f}%;"></div></div>
-            <div class="breaker-thr">熔断线：突破 {us10y_thr:.2f}%</div>
+            <div class="breaker-thr">{esc(us10y_thr_line)}</div>
           </div>
           <div class="breaker-item">
             <div class="breaker-top">
@@ -8299,15 +8508,20 @@ def build_channels_page(
     ch_filter_h2 = f"按用钱时间或资产类型筛选全部 {ch_cnt} 大渠道" if ch_cnt else "按用钱时间或资产类型筛选全部合规渠道"
     return f"""
     <section class="channels-hero">
-      <div class="cover-tag">{esc(ch_cnt_tag)} · {esc(as_of)}</div>
-      <h1>{esc(headline)}</h1>
-      <p class="channels-hero-sub">{esc(subtitle)}</p>
-      <div class="hero-cta-row" style="margin:10px 0 12px 0;">
-        <a class="hero-cta hero-cta-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">⚡ 直达 QDII 溢价与限购对照表 →</a>
-        <a class="hero-cta" href="etfs.html#preset=qdii">境内 QDII ETF 排雷专窗</a>
-        <a class="hero-cta" href="#sec-compare-table">12 大渠道一眼对比表 ↓</a>
+      <div class="exec-top">
+        <span class="cover-tag">{esc(ch_cnt_tag)} · {esc(as_of)}</span>
+        {f'<span class="compact-alert-pill">🛑 {esc(mutex_note)}</span>' if mutex_note else ''}
       </div>
-      {f'<div class="channels-mutex">🛑 跨市场风控同步：{esc(mutex_note)}</div>' if mutex_note else ''}
+      <div class="exec-main">
+        <div class="exec-copy">
+          <h1>{esc(headline)}</h1>
+          <p class="channels-hero-sub">{esc(subtitle)}</p>
+        </div>
+        <div class="exec-actions">
+          <a class="btn btn-qdii" href="channels/qdii_mrf.html#sec-qdii-compare">⚡ QDII 溢价与限购表 →</a>
+          <a class="btn btn-primary" href="#sec-compare-table">一眼对比总表 ↓</a>
+        </div>
+      </div>
       <div class="macro-strip">{anchor_html}</div>
     </section>
 
@@ -8419,13 +8633,11 @@ def build_etfs_page(
             '<span class="disclosure-summary-main">'
             '<span class="disclosure-icon" aria-hidden="true">📐</span>'
             '<span class="disclosure-heading">'
-            '<span class="disclosure-title">2026 全球 ETF 5 条核心铁律（费改 · 港股三通道税差 · 爱尔兰免遗产税 · 跨境溢价死线）</span>'
-            '<span class="disclosure-sub">下单前速查公募费改、税负通道对比与场内高溢价纪律</span>'
+            '<span class="disclosure-title">2026 全球 ETF 5 条核心铁律（费改 · 港股税差 · 爱尔兰免遗产税 · 溢价死线）</span>'
             "</span>"
             "</span>"
             '<span class="disclosure-summary-meta">'
-            f'<span class="disclosure-toggle-lbl">{len(rules)} 条规则 · 展开查阅</span>'
-            '<span class="disclosure-chev" aria-hidden="true">▾</span>'
+            f'<span class="disclosure-toggle-lbl">{len(rules)} 条规则 ▾</span>'
             "</span>"
             "</summary>"
             f'<div class="etf-rules-body"><div class="etf-rules-grid">{rules_html}</div></div>'
@@ -8435,11 +8647,12 @@ def build_etfs_page(
     etfs_intro_html = inject_glossary_tips(
         f"""
     <div class="sec-head" style="margin-top:4px;">
-      <h1>全球 {total} 只重点 ETF 多通道深度雷达</h1>
-      <span class="sec-sub">覆盖 A 股、港股三通道、美股原版、爱尔兰 UCITS、境内非美 QDII 及债券商品 ETF · 基准 {esc(as_of)}</span>
+      <div>
+        <h1>全球 {total} 只重点 ETF 多通道深度雷达</h1>
+        <span class="sec-sub">覆盖 A/港/美/日欧亚太、爱尔兰 UCITS、境内 QDII 与债现商品 · 基准 {esc(as_of)}</span>
+      </div>
+      {f'<span class="compact-alert-pill">🛑 {esc(lock_notice)}</span>' if lock_notice else ''}
     </div>
-
-    {f'<div class="etf-lock-banner">🛑 {esc(lock_notice)}</div>' if lock_notice else ''}
     {rules_box_html}
     """
     )
@@ -8447,81 +8660,87 @@ def build_etfs_page(
     return f"""
     {etfs_intro_html}
 
-    <div class="screener-stats">
+    <div class="screener-stats compact-stat-strip">
       <div class="stat-tile stat-total active" data-etf-stat-ortho="all" role="button" tabindex="0" aria-pressed="true">
-        <div class="stat-tile-lbl">全通道重点 ETF</div>
+        <div class="stat-tile-lbl">全通道 ETF</div>
         <div class="stat-tile-num">{total}</div>
       </div>
       <div class="stat-tile" data-etf-stat-ortho="equity" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #9f2326;">
-        <div class="stat-tile-lbl">📈 全球股票权益 ETF</div>
+        <div class="stat-tile-lbl">📈 股票权益</div>
         <div class="stat-tile-num">{cnt_ac["equity"]}</div>
       </div>
       <div class="stat-tile" data-etf-stat-ortho="fixed_income_plus" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #0d6963;">
-        <div class="stat-tile-lbl">🏦 固收 / 现金盾 / 转债 / REITs</div>
+        <div class="stat-tile-lbl">🏦 债/现/转债/REITs</div>
         <div class="stat-tile-num">{cnt_fi_plus}</div>
       </div>
       <div class="stat-tile" data-etf-stat-ortho="qdii" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #1b4b8a;">
-        <div class="stat-tile-lbl">⚡ 境内 QDII 溢价专窗</div>
+        <div class="stat-tile-lbl">⚡ 境内 QDII</div>
         <div class="stat-tile-num">{cnt_qdii}</div>
       </div>
       <div class="stat-tile" data-etf-stat-ortho="gold_commodity" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #b45309;">
-        <div class="stat-tile-lbl">🥇 黄金红灯与非金商品</div>
+        <div class="stat-tile-lbl">🥇 黄金红灯/商品</div>
         <div class="stat-tile-num">{cnt_gold_cmd}</div>
       </div>
     </div>
 
-    <section class="filter-panel">
-      <div class="preset-row" role="group" aria-label="ETF 快捷筛选">
-        <button type="button" class="preset-pill active" data-etf-preset="all">全部 ETF</button>
-        <button type="button" class="preset-pill preset-pill-qdii" data-etf-preset="qdii">⚡ 境内 QDII 溢价排雷 ({cnt_qdii})</button>
-        <button type="button" class="preset-pill" data-etf-preset="watchlist">★ 仅看自选</button>
-        <button type="button" class="preset-pill" data-etf-preset="low-fee">地板费率 ≤0.20%</button>
-        <button type="button" class="preset-pill" data-etf-preset="base">红灯稳健底座</button>
-        <button type="button" class="preset-pill" data-etf-preset="cash-shield">本外币现金盾</button>
-        <button type="button" class="preset-pill" data-etf-preset="high-risk">高溢价/高危排雷</button>
-        <button type="button" class="preset-pill" data-etf-preset="hide-gold">隐藏黄金红灯锁</button>
-      </div>
+    <section class="filter-panel toolbar-sticky">
       <div class="filter-row">
         <div class="search-wrap">
           <input type="search" id="etf-search" class="search-input" placeholder="搜索代码 / 简称 / 指数 / 联接（如 563360、IB01、513800、红利）…" autocomplete="off">
           <button type="button" id="etf-clear" class="search-clear" aria-label="清空搜索" hidden>×</button>
           <kbd class="kbd-hint" aria-hidden="true">/</kbd>
         </div>
-        <button type="button" class="btn btn-sm" id="etf-reset">重置筛选</button>
+        <div class="preset-row" role="group" aria-label="ETF 快捷筛选">
+          <button type="button" class="preset-pill active" data-etf-preset="all">全部</button>
+          <button type="button" class="preset-pill preset-pill-qdii" data-etf-preset="qdii">⚡ QDII排雷 ({cnt_qdii})</button>
+          <button type="button" class="preset-pill" data-etf-preset="watchlist">★ 自选</button>
+          <button type="button" class="preset-pill" data-etf-preset="low-fee">低费 ≤0.20%</button>
+          <button type="button" class="preset-pill" data-etf-preset="high-risk">高危预警</button>
+        </div>
+        <button type="button" class="ctrl-btn filter-adv-btn" data-toggle-adv-filter="1" aria-expanded="false">精细筛选 ▾</button>
+        <button type="button" class="btn btn-sm" id="etf-reset">重置</button>
       </div>
-      <div class="filter-row">
-        <span class="filter-row-lbl">资产大类</span>
-        <button type="button" class="filter-pill active" data-etf-asset-class="all">全部大类 ({total})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="equity">股票权益 ({cnt_ac["equity"]})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="fixed_income_plus">固收现金组合 ({cnt_fi_plus})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="fixed_income">利率信用债 ({cnt_ac["fixed_income"]})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="cash_mmf">现金货币盾 ({cnt_ac["cash_mmf"]})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="convertible_bond">可转债 ({cnt_ac["convertible_bond"]})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="gold">黄金红灯 ({cnt_ac["gold"]})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="commodity">非金商品 ({cnt_ac["commodity"]})</button>
-        <button type="button" class="filter-pill" data-etf-asset-class="reits">REITs ({cnt_ac["reits"]})</button>
-      </div>
-      <div class="filter-row">
-        <span class="filter-row-lbl">底层区域</span>
-        <button type="button" class="filter-pill active" data-etf-region="all">全部区域</button>
-        <button type="button" class="filter-pill" data-etf-region="cn">🇨🇳 中国境内 ({cnt_reg["cn"]})</button>
-        <button type="button" class="filter-pill" data-etf-region="hk">🇭🇰 中国香港 ({cnt_reg["hk"]})</button>
-        <button type="button" class="filter-pill" data-etf-region="us">🇺🇸 美国 ({cnt_reg["us"]})</button>
-        <button type="button" class="filter-pill" data-etf-region="non_us">🌏 日欧亚太全球 ({cnt_nonus})</button>
-        <button type="button" class="filter-pill" data-etf-region="jp">🇯🇵 日本 ({cnt_reg["jp"]})</button>
-        <button type="button" class="filter-pill" data-etf-region="eu">🇪🇺 欧洲 ({cnt_reg["eu"]})</button>
-        <button type="button" class="filter-pill" data-etf-region="apac_em">亚太新兴 ({cnt_reg["apac_em"]})</button>
-        <button type="button" class="filter-pill" data-etf-region="global">全球大宗/宽基 ({cnt_reg["global"]})</button>
-      </div>
-      <div class="filter-row">
-        <span class="filter-row-lbl">交易通道</span>
-        <button type="button" class="filter-pill active" data-etf-channel="all">全部交易通道</button>
-        <button type="button" class="filter-pill" data-etf-channel="境内场内">境内场内</button>
-        <button type="button" class="filter-pill" data-etf-channel="境内非QDII港股通">境内非QDII港股通</button>
-        <button type="button" class="filter-pill" data-etf-channel="境内QDII">境内QDII ({cnt_qdii})</button>
-        <button type="button" class="filter-pill" data-etf-channel="离岸港交所">离岸港交所</button>
-        <button type="button" class="filter-pill" data-etf-channel="离岸美股">离岸美股</button>
-        <button type="button" class="filter-pill" data-etf-channel="爱尔兰UCITS">爱尔兰UCITS</button>
+      <div class="filter-adv-tray" hidden>
+        <div class="filter-row">
+          <span class="filter-row-lbl">更多预设</span>
+          <button type="button" class="preset-pill" data-etf-preset="base">红灯稳健底座</button>
+          <button type="button" class="preset-pill" data-etf-preset="cash-shield">本外币现金盾</button>
+          <button type="button" class="preset-pill" data-etf-preset="hide-gold">隐藏黄金红灯锁</button>
+        </div>
+        <div class="filter-row">
+          <span class="filter-row-lbl">资产大类</span>
+          <button type="button" class="filter-pill active" data-etf-asset-class="all">全部大类 ({total})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="equity">股票权益 ({cnt_ac["equity"]})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="fixed_income_plus">固收现金组合 ({cnt_fi_plus})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="fixed_income">利率信用债 ({cnt_ac["fixed_income"]})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="cash_mmf">现金货币盾 ({cnt_ac["cash_mmf"]})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="convertible_bond">可转债 ({cnt_ac["convertible_bond"]})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="gold">黄金红灯 ({cnt_ac["gold"]})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="commodity">非金商品 ({cnt_ac["commodity"]})</button>
+          <button type="button" class="filter-pill" data-etf-asset-class="reits">REITs ({cnt_ac["reits"]})</button>
+        </div>
+        <div class="filter-row">
+          <span class="filter-row-lbl">底层区域</span>
+          <button type="button" class="filter-pill active" data-etf-region="all">全部区域</button>
+          <button type="button" class="filter-pill" data-etf-region="cn">🇨🇳 中国境内 ({cnt_reg["cn"]})</button>
+          <button type="button" class="filter-pill" data-etf-region="hk">🇭🇰 中国香港 ({cnt_reg["hk"]})</button>
+          <button type="button" class="filter-pill" data-etf-region="us">🇺🇸 美国 ({cnt_reg["us"]})</button>
+          <button type="button" class="filter-pill" data-etf-region="non_us">🌏 日欧亚太全球 ({cnt_nonus})</button>
+          <button type="button" class="filter-pill" data-etf-region="jp">🇯🇵 日本 ({cnt_reg["jp"]})</button>
+          <button type="button" class="filter-pill" data-etf-region="eu">🇪🇺 欧洲 ({cnt_reg["eu"]})</button>
+          <button type="button" class="filter-pill" data-etf-region="apac_em">亚太新兴 ({cnt_reg["apac_em"]})</button>
+          <button type="button" class="filter-pill" data-etf-region="global">全球大宗/宽基 ({cnt_reg["global"]})</button>
+        </div>
+        <div class="filter-row">
+          <span class="filter-row-lbl">交易通道</span>
+          <button type="button" class="filter-pill active" data-etf-channel="all">全部交易通道</button>
+          <button type="button" class="filter-pill" data-etf-channel="境内场内">境内场内</button>
+          <button type="button" class="filter-pill" data-etf-channel="境内非QDII港股通">境内非QDII港股通</button>
+          <button type="button" class="filter-pill" data-etf-channel="境内QDII">境内QDII ({cnt_qdii})</button>
+          <button type="button" class="filter-pill" data-etf-channel="离岸港交所">离岸港交所</button>
+          <button type="button" class="filter-pill" data-etf-channel="离岸美股">离岸美股</button>
+          <button type="button" class="filter-pill" data-etf-channel="爱尔兰UCITS">爱尔兰UCITS</button>
+        </div>
       </div>
     </section>
 
@@ -8550,8 +8769,9 @@ def build_etfs_page(
     </div>
 
     <div class="etf-cards" id="etf-cards"></div>
+    <div class="pg-bar" id="etf-pg-bar"></div>
 
-    <div class="dossier-backdrop no-print" id="etf-modal" role="dialog" aria-modal="true" aria-label="ETF 深度拆解">
+    <div class="dossier-backdrop drawer-modal no-print" id="etf-modal" role="dialog" aria-modal="true" aria-label="ETF 深度拆解">
       <div class="dossier-dialog">
         <div class="dossier-head">
           <div class="dossier-head-main">
@@ -8559,7 +8779,11 @@ def build_etfs_page(
             <div class="dossier-sub" id="etf-modal-sub"></div>
             <div class="dossier-badges" id="etf-modal-badges"></div>
           </div>
-          <button type="button" class="ctrl-btn" data-action="close-etf" aria-label="关闭 ETF 详情">关闭 ✕</button>
+          <div class="drawer-nav-btns">
+            <button type="button" class="ctrl-btn" data-drawer-step="-1" title="上一个 (↑)" aria-label="上一个">↑</button>
+            <button type="button" class="ctrl-btn" data-drawer-step="1" title="下一个 (↓)" aria-label="下一个">↓</button>
+            <button type="button" class="ctrl-btn" data-action="close-etf" aria-label="关闭 ETF 详情">关闭 ✕</button>
+          </div>
         </div>
         <div class="dossier-body" id="etf-modal-body"></div>
         <div class="dossier-foot">
@@ -8639,7 +8863,7 @@ def build_screener_page(
     </div>
 
     <div id="scr-view-pool">
-    <div class="screener-stats">
+    <div class="screener-stats compact-stat-strip">
       <div class="stat-tile stat-total" data-stat-color="all" role="button" tabindex="0" aria-pressed="false">
         <div class="stat-tile-lbl">全部龙头池</div>
         <div class="stat-tile-num">{total}</div>
@@ -8649,7 +8873,7 @@ def build_screener_page(
         <div class="stat-tile-num">{cnt_c["g"]}</div>
       </div>
       <div class="stat-tile" data-stat-color="b" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #0072b2;">
-        <div class="stat-tile-lbl" style="color:var(--st-blue-txt);">◆ 未来主攻（已锁）</div>
+        <div class="stat-tile-lbl" style="color:var(--st-blue-txt);">◆ 未来主攻</div>
         <div class="stat-tile-num">{cnt_c["b"]}</div>
       </div>
       <div class="stat-tile" data-stat-color="y" role="button" tabindex="0" aria-pressed="false" style="border-top:3px solid #d97706;">
@@ -8662,38 +8886,41 @@ def build_screener_page(
       </div>
     </div>
 
-    <section class="filter-panel">
-      <div class="preset-row" role="group" aria-label="快捷筛选预设">
-        <button type="button" class="preset-pill active" data-preset="all">全部龙头</button>
-        <button type="button" class="preset-pill" data-preset="watchlist">★ 仅看自选</button>
-        <button type="button" class="preset-pill" data-preset="base">● 当下底座</button>
-        <button type="button" class="preset-pill" data-preset="high-div">高股息 ≥4%</button>
-        <button type="button" class="preset-pill" data-preset="near-anchor">近安全锚 ≤12%</button>
-        <button type="button" class="preset-pill" data-preset="ah-inverted">A/H 倒挂折价</button>
-        <button type="button" class="preset-pill" data-preset="hide-red">隐藏高危回避</button>
-      </div>
+    <section class="filter-panel toolbar-sticky">
       <div class="filter-row">
         <div class="search-wrap">
-          <input type="search" id="scr-search" class="search-input" placeholder="搜索中文名 / 代码 / 赛道 / 关键词（如 宁德、NVDA、00883、银行、回购）…" autocomplete="off">
+          <input type="search" id="scr-search" class="search-input" placeholder="搜索中文名 / 代码 / 赛道 / 关键词（如 宁德、NVDA、00883、银行）…" autocomplete="off">
           <button type="button" id="scr-clear" class="search-clear" aria-label="清空搜索" hidden>×</button>
           <kbd class="kbd-hint" aria-hidden="true">/</kbd>
         </div>
-        <button type="button" class="btn btn-sm" id="scr-reset">重置筛选</button>
+        <div class="preset-row" role="group" aria-label="快捷筛选预设">
+          <button type="button" class="preset-pill active" data-preset="all">全部</button>
+          <button type="button" class="preset-pill" data-preset="watchlist">★ 自选</button>
+          <button type="button" class="preset-pill" data-preset="base">● 当下底座</button>
+          <button type="button" class="preset-pill" data-preset="high-div">高股息 ≥4%</button>
+          <button type="button" class="preset-pill" data-preset="near-anchor">近安全锚</button>
+          <button type="button" class="preset-pill" data-preset="ah-inverted">A/H 倒挂</button>
+        </div>
+        <button type="button" class="ctrl-btn filter-adv-btn" data-toggle-adv-filter="1" aria-expanded="false">精细筛选 ▾</button>
+        <button type="button" class="btn btn-sm" id="scr-reset">重置</button>
       </div>
-      <div class="filter-row">
-        <button type="button" class="filter-pill active" data-filter-market="all">全部市场 ({total})</button>
-        <button type="button" class="filter-pill" data-filter-market="a-share">🇨🇳 A 股 ({cnt_m["a-share"]})</button>
-        <button type="button" class="filter-pill" data-filter-market="hk-stock">🇭🇰 港股 ({cnt_m["hk-stock"]})</button>
-        <button type="button" class="filter-pill" data-filter-market="us-stock">🇺🇸 美股 ({cnt_m["us-stock"]})</button>
+      <div class="filter-adv-tray" hidden>
+        <div class="filter-row">
+          <button type="button" class="filter-pill active" data-filter-market="all">全部市场 ({total})</button>
+          <button type="button" class="filter-pill" data-filter-market="a-share">🇨🇳 A 股 ({cnt_m["a-share"]})</button>
+          <button type="button" class="filter-pill" data-filter-market="hk-stock">🇭🇰 港股 ({cnt_m["hk-stock"]})</button>
+          <button type="button" class="filter-pill" data-filter-market="us-stock">🇺🇸 美股 ({cnt_m["us-stock"]})</button>
+          <button type="button" class="preset-pill" data-preset="hide-red">隐藏高危回避</button>
+        </div>
+        <div class="filter-row">
+          <button type="button" class="filter-pill active" data-filter-color="all">全部四色阵营</button>
+          <button type="button" class="filter-pill" data-filter-color="g" data-color="g">● 当下底座 ({cnt_c["g"]})</button>
+          <button type="button" class="filter-pill" data-filter-color="b" data-color="b">◆ 未来主攻 ({cnt_c["b"]})</button>
+          <button type="button" class="filter-pill" data-filter-color="y" data-color="y">▲ 分歧观察 ({cnt_c["y"]})</button>
+          <button type="button" class="filter-pill" data-filter-color="r" data-color="r">× 高危回避 ({cnt_c["r"]})</button>
+        </div>
+        <div class="sector-tray" id="scr-sector-tray" aria-label="赛道多选筛选"></div>
       </div>
-      <div class="filter-row">
-        <button type="button" class="filter-pill active" data-filter-color="all">全部四色阵营</button>
-        <button type="button" class="filter-pill" data-filter-color="g" data-color="g">● 当下底座 ({cnt_c["g"]})</button>
-        <button type="button" class="filter-pill" data-filter-color="b" data-color="b">◆ 未来主攻 ({cnt_c["b"]})</button>
-        <button type="button" class="filter-pill" data-filter-color="y" data-color="y">▲ 分歧观察 ({cnt_c["y"]})</button>
-        <button type="button" class="filter-pill" data-filter-color="r" data-color="r">× 高危回避 ({cnt_c["r"]})</button>
-      </div>
-      <div class="sector-tray" id="scr-sector-tray" aria-label="赛道多选筛选"></div>
     </section>
 
     <div class="screener-bar">
@@ -8719,6 +8946,7 @@ def build_screener_page(
     </div>
 
     <div class="screener-cards" id="scr-cards"></div>
+    <div class="pg-bar" id="scr-pg-bar"></div>
     </div>
 
     <section id="scr-view-ah" class="ah-matrix-panel" hidden aria-label="A/H 孪生股税后股息比价矩阵">
@@ -8757,7 +8985,7 @@ def build_screener_page(
       <script id="ah-matrix-data" type="application/json">{safe_ah_json}</script>
     </section>
 
-    <div class="dossier-backdrop no-print" id="dossier-modal" role="dialog" aria-modal="true" aria-label="个股 7 维机构深度档案">
+    <div class="dossier-backdrop drawer-modal no-print" id="dossier-modal" role="dialog" aria-modal="true" aria-label="个股 7 维机构深度档案">
       <div class="dossier-dialog">
         <div class="dossier-head">
           <div class="dossier-head-main">
@@ -8765,7 +8993,11 @@ def build_screener_page(
             <div class="dossier-sub" id="dossier-modal-sub"></div>
             <div class="dossier-badges" id="dossier-modal-badges"></div>
           </div>
-          <button type="button" class="ctrl-btn" data-action="close-dossier" aria-label="关闭个股深度档案">关闭 ✕</button>
+          <div class="drawer-nav-btns">
+            <button type="button" class="ctrl-btn" data-drawer-step="-1" title="上一个 (↑)" aria-label="上一个">↑</button>
+            <button type="button" class="ctrl-btn" data-drawer-step="1" title="下一个 (↓)" aria-label="下一个">↓</button>
+            <button type="button" class="ctrl-btn" data-action="close-dossier" aria-label="关闭个股深度档案">关闭 ✕</button>
+          </div>
         </div>
         <div class="dossier-body" id="dossier-modal-body"></div>
         <div class="dossier-foot">
@@ -8803,79 +9035,6 @@ def build_guide_page(
     etf_cnt = len((etf_data or {}).get("etfs") or []) if isinstance(etf_data, dict) else 0
     ch_lbl = f"{ch_cnt} 大个人多元渠道" if ch_cnt else "个人多元合规渠道"
     etf_lbl = f"{etf_cnt} 只重点 ETF" if etf_cnt else "全球重点 ETF"
-
-    # Compact live 4-market status strip from gold_snap + eq_state (graceful when None/{})
-    guide_live_strip_html = ""
-    eq_mkts = es.get("markets") if isinstance(es.get("markets"), dict) else {}
-    if gs or eq_mkts:
-        g_lamp_cls = "lamp-red" if gold_blocked else _lamp_css_class(gs.get("lamp", "amber"))
-        g_tier = str(gs.get("tier_short") or ("红灯停" if gold_blocked else "按档观察")).strip()
-        g_pass = str(gs.get("tier1_pass_count") or ("新仓 0%" if gold_blocked else "四关核验")).strip()
-        a_m = eq_mkts.get("a_share") if isinstance(eq_mkts.get("a_share"), dict) else {}
-        hk_m = eq_mkts.get("hk_stock") if isinstance(eq_mkts.get("hk_stock"), dict) else {}
-        us_m = eq_mkts.get("us_stock") if isinstance(eq_mkts.get("us_stock"), dict) else {}
-        mkt_strip_specs: list[tuple[str, str, str, str]] = [
-            ("🥇 黄金", g_lamp_cls, f"{g_tier} · {g_pass}", "daily/gold-latest.html"),
-            (
-                "🇨🇳 A 股",
-                _lamp_css_class(a_m.get("lamp", "red")),
-                f'{str(a_m.get("lamp_label") or "红灯防守").replace("🛡️", "").strip()} · {str(a_m.get("score") or "待核")}',
-                "daily/a-share-latest.html",
-            ),
-            (
-                "🇭🇰 港股",
-                _lamp_css_class(hk_m.get("lamp", "red")),
-                f'{str(hk_m.get("lamp_label") or "红灯防守").replace("🛡️", "").strip()} · {str(hk_m.get("score") or "待核")}',
-                "daily/hk-stock-latest.html",
-            ),
-            (
-                "🇺🇸 美股",
-                _lamp_css_class(us_m.get("lamp", "red")),
-                f'{str(us_m.get("lamp_label") or "红灯防守").replace("🛡️", "").strip()} · {str(us_m.get("score") or "待核")}',
-                "daily/us-stock-latest.html",
-            ),
-        ]
-        rb_g = es.get("rates_bonds_core") if isinstance(es.get("rates_bonds_core"), dict) else {}
-        if rb_g:
-            rb_g_lamp = str(rb_g.get("lamp") or "yellow").strip().lower()
-            rb_g_cls = "lamp-green" if rb_g_lamp == "green" else ("lamp-red" if rb_g_lamp == "red" else "lamp-amber")
-            rb_g_lbl = str(rb_g.get("lamp_label") or "黄灯控久期").replace("⚖️", "").replace("🛡️", "").split("·")[0].strip()
-            mkt_strip_specs.append(("🛡️ 中美债率", rb_g_cls, rb_g_lbl, "index.html#card-rates"))
-        nonus_g = es.get("non_us_global_satellite") if isinstance(es.get("non_us_global_satellite"), dict) else {}
-        if nonus_g:
-            mkt_strip_specs.append(("🌏 非美卫星", "lamp-amber", "黄灯精选 · 严防溢价", "index.html#card-nonus"))
-        strip_cards = "".join(
-            f'<a class="home-macro-card" href="{esc(href)}">'
-            f'<div class="home-macro-lbl">{esc(lbl)}</div>'
-            f'<div class="home-macro-val"><span class="lamp-pill {lcls}"><span class="lamp-dot"></span>{esc(val)}</span></div>'
-            f"</a>"
-            for lbl, lcls, val, href in mkt_strip_specs
-        )
-        guide_live_strip_html = (
-            '<div class="home-macro-bar" aria-label="六大核心与卫星市场当下实时红绿灯状态">'
-            f'<div class="home-macro-grid">{strip_cards}</div>'
-            "</div>"
-        )
-
-    # Quick links across channels.html + all standard personal channels
-    guide_ch_links_html = ""
-    if ch_items:
-        seen_cids: set[str] = set()
-        ch_pills: list[str] = ['<a class="home-jump-pill" href="channels.html">全渠道对比总表</a>']
-        for idx, ch in enumerate(ch_items, start=1):
-            cid = str(ch["id"]).strip()
-            if cid in seen_cids:
-                continue
-            seen_cids.add(cid)
-            cname = str(ch.get("short_name") or ch.get("name") or cid).strip()
-            ch_pills.append(
-                f'<a class="home-jump-pill" href="channels/{esc(cid)}.html">{_fmt_ch_num(ch.get("order"), idx)} {esc(cname)}</a>'
-            )
-        guide_ch_links_html = (
-            '<nav class="home-jump-bar" aria-label="12 大个人多元渠道直达">'
-            + "".join(ch_pills)
-            + "</nav>"
-        )
 
     pitfalls: tuple[tuple[str, str, str, str], ...] = (
         (
@@ -8959,24 +9118,28 @@ def build_guide_page(
 
     return f"""
     <section class="guide-hero">
-      <div class="cover-tag">新手 3 分钟入门指南 · 平等透明投研导航</div>
-      <h1>3 分钟读懂全球投研门户与高频金融关键词</h1>
-      <p class="channels-hero-sub">不必背诵复杂金融黑话，按「看懂红绿灯 → 分好四笔钱 → 避开 8 大高频误区」三步节奏，轻松把全站 {esc(ch_lbl)}、{esc(etf_lbl)} 与 {total_pool} 只核心龙头变成清晰好用的决策参考。</p>
-      <div class="hero-cta-row">
-        <a class="hero-cta hero-cta-primary" href="#sec-guide-glossary">直查 Top {len(GLOSSARY_TERMS)} 关键词白话速查 ↓</a>
-        <a class="hero-cta" href="index.html#sec-four-buckets">回首页看四笔钱导览</a>
-        <a class="hero-cta" href="channels.html">全渠道一眼对比总表</a>
-        <a class="hero-cta" href="etfs.html">重点 ETF 雷达</a>
+      <div class="exec-top">
+        <span class="cover-tag">新手 3 分钟入门指南 · 平等透明投研导航</span>
+      </div>
+      <div class="exec-main">
+        <div class="exec-copy">
+          <h1>3 分钟读懂全球投研门户与高频金融关键词</h1>
+          <p class="channels-hero-sub">不必背诵复杂金融黑话，按「看懂红绿灯与仓位区别 → 试算四笔钱 → 避开 8 大误区」三步节奏，轻松把全站 {esc(ch_lbl)}、{esc(etf_lbl)} 与 {total_pool} 只核心龙头变成清晰好用的决策参考。</p>
+        </div>
+        <div class="exec-actions">
+          <a class="btn btn-primary" href="#sec-guide-glossary">直查 Top {len(GLOSSARY_TERMS)} 关键词 ↓</a>
+          <a class="btn" href="index.html">回首页驾驶舱 →</a>
+        </div>
       </div>
     </section>
 
-    {guide_live_strip_html}
-    {guide_ch_links_html}
-    {_render_wallet_calculator(gs, es)}
-
-    <div class="sec-head" id="sec-guide-lamps">
-      <h2>① 1 分钟看懂本站「红绿灯」与四笔钱路线图</h2>
+    <div class="sec-head" id="sec-guide-lamps" style="margin-top:8px;">
+      <h2>① 1 分钟看懂本站「红绿灯」与每日 3 分钟动线</h2>
       <span class="sec-sub">红绿灯是帮你管住手的仓位安全阀，绝非情绪化喊单</span>
+    </div>
+    <div class="guide-stance-clarify">
+      <strong>⚠️ 必读区分：「股票防守建底期（上限 ≤40%）」≠「黄金红灯停（新仓严格 0%）」</strong>
+      <p>股票市场亮红灯防守时，仍允许空仓或低仓者按安全锚分批建立防弹衣底座（严守总股仓上限 ≤35%–40%、不追高）；而黄金若处于红灯停阶段，则是新仓严格 0% 暂不新买（老持仓稳拿不乱割），两类规则切勿混淆。</p>
     </div>
     <section class="guide-lamp-grid">
       <div class="guide-lamp-card gl-green">
@@ -9019,6 +9182,8 @@ def build_guide_page(
         </div>
       </div>
     </div>
+
+    {_render_wallet_calculator(gs, es)}
 
     <div class="sec-head" id="sec-guide-pitfalls">
       <h2>② 新手最常踩的 8 大真实避坑清单</h2>
@@ -9073,18 +9238,18 @@ def parse_scorecard_stats(gold_sc_md: str, eq_sc_md: str) -> dict[str, dict[str,
         cells = _split_md_cells(st)
         if len(cells) >= 8 and ("统计口径" in cells[0] or ("兑现" in " ".join(cells) and "证伪" in " ".join(cells))):
             for idx_c, hdr in enumerate(cells):
-                if "部分兑现" in hdr and "率" not in hdr:
+                if "至少部分" in hdr:
+                    col_idx["part_pct"] = idx_c
+                elif "完全兑现" in hdr:
+                    col_idx["full_pct"] = idx_c
+                elif "部分兑现" in hdr and "率" not in hdr and "至少" not in hdr and "评分" not in hdr:
                     col_idx["partial"] = idx_c
-                elif "兑现" in hdr and "部分" not in hdr and "率" not in hdr:
+                elif "兑现" in hdr and "部分" not in hdr and "率" not in hdr and "评分" not in hdr:
                     col_idx["hit"] = idx_c
                 elif "证伪" in hdr:
                     col_idx["miss"] = idx_c
                 elif "未触发" in hdr:
                     col_idx["untrig"] = idx_c
-                elif "完全兑现" in hdr:
-                    col_idx["full_pct"] = idx_c
-                elif "至少部分" in hdr:
-                    col_idx["part_pct"] = idx_c
             continue
         if len(cells) >= 8 and "已到期" in cells[0]:
             g_settled = _first_int(cells[1])
@@ -10067,7 +10232,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         active_nav="scorecard",
         base_prefix="",
         market_attr="overview",
-        doc_kind="tool",
+        doc_kind="scorecard",
         total_pool=total_pool,
         channel_count=ch_total,
         channels_list=all_chs,
@@ -10169,7 +10334,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         active_nav="guide",
         base_prefix="",
         market_attr="overview",
-        doc_kind="tool",
+        doc_kind="guide",
         total_pool=total_pool,
         channel_count=ch_total,
         channels_list=all_chs,

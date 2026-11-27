@@ -27,6 +27,65 @@
     return typeof v === "number" && Number.isFinite(v);
   }
 
+  const PROVIDER_LABELS = {
+    tencent_newfqkline: "公开复权日线",
+    tencent_fqkline: "公开复权日线",
+    tencent_usfqkline: "公开复权日线",
+    tencent_hkfqkline: "公开复权日线",
+    sina_fut: "公开期货/外汇日线",
+    sina_fx: "公开期货/外汇日线",
+    sina_bj: "公开期货/外汇日线",
+    sina_us: "公开期货/外汇日线",
+    sina_hq: "公开期货/外汇日线",
+    sina_forex: "公开期货/外汇日线",
+    sina_global_futures: "公开期货/外汇日线",
+    sina_inner_futures: "公开期货/外汇日线",
+    sina_cn_kline: "公开行情日线",
+    sina_us_kline: "公开行情日线",
+    sge_daily: "上金所日线",
+    sge_dailyhq: "上金所日线",
+    sge: "上金所日线",
+    cboe_csv: "Cboe官方日线",
+    cboe_vix_csv: "Cboe官方日线",
+    cboe: "Cboe官方日线",
+    us_treasury_csv: "美国财政部官曲",
+    us_treasury: "美国财政部官曲",
+    treasury: "美国财政部官曲",
+    chinabond: "中债/中证官曲",
+    csindex: "中债/中证官曲",
+    csindex_perf: "中债/中证官曲",
+    eastmoney_cgb: "中债/中证官曲",
+    ft_batch: "离岸ETF日线",
+    ft_chartapi: "离岸ETF日线",
+    ft: "离岸ETF日线",
+    coinbase: "离岸现货参考(只读)",
+    coinbase_candles: "离岸现货参考(只读)",
+    cnbc_harmony: "国际公开日线",
+  };
+
+  function fmtProviderLabel(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return "";
+    const key = s.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(PROVIDER_LABELS, key)) {
+      return PROVIDER_LABELS[key];
+    }
+    if (key.startsWith("tencent_")) return "公开复权日线";
+    if (key.startsWith("sina_")) return "公开期货/外汇日线";
+    if (key.startsWith("sge")) return "上金所日线";
+    if (key.startsWith("cboe")) return "Cboe官方日线";
+    if (key.startsWith("us_treasury") || key.startsWith("treasury")) return "美国财政部官曲";
+    if (key.startsWith("chinabond") || key.startsWith("csindex") || key.startsWith("eastmoney_cgb")) {
+      return "中债/中证官曲";
+    }
+    if (key.startsWith("ft_") || key === "ft") return "离岸ETF日线";
+    if (key.startsWith("coinbase")) return "离岸现货参考(只读)";
+    if (key.startsWith("cnbc")) return "国际公开日线";
+    if (key === "unknown" || key === "cached") return "公开行情日线";
+    if (/^[a-z0-9_.-]+$/i.test(s) && s.indexOf("_") !== -1) return "公开行情日线";
+    return s;
+  }
+
   function isCryptoReadOnly(id) {
     return CRYPTO_ASSET_RE.test(String(id || "").trim());
   }
@@ -1664,7 +1723,8 @@
         }
         hideEmpty();
         if (footEl) {
-          const prov = (res.series && res.series.provider) || (res.meta && res.meta.provider) || "多源官库";
+          const rawProv = (res.series && res.series.provider) || (res.meta && res.meta.provider) || "";
+          const prov = fmtProviderLabel(rawProv) || "多源官库";
           const lastDt = res.bars[res.bars.length - 1].t;
           const hint = opts.mode === "compact"
             ? "拖拽平移 · Ctrl/⌘+滚轮或点击＋/−缩放 · 手机端长按查价"
@@ -1915,9 +1975,13 @@
         activeInstances.delete(instance);
         if (ro) ro.disconnect();
         window.removeEventListener("gir:kline-color", onColorChange);
+        if (containerEl._girKlineInst === instance) {
+          delete containerEl._girKlineInst;
+        }
         containerEl.innerHTML = "";
       },
     };
+    containerEl._girKlineInst = instance;
     activeInstances.add(instance);
     syncControlsUI();
     if (opts.symbolId) {
@@ -2052,8 +2116,9 @@
           ? (item.change_pct >= 0 ? "+" : "") + item.change_pct.toFixed(2) + "%"
           : "";
         const price = item && isFiniteNum(item.latest_close) ? fmtPrice(item.latest_close, item.unit) : "";
+        const provLabel = item ? fmtProviderLabel(item.provider) : "";
         headSub.textContent = item
-          ? [price, chg, item.latest_date ? "截止 " + item.latest_date : "", item.provider || ""].filter(Boolean).join(" · ")
+          ? [price, chg, item.latest_date ? "截止 " + item.latest_date : "", provLabel].filter(Boolean).join(" · ")
           : "交互 K 线与技术指标";
       }
       if (headStar) {
@@ -2325,7 +2390,7 @@
   }
 
   function initDeclarativeDecks() {
-    // 1. Homepage 4-Tab K-Line Deck & Daily Report K-Line Strips
+    // 1. Homepage 4-Tab K-Line Deck & Daily Report K-Line Strips (incl. collapsible <details.kline-daily-collapse>)
     document.querySelectorAll("[data-kline-deck]").forEach(function (deck) {
       const mountTarget = deck.querySelector("[data-kline-deck-mount]");
       if (!mountTarget) return;
@@ -2334,14 +2399,48 @@
       const fullLink = deck.querySelector("[data-deck-full-link]");
       const basePrefix = getBasePrefix();
       const firstSymBtn = deck.querySelector("[data-deck-sym]");
-      const initSym = (firstSymBtn && firstSymBtn.getAttribute("data-deck-sym")) || mountTarget.getAttribute("data-init-sym") || "idx_sh000001";
+      let activeSym =
+        (firstSymBtn && firstSymBtn.getAttribute("data-deck-sym")) ||
+        mountTarget.getAttribute("data-init-sym") ||
+        "idx_sh000001";
       const h = Number(mountTarget.getAttribute("data-kline-height")) || 370;
+      const collapseParent = deck.closest("details.kline-daily-collapse");
+      let inst = null;
 
-      const inst = mount(mountTarget, {
-        symbolId: initSym,
-        height: h,
-        mode: "compact",
-      });
+      function ensureMounted(symOverride) {
+        const targetSym = symOverride || activeSym;
+        activeSym = targetSym;
+        if (!inst) {
+          inst = mount(mountTarget, {
+            symbolId: targetSym,
+            height: h,
+            mode: "compact",
+          });
+          deck._girKlineInst = inst;
+        } else if (symOverride) {
+          inst.load(targetSym);
+        } else {
+          inst.resize();
+        }
+      }
+
+      if (!collapseParent || collapseParent.open) {
+        ensureMounted(activeSym);
+      }
+
+      if (collapseParent && !collapseParent.dataset.klineDeckBound) {
+        collapseParent.dataset.klineDeckBound = "1";
+        collapseParent.addEventListener("toggle", function () {
+          if (!collapseParent.open) return;
+          window.requestAnimationFrame(function () {
+            if (!inst) {
+              ensureMounted(activeSym);
+            } else {
+              inst.resize();
+            }
+          });
+        });
+      }
 
       function activateSymbol(symId, targetTab) {
         if (targetTab) {
@@ -2358,7 +2457,15 @@
         if (fullLink) {
           fullLink.setAttribute("href", basePrefix + "charts.html#sym=" + encodeURIComponent(symId));
         }
-        inst.load(symId);
+        activeSym = symId;
+        if (collapseParent && !collapseParent.open) {
+          collapseParent.open = true;
+          window.requestAnimationFrame(function () {
+            ensureMounted(symId);
+          });
+          return;
+        }
+        ensureMounted(symId);
       }
 
       tabBtns.forEach(function (btn) {
@@ -2366,7 +2473,7 @@
           const tabKey = btn.getAttribute("data-deck-tab");
           const panel = deck.querySelector('[data-deck-panel="' + tabKey + '"]');
           const firstBtn = panel ? panel.querySelector("[data-deck-sym]") : null;
-          activateSymbol(firstBtn ? firstBtn.getAttribute("data-deck-sym") : initSym, tabKey);
+          activateSymbol(firstBtn ? firstBtn.getAttribute("data-deck-sym") : activeSym, tabKey);
         });
       });
 
@@ -2378,6 +2485,27 @@
       });
 
       deck._girActivateSym = activateSymbol;
+    });
+
+    // 1B. Any other collapsible daily K-line <details class="kline-daily-collapse"> blocks
+    document.querySelectorAll("details.kline-daily-collapse").forEach(function (det) {
+      if (det.dataset.klineToggleBound) return;
+      det.dataset.klineToggleBound = "1";
+      det.addEventListener("toggle", function () {
+        if (!det.open) return;
+        window.requestAnimationFrame(function () {
+          det.querySelectorAll("[data-kline-deck-mount], .kline-mount").forEach(function (el) {
+            if (el._girKlineInst && typeof el._girKlineInst.resize === "function") {
+              el._girKlineInst.resize();
+            }
+          });
+          activeInstances.forEach(function (inst) {
+            if (inst && typeof inst.resize === "function") {
+              inst.resize();
+            }
+          });
+        });
+      });
     });
 
     // 2. Delegated [data-kline-jump] buttons (on homepage market cards & commodity chips)
@@ -2408,6 +2536,7 @@
     loadSeries: loadSeries,
     isGoldAsset: isGoldAsset,
     isCryptoReadOnly: isCryptoReadOnly,
+    fmtProviderLabel: fmtProviderLabel,
     getColorConvention: getColorConvention,
     setColorConvention: setColorConvention,
     initChartsTerminal: initChartsTerminal,
