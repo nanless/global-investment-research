@@ -137,6 +137,30 @@ def _estimate_run_width(text: str, font_size: float, is_bold: bool) -> float:
     return em_sum * font_size * (1.04 if is_bold else 1.0)
 
 
+def _normalize_runs_width(runs: list[tuple[str, float, bool]], default_fs: float) -> tuple[str, float, float]:
+    """Normalize whitespace across inline text runs while preserving per-run font metrics."""
+    raw_joined = "".join(r[0] for r in runs)
+    norm_full = _WS_RE.sub(" ", raw_joined).strip()
+    if not norm_full:
+        return "", 0.0, default_fs
+
+    width = 0.0
+    max_fs = default_fs
+    prev_space = True
+    for seg_txt, seg_fs, seg_bold in runs:
+        max_fs = max(max_fs, seg_fs)
+        norm_seg = _WS_RE.sub(" ", seg_txt)
+        if prev_space:
+            norm_seg = norm_seg.lstrip(" ")
+        if not norm_seg:
+            continue
+        prev_space = norm_seg.endswith(" ")
+        width += _estimate_run_width(norm_seg, seg_fs, seg_bold)
+    if prev_space and runs:
+        width = max(0.0, width - _estimate_run_width(" ", runs[-1][1], runs[-1][2]))
+    return norm_full, width, max_fs
+
+
 def _estimate_text_element_width(node: ET.Element, parent_fs: float, parent_bold: bool) -> tuple[str, float, float]:
     """Return (normalized_text, width_px, max_font_size) handling inline <tspan> children."""
     has_children = len(node) > 0
@@ -161,27 +185,7 @@ def _estimate_text_element_width(node: ET.Element, parent_fs: float, parent_bold
         if child.tail:
             runs.append((child.tail, parent_fs, parent_bold))
 
-    raw_joined = "".join(r[0] for r in runs)
-    norm_full = _WS_RE.sub(" ", raw_joined).strip()
-    if not norm_full:
-        return "", 0.0, parent_fs
-
-    # Normalize whitespace across runs while preserving per-run font metrics
-    width = 0.0
-    max_fs = parent_fs
-    prev_space = True
-    for seg_txt, seg_fs, seg_bold in runs:
-        max_fs = max(max_fs, seg_fs)
-        norm_seg = _WS_RE.sub(" ", seg_txt)
-        if prev_space:
-            norm_seg = norm_seg.lstrip(" ")
-        if not norm_seg:
-            continue
-        prev_space = norm_seg.endswith(" ")
-        width += _estimate_run_width(norm_seg, seg_fs, seg_bold)
-    if prev_space and runs:
-        width = max(0.0, width - _estimate_run_width(" ", runs[-1][1], runs[-1][2]))
-    return norm_full, width, max_fs
+    return _normalize_runs_width(runs, parent_fs)
 
 
 def _parse_viewbox(svg_el: ET.Element) -> tuple[float, float, float, float] | None:
@@ -228,11 +232,14 @@ def _extract_text_boxes(
     tx: float,
     ty: float,
     style: dict[str, str],
+    *,
+    has_translate: bool = False,
 ) -> list[tuple[float, float, float, float, str]]:
-    """Extract one or more text bounding boxes from <text>, handling <tspan dy/x/y/dx>."""
+    """Extract one or more text bounding boxes from <text>, handling translate() and <tspan dy/x/y/dx>."""
     raw_x = _parse_float(node.attrib.get("x"))
     raw_y = _parse_float(node.attrib.get("y"))
-    if raw_x is None and raw_y is None:
+    own_has_translate = bool(node.attrib.get("transform") and _TRANSLATE_RE.search(node.attrib["transform"]))
+    if raw_x is None and raw_y is None and not (has_translate or own_has_translate or abs(tx) > 1e-6 or abs(ty) > 1e-6):
         return []
     base_x = (raw_x or 0.0) + tx
     base_y = (raw_y or 0.0) + ty
@@ -241,15 +248,17 @@ def _extract_text_boxes(
     anchor = _get_attr(node, "text-anchor", style, "start").lower()
     baseline = _get_attr(node, "dominant-baseline", style).lower()
 
-    # Check if any <tspan> child shifts position explicitly via dy/y/x
+    # Check if any <tspan> child shifts position explicitly via dy/y/x/dx
     has_positioned_tspan = False
     for child in node:
         if child.tag.split("}")[-1].lower() != "tspan":
             continue
+        dx_val = _parse_length_px(child.attrib.get("dx"), fs)
         dy_val = _parse_length_px(child.attrib.get("dy"), fs)
         if (
             child.attrib.get("y") is not None
             or child.attrib.get("x") is not None
+            or (dx_val is not None and abs(dx_val) > 1e-6)
             or (dy_val is not None and abs(dy_val) > 1e-6)
         ):
             has_positioned_tspan = True
@@ -264,11 +273,26 @@ def _extract_text_boxes(
     out: list[tuple[float, float, float, float, str]] = []
     cur_x = base_x
     cur_y = base_y
-    lead_txt = _WS_RE.sub(" ", node.text or "").strip()
-    if lead_txt:
-        lw = _estimate_run_width(lead_txt, fs, is_bold)
-        if lw > 0.0:
-            out.append(_make_text_box(cur_x, cur_y, lw, fs, anchor, baseline, lead_txt))
+    chunk_runs: list[tuple[str, float, bool]] = []
+    chunk_x = cur_x
+    chunk_y = cur_y
+    chunk_anchor = anchor
+    chunk_baseline = baseline
+
+    def _flush_chunk() -> float | None:
+        nonlocal chunk_runs
+        if not chunk_runs:
+            return None
+        txt, width, eff_fs = _normalize_runs_width(chunk_runs, fs)
+        chunk_runs = []
+        if not txt or width <= 0.0:
+            return None
+        box = _make_text_box(chunk_x, chunk_y, width, eff_fs, chunk_anchor, chunk_baseline, txt)
+        out.append(box)
+        return box[2]
+
+    if node.text and node.text.strip():
+        chunk_runs.append((node.text, fs, is_bold))
 
     for child in node:
         ctag = child.tag.split("}")[-1].lower()
@@ -284,25 +308,46 @@ def _extract_text_boxes(
             cy_attr = _parse_float(child.attrib.get("y"))
             cdx = _parse_length_px(child.attrib.get("dx"), cfs) or 0.0
             cdy = _parse_length_px(child.attrib.get("dy"), cfs) or 0.0
-            if cx_attr is not None:
-                cur_x = cx_attr + tx
-            cur_x += cdx
-            if cy_attr is not None:
-                cur_y = cy_attr + ty
-            cur_y += cdy
+            repos = (
+                cx_attr is not None
+                or cy_attr is not None
+                or abs(cdx) > 1e-6
+                or abs(cdy) > 1e-6
+            )
+            if repos:
+                flushed_x1 = _flush_chunk()
+                if cx_attr is not None:
+                    cur_x = cx_attr + tx
+                elif flushed_x1 is not None:
+                    cur_x = flushed_x1
+                cur_x += cdx
+                if cy_attr is not None:
+                    cur_y = cy_attr + ty
+                cur_y += cdy
+                chunk_x = cur_x
+                chunk_y = cur_y
+                chunk_anchor = canc
+                chunk_baseline = cbase
 
-        ctext = _WS_RE.sub(" ", "".join(child.itertext())).strip()
-        if ctext:
-            cw = _estimate_run_width(ctext, cfs, cbold)
-            if cw > 0.0:
-                out.append(_make_text_box(cur_x, cur_y, cw, cfs, canc, cbase, ctext))
+        raw_ctext = "".join(child.itertext())
+        if raw_ctext:
+            if not chunk_runs:
+                chunk_x = cur_x
+                chunk_y = cur_y
+                chunk_anchor = canc if ctag == "tspan" else anchor
+                chunk_baseline = cbase if ctag == "tspan" else baseline
+            chunk_runs.append((raw_ctext, cfs if ctag == "tspan" else fs, cbold if ctag == "tspan" else is_bold))
 
         if child.tail:
-            tail_txt = _WS_RE.sub(" ", child.tail).strip()
-            if tail_txt:
-                tw = _estimate_run_width(tail_txt, fs, is_bold)
-                if tw > 0.0:
-                    out.append(_make_text_box(cur_x, cur_y, tw, fs, anchor, baseline, tail_txt))
+            if not chunk_runs and child.tail.strip():
+                chunk_x = cur_x
+                chunk_y = cur_y
+                chunk_anchor = anchor
+                chunk_baseline = baseline
+            if chunk_runs or child.tail.strip():
+                chunk_runs.append((child.tail, fs, is_bold))
+
+    _flush_chunk()
     return out
 
 
@@ -340,7 +385,7 @@ def check_svg_text_geometry(
         boxes: list[tuple[float, float, float, float, str]] = []
         circles: list[tuple[float, float, float]] = []
 
-        def _walk(node: ET.Element, acc_tx: float, acc_ty: float) -> None:
+        def _walk(node: ET.Element, acc_tx: float, acc_ty: float, acc_has_translate: bool = False) -> None:
             style = _parse_style(node.attrib.get("style"))
             if (
                 _get_attr(node, "display", style).lower() == "none"
@@ -351,13 +396,15 @@ def check_svg_text_geometry(
             if op is not None and op <= 0.0:
                 return
 
-            ntx, nty = _parse_translate(node.attrib.get("transform"))
+            raw_tr = node.attrib.get("transform")
+            ntx, nty = _parse_translate(raw_tr)
             cur_tx = acc_tx + ntx
             cur_ty = acc_ty + nty
+            cur_has_tr = acc_has_translate or bool(raw_tr and _TRANSLATE_RE.search(raw_tr))
             el_tag = node.tag.split("}")[-1].lower()
 
             if el_tag == "text":
-                for box in _extract_text_boxes(node, cur_tx, cur_ty, style):
+                for box in _extract_text_boxes(node, cur_tx, cur_ty, style, has_translate=cur_has_tr):
                     x0, y0, x1, y1, txt = box
                     if (
                         x0 < vb_x - oob_tol
@@ -382,9 +429,9 @@ def check_svg_text_geometry(
                 return
 
             for child in node:
-                _walk(child, cur_tx, cur_ty)
+                _walk(child, cur_tx, cur_ty, cur_has_tr)
 
-        _walk(root, 0.0, 0.0)
+        _walk(root, 0.0, 0.0, False)
 
         for i in range(len(boxes)):
             ax0, ay0, ax1, ay1, at = boxes[i]

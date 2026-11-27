@@ -31,7 +31,7 @@
      | :--- | :--- | :--- |
      | **第一档 · 自由使用** | 全篇（含 Layer 0–1） | 仅日常极高频词与代码：`ETF`、`VIX`（首现仍建议附“恐慌指数”）、`GLD`/`GDX`（仅代码）、`鹰派`、`鸽派`、`提保`、`轧空`、`逼空`、`上影线` |
      | **第二档 · 首次必附白话括注** | 首次出现必配简短白话括注，或交给站内术语白话浮窗 | `DXY`（美元指数）、`COT`（期货大资金持仓报告）、`CDS`（债务违约保险费率）、`CFTC`（美国期交委）、`DFII10`（10 年美债扣除通胀后的真实利率）、`2Y−FF`（2 年美债减政策利率利差）、`ON RRP`（联储隔夜逆回购余额）、`HY/CCC OAS`（高收益信用利差）、`IOPV`（盘中实时参考净值）、`bp`（基点，1% 的百分之一） |
-     | **第三档 · 门禁硬拦** | **全篇拦截（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）** | 内部版本号（`V2.x/V5.x/V6.x/V7.x`）、工程术语（`Subagent`/`红队`/`法证`）及一切内部文件名（`data_snapshot.json`/`master_snapshot.json`/`market_state.json`/`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`/`market_calendar.json`/`_edition_patch.json`/`_ledger_patch.json`/`RSI_PLAYBOOK(.md)`/`rsi_metrics.json`/`AGENTS.md`/`SKILL.md`/`patch_state_dbs.py` 等任意 `*.py`）；全篇拦截 6 个居高临下口号（`小白词典`/`直接抄`/`蠢事`/`1分钟定心丸`/`1 分钟定心丸`/`保命铁律`） |
+     | **第三档 · 门禁硬拦** | **全篇拦截（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）** | 内部版本号（`V2.x/V5.x/V6.x/V7.x`）、工程术语（`Subagent`/`红队`/`法证`）及一切内部文件名（`data_snapshot.json`/`master_snapshot.json`/`market_state.json`/`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`/`market_calendar.json`/`_edition_patch.json`/`_ledger_patch.json`/`_rsi_patch.json`/`_audit_patch.json`/`_rollover_patch.json`/`_archive_patch.json`/`RSI_PLAYBOOK(.md)`/`rsi_metrics.json`/`AGENTS.md`/`SKILL.md`/`patch_state_dbs.py`/`svg_geometry.py` 等任意 `*.py`）；全篇拦截 6 个居高临下口号（`小白词典`/`直接抄`/`蠢事`/`1分钟定心丸`/`1 分钟定心丸`/`保命铁律`） |
      | **第三档 · 门禁硬拦** | **Layer 0–1 拦截** | 生僻卖方量化词（`stop-through`、`IFRS 9`、`HQLA`、`FVOCI`、`ROTCE`、`Call Wall`/`Put Wall`、`负 Gamma`、`R²=`）、未消歧人名（`Daniel Ghali`/`Michael Hsueh`）、工程路数（`子代理`/`63 路`）、赌徒口语（`梭哈`、`做T`、`短线波段`、`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）、平行打分（`六灯`、`X/6`） |
 
    - **标点、煽动词与排版干净度**：所有论证区分 **【客观事实】/【逻辑推论】/【概率与失效边界】**；Layer 0–1 感叹号必须为 **0**（FAIL），收敛新刊全篇 **≤5**（旧刊 ≤2）；全文严禁 **13 个夸张煽动词**；全篇**加粗文字密度 ≤14%**；**裸数字、金额与百分比不套反引号**（仅证券/期货/基金代码如 `` `518660` ``、`` `008142` ``、`` `GCZ26` ``、`` `au2702` `` 可用反引号）。
@@ -70,7 +70,7 @@
   - 必讲：当前红绿灯卡在哪几关、为什么红灯区不宜提前追买、按 `30% + 45% + 25%` 分三批建仓的 **10 万元与 1 万元双刻度实算**、清晰“三步怎么买”（提前备好低费率合规工具、盯哪四关、挂限价单防溢价），以及切忌一次性满仓押注和仅看单日涨跌追高。
 - **B 类（已持仓——细分为三类处境）**：
   - **B1（轻仓套牢，占总资产 ≤15%）**：算清时间成本与回本区间，不恐慌割肉也不在红灯区盲目补仓；
-  - **B2（重仓焦虑，占总资产 >20% 或含杠杆）**：以现金流与风险承受度为先，借反弹分步去杠杆并将总仓位压回家庭总资产 10%–15% 舒适线；
+  - **B2（重仓焦虑，占总资产 >15% 或含杠杆）**：以现金流与风险承受度为先，借反弹分步去杠杆并将总仓位压回家庭总资产 10%–15% 舒适线；
   - **B3（早年低位浮盈）**：区分长期底仓与再平衡止盈纪律，不因单日回调情绪化清仓，也不忽视家庭资产比例偏离。
 - **D 类（进阶宏观框架学习者）**：
   - 必讲：结合**当天真实市场案例**（如油价波动如何传导至实际利率、VIX 冲高如何触发流动性踩踏、四大央行定价如何压制无息资产）拆透一条可迁移机制，明示失效边界，并在 Layer 3 附免费官方数据自查路径（美国财政部、FRED、CME FedWatch、Cboe、上金所、中国外汇交易中心）。

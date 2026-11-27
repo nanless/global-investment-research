@@ -21,7 +21,7 @@
 | 突发 `_r2` 跨午夜切割线 | **北京时间 `05:30`** | **北京时间 `05:30`** | `05:30` 前归前日 `1800_r2`，`05:30` 起归当日 `0730` |
 
 ### 每周常规节拍（全时段完整主刊 + 分层刷新矩阵）
-- **周一至周五 `07:30 CST`（`_0730_`）& `18:00 CST`（`_1800_`）**：A 股、港股、美股**全部发布结构统一的完整主刊（`main`，必含 ≥2 张矢量图）**，中小 Markdown 与快照用 `write_file` 全量写盘（严禁 `edit_file`），**三大扩展大 JSON（`multi_asset_channels.json` / `etf_universe.json` / `deep_dossiers.json`，合计 ~830 KB）统一写微型补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py` 原子合并**，强制同步 `edition_id` 并按早/晚分层重点增量刷新。
+- **周一至周五 `07:30 CST`（`_0730_`）& `18:00 CST`（`_1800_`）**：A 股、港股、美股**全部发布结构统一的完整主刊（`main`，必含 ≥2 张矢量图）**，中小 Markdown 与轻量快照用 `write_file` 全量写盘（严禁 `edit_file`）；**三大扩展大 JSON（合计 ~830 KB）写嵌套 `_edition_patch.json` 走 `scripts/patch_state_dbs.py --apply`（只读查库用 `--inspect <target>`），`state/audit_ledger.md` 走 `--prepend-equity-audit`，`state/rsi_metrics.json` 走 `--append-equity-rsi`，月初切换 `period_slug` 走 `--rollover-equity-month`**，强制同步 `edition_id` 并按早/晚分层重点增量刷新。
   - **周一 `07:30 CST` 美股特例**：升级为**周度全维前瞻主刊（`main`，≥2 图）**，封账上周五 09:00/08:00 盘后终盘与周五现货比特币 ETF 官流，覆盖本周完整宏观/央行/财报/债市日历与周末加密/大宗映射（严禁将周末加密波动写成美股官收）。
 - **周六 `07:30 CST`（`_0730_`）**：**仅美股承接周五收盘发刊**——常规周五收盘发完整主刊（`main`）；黑五半日市发升级版守望刊（`holiday_watch`，建议 ≥1 图）。A 股与港股双休沿用旧稿；周五滞后美股盘后终盘与 BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股周度前瞻主刊。
 - **周六 `18:00` & 周日双场**：无 P0/P1 突发默认模式 3 双休沿用旧稿（仅记 `INDEX.md` + `CHANGELOG.md` 不生冗余日报）；**每周日执行全量周度校准**：刷新 `SCORECARD.md` 周频对照、轮换精修 231 股池中的 **6–10 只核心龙头 7 维深研档案**（更新 `deep_dossiers.json`）、集中校准 12 大渠道中低频项（`multi_asset_channels.json`）及全量 140+ ETF 费率与规模（`etf_universe.json`），命中旗舰 5 条阈值时同步刷新旗舰。
@@ -72,15 +72,12 @@
 
 > **根目录冻结与零未授权 Shell 铁律**：工作区根目录 `<REPO_ROOT>/equity` **永久不改名**；沙箱内严禁调用 `mv`/`rm`，物理清理旧档一律登记清单交由用户确认执行；归档不得让曾公开的静态网页地址失效。
 
-1. **第 1 步｜创建新月份三份旗舰源文并同步 `*_latest.md` 与 3 份 `report_meta_*.json`**：
-   - 使用 `write_file` 全量写入 `a_share_market_report_2026_12.md`、`hk_stock_market_report_2026_12.md` 与 `us_stock_market_report_2026_12.md`，并保持 `{market}_market_report_latest.md` 与当月旗舰字节完全一致（刷新精确 12 月公历日期、7 维度大盘与三市 **65–85 只/市** 弹性龙头池，扩容基准 A 76 / 港 75 / 美 80，实时总数以 `state/market_state.json` 为准）。
-   - 同步更新 `report_meta_a_share.json`、`report_meta_hk_stock.json` 与 `report_meta_us_stock.json`：
-     - `"period_slug": "2026_12"`、`"version": "2026年12月刊"`、`"page_footer"` 改为 `2026年12月`；
-     - 推进 `"as_of_year_float"`（12 月初约 `2026.92`，12 月下旬约 `2026.97`）；
-     - 同步更新 `a3`/`a4`/`a6`/`a7`、`h2`/`h3`（唯一使用 `hkma_agg_bal_hkd_100m`）/`h4`/`h6`（含必填 `items` 与 `sector_strip`）/`h7`、`u3`/`u4`/`u5`/`u6`/`u7` 与 `kpis`，并确保 `stock_pool_count` 与附表二行数及 `deep_dossiers.json` 100% 相等。
+1. **第 1 步｜月初零超时原子滚存三旗舰与 `report_meta_*.json`（同步黄金月度归档）**：
+   - **严禁手写 636 KB 全量旗舰触发 300s 超时！** 当 `lint_equity.py --plan` 提示跨月切换 `period_slug`（如 `2026_11` → `2026_12`）时，用 `write_file` 写紧凑 `equity/state/_rollover_patch.json` 并运行预授权 **`python3 <REPO_ROOT>/scripts/patch_state_dbs.py --rollover-equity-month`**（原子克隆 `a_share_market_report_2026_12.md`、`hk_stock_market_report_2026_12.md`、`us_stock_market_report_2026_12.md` 与各自 `_latest.md` 保持字节 100% 一致，并同步更新 `report_meta_a_share.json`、`report_meta_hk_stock.json` 与 `report_meta_us_stock.json` 中的 `"period_slug": "2026_12"`、`"version": "2026年12月刊"`、`"page_footer"`、精确浮点 `"as_of_year_float"`、`kpis` 及与附表二/`deep_dossiers.json` 100% 对齐的 `stock_pool_count`）。
+   - 若同日同步归档上月黄金历史双账本（`gold/daily/{CHANGELOG,AUDIT_LOG}.md`），写紧凑 `gold/daily/_archive_patch.json` 运行预授权 **`python3 <REPO_ROOT>/scripts/patch_state_dbs.py --archive-gold-ledgers`** 无损归档至 `gold/daily/archive/{CHANGELOG,AUDIT_LOG}_YYYY_MM.md`。
 2. **第 2 步｜源稿严检、静态门户构建严检与纯网页发布**：
    - 运行全量验收 `python3 <REPO_ROOT>/equity/lint_equity.py --strict`，确认三份旗舰源稿与 `*_latest.md` 字节一致、21 张矢量 SVG 图实时演练零重叠、三大扩展数据库完整同步且 Gate 0–5 / Gate 3B / 跨项目 Gate C1–C3 全部退出码 0、0 错 0 警；
    - 终检全绿后，推进本期令牌到 `publish` 阶段，通过 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>` 构建静态门户、通过 S1–S6 严检并推送至 `origin/main`，再执行 `python3 <REPO_ROOT>/scripts/edition_run.py complete <token>` 验证对应 GitHub Pages 部署。无活动班次时按根仓规则使用人工入口。
 3. **第 3 步｜更新 `daily/INDEX.md` 月度归档导航**：将超 7 天的上月三市日报折叠入底部“历史月份归档区”，保持主表清爽且全部链接均为有效纯网页/Markdown 路径。
-4. **第 4 步｜更新单一事实源 `state/market_state.json` 与三大扩展数据库**：用 `write_file` 更新 `state/market_state.json`（推进 `period_slug`、月度基准日期、刷新未来 60 天三市休市日历并校验 `gold_event_id`、无日期规范状态键、`data_caveats`、实时 `stock_pool_count`）；三大扩展大 JSON（合计 ~830 KB）写微型补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py` 原子合并，同步 `edition_id` 与月度刷新项（防 300s 超时）。
-5. **第 5 步｜留痕与归档移交清单**：在 `state/audit_ledger.md` 倒序置顶登记新月刊核验记录；在 `daily/CHANGELOG.md` 仅以纯读者中文记录新月刊观点变化（零工程/RSI 词）。
+4. **第 4 步｜更新单一事实源 `state/market_state.json` 与三大扩展数据库**：用 `write_file` 更新 `state/market_state.json`（推进 `period_slug`、月度基准日期、刷新未来 60 天三市休市日历并校验 `gold_event_id`、无日期规范状态键、`data_caveats`、实时 `stock_pool_count`）；三大扩展大 JSON（合计 ~830 KB）写嵌套补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --apply` 原子合并，同步 `edition_id` 与月度刷新项（防 300s 超时）。
+5. **第 5 步｜留痕与归档移交清单**：写 3 键 `equity/state/_audit_patch.json` 经 `scripts/patch_state_dbs.py --prepend-equity-audit` 在 `state/audit_ledger.md` 倒序置顶登记新月刊核验记录；在 `daily/CHANGELOG.md` 仅以纯读者中文记录新月刊观点变化（零工程/RSI 词）。

@@ -36,6 +36,8 @@ FORBIDDEN_STAGE_FILENAMES = (
     "_ledger_patch.json",
     "_rsi_patch.json",
     "_audit_patch.json",
+    "_rollover_patch.json",
+    "_archive_patch.json",
 )
 TRANSIENT_PATCH_FILES = (
     "equity/state/_edition_patch.json",
@@ -43,6 +45,8 @@ TRANSIENT_PATCH_FILES = (
     "gold/daily/_rsi_patch.json",
     "equity/state/_rsi_patch.json",
     "equity/state/_audit_patch.json",
+    "equity/state/_rollover_patch.json",
+    "gold/daily/_archive_patch.json",
 )
 STALE_QUOTE_WARN_MINUTES = 45
 EXTENDED_EQUITY_STATE_FILES = (

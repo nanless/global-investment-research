@@ -20,7 +20,7 @@
 1. **冷启动继承**：按序读取 `market_calendar.json` → `daily/RSI_PLAYBOOK.md`、`daily/rsi_metrics.json` 最近 5 条与 `daily/SCORECARD.md` → `daily/CHANGELOG.md`（超 150 行仅读前 150 行）→ `data_snapshot.json` 与轻量 `master_snapshot.json` → 上期日报；排版细节核对 `daily/DAILY_FORMAT_SPEC.md`。
 2. **零幻觉与跨时区因果**：每条新增数据须标明信源与精确时点，休市或未披露项如实留白并写入纯读者中文 `data_caveats`。严禁把国内 02:30 夜盘与纽约 06:00 终盘的时差混作“国内供需溢价”，严禁把 05:00 盘后讲话倒推归因到 02:30 已收盘的内盘价。
 3. **调研信源与单跑回退**：一体化班次采用顶层 10+1 并行调研与红队（独立单跑黄金轨回退 5+1），严守美股 `GLD`/`GDX` 官收白名单（`StockAnalysis`/`Investing`/`SSGA`/`VanEck NAV`）、**禁用 `Barchart` 远月滞后合约快照**、善用 `site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与冬/夏令时核对。
-4. **无人值守分级写盘与三层 RSI 边界**：定时任务禁 `edit_file` 与未授权 shell 探测——中小文件用 `write_file` 全量写盘；`CHANGELOG.md`/`AUDIT_LOG.md` 一律写微型补丁 `gold/daily/_ledger_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（自动校验完整 `GOLD_EDITION_REVIEW` Schema——必填 `as_of_short`、`note`、四关 HTTPS `sources` 与 `forecast_review.status ∈ {"settled","none_due","pending_evidence"}`，严禁 `"tracked"`，支持跨月空锚回退并锁定 `0o644` 权限）。正常发刊阶段禁改 `.py` 与规则文件；仅在 Step 5 统一盲审后按 Tier A（`RSI_PLAYBOOK`/`rsi_metrics`）、Tier B（单次 ≤1 处 ≤40 行确定性修 Bug 且必过 `--strict` + 静态站 + 单测，败则回滚）、Tier C（宪法/规则/技能/权限永不自动改，仅提案）执行。
+4. **无人值守分级写盘与三层 RSI 边界**：定时任务禁 `edit_file` 与未授权 shell 探测——中小文件用 `write_file` 全量写盘；`CHANGELOG.md`/`AUDIT_LOG.md` 一律写微型补丁 `gold/daily/_ledger_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（自动校验完整 `GOLD_EDITION_REVIEW` Schema——必填 `as_of_short`、`note`、四关 HTTPS `sources` 与 `forecast_review.status ∈ {"settled","none_due","pending_evidence"}`，严禁 `"tracked"`，支持跨月空锚回退并锁定 `0o644` 权限）；跨月归档上月双账本写 `gold/daily/_archive_patch.json` 走 `--archive-gold-ledgers`；`daily/rsi_metrics.json` 写裸单条运行对象 `gold/daily/_rsi_patch.json` 走 `--append-gold-rsi` 无损追加（防 300s 超时）。正常发刊阶段禁改 `.py` 与规则文件；仅在 Step 5 统一盲审后按 Tier A（`RSI_PLAYBOOK`/`rsi_metrics`）、Tier B（单次 ≤1 处 ≤40 行确定性修 Bug 且必过 `--strict` + 静态站 + 单测，败则回滚）、Tier C（宪法/规则/技能/权限永不自动改，仅提案）执行。
 
 ---
 
@@ -45,6 +45,6 @@
 
 ## 4. 标准交付门禁（Step 3 → Step 5）
 
-1. 先更新 `data_snapshot.json`（命中 5 阈值时同步主报告与 `master_snapshot.json`），再用 `write_file` 写本刊 Markdown 与 `SCORECARD.md`，用 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插 `CHANGELOG.md` 与 `AUDIT_LOG.md`；
+1. 先更新 `data_snapshot.json`（命中 5 阈值时同步主报告与 `master_snapshot.json`），再用 `write_file` 写本刊 Markdown 与 `SCORECARD.md`；跨月归档上月账本时先经 `scripts/patch_state_dbs.py --archive-gold-ledgers` 归档，再经 `--prepend-gold-ledgers` 无损头插 `CHANGELOG.md` 与 `AUDIT_LOG.md`；
 2. 必须通过严格门禁（`0 errors, 0 warnings`）：`python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md`（同步主报告时一并传入）；
-3. 交棒 Step 4 权益轨完成后，由 Step 5 独立只读盲审闭环更新 `daily/{rsi_metrics.json,RSI_PLAYBOOK.md}` 并复跑双轨严检，再由 `scripts/publish_site.py --edition-token <token>` 与 `scripts/edition_run.py complete <token>` 完成单次纯网页发布与部署验真。
+3. 交棒 Step 4 权益轨完成后，由 Step 5 独立只读盲审闭环经 `scripts/patch_state_dbs.py --append-gold-rsi` 无损追加 `daily/rsi_metrics.json` 并更新 `daily/RSI_PLAYBOOK.md`，复跑双轨严检后由 `scripts/publish_site.py --edition-token <token>` 与 `scripts/edition_run.py complete <token>` 完成单次纯网页发布与部署验真。

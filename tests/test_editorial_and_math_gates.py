@@ -324,12 +324,29 @@ class DeterministicMathEditorialAndTenseGateTests(unittest.TestCase):
 
     def test_gold_snapshot_math_and_wallet_grams(self):
         # Wallet anchor gram check: 100000 / 766 = 130.548 -> 130.5 passes, 131.0 fails
-        good_wallet = "## 三、10 万元钱包账\n以 766 元/克为起跑线：\n| 起跑线 | 0 元（持约 130.5 克） | 0 元（持约 13.1 克） |\n"
-        bad_wallet = "## 三、10 万元钱包账\n以 766 元/克为起跑线：\n| 起跑线 | 0 元（持约 131.0 克） |\n"
+        # Partial tranche (e.g. 3 万元 / 37.5 克) must NEVER falsely trigger!
+        good_wallet = (
+            "## 三、10 万元与 1 万元双刻度钱包账\n"
+            "以 766 元/克为起跑线，若首笔试仓 3 万元（持约 39.2 克，按 800 元/克持约 37.5 克）：\n"
+            "| 未来情景 | 10 万元钱包盈亏 | 1 万元钱包盈亏 |\n"
+            "| :--- | :---: | :---: |\n"
+            "| 起跑线 | 0 元（持约 130.5 克） | 0 元（持约 13.1 克） |\n"
+        )
+        bad_wallet = (
+            "## 三、10 万元钱包账\n"
+            "以 766 元/克为起跑线：\n"
+            "| 未来情景 | 10 万元钱包盈亏 |\n"
+            "| :--- | :---: |\n"
+            "| 起跑线 | 0 元（持约 131.0 克） |\n"
+        )
+        prose_good = "## 三、钱包账\n锚定 800 元/克：10 万元持约 125.0 克，1 万元持约 12.5 克，首批 3 万元持约 37.5 克。\n"
+        prose_bad = "## 三、钱包账\n锚定 800 元/克：10 万元持约 126.0 克。\n"
         self.assertEqual(gold_lint._check_wallet_anchor_grams(good_wallet), [])
         self.assertTrue(gold_lint._check_wallet_anchor_grams(bad_wallet))
+        self.assertEqual(gold_lint._check_wallet_anchor_grams(prose_good), [])
+        self.assertTrue(gold_lint._check_wallet_anchor_grams(prose_bad))
 
-        # Gold snapshot fair_value_rmb & math checks
+        # Gold snapshot fair_value_rmb & math checks (incl. widened 0.08 TIPS tolerance)
         snap = json.loads((ROOT / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
         snap["fair_value_usd"] = 3790
         snap["usd_cny_1630"] = 6.66
@@ -341,8 +358,17 @@ class DeterministicMathEditorialAndTenseGateTests(unittest.TestCase):
             gold_lint.validate_snapshot_file(sp, errs, warns)
             self.assertTrue(any("fair_value_rmb" in e for e in errs), errs)
 
+            # Intraday volatile TIPS lag of 0.05 (<= 0.08) passes cleanly
             snap["fair_value_rmb"] = 812
-            snap["dfii10_live_pct"] = 2.90  # 2.90 + 2.12 = 5.02 != us10y 4.85
+            snap["us10y_pct"] = 4.85
+            snap["t10yie_fred_pct"] = 2.12
+            snap["dfii10_live_pct"] = 2.78  # 2.78 + 2.12 = 4.90 -> diff 0.05 <= 0.08
+            sp.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+            errs_tol, warns_tol = [], []
+            gold_lint.validate_snapshot_file(sp, errs_tol, warns_tol)
+            self.assertFalse(any("利率恒等式冲突" in e for e in errs_tol), errs_tol)
+
+            snap["dfii10_live_pct"] = 2.90  # 2.90 + 2.12 = 5.02 -> diff 0.17 > 0.08
             snap["gdx_gld_ratio"] = 0.2500  # != 73.89 / 327.45
             snap["spot_gold_live_change_pct"] = -1.50  # != ((3567.32/3588.78)-1)*100
             sp.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
@@ -393,12 +419,15 @@ class DeterministicMathEditorialAndTenseGateTests(unittest.TestCase):
                 errs = "\n".join(eq_lint._check_ssot_databases(fake_state))
                 self.assertIn("裸 IOPV", errs)
                 self.assertIn("恢复申赎", errs)
+                self.assertIn("Gate S4 失败", errs)
 
-                fake_etfs["etfs"][0]["premium_note"] = "溢价+9%，11/27仅恢复赎回，买前核对实时参考净值（IOPV）。"
+                fake_etfs["etfs"][0]["action_role"] = "高危回避"
+                fake_etfs["etfs"][0]["premium_note"] = "溢价+9%，11/27仅恢复赎回，买前核对盘中净值（IOPV）。"
                 eu_p.write_text(json.dumps(fake_etfs, ensure_ascii=False), encoding="utf-8")
                 errs_ok = "\n".join(eq_lint._check_ssot_databases(fake_state))
                 self.assertNotIn("裸 IOPV", errs_ok)
                 self.assertNotIn("恢复申赎", errs_ok)
+                self.assertNotIn("Gate S4 失败", errs_ok)
 
     def test_scorecard_past_due_detection_equity_and_gold(self):
         eq_sc = (
@@ -425,20 +454,373 @@ class DeterministicMathEditorialAndTenseGateTests(unittest.TestCase):
                 "ah_premium_radar": {
                     "benchmarks": [
                         {"name": "工商银行", "a": "601398", "h": "01398.HK", "ah_premium_pct": 37.6},
+                        {"name": "招商银行", "a": "600036", "h": "03968.HK", "ah_premium_pct": -13.0},
                     ]
                 }
             }
         }
         dossiers = {
             "a-share:601398": {
-                "baseline_note": "PE 8.5x / 股息率 3.5% / AH 溢价 +39.0%。",
-                "valuation_anchor": "AH 溢价 +38.0%。",
-                "shareholder_flow": "A 股股息率 3.9%。",
-            }
+                "baseline_note": "PE 8.5x / 当前股息率 3.5% / AH 溢价 +39.0%。",
+                "valuation_anchor": "过去五年历史中枢 AH 溢价 +25.0%，当前 AH 溢价 +38.0%。",
+                "shareholder_flow": "A 股股息率 3.9%，中期股息率 1.9%，原股息率 4.5%。",
+            },
+            "a-share:600036": {
+                "baseline_note": "A折H 13%，当前股息率 5.2%。",
+                "valuation_anchor": "AH 倒挂 13%，历史均值 AH 溢价 +8.0%；特别股息率 1.0%。",
+                "shareholder_flow": "AH 折价 13%，此前股息率 4.1%，半年股息率 2.5%。",
+                "financials": "全年股息率 5.2%。",
+            },
         }
         errs = "\n".join(eq_lint._check_dossiers_ah_and_dividends(dossiers, state))
+        self.assertIn("a-share:601398", errs)
         self.assertIn("AH 溢价", errs)
         self.assertIn("A 股内部股息率口径漂移", errs)
+        self.assertNotIn("a-share:600036", errs)
+        self.assertNotIn("+25.0%", errs)
+
+
+class RolloverContrastAndGeometryRegressionTests(unittest.TestCase):
+    def test_dec1_and_jan_rollover_etf_sibling_date_and_dedup_and_fee_strip(self):
+        fake_state = {
+            "edition_id": "2026-12-01_0730",
+            "markets": {"a_share": {"stock_pool_count": 1}, "hk_stock": {"stock_pool_count": 1}, "us_stock": {"stock_pool_count": 1}},
+        }
+        fake_etfs = {
+            "edition_id": "2026-12-01_0730",
+            "total_etfs": 3,
+            "counts_by_market": {"a-share": 1, "hk-stock": 2},
+            "counts_by_channel": {"境内场内": 1, "离岸港交所": 2},
+            "etfs": [
+                {
+                    "code": "511380",
+                    "name": "博时可转债ETF",
+                    "market": "a-share",
+                    "channel": "境内场内",
+                    "fee_total_pct": "0.20%",
+                    "fee_num": 0.20,
+                    "premium_status": "normal",
+                    "premium_note": "12/01 收盘折价 -0.05%",
+                    "yield_or_pe": "11/30 到期收益率 1.2%",
+                    "thesis_deep": "全市场可转债代表",
+                    "risk_boundary": "注意强赎与信用波动",
+                    "action_role": "防御观察",
+                },
+                {
+                    "code": "02840.HK",
+                    "name": "SPDR金ETF",
+                    "market": "hk-stock",
+                    "channel": "离岸港交所",
+                    "fee_total_pct": "0.40%",
+                    "fee_num": 0.40,
+                    "premium_status": "normal",
+                    "premium_note": "01/02 收盘平价",
+                    "yield_or_pe": "12/31 跟踪现货金",
+                    "thesis_deep": "港交所黄金标的",
+                    "risk_boundary": "受美遗产税规则约束",
+                    "action_role": "红灯观望",
+                },
+                {
+                    "code": "2840",
+                    "name": "重复代码测试ETF",
+                    "market": "hk-stock",
+                    "channel": "离岸港交所",
+                    "fee_total_pct": "0.40%",
+                    "fee_num": 0.40,
+                    "premium_status": "normal",
+                    "premium_note": "11/30 收盘平价",
+                    "yield_or_pe": "12/01 已同步",
+                    "thesis_deep": "测试重复归一化代码",
+                    "risk_boundary": "无",
+                    "action_role": "观察",
+                },
+            ],
+        }
+        fake_ma = {
+            "edition_id": "2026-12-01_0730",
+            "channels": [
+                {
+                    "id": cid,
+                    "name": cid,
+                    "key_metrics": [{"label": "指标", "value": "1%"}],
+                    "products": [
+                        {
+                            "code": "511380" if cid == "convertible_bonds" else f"P{i}",
+                            "name": "可转债ETF" if cid == "convertible_bonds" else f"产品{i}",
+                            "metric": "流动充裕",
+                            "fee": "申购费 0.30%（1折 0.03%）｜年费 0.20%/年｜赎回费 0.50%" if cid == "convertible_bonds" else "0.10%/年",
+                            "note": "场内工具",
+                        }
+                    ],
+                    "rules_and_redlines": ["严守仓位纪律"],
+                }
+                for i, cid in enumerate(eq_lint._SYNTHETIC_LEGACY_MULTI_ASSET_CHANNELS)
+            ],
+        }
+        with TemporaryDirectory() as tmp:
+            t = Path(tmp)
+            ma_p = t / "ma.json"
+            eu_p = t / "eu.json"
+            ma_p.write_text(json.dumps(fake_ma, ensure_ascii=False), encoding="utf-8")
+            eu_p.write_text(json.dumps(fake_etfs, ensure_ascii=False), encoding="utf-8")
+            with patch.multiple(
+                eq_lint,
+                MULTI_ASSET_PATH=ma_p,
+                ETF_UNIVERSE_PATH=eu_p,
+                DEEP_DOSSIERS_PATH=t / "missing_dd.json",
+            ):
+                errs = "\n".join(eq_lint._check_ssot_databases(fake_state))
+                self.assertIn("premium_note 已更新至 12/1，但 yield_or_pe 仍停留 11/30", errs)
+                self.assertIn("premium_note 已更新至 1/2，但 yield_or_pe 仍停留 12/31", errs)
+                self.assertNotIn("2840) 字段日期未同步", errs)
+                self.assertIn("存在重复代码 02840", errs)
+                self.assertNotIn("费率", errs)
+
+    def test_shfe_0230_before_qualified_copper_and_expanded_metals(self):
+        good_after = "上期所夜盘金银 02:30 收盘；沪铜（01:00 收盘）上涨，热卷（23:00 收盘）微跌。"
+        bad_tin = "国内 02:30 夜盘沪锡反弹 +1.2%。"
+        bad_al = "国内 02:30 夜盘 al2701 小幅收涨。"
+        bad_rb = "国内 02:30 夜盘 rb2701 回落。"
+        safe_english = "02:30 金银夜盘收盘，annual2026 统计口径不变。"
+
+        for checker in (eq_lint._check_shfe_night_close, gold_lint._check_shfe_night_close):
+            self.assertEqual(checker("t.md", good_after), [])
+            self.assertTrue(checker("t.md", bad_tin))
+            self.assertTrue(checker("t.md", bad_al))
+            self.assertTrue(checker("t.md", bad_rb))
+            self.assertEqual(checker("t.md", safe_english), [])
+
+    def test_multiline_and_delta_scenario_weights_equity_and_gold(self):
+        delta_line = "- 情景权重调整：基准震荡由 4/10 调至占 5 点（较上期原占 4 点上调 1 点）。"
+        good_multi = (
+            "### 未来两周三情景推演（合计 10 点）\n"
+            "- **基准震荡**：占 5 点（●●●●●○○○○○，较上期原占 4 点上调）\n"
+            "- **向上修复**：占 3 点（●●●○○○○○○○）\n"
+            "- **向下回踩**：占 2 点（●●○○○○○○○○）\n"
+        )
+        bad_multi_bullets = (
+            "### 未来两周三情景推演\n"
+            "- 震荡（5/10）：区间拉锯\n"
+            "- 修复（3/10）：反弹承压\n"
+            "- 回踩（1/10）：深挖黄金坑\n"
+        )
+        bad_multi_table = (
+            "### 四情景路径\n"
+            "| 情景 | 权重 | 区间 |\n"
+            "| :--- | :---: | :--- |\n"
+            "| 情景一 | 占 5 点 | 3500 |\n"
+            "| 情景二 | 占 3 点 | 3600 |\n"
+            "| 情景三 | 占 3 点 | 3400 |\n"
+        )
+        non_scenario = (
+            "### 财报打分清单\n"
+            "- 盈利质量（8/10）：现金流充沛\n"
+            "- 护城河（7/10）：龙头稳固\n"
+        )
+
+        for checker in (eq_lint._check_scenario_10pt_and_dots, gold_lint._check_scenario_10pt_and_dots):
+            self.assertEqual(checker("t.md", delta_line), [])
+            self.assertEqual(checker("t.md", good_multi), [])
+            self.assertTrue(checker("t.md", bad_multi_bullets))
+            self.assertTrue(checker("t.md", bad_multi_table))
+            self.assertEqual(checker("t.md", non_scenario), [])
+
+    def test_iopv_gloss_parity_and_internal_leak_sync(self):
+        for gloss in ("参考净值（IOPV）", "实时净值（IOPV）", "盘中净值（IOPV）"):
+            _, warns = pdf_common.lint_markdown_report(f"# 标题\n\n买前核对{gloss}。\n", "2026-11-27_0730_a_share.md")
+            self.assertFalse(any("IOPV" in w for w in warns), (gloss, warns))
+        _, warns_bare = pdf_common.lint_markdown_report("# 标题\n\n买前核对 IOPV 折溢价。\n", "2026-11-27_0730_a_share.md")
+        self.assertTrue(any("IOPV" in w for w in warns_bare), warns_bare)
+
+        for leak_tok in ("svg_geometry.py", "_rsi_patch.json", "_audit_patch.json", "_rollover_patch.json", "_archive_patch.json"):
+            errs_eq, _ = pdf_common.lint_markdown_report(f"# 标题\n\n内部文件 {leak_tok}。\n", "2026-11-27_0730_a_share.md")
+            self.assertTrue(any(leak_tok in e for e in errs_eq), (leak_tok, errs_eq))
+            self.assertTrue(gold_lint.SCORECARD_BANNED_RE.search(leak_tok), leak_tok)
+            self.assertTrue(gold_lint._INTERNAL_FILENAME_LEAK_RE.search(leak_tok), leak_tok)
+
+    def test_scorecard_year_rollover_chinese_tense_and_generalized_countdown(self):
+        # 2027-01-02 vs 12/29 16:00 -> overdue!
+        eq_dec29 = (
+            "## 一、台账\n\n"
+            "| 锁定 | 市场 | 判断 | 验真节点 | 结果 | 复盘 |\n"
+            "| :--- | :---: | :--- | :--- | :---: | :--- |\n"
+            "| 2026-12-28 | A 股 | 跨年逾期 | 12/29 16:00 | ⏳ 待验真 | 待补 |\n"
+        )
+        self.assertTrue(
+            any("逾期未结案" in e for e in eq_lint._reconcile_equity_scorecard(eq_dec29, as_of_dt=datetime(2027, 1, 2, 7, 55)))
+        )
+        # 2026-11-27 vs 1/15 16:00 -> next year (2027-01-15), NOT overdue!
+        eq_jan15 = eq_dec29.replace("12/29 16:00", "1/15 16:00")
+        self.assertEqual(
+            eq_lint._reconcile_equity_scorecard(eq_jan15, as_of_dt=datetime(2026, 11, 27, 7, 55)),
+            [],
+        )
+        # Date-only MM/DD support
+        eq_md_only_due = eq_dec29.replace("12/29 16:00", "12/29")
+        self.assertTrue(
+            any("逾期未结案" in e for e in eq_lint._reconcile_equity_scorecard(eq_md_only_due, as_of_dt=datetime(2027, 1, 2, 7, 55)))
+        )
+
+        # Same year-rollover checks on Gold scorecard
+        gold_dec29 = (
+            "## 三、表二\n\n"
+            "| 锁定 | 判断 | 预定验真节点 | 状态 | 重点 |\n"
+            "| :--- | :--- | :---: | :---: | :--- |\n"
+            "| 2026-12-28 | 跨年逾期 | 12/29 16:00 | ⏳ 持续追踪 | 复核 |\n"
+        )
+        self.assertTrue(
+            any("逾期未结案" in e for e in gold_lint._check_gold_scorecard_past_due(gold_dec29, datetime(2027, 1, 2, 7, 55)))
+        )
+        gold_jan15 = gold_dec29.replace("12/29 16:00", "1/15 16:00")
+        self.assertEqual(gold_lint._check_gold_scorecard_past_due(gold_jan15, datetime(2026, 11, 27, 7, 55)), [])
+        gold_md_only = gold_dec29.replace("12/29 16:00", "12/29")
+        self.assertTrue(
+            any("逾期未结案" in e for e in gold_lint._check_gold_scorecard_past_due(gold_md_only, datetime(2027, 1, 2, 7, 55)))
+        )
+
+        # Chinese MM月DD日 tense-drift
+        for checker in (eq_lint._check_tense_drift, gold_lint._check_tense_drift):
+            self.assertTrue(checker("t.md", "明日（12月1日）月度切换。", "2026-12-01"))
+            self.assertTrue(checker("t.md", "今日（11月30日）收盘。", "2026-12-01"))
+            self.assertTrue(checker("t.md", "昨日 11月29日数据披露。", "2026-12-01"))
+            self.assertEqual(checker("t.md", "今日（12月1日）月度切换，明日（12月2日）观察。", "2026-12-01"), [])
+
+        # Generalized 20xx year-end countdown
+        self.assertEqual(eq_lint._check_year_end_countdown("t.md", "距 2027 年底仅剩 363 天。", "2027-01-02"), [])
+        self.assertTrue(eq_lint._check_year_end_countdown("t.md", "距 2027 年底仅剩 360 天。", "2027-01-02"))
+
+    def test_credit_spread_ccc_guard_equity_and_gold(self):
+        bad1 = "美债 4.85% 叠加垃圾债利差 1,405 基点压制风险资产。"
+        bad2 = "受休市影响，11/25 美国高收益与垃圾债信用利差顺延披露。"
+        good1 = "美债 4.85% 叠加 CCC 级垃圾债利差 1,405 基点（全口径高收益债 372 基点）。"
+        good2 = "受休市影响，11/25 美国高收益与 CCC 级垃圾债信用利差顺延披露。"
+
+        for checker in (eq_lint._check_credit_spread_ccc, gold_lint._check_credit_spread_ccc):
+            self.assertTrue(checker("t.md", bad1))
+            self.assertTrue(checker("t.md", bad2))
+            self.assertEqual(checker("t.md", good1), [])
+            self.assertEqual(checker("t.md", good2), [])
+
+    def test_gold_archive_ledgers_and_non_investment_scorecard_exclusion(self):
+        # 1. Archived November CHANGELOG & AUDIT_LOG satisfy _check_edition_ledgers after rollover
+        edition = "2026-11-27_0730"
+        as_of = "2026-11-27 07:55"
+        review_obj = {
+            "edition_id": edition,
+            "as_of_short": as_of,
+            "note": "月度归档后仍可核验。",
+            "sources": {k: ["https://example.com/evidence"] for k in gold_lint.ENTRY_GATE_IDS},
+            "forecast_review": {"status": "none_due", "note": "无到期", "sources": []},
+        }
+        with TemporaryDirectory() as tmp:
+            t = Path(tmp)
+            cl = t / "CHANGELOG.md"
+            al = t / "AUDIT_LOG.md"
+            sc = t / "SCORECARD.md"
+            cl.write_text("# 12 月新卷\n<!-- GOLD_EDITION_CHANGELOG 2026-12-01_0730 -->\n", encoding="utf-8")
+            al.write_text("# 12 月核验卷\n", encoding="utf-8")
+            sc.write_text("<!-- GOLD_EDITION_SCORECARD 2026-12-01_0730 -->\n", encoding="utf-8")
+            arch = t / "archive" / "2026-11"
+            arch.mkdir(parents=True)
+            (arch / "CHANGELOG_2026_11.md").write_text(f"<!-- GOLD_EDITION_CHANGELOG {edition} -->\n", encoding="utf-8")
+            (arch / "AUDIT_LOG_2026_11.md").write_text(
+                f"<!-- GOLD_EDITION_REVIEW {json.dumps(review_obj, ensure_ascii=False)} -->\n",
+                encoding="utf-8",
+            )
+            with patch.multiple(gold_lint, CHANGELOG_PATH=cl, AUDIT_LOG_PATH=al, SCORECARD_PATH=sc):
+                errs: list[str] = []
+                gold_lint._check_edition_ledgers(edition, as_of, errs, is_current=False)
+                self.assertEqual(errs, [])
+
+        # 2. SCORECARD non-investment rows (⚪ 运维记录 / 不计入投资胜率) excluded cleanly from scored denominator
+        def _build_sc(summary_row: str, ops_verdict: str) -> str:
+            return (
+                "## 一、总览\n\n"
+                "| 统计口径 | 累计条目数 | ✅ 兑现 | ⚠️ 部分兑现 | ❌ 证伪 | ⚪ 条件未触发 | 兑现率 | 至少部分 |\n"
+                "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n"
+                f"{summary_row}\n\n"
+                "## 二、表一\n\n"
+                "| 刊期 | 判断 | 节点 | 结果 | 判定 | 复盘 |\n"
+                "| :--- | :--- | :---: | :--- | :---: | :--- |\n"
+                "| 11-24 | 预测一 | 11-25 | 达标 | **✅ 兑现** | 准确 |\n"
+                f"| 11-24 | 补录计划（不计入投资胜率） | 11-25 | 完成 | {ops_verdict} | 运维 |\n"
+                "| 11-25 | 触发线 | 11-26 | 未触 | **⚪ 条件未触发** | 保持 |\n"
+            )
+
+        # Case 1: ops folded into ⚪ column (tot=3, scored=1, pass=1, partial=0, fail=0, ⚪=2)
+        errs_folded: list[str] = []
+        gold_lint._reconcile_gold_scorecard(
+            _build_sc("| **已到期公开回验** | **3 项**（计分 1 项） | **1 项** | **0 项** | **0 项** | **2 项** | 100% | 100% |", "**⚪ 运维记录**"),
+            errs_folded,
+        )
+        self.assertEqual(errs_folded, [])
+
+        # Case 2: ops tracked separately from ⚪ 条件未触发 (tot=3, scored=1, pass=1, ⚪=1, ops=1)
+        errs_sep: list[str] = []
+        gold_lint._reconcile_gold_scorecard(
+            _build_sc("| **已到期公开回验** | **3 项**（计分 1 项，含运维 1 项） | **1 项** | **0 项** | **0 项** | **1 项** | 100% | 100% |", "**⚪ 运维记录**"),
+            errs_sep,
+        )
+        self.assertEqual(errs_sep, [])
+
+        # Case 3: contradiction — ops row erroneously counted inside 计分 2 项 / ⚠️ 1 项 -> FAILS!
+        errs_bad: list[str] = []
+        gold_lint._reconcile_gold_scorecard(
+            _build_sc("| **已到期公开回验** | **3 项**（计分 2 项） | **1 项** | **1 项** | **0 项** | **1 项** | 50% | 100% |", "**⚠️ 部分兑现**"),
+            errs_bad,
+        )
+        self.assertTrue(any("表一对账错" in e for e in errs_bad), errs_bad)
+
+    def test_gold_build_daily_persona_badge_wcag_aa_contrast(self):
+        html_out = gold_daily.render_persona_cards({
+            "title": "对号入座",
+            "cards": [
+                {"group": "A", "heading": "空仓观望", "actions": ["等四关全亮"]},
+                {"group": "C", "heading": "刚需买金", "actions": ["按需分批"]},
+            ],
+        })
+        self.assertIn('<span class="grp-badge" style="background:#0369a1;">A</span>', html_out)
+        self.assertIn('<span class="grp-badge" style="background:#047857;">C</span>', html_out)
+        self.assertNotIn("#0284c7", html_out)
+        self.assertNotIn("#059669", html_out)
+
+    def test_svg_geometry_translate_without_xy_and_inline_tspan(self):
+        # 1. <text> omitting x/y but positioned via transform="translate(tx, ty)" MUST be checked for OOB & overlap
+        svg_oob = (
+            '<svg viewBox="0 0 640 200">'
+            '<text transform="translate(625, 50)" font-size="12">OutOfBoundsLabel</text>'
+            '</svg>'
+        )
+        issues_oob = check_svg_text_geometry(svg_oob, label="TR_OOB")
+        self.assertTrue(any("SVG 文字越界" in x for x in issues_oob), issues_oob)
+
+        svg_group_overlap = (
+            '<svg viewBox="0 0 640 200">'
+            '<g transform="translate(100, 80)"><text font-size="12">OverlapA</text></g>'
+            '<text x="102" y="80" font-size="12">OverlapB</text>'
+            '</svg>'
+        )
+        issues_ov = check_svg_text_geometry(svg_group_overlap, label="TR_OV")
+        self.assertTrue(any("SVG 文字重叠" in x for x in issues_ov), issues_ov)
+
+        # 2. Inline <tspan> following <tspan dy="14"> advances cur_x and must NOT false-collide
+        svg_inline_ok = (
+            '<svg viewBox="0 0 640 200">'
+            '<text x="40" y="40" font-size="12"><tspan dy="14">LabelA</tspan><tspan font-weight="700">LabelB</tspan></text>'
+            '<text x="320" y="100" text-anchor="middle" font-size="12">'
+            '<tspan dy="14">CenterPart1 </tspan><tspan font-weight="700">CenterPart2</tspan></text>'
+            '</svg>'
+        )
+        self.assertEqual(check_svg_text_geometry(svg_inline_ok, label="TSPAN_INLINE"), [])
+
+        # 3. Explicit same-x overlapping <tspan> STILL caught
+        svg_tspan_collide = (
+            '<svg viewBox="0 0 640 200">'
+            '<text x="40" y="40" font-size="12"><tspan dy="14">SameLineA</tspan><tspan x="40">SameLineB</tspan></text>'
+            '</svg>'
+        )
+        issues_ts = check_svg_text_geometry(svg_tspan_collide, label="TSPAN_COLLIDE")
+        self.assertTrue(any("SVG 文字重叠" in x for x in issues_ts), issues_ts)
 
 
 if __name__ == "__main__":

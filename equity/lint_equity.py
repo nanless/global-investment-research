@@ -118,28 +118,51 @@ _EQUITY_RETRACTED_NEG_RE = re.compile(
     r"(?:已区隔|更正|修正|原稿|驳回|不含|未停牌|非硬停|仅第三方折价要约|误标|误写|并非|不是|辟谣|严禁|纠偏)"
 )
 _SHFE_0230_RE = re.compile(r"(?<!\d)02:30(?!\d)")
-_SHFE_NON_GOLD_METAL_RE = re.compile(r"(?:沪铜|cu\d{4}|沪铝|沪锌|沪镍|螺纹钢|纯碱)", re.IGNORECASE)
+_SHFE_NON_GOLD_METAL_RE = re.compile(
+    r"(?:沪铜|沪铝|沪锌|沪镍|沪锡|沪铅|氧化铝|螺纹钢|热卷|不锈钢|纯碱|(?<![A-Za-z])(?:cu|al|zn|ni|rb)\d{4}(?!\d))",
+    re.IGNORECASE,
+)
 _SHFE_EARLY_CLOSE_QUAL_RE = re.compile(r"(?<!\d)(?:01:00|23:00)(?!\d)")
 _SCENARIO_LINE_TRIGGER_RE = re.compile(r"(?:情景|合计\s*10\s*点|(?<![0-9./])(?:[0-9]|10)\s*/\s*10(?![0-9]))")
 _SCENARIO_WEIGHT_RE = re.compile(
     r"(?:占\s*(\d+)\s*点|[（(]\s*(?:占\s*)?([0-9]|10)\s*/\s*10(?:\s*点)?\s*[)）]|(?<![0-9./])(?:占|权重|概率)\s*([0-9]|10)\s*/\s*10(?![0-9]))"
 )
+_SCENARIO_DELTA_RE = re.compile(r"(?:原占|由.{0,6}调至|较上期)")
+_MULTILINE_SCENARIO_WEIGHT_RE = re.compile(
+    r"(?:占\s*(\d+)\s*点|[（(]\s*(?:占\s*)?([0-9]|10)\s*/\s*10(?:\s*点)?\s*[)）])"
+)
+_SCENARIO_CONTEXT_RE = re.compile(
+    r"(?:情景|场景|路径|推演|概率|权重|合计\s*10\s*点|10\s*点(?:分配|拆分|分布|概率))"
+)
 _SCENARIO_SINGLE_RATIO_RE = re.compile(r"(?<![0-9./])([0-9]|10)\s*/\s*10(?![0-9])")
 _LAZY_ZERO_SCORE_RE = re.compile(r"其余(?:均|均为|全|皆)\s*[0零]")
 _AUDIT_JARGON_LEAD_RE = re.compile(r"(?:旧缺口|核销成绩单|台账补核|清零旧账)")
-_COUNTDOWN_2026_RE = re.compile(r"距\s*2026\s*(?:[-年/]\s*12\s*[-月/]\s*31\s*[日]?|年底)\D{0,10}剩\s*(\d+)\s*天")
+_COUNTDOWN_YEAR_END_RE = re.compile(
+    r"距\s*(20\d{2})\s*(?:[-年/]\s*12\s*[-月/]\s*31\s*[日]?|年底)\D{0,10}剩\s*(\d+)\s*天"
+)
+_COUNTDOWN_2026_RE = _COUNTDOWN_YEAR_END_RE
 _BARE_IOPV_RE = re.compile(r"(?<![A-Za-z0-9_])IOPV(?![A-Za-z0-9_])", re.IGNORECASE)
-_IOPV_GLOSS_RE = re.compile(r"(?:参考净值|实时净值)")
+_IOPV_GLOSS_RE = re.compile(r"(?:参考净值|实时净值|盘中净值)")
+_CREDIT_SPREAD_CCC_RE = re.compile(r"(?:垃圾债利差\s*1,\d{3}|高收益与垃圾债)")
+_CCC_QUAL_RE = re.compile(r"CCC", re.IGNORECASE)
+_FEE_EXCLUDE_SPAN_RE = re.compile(
+    r"(?:申购费?|赎回费?|1折|一折|佣金|销服(?:优惠至|费)?|销售服务费)"
+    r"[^\s｜|，,；;）)。”\"·]{0,12}?"
+    r"\d+(?:\.\d+)?%(?:\s*[–\-~至]\s*\d+(?:\.\d+)?%)?"
+)
 _RESTORE_SUB_REDEEM_RE = re.compile(r"恢复申赎")
 _RESTORE_SAFE_QUAL_RE = re.compile(r"(?:仅恢复赎回|只恢复赎回|未恢复申赎|并非恢复申赎|不恢复申购)")
 _DOSSIER_AH_RE = re.compile(
-    r"(?:(?:AH|A/H)\s*(?:溢价|倒挂|折价)|A\s*折\s*H\s*(?:倒挂)?)[^0-9+\-]{0,10}([+\-]?\d+(?:\.\d+)?)%(?:\s*[–\-~～至]\s*([+\-]?\d+(?:\.\d+)?)%)?"
+    r"(?:(?:AH|A/H)\s*(?:(?:罕见|深度|仍呈)?(?:溢价|倒挂|折价))|A\s*折\s*H\s*(?:倒挂)?)"
+    r"[^0-9+\-，。；（）]{0,12}([+\-]?\d+(?:\.\d+)?)%(?:\s*[–\-~～至]\s*([+\-]?\d+(?:\.\d+)?)%)?"
 )
+_DOSSIER_AH_NEG_WORD_RE = re.compile(r"(?:倒挂|A\s*折\s*H|折价)")
+_DOSSIER_AH_HIST_CTX_RE = re.compile(r"(?:历史中枢|历史均值|过去)")
 _DOSSIER_DIV_STRICT_RE = re.compile(
     r"股息率\s*(?:约|近|逾|高达|达|为|仅|稳定在|~)?\s*(\d+(?:\.\d+)?)%(?:\s*[–\-~～至]\s*(\d+(?:\.\d+)?)%)?"
 )
 _DOSSIER_DIV_QUAL_RE = re.compile(
-    r"(?:税后|扣税|港股通|H股|H\s*股|离岸|扣\s*20%|净股息|同业|贵于|低于|高于|对比|较|历史|目标|门槛|中证红利|均值|行业)"
+    r"(?:税后|扣税|港股通|中期|半年|特别|历史|原|旧|(?<![当目])前|目标|门槛|行业|均值|中证红利|同业|对比|较|H\s*股|离岸|扣\s*20%|净股息|贵于|低于|高于)"
 )
 _ETF_CODE_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(?:\d{6}|\d{5}(?:\.HK)?|[A-Z]{2,5}(?:\.L)?)(?![A-Za-z0-9])")
 _PCT_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)%")
@@ -574,12 +597,13 @@ def _check_gate_3b(md_text: str, path: Path, *, is_flagship: bool, meta: dict | 
     if is_flagship or sort_key >= ALL_MAIN_CUTOVER:
         errs.extend(_check_retracted_facts(path.name, body))
 
-    # 9. Deterministic G2 / G3 / G5 / G7 & Phase D editorial depth gates (>= 2026-11-27_0730 dailies)
+    # 9. Deterministic G2 / G3 / G5 / G7 / S2 & Phase D editorial depth gates (>= 2026-11-27_0730 dailies)
     if not is_flagship and sort_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]:
         errs.extend(_check_shfe_night_close(path.name, body))
         errs.extend(_check_scenario_10pt_and_dots(path.name, body))
         errs.extend(_check_tense_drift(path.name, body, sort_key[0]))
         errs.extend(_check_year_end_countdown(path.name, body, sort_key[0]))
+        errs.extend(_check_credit_spread_ccc(path.name, body))
         ed_errs, ed_warns = _check_phase_d_editorial(body, path.name, meta)
         errs.extend(ed_errs)
         warns.extend(ed_warns)
@@ -606,7 +630,7 @@ def _check_shfe_night_close(label: str, text: str) -> list[str]:
                 within_45 = len(between) <= 45
                 if (same_clause or within_45) and not _SHFE_EARLY_CLOSE_QUAL_RE.search(between):
                     metal_local = ln[max(0, m_metal.start() - 14) : min(len(ln), m_metal.end() + 14)]
-                    if _SHFE_EARLY_CLOSE_QUAL_RE.search(metal_local) and m_metal.end() <= m_time.start():
+                    if _SHFE_EARLY_CLOSE_QUAL_RE.search(metal_local):
                         continue
                     errs.append(
                         f"Gate G2 失败：{label} (L{line_no}) 将 02:30 误关联至非金银夜盘标的 "
@@ -629,14 +653,15 @@ def _extract_scenario_weight_matches(line: str) -> list[tuple[int, int, int]]:
 
 
 def _check_scenario_10pt_and_dots(label: str, text: str) -> list[str]:
-    """Gate G3: Check 10-point scenario sum and [●○]{10} dot-bar parity across bullets and tables."""
+    """Gate G3: Check 10-point scenario sum (single-line & multi-line blocks) and [●○]{10} dot-bar parity."""
     errs: list[str] = []
-    for line_no, ln in enumerate(text.splitlines(), 1):
+    lines = text.splitlines()
+    for line_no, ln in enumerate(lines, 1):
         has_bar = bool(_TEN_DOT_RE.search(ln))
         if not has_bar and not _SCENARIO_LINE_TRIGGER_RE.search(ln):
             continue
         weights = _extract_scenario_weight_matches(ln)
-        if len(weights) >= 2:
+        if len(weights) >= 2 and not _SCENARIO_DELTA_RE.search(ln):
             total = sum(w for _, _, w in weights)
             if total != 10:
                 errs.append(
@@ -659,21 +684,89 @@ def _check_scenario_10pt_and_dots(label: str, text: str) -> list[str]:
                     errs.append(
                         f"Gate G3 失败：{label} (L{line_no}) 10 点概率条实心数 ({filled}) 与对应权重 ({chosen[2]}) 不一致"
                     )
+
+    # Scan consecutive multi-line scenario bullet/table blocks (2–6 adjacent lines) under a scenario context
+    def _extract_block_line_weight(line: str) -> int | None:
+        st = line.strip()
+        is_bullet = bool(re.match(r"^(?:[-•*]|\d+\.)\s+", st))
+        is_table_row = st.startswith("|") and st.endswith("|")
+        if not (is_bullet or is_table_row):
+            return None
+        if is_table_row:
+            cells = _split_md_row(st)
+            if not cells or all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                return None
+        matches: list[tuple[int, int, int]] = []
+        for m in _MULTILINE_SCENARIO_WEIGHT_RE.finditer(line):
+            raw_num = next(g for g in m.groups() if g is not None)
+            matches.append((m.start(), m.end(), int(raw_num)))
+        if len(matches) == 1:
+            return matches[0][2]
+        if len(matches) >= 2 and _SCENARIO_DELTA_RE.search(line):
+            cur_matches = [
+                w for s, _, w in matches
+                if not re.search(r"(?:原|由|较上期)[^，。；（）]{0,4}$", line[max(0, s - 8) : s])
+            ]
+            if len(cur_matches) == 1:
+                return cur_matches[0]
+        return None
+
+    def _has_scenario_context(start_idx: int, end_idx: int) -> bool:
+        for k in range(start_idx, end_idx):
+            if _SCENARIO_CONTEXT_RE.search(lines[k]):
+                return True
+        for k in range(max(0, start_idx - 5), start_idx):
+            if _SCENARIO_CONTEXT_RE.search(lines[k]):
+                return True
+        for k in range(start_idx - 1, -1, -1):
+            st_k = lines[k].strip()
+            if st_k.startswith("#"):
+                return bool(_SCENARIO_CONTEXT_RE.search(st_k))
+        return False
+
+    idx = 0
+    while idx < len(lines):
+        w0 = _extract_block_line_weight(lines[idx])
+        if w0 is None:
+            idx += 1
+            continue
+        is_tbl0 = lines[idx].strip().startswith("|")
+        block_weights = [w0]
+        end_idx = idx + 1
+        while end_idx < len(lines):
+            if lines[end_idx].strip().startswith("|") != is_tbl0:
+                break
+            wk = _extract_block_line_weight(lines[end_idx])
+            if wk is None:
+                break
+            block_weights.append(wk)
+            end_idx += 1
+        if 2 <= len(block_weights) <= 6 and _has_scenario_context(idx, end_idx):
+            total = sum(block_weights)
+            if total != 10:
+                errs.append(
+                    f"Gate G3 失败：{label} (L{idx + 1}-L{end_idx}) 多行情景 10 点拆分权重之和={total} ≠ 10 ({block_weights})"
+                )
+        idx = end_idx
     return errs
 
 
 def _check_tense_drift(label: str, text: str, edition_date: str) -> list[str]:
-    """Gate G7: Catch stale relative-day tense drift (明日=今日 / 今日=昨日 / 昨日=前日)."""
+    """Gate G7: Catch stale relative-day tense drift (明日=今日 / 今日=昨日 / 昨日=前日, MM/DD & MM月DD日)."""
     try:
         ed = date.fromisoformat(edition_date)
     except ValueError:
         return []
     prev = ed - timedelta(days=1)
     prev2 = ed - timedelta(days=2)
+
+    def _md_pat(d: date) -> str:
+        return rf"(?:0?{d.month}/0?{d.day}(?!\d)|0?{d.month}\s*月\s*0?{d.day}\s*[日号])"
+
     pats = (
-        (f"明日误标今日({ed.month}/{ed.day})", re.compile(rf"明日\s*[（(]?\s*0?{ed.month}/0?{ed.day}(?!\d)")),
-        (f"今日误标昨日({prev.month}/{prev.day})", re.compile(rf"今日\s*[（(]?\s*0?{prev.month}/0?{prev.day}(?!\d)")),
-        (f"昨日误标前日({prev2.month}/{prev2.day})", re.compile(rf"昨日\s*[（(]?\s*0?{prev2.month}/0?{prev2.day}(?!\d)")),
+        (f"明日误标今日({ed.month}/{ed.day})", re.compile(rf"明日\s*[（(]?\s*{_md_pat(ed)}")),
+        (f"今日误标昨日({prev.month}/{prev.day})", re.compile(rf"今日\s*[（(]?\s*{_md_pat(prev)}")),
+        (f"昨日误标前日({prev2.month}/{prev2.day})", re.compile(rf"昨日\s*[（(]?\s*{_md_pat(prev2)}")),
     )
     errs: list[str] = []
     for line_no, ln in enumerate(text.splitlines(), 1):
@@ -685,20 +778,37 @@ def _check_tense_drift(label: str, text: str, edition_date: str) -> list[str]:
 
 
 def _check_year_end_countdown(label: str, text: str, edition_date: str) -> list[str]:
-    """Gate G7: Verify 2026-12-31 countdown days match (date(2026,12,31) - edition_date).days."""
+    """Gate G7: Verify YYYY-12-31 countdown days match (date(year,12,31) - edition_date).days."""
     try:
         ed = date.fromisoformat(edition_date)
     except ValueError:
         return []
-    expected_days = (date(2026, 12, 31) - ed).days
     errs: list[str] = []
     for line_no, ln in enumerate(text.splitlines(), 1):
-        for m in _COUNTDOWN_2026_RE.finditer(ln):
-            stated = int(m.group(1))
+        for m in _COUNTDOWN_YEAR_END_RE.finditer(ln):
+            target_yr = int(m.group(1))
+            stated = int(m.group(2))
+            expected_days = (date(target_yr, 12, 31) - ed).days
             if stated != expected_days:
                 errs.append(
-                    f"Gate G7 失败：{label} (L{line_no}) 年底倒计时算错（写剩 {stated} 天，按 {edition_date} 实为 {expected_days} 天）"
+                    f"Gate G7 失败：{label} (L{line_no}) 年底倒计时算错"
+                    f"（写距 {target_yr}-12-31 剩 {stated} 天，按 {edition_date} 实为 {expected_days} 天）"
                 )
+    return errs
+
+
+def _check_credit_spread_ccc(label: str, text: str) -> list[str]:
+    """Gate S2: Require explicit CCC qualifier within ±20 chars of CCC-tier junk spread mentions."""
+    errs: list[str] = []
+    for line_no, ln in enumerate(text.splitlines(), 1):
+        for m in _CREDIT_SPREAD_CCC_RE.finditer(ln):
+            win = ln[max(0, m.start() - 20) : min(len(ln), m.end() + 20)]
+            if not _CCC_QUAL_RE.search(win):
+                errs.append(
+                    f"Gate S2 失败：{label} (L{line_no}) 信用利差表述缺少 CCC 分级限定"
+                    f"（防止混淆全口径高收益债与 CCC 级垃圾债利差）-> {win!r}"
+                )
+                break
     return errs
 
 
@@ -1884,9 +1994,9 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                                 errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}]({item.get('code')}).{field} 残留原始 Markdown/HTML 标记")
                         code = item.get("code")
                         if isinstance(code, str) and code.strip():
-                            ck = code.strip().upper()
+                            ck = _normalize_etf_code(code)
                             if ck in seen_codes:
-                                errs.append(f"Gate 4 失败：etf_universe.json 存在重复代码 {ck}")
+                                errs.append(f"Gate 4 失败：etf_universe.json 存在重复代码 {ck} ({code.strip()})")
                             seen_codes.add(ck)
                         mkt_v = str(item.get("market", "")).strip()
                         if mkt_v:
@@ -1901,6 +2011,11 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                         if "premium_status" in item and item["premium_status"] not in _ETF_ALLOWED_PREMIUM_STATUSES:
                             errs.append(
                                 f"Gate 4 失败：etf_universe.json etfs[{idx}]({code}).premium_status 非法枚举 ({item['premium_status']!r})"
+                            )
+                        elif item.get("premium_status") == "high_risk" and str(item.get("action_role", "")).strip() != "高危回避":
+                            errs.append(
+                                f"Gate S4 失败：etf_universe.json etfs[{idx}]({code}) premium_status='high_risk' "
+                                f"须配 action_role='高危回避'（当前为 {item.get('action_role')!r}）"
                             )
                         # Internal fee_total_pct vs fee_num consistency (abs <= 0.005)
                         ft_str = str(item.get("fee_total_pct", ""))
@@ -1933,7 +2048,13 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                         if m_pn_dt and m_yop_dt:
                             pm, pd = int(m_pn_dt.group(1)), int(m_pn_dt.group(2))
                             ym, yd = int(m_yop_dt.group(1)), int(m_yop_dt.group(2))
-                            if 1 <= pm <= 12 and pm == ym and 1 <= yd < pd <= 31:
+                            if (
+                                1 <= pm <= 12
+                                and 1 <= ym <= 12
+                                and 1 <= pd <= 31
+                                and 1 <= yd <= 31
+                                and ((pm == ym and yd < pd) or ((pm - ym) % 12 in (1, 2)))
+                            ):
                                 errs.append(
                                     f"Gate 4 失败：etf_universe.json ({code}) 字段日期未同步："
                                     f"premium_note 已更新至 {pm}/{pd}，但 yield_or_pe 仍停留 {ym}/{yd}"
@@ -1961,7 +2082,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                             win = sval[max(0, m_iopv.start() - 20) : min(len(sval), m_iopv.end() + 20)]
                             if not _IOPV_GLOSS_RE.search(win):
                                 errs.append(
-                                    f"Gate G5 失败：{jpath} 出现未配白话释义（参考净值/实时净值）的裸 IOPV -> {win!r}"
+                                    f"Gate G5 失败：{jpath} 出现未配白话释义（参考净值/实时净值/盘中净值）的裸 IOPV -> {win!r}"
                                 )
                                 break
                 if enforce_g5_g7 and isinstance(etfs, list):
@@ -1992,7 +2113,8 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                     continue
                 pcode = str(prod.get("code", ""))
                 pfee = str(prod.get("fee", ""))
-                pfee_nums = [float(x) for x in _PCT_NUM_RE.findall(pfee)]
+                pfee_cleaned = _FEE_EXCLUDE_SPAN_RE.sub("", pfee)
+                pfee_nums = [float(x) for x in _PCT_NUM_RE.findall(pfee_cleaned)]
                 if not pfee_nums:
                     continue
                 matched_etfs: list[tuple[str, float]] = []
@@ -2166,12 +2288,22 @@ def _check_dossiers_ah_and_dividends(dossiers: dict, state: dict | None) -> list
                 for fld in ("baseline_note", "valuation_anchor"):
                     txt = str(entry.get(fld, ""))
                     for m in _DOSSIER_AH_RE.finditer(txt):
+                        pre_clause = re.split(r"[。！？；;，,]", txt[: m.start()])[-1]
+                        post_head = txt[m.end() : m.end() + 14]
+                        if _DOSSIER_AH_HIST_CTX_RE.search(pre_clause) or re.match(
+                            r"\s*(?:为|系|属)?\s*[（(]?\s*(?:历史中枢|历史均值|过去)", post_head
+                        ):
+                            continue
                         raw_lo, raw_hi = m.group(1), m.group(2)
                         lo = float(raw_lo)
                         hi = float(raw_hi) if raw_hi else lo
-                        if "倒挂" in m.group(0) and not raw_lo.startswith(("+", "-")):
-                            lo = -abs(lo)
-                            hi = -abs(hi)
+                        if _DOSSIER_AH_NEG_WORD_RE.search(m.group(0)):
+                            if not raw_lo.startswith(("+", "-")):
+                                lo = -abs(lo)
+                            if raw_hi is None:
+                                hi = lo
+                            elif not raw_hi.startswith(("+", "-")):
+                                hi = -abs(hi)
                         lo, hi = min(lo, hi), max(lo, hi)
                         dist = 0.0 if lo <= bm_ah <= hi else min(abs(bm_ah - lo), abs(bm_ah - hi))
                         if dist > 0.6:
@@ -2188,9 +2320,9 @@ def _check_dossiers_ah_and_dividends(dossiers: dict, state: dict | None) -> list
             txt = str(entry.get(fld, ""))
             for m in _DOSSIER_DIV_STRICT_RE.finditer(txt):
                 clause_pre = re.split(r"[。！？；;，,（(]", txt[: m.start()])[-1]
-                post_win = txt[m.end() : m.end() + 12]
+                post_clause = re.split(r"[。！？；;，,]", txt[m.end() : m.end() + 12])[0]
                 if _DOSSIER_DIV_QUAL_RE.search(clause_pre) or re.search(
-                    r"(?:税后|扣税|港股通|H股|H\s*股|离岸)", post_win
+                    r"(?:税后|扣税|港股通|H\s*股|离岸|中期|半年|特别|历史|净股息)", post_clause
                 ):
                     continue
                 lo = float(m.group(1))
@@ -2292,30 +2424,45 @@ def _check_market_state_math(state: dict) -> list[str]:
     return errs
 
 
+def _closest_md_dt(mo: int, d: int, hh: int, mm: int, ref_dt: datetime) -> datetime | None:
+    cands: list[datetime] = []
+    for yr in (ref_dt.year - 1, ref_dt.year, ref_dt.year + 1):
+        try:
+            cands.append(datetime(yr, mo, d, hh, mm))
+        except ValueError:
+            continue
+    if not cands:
+        return None
+    return min(cands, key=lambda dt: (abs((dt - ref_dt).days), abs((dt - ref_dt).total_seconds())))
+
+
 def _parse_scorecard_due_dt(cell_text: str, ref_dt: datetime) -> datetime | None:
     plain = re.sub(r"<br\s*/?>", " ", cell_text, flags=re.IGNORECASE)
     plain = re.sub(r"[*`]", "", plain).strip()
-    m_full = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
+    m_full = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
     if m_full:
         try:
             return datetime(*(int(g) for g in m_full.groups()))
         except ValueError:
             return None
-    m_date = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)", plain)
+    m_date = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?!\d)", plain)
     if m_date:
         try:
             y, mo, d = (int(g) for g in m_date.groups())
             return datetime(y, mo, d, 23, 59)
         except ValueError:
             return None
-    m_md = re.search(r"(?<!\d)(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
+    m_md = re.search(r"(?<![0-9/])(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
     if m_md:
-        try:
-            mo, d, hh, mm = (int(g) for g in m_md.groups())
-            yr = ref_dt.year + (1 if ref_dt.month == 12 and mo == 1 else 0)
-            return datetime(yr, mo, d, hh, mm)
-        except ValueError:
-            return None
+        mo, d, hh, mm = (int(g) for g in m_md.groups())
+        if 1 <= mo <= 12 and 1 <= d <= 31 and 0 <= hh <= 23 and 0 <= mm <= 59:
+            return _closest_md_dt(mo, d, hh, mm, ref_dt)
+        return None
+    m_md_only = re.search(r"(?<![0-9/])(\d{1,2})/(\d{1,2})(?![0-9/]|(?:\s*(?:关|分|项|点|家|只)))", plain)
+    if m_md_only:
+        mo, d = int(m_md_only.group(1)), int(m_md_only.group(2))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return _closest_md_dt(mo, d, 23, 59, ref_dt)
     return None
 
 

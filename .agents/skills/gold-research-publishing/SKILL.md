@@ -16,8 +16,8 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 | `data_snapshot.json` | 跨项目 SSOT 唯一写入源（含 `edition_id`、`as_of_short`、四关固定 `id` 精确输入、`vix_10d_session_closes`/`vix_daily_row_checks`、`etf_cn`、`data_caveats`、`tier_code`/`new_buy_allowed`），供 Step 4 权益轨零滞后只读校核 |
 | `master_snapshot.json` / `market_calendar.json` | 主报告独立基线（常规班次惰性只读核验 5 大触发条件）；外置跨市场休市与冬/夏令时日历（覆盖至 `2027-06-30`，硬底线 30 天 / 核证 90 天） |
 | `daily/YYYY-MM-DD_{0730_早报\|1800_晚报}_黄金深度研报.md` | 收敛在线主刊（3 张 640px SVG 图；同场勘误加 `_r2` 防覆写）；主报告为 7 图百科版 |
-| `daily/{SCORECARD,CHANGELOG,AUDIT_LOG}.md` | 公开记分卡（仅登可证伪投资预判，零后台回补工单与内部词）；历史双账本经 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插（支持月度归档与跨月空锚回退） |
-| `daily/{RSI_PLAYBOOK.md,rsi_metrics.json}` | 受控 RSI 经验库（≤180 行软限 / 200 行硬限）与 6 维 `/30` 盲审闭环账本 |
+| `daily/{SCORECARD,CHANGELOG,AUDIT_LOG}.md` | 公开记分卡（仅登可证伪投资预判，零后台回补工单与内部词）；历史双账本经 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插、跨月经 `--archive-gold-ledgers`（`_archive_patch.json`）无损归档 |
+| `daily/{RSI_PLAYBOOK.md,rsi_metrics.json}` | 受控 RSI 经验库（≤180 行软限 / 200 行硬限）与 6 维 `/30` 盲审闭环账本（经 `--append-gold-rsi` 无损追加） |
 | `lint_readability.py` / `edition_validation.py` / `chart_input.py` | 6 道纯网页源稿门禁（Gate 0–5、`--strict` 零容忍）、`[-5m, +6h]` 单向截点与四关复算、图表数值规范化 |
 
 ---
@@ -29,7 +29,7 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 3. **Step 3｜双快照落盘、收敛主刊写作与无损头插**：
    - 先用 `write_file` 全量更新 `data_snapshot.json`（无日期键 `cross_ratios`/`etf_cn`、纯中文 `data_caveats`、VIX 10 日表与核查台账：普通日 `provisional_close` 3 日内核销、节日 `pending` 4h 复查、`no_row_confirmed` 官告/CSV 自证，无有效窗口盘口时 `vix_live`/`vix_live_as_of` 同时留空）；
    - 再写本刊 Markdown（小白三层结构、导语 ≤160 字且信号/噪音条数须与 `DAILY_SIGNAL_NOISE` 数组长度精确一致、Layer 2 自然段 ≤250 字[建议 ≤220 字]、正文禁塞冗余「挂账核销成绩单」表、同一核心数字复读 ≤3 次、标题/导语零后台审计腔、1 句跨资产传导链 + 48h 双向催化 + 四情景完整 100% 拆分）与 `SCORECARD.md`（仅登可证伪投资预判）；
-   - 写微型补丁 `gold/daily/_ledger_patch.json`（`GOLD_EDITION_REVIEW` JSON 必填 `edition_id`、`as_of_short`、`note`、四关 HTTPS `sources` 与 `forecast_review.status ∈ {"settled","none_due","pending_evidence"}`，严禁 `"tracked"`），运行 `python3 <REPO_ROOT>/scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插 `CHANGELOG.md` 与 `AUDIT_LOG.md`。命中 5 阈值时同步主报告与 `master_snapshot.json`。
+   - 跨月归档上月双账本时先写 `gold/daily/_archive_patch.json` 运行 `python3 <REPO_ROOT>/scripts/patch_state_dbs.py --archive-gold-ledgers`；再写微型补丁 `gold/daily/_ledger_patch.json`（`GOLD_EDITION_REVIEW` JSON 必填 `edition_id`、`as_of_short`、`note`、四关 HTTPS `sources` 与 `forecast_review.status ∈ {"settled","none_due","pending_evidence"}`，严禁 `"tracked"`），运行 `python3 <REPO_ROOT>/scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插 `CHANGELOG.md` 与 `AUDIT_LOG.md`。命中 5 阈值时同步主报告与 `master_snapshot.json`。
 4. **Step 4｜6 门禁严格验收（绝对路径裸命令，无 `cd &&`）**：
    ```bash
    python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md

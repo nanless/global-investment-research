@@ -52,7 +52,7 @@
   "spot_gold_ny_close_date": "2026-11-25",
   "spot_gold_ny_change_pct": 0.96,
   "spot_gold_live_usd": 3567.32,
-  "spot_gold_live_change_pct": -0.60,
+  "spot_gold_live_change_pct": -0.6,
   "spot_gold_intraday_high_usd": 3607.12,
   "spot_gold_intraday_low_usd": 3551.57,
   "spot_gold_asia_open_usd": 3566.84,
@@ -61,15 +61,15 @@
   "spot_gold_fri_low_usd": 3502.73,
   "spot_gold_fri_high_usd": 3636.63,
   "spot_gold_2026_peak_usd": 5595.62,
-  "comex_front_settle_usd": 3534.70,
+  "comex_front_settle_usd": 3534.7,
   "comex_front_change_pct": -0.71,
-  "comex_gcz26_settle_usd": 3537.90,
-  "comex_gcz26_live_usd": 3566.00,
-  "comex_gcg27_settle_usd": 3564.60,
+  "comex_gcz26_settle_usd": 3537.9,
+  "comex_gcz26_live_usd": 3566.0,
+  "comex_gcg27_settle_usd": 3564.6,
   "comex_gcg27_live_usd": 3592.12,
   "comex_gcg27_change_pct": -0.74,
-  "lbma_am_fix_usd": 3562.40,
-  "lbma_pm_fix_usd": 3578.90,
+  "lbma_am_fix_usd": 3562.4,
+  "lbma_pm_fix_usd": 3578.9,
   "lbma_fix_date": "2026-11-26",
   "spot_silver_usd": 41.41,
   "spot_silver_change_pct": 1.22,
@@ -77,33 +77,33 @@
   "spot_silver_live_change_pct": 0.31,
   "comex_silver_settle_usd": 40.052,
   "comex_silver_change_pct": -1.74,
-  "spot_platinum_usd": 1266.60,
-  "spot_platinum_change_pct": 0.70,
+  "spot_platinum_usd": 1266.6,
+  "spot_platinum_change_pct": 0.7,
   "spot_platinum_live_usd": 1290.96,
   "comex_copper_usd_lb": 5.3325,
   "comex_copper_change_pct": -0.56,
-  "comex_copper_live_usd_lb": 5.3890,
+  "comex_copper_live_usd_lb": 5.389,
   "shfe_copper_day_rmb": 89300,
   "shfe_copper_day_change_pct": -0.51,
   "shfe_copper_night_rmb": 89270,
   "shfe_copper_night_change_pct": 0.56,
-  "shfe_gold_night_rmb": 766.00,
+  "shfe_gold_night_rmb": 766.0,
   "shfe_gold_night_change_pct": 1.28,
   "shfe_gold_day_rmb": 767.62,
   "shfe_gold_day_change_pct": -0.17,
   "shfe_au2612_night_rmb": 764.44,
-  "shfe_au2612_night_change_pct": 1.40,
+  "shfe_au2612_night_change_pct": 1.4,
   "shfe_au2612_day_rmb": 765.36,
   "shfe_au2702_day_rmb": 767.62,
   "shfe_au2702_settle_rmb": 756.32,
   "shfe_au2702_day_change_pct": -0.17,
   "sge_am_fix_rmb": 768.24,
   "sge_pm_fix_rmb": 765.96,
-  "sge_autd_night_rmb": 764.00,
+  "sge_autd_night_rmb": 764.0,
   "sge_autd_night_change_pct": 0.11,
   "sge_autd_day_rmb": 765.78,
   "sge_autd_day_change_pct": 1.17,
-  "sge_au9999_night_rmb": 765.00,
+  "sge_au9999_night_rmb": 765.0,
   "sge_au9999_night_change_pct": -0.11,
   "sge_au9999_day_rmb": 765.82,
   "sge_au9999_day_change_pct": 1.12,
@@ -119,11 +119,11 @@
   "sge_agtd_day_change_pct": 0.42,
   "sge_agtd_night_rmb_kg": 9627,
   "sge_agtd_night_change_pct": 0.49,
-  "usd_cny": 6.6600,
-  "usd_cny_1630": 6.6600,
+  "usd_cny": 6.66,
+  "usd_cny_1630": 6.66,
   "usd_cny_night": 6.6609,
   "usd_cny_short": 6.66,
-  "usd_cnh_live": 6.6640,
+  "usd_cnh_live": 6.664,
   "cfets_cny_fixing": 6.7096,
   "cfets_fixing_date": "2026-11-26",
   "dxy": 103.76,
@@ -159,12 +159,12 @@
   "sma_200w_q1_2027_usd": 3136,
   "brent_settle_usd": 96.57,
   "brent_change_pct": 2.07,
-  "brent_live_usd": 95.80,
-  "brent_live_chg_pct": -0.80,
+  "brent_live_usd": 95.8,
+  "brent_live_chg_pct": -0.8,
   "wti_settle_usd": 83.68,
   "wti_change_pct": 1.99,
-  "wti_live_usd": 84.60,
-  "wti_live_chg_pct": 1.10,
+  "wti_live_usd": 84.6,
+  "wti_live_chg_pct": 1.1,
   "ttf_gas_eur": 87.75,
   "vix_close": 28.29,
   "vix_change_pct": 7.32,
@@ -176,16 +176,46 @@
   "vix_10d_peak_date": "2026-11-20",
   "vix_10d_window_end": "2026-11-25",
   "vix_10d_session_closes": [
-    {"date": "2026-11-12", "close": 18.70},
-    {"date": "2026-11-13", "close": 19.30},
-    {"date": "2026-11-16", "close": 22.91},
-    {"date": "2026-11-17", "close": 25.46},
-    {"date": "2026-11-18", "close": 24.56},
-    {"date": "2026-11-19", "close": 28.44},
-    {"date": "2026-11-20", "close": 35.89},
-    {"date": "2026-11-23", "close": 26.62},
-    {"date": "2026-11-24", "close": 26.36},
-    {"date": "2026-11-25", "close": 28.29}
+    {
+      "date": "2026-11-12",
+      "close": 18.7
+    },
+    {
+      "date": "2026-11-13",
+      "close": 19.3
+    },
+    {
+      "date": "2026-11-16",
+      "close": 22.91
+    },
+    {
+      "date": "2026-11-17",
+      "close": 25.46
+    },
+    {
+      "date": "2026-11-18",
+      "close": 24.56
+    },
+    {
+      "date": "2026-11-19",
+      "close": 28.44
+    },
+    {
+      "date": "2026-11-20",
+      "close": 35.89
+    },
+    {
+      "date": "2026-11-23",
+      "close": 26.62
+    },
+    {
+      "date": "2026-11-24",
+      "close": 26.36
+    },
+    {
+      "date": "2026-11-25",
+      "close": 28.29
+    }
   ],
   "vix_daily_row_checks": {
     "2026-11-25": {
@@ -203,11 +233,11 @@
     }
   },
   "vix_daily_source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
-  "nvda_close_usd": 149.30,
+  "nvda_close_usd": 149.3,
   "nvda_change_pct": -3.91,
   "spx_close": 7182.78,
   "spx_change_pct": -0.25,
-  "ndx_close": 26046.90,
+  "ndx_close": 26046.9,
   "ndx_change_pct": -0.64,
   "dow_close": 50182.95,
   "dow_change_pct": 0.33,
@@ -215,7 +245,7 @@
   "btc_change_pct": -0.36,
   "gdx_close_usd": 73.89,
   "gdx_change_pct": 3.53,
-  "gdx_nav_usd": 73.70,
+  "gdx_nav_usd": 73.7,
   "gdx_note": "11/25 官收 $73.89（+3.53%），VanEck 官网已核实 11/25 官方 NAV 为 $73.70（+3.08%，市价小幅溢价 +0.26%）；11/26 美股感恩节休市沿用",
   "gld_close_usd": 327.45,
   "gld_change_pct": 0.61,
@@ -252,9 +282,24 @@
   "bank_2027_fx_median": 6.44,
   "etf_cn": {
     "as_of_date": "2026-11-26",
-    "518880": {"close": 7.270, "chg_pct": 1.41, "nav": 7.2749, "flow_100m": -1.86},
-    "159937": {"close": 7.251, "chg_pct": 1.34, "nav": 7.2588, "flow_100m": -1.25},
-    "518660": {"close": 7.298, "chg_pct": 1.36, "nav": 7.3051, "flow_100m": -0.31}
+    "518880": {
+      "close": 7.27,
+      "chg_pct": 1.41,
+      "nav": 7.2749,
+      "flow_100m": -1.86
+    },
+    "159937": {
+      "close": 7.251,
+      "chg_pct": 1.34,
+      "nav": 7.2588,
+      "flow_100m": -1.25
+    },
+    "518660": {
+      "close": 7.298,
+      "chg_pct": 1.36,
+      "nav": 7.3051,
+      "flow_100m": -0.31
+    }
   },
   "data_caveats": [
     {
@@ -283,7 +328,7 @@
       "category": "delayed_official",
       "severity": "info",
       "item": "美国 11/25 信用利差、隔夜利率与财政部账户受感恩节顺延至美东周五发布",
-      "detail": "受美国感恩节联邦休假影响，11/25 美国高收益与垃圾债信用利差、隔夜基准利率及财政部一般账户均顺延至美东周五（北京时间周六凌晨）发布，本期合法沿用 11/24 官方终值（372 / 1,405 基点）。",
+      "detail": "受美国感恩节联邦休假影响，11/25 美国高收益债与 CCC 级深度垃圾债信用利差、隔夜基准利率及财政部一般账户均顺延至美东周五（北京时间周六凌晨）发布，本期合法沿用 11/24 官方终值（372 / 1,405 基点）。",
       "impact": "四关核心硬门槛均已锁定，上述联邦滞后统计不影响当前红灯停裁决。",
       "next_review": "2026-11-28_0730"
     }
@@ -308,40 +353,211 @@
     "gold_brent_ratio": 37.16,
     "gold_platinum_ratio": 2.83,
     "gold_silver_ratio": 86.66,
-    "gold_spx_ratio": 0.500
+    "gold_spx_ratio": 0.5
   },
   "monthly_candles": [
-    {"label": "1月", "o": 4318, "h": 5596, "l": 4311, "c": 4865},
-    {"label": "2月", "o": 4865, "h": 5281, "l": 4404, "c": 5278},
-    {"label": "3月", "o": 5278, "h": 5419, "l": 4100, "c": 4697},
-    {"label": "4月", "o": 4697, "h": 4890, "l": 4510, "c": 4623},
-    {"label": "5月", "o": 4626, "h": 4774, "l": 4366, "c": 4541},
-    {"label": "6月", "o": 4540, "h": 4545, "l": 3942, "c": 4006},
-    {"label": "7月", "o": 4006, "h": 4202, "l": 3960, "c": 4051},
-    {"label": "8月", "o": 4043, "h": 4697, "l": 4020, "c": 4452},
-    {"label": "9月", "o": 4452, "h": 4510, "l": 4111, "c": 4156},
-    {"label": "10月", "o": 4156, "h": 4225, "l": 3870, "c": 3875},
-    {"label": "11月*", "o": 3875, "h": 4146, "l": 3427, "c": 3589}
+    {
+      "label": "1月",
+      "o": 4318,
+      "h": 5596,
+      "l": 4311,
+      "c": 4865
+    },
+    {
+      "label": "2月",
+      "o": 4865,
+      "h": 5281,
+      "l": 4404,
+      "c": 5278
+    },
+    {
+      "label": "3月",
+      "o": 5278,
+      "h": 5419,
+      "l": 4100,
+      "c": 4697
+    },
+    {
+      "label": "4月",
+      "o": 4697,
+      "h": 4890,
+      "l": 4510,
+      "c": 4623
+    },
+    {
+      "label": "5月",
+      "o": 4626,
+      "h": 4774,
+      "l": 4366,
+      "c": 4541
+    },
+    {
+      "label": "6月",
+      "o": 4540,
+      "h": 4545,
+      "l": 3942,
+      "c": 4006
+    },
+    {
+      "label": "7月",
+      "o": 4006,
+      "h": 4202,
+      "l": 3960,
+      "c": 4051
+    },
+    {
+      "label": "8月",
+      "o": 4043,
+      "h": 4697,
+      "l": 4020,
+      "c": 4452
+    },
+    {
+      "label": "9月",
+      "o": 4452,
+      "h": 4510,
+      "l": 4111,
+      "c": 4156
+    },
+    {
+      "label": "10月",
+      "o": 4156,
+      "h": 4225,
+      "l": 3870,
+      "c": 3875
+    },
+    {
+      "label": "11月*",
+      "o": 3875,
+      "h": 4146,
+      "l": 3427,
+      "c": 3589
+    }
   ],
   "mechanical_calendar": [
-    {"title": "① 11/27–29 · 黑五早收与油会", "line1": "• 今晚黑五美股 02:00 / 期金 03:45 提前收防薄量", "line2": "• 周日 11/29 OPEC+ 会议定 2027 产油基线", "bg": "#fff7ed", "brd": "#fb923c", "hdr": "#c2410c", "txt": "#7c2d12"},
-    {"title": "② 12/01 – 12/18 · 加息逆风砸坑期", "line1": "• 12/10 美联储打头阵，10 天内四大央行密集加息", "line2": "• 欧美机构年底卖亏本黄金抵税，容易砸出坑", "bg": "#fef2f2", "brd": "#f87171", "hdr": "#b91c1c", "txt": "#7f1d1d"},
-    {"title": "③ 12/24 – 01/07 · 情绪拐点观察窗", "line1": "• 加息与年底抵税抛售结束，压力明显减轻", "line2": "• 盯着下方四步红绿灯，四关全亮再分批买", "bg": "#f0fdf4", "brd": "#4ade80", "hdr": "#15803d", "txt": "#14532d"},
-    {"title": "④ 01/08 – 01/15 · 指数基金强制进货", "line1": "• 两大全球商品指数调高金银权重", "line2": "• 被动基金强制净买 33–48 亿美元金+25 亿银", "bg": "#dcfce7", "brd": "#15803d", "hdr": "#0f5132", "txt": "#14532d"}
+    {
+      "title": "① 11/27–29 · 黑五早收与油会",
+      "line1": "• 今晚黑五美股 02:00 / 期金 03:45 提前收防薄量",
+      "line2": "• 周日 11/29 OPEC+ 会议定 2027 产油基线",
+      "bg": "#fff7ed",
+      "brd": "#fb923c",
+      "hdr": "#c2410c",
+      "txt": "#7c2d12"
+    },
+    {
+      "title": "② 12/01 – 12/18 · 加息逆风砸坑期",
+      "line1": "• 12/10 美联储打头阵，10 天内四大央行密集加息",
+      "line2": "• 欧美机构年底卖亏本黄金抵税，容易砸出坑",
+      "bg": "#fef2f2",
+      "brd": "#f87171",
+      "hdr": "#b91c1c",
+      "txt": "#7f1d1d"
+    },
+    {
+      "title": "③ 12/24 – 01/07 · 情绪拐点观察窗",
+      "line1": "• 加息与年底抵税抛售结束，压力明显减轻",
+      "line2": "• 盯着下方四步红绿灯，四关全亮再分批买",
+      "bg": "#f0fdf4",
+      "brd": "#4ade80",
+      "hdr": "#15803d",
+      "txt": "#14532d"
+    },
+    {
+      "title": "④ 01/08 – 01/15 · 指数基金强制进货",
+      "line1": "• 两大全球商品指数调高金银权重",
+      "line2": "• 被动基金强制净买 33–48 亿美元金+25 亿银",
+      "bg": "#dcfce7",
+      "brd": "#15803d",
+      "hdr": "#0f5132",
+      "txt": "#14532d"
+    }
   ],
   "institutional_targets": [
-    {"name": "麦格理（27年均价）", "lo": 3500, "hi": 4600, "base": 4200, "kind": "avg"},
-    {"name": "世界银行（27年均价）", "lo": 3650, "hi": 4600, "base": 4250, "kind": "avg"},
-    {"name": "摩根大通（27年末·11/24修）", "lo": 3600, "hi": 5200, "base": 4500, "kind": "pt"},
-    {"name": "高盛（27年末·11月修）", "lo": 3500, "hi": 4800, "base": 4650, "kind": "pt"},
-    {"name": "澳新银行（27年末）", "lo": 3400, "hi": 5200, "base": 4800, "kind": "pt"},
-    {"name": "美国银行（27年均价）", "lo": 3700, "hi": 5000, "base": 4813, "kind": "avg"},
-    {"name": "法国兴业（27年末）", "lo": 4200, "hi": 5400, "base": 5000, "kind": "pt", "annual_average_usd": 4625},
-    {"name": "瑞银集团（27年末）", "lo": 3750, "hi": 5400, "base": 5000, "kind": "pt"},
-    {"name": "花旗集团（6–12月）", "lo": 3500, "hi": 6000, "base": 5000, "kind": "horizon"},
-    {"name": "汇丰银行（27年末）", "lo": 3950, "hi": 5300, "base": 5025, "kind": "pt"},
-    {"name": "德意志银行（27均价·旧稿†）", "lo": 3950, "hi": 5600, "base": 5150, "kind": "stale"},
-    {"name": "摩根士丹利（27年末）", "lo": 4200, "hi": 5600, "base": 5250, "kind": "pt"}
+    {
+      "name": "麦格理（27年均价）",
+      "lo": 3500,
+      "hi": 4600,
+      "base": 4200,
+      "kind": "avg"
+    },
+    {
+      "name": "世界银行（27年均价）",
+      "lo": 3650,
+      "hi": 4600,
+      "base": 4250,
+      "kind": "avg"
+    },
+    {
+      "name": "摩根大通（27年末·11/24修）",
+      "lo": 3600,
+      "hi": 5200,
+      "base": 4500,
+      "kind": "pt"
+    },
+    {
+      "name": "高盛（27年末·11月修）",
+      "lo": 3500,
+      "hi": 4800,
+      "base": 4650,
+      "kind": "pt"
+    },
+    {
+      "name": "澳新银行（27年末）",
+      "lo": 3400,
+      "hi": 5200,
+      "base": 4800,
+      "kind": "pt"
+    },
+    {
+      "name": "美国银行（27年均价）",
+      "lo": 3700,
+      "hi": 5000,
+      "base": 4813,
+      "kind": "avg"
+    },
+    {
+      "name": "法国兴业（27年末）",
+      "lo": 4200,
+      "hi": 5400,
+      "base": 5000,
+      "kind": "pt",
+      "annual_average_usd": 4625
+    },
+    {
+      "name": "瑞银集团（27年末）",
+      "lo": 3750,
+      "hi": 5400,
+      "base": 5000,
+      "kind": "pt"
+    },
+    {
+      "name": "花旗集团（6–12月）",
+      "lo": 3500,
+      "hi": 6000,
+      "base": 5000,
+      "kind": "horizon"
+    },
+    {
+      "name": "汇丰银行（27年末）",
+      "lo": 3950,
+      "hi": 5300,
+      "base": 5025,
+      "kind": "pt"
+    },
+    {
+      "name": "德意志银行（27均价·旧稿†）",
+      "lo": 3950,
+      "hi": 5600,
+      "base": 5150,
+      "kind": "stale"
+    },
+    {
+      "name": "摩根士丹利（27年末）",
+      "lo": 4200,
+      "hi": 5600,
+      "base": 5250,
+      "kind": "pt"
+    }
   ],
   "trust_assets": {
     "myths_blocked": 39,

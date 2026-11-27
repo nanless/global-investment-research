@@ -619,7 +619,8 @@ _BANNED_INTERNAL_RE = re.compile(
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
     r"edition_(?:run|plan|validation)\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|"
-    r"patch_state_dbs\.py|_edition_patch\.json|_ledger_patch\.json|"
+    r"svg_geometry\.py|patch_state_dbs\.py|"
+    r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"master_snapshot\.json|data_snapshot\.json|unified-edition\.prompt\.md|permissions\.json|"
@@ -657,7 +658,7 @@ _RARE_JARGON_RE = re.compile(
 )
 _TIER2_GLOSS_PATTERNS: tuple[tuple[str, re.Pattern[str], re.Pattern[str], int], ...] = (
     ("ON RRP", re.compile(r"\bON\s+RRP\b", re.IGNORECASE), re.compile(r"(?:隔夜逆回购|逆回购)"), 20),
-    ("IOPV", re.compile(r"\bIOPV\b", re.IGNORECASE), re.compile(r"(?:参考净值|盘中净值)"), 20),
+    ("IOPV", re.compile(r"\bIOPV\b", re.IGNORECASE), re.compile(r"(?:参考净值|实时净值|盘中净值)"), 20),
     ("bp", re.compile(r"\d+\s*bp\b", re.IGNORECASE), re.compile(r"基点"), 16),
     ("DXY", re.compile(r"\bDXY\b", re.IGNORECASE), re.compile(r"美元指数"), 24),
     ("COT", re.compile(r"\bCOT\b", re.IGNORECASE), re.compile(r"(?:持仓|期货持仓|投机净多|仓位报告)"), 24),

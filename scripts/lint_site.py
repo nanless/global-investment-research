@@ -275,8 +275,9 @@ S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|"
-    r"_edition_patch\.json|_ledger_patch\.json|"
+    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|"
+    r"_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|"
+    r"_rollover_patch\.json|_archive_patch\.json|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing)(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
@@ -450,6 +451,18 @@ DOSSIER_DIMENSIONS: tuple[str, ...] = (
 )
 DOSSIER_RED_AVOID_RE = re.compile(r"高危回避|坚决回避")
 DOSSIER_RED_NEG_RE = re.compile(r"(?:并非|不是|脱离|解除|不再).{0,6}(?:高危回避|坚决回避)")
+DOSSIER_BASE_NEG_RE = re.compile(r"(?:严禁|禁止|不可|不得|切勿|勿|不能|绝不|非|不再).{0,8}当下底座")
+DOSSIER_URGENT_WARN_RE = re.compile(r"暂勿立即加仓|切勿.{0,12}追买")
+SCREENER_SUMMARY_WARN_RE = re.compile(r"配售|暂勿|切勿|严禁追高|抛压|回避|观望|不追|勿追")
+S6_A_FORBID_CURR_RE = re.compile(r"HK\$|\$|港元|美元", re.IGNORECASE)
+S6_HK_FORBID_CURR_RE = re.compile(r"(?<!HK)\$|美元", re.IGNORECASE)
+S6_US_FORBID_CURR_RE = re.compile(r"港元")
+S6_PERMANENT_INVARIANTS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("4-digit .HK ticker (must be 5-digit zero-padded)", re.compile(r"(?<![0-9])\d{4}\.HK(?![A-Za-z0-9])")),
+    ("lumped 008142/008143 (0.20%) fee claim", re.compile(r"008142\s*/\s*008143\s*[（(][^）)]{0,12}0\.20%")),
+    ("exchange bond ETF tax-avoidance claim", re.compile(r"借道债券\s*ETF[^\n。；;]{0,24}避税")),
+    ("secondary CD must re-list claim", re.compile(r"二手存单[^\n。；;]{0,24}只能再次[^\n。；;]{0,12}转让")),
+)
 CORE_HUB_H1_PAGES: frozenset[str] = frozenset(
     {
         "index.html",
@@ -1851,6 +1864,7 @@ def _validate_screener_json(
     errors: list[str],
     *,
     gold_new_buy_blocked: bool,
+    market_state: dict | None = None,
 ) -> None:
     """Parse and validate <script id='screener-data' type='application/json'> payload in screener.html."""
     if screener_doc.screener_json_raw is None:
@@ -1878,6 +1892,25 @@ def _validate_screener_json(
         errors.append(
             f"[S6] screener.html: #screener-data length ({len(payload)}) != expected total ({expected_total})"
         )
+
+    ah_lookup: dict[str, float] = {}
+    if isinstance(market_state, dict):
+        ah_rows = (
+            (market_state.get("cross_market_linkages") or {})
+            .get("ah_premium_radar", {})
+            .get("benchmarks")
+        )
+        if isinstance(ah_rows, list):
+            for row in ah_rows:
+                if not isinstance(row, dict):
+                    continue
+                pct = row.get("ah_premium_pct")
+                if not isinstance(pct, (int, float)):
+                    continue
+                for k in ("a", "h"):
+                    c = str(row.get(k) or "").strip().upper()
+                    if c:
+                        ah_lookup[c] = float(pct)
 
     actual_by_market: dict[str, int] = {"a-share": 0, "hk-stock": 0, "us-stock": 0}
     benchmarks: dict[str, str] = {}
@@ -1929,6 +1962,38 @@ def _validate_screener_json(
                 )
                 bad_entries += 1
 
+        # Market-currency invariant on price string
+        price_str = str(entry.get("price", ""))
+        if mk == "a-share" and S6_A_FORBID_CURR_RE.search(price_str):
+            errors.append(
+                f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) currency violation — "
+                f"a-share price contains non-RMB currency token: {price_str!r}"
+            )
+            bad_entries += 1
+        elif mk == "hk-stock" and S6_HK_FORBID_CURR_RE.search(price_str):
+            errors.append(
+                f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) currency violation — "
+                f"hk-stock price contains USD currency token: {price_str!r}"
+            )
+            bad_entries += 1
+        elif mk == "us-stock" and S6_US_FORBID_CURR_RE.search(price_str):
+            errors.append(
+                f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) currency violation — "
+                f"us-stock price contains HKD currency token: {price_str!r}"
+            )
+            bad_entries += 1
+
+        # AH parity vs market_state.ah_benchmarks (±0.6pp when present)
+        if code in ah_lookup:
+            expected_ah = ah_lookup[code]
+            card_ah = entry.get("ah_pct")
+            if not isinstance(card_ah, (int, float)) or abs(float(card_ah) - expected_ah) > 0.6:
+                errors.append(
+                    f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) ah_pct parity mismatch — "
+                    f"card ah_pct={card_ah!r} vs market_state ah_benchmarks={expected_ah:+.1f}%"
+                )
+                bad_entries += 1
+
         col_val = str(entry.get("color", "")).strip()
         if gold_new_buy_blocked and col_val == "g" and GOLD_STOCK_RE.search(f"{entry.get('name', '')} {code}"):
             errors.append(f"[S6] screener.html: Gold Tier 0 stock marked as green base: {mk}/{code}")
@@ -1970,16 +2035,35 @@ def _validate_screener_json(
                     bad_entries += 1
                     break
             action_head = str(dossier.get("action_etf") or "").strip()[:60]
-            if action_head and (
-                "🔴" in action_head
-                or (DOSSIER_RED_AVOID_RE.search(action_head) and not DOSSIER_RED_NEG_RE.search(action_head))
-            ):
-                if col_val in ("g", "b"):
+            if action_head:
+                is_dossier_red = (
+                    "🔴" in action_head
+                    or (bool(DOSSIER_RED_AVOID_RE.search(action_head)) and not DOSSIER_RED_NEG_RE.search(action_head))
+                )
+                is_dossier_green = (
+                    "🟢" in action_head
+                    or ("当下底座" in action_head and not DOSSIER_BASE_NEG_RE.search(action_head))
+                )
+                if is_dossier_red and col_val in ("g", "b"):
                     errors.append(
                         f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) badge contradiction — "
                         f"card color={col_val!r} conflicts with dossier action_etf red-avoid ({action_head[:40]!r})"
                     )
                     bad_entries += 1
+                elif is_dossier_green and col_val == "r":
+                    errors.append(
+                        f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) badge contradiction — "
+                        f"card color='r' conflicts with dossier action_etf green-base ({action_head[:40]!r})"
+                    )
+                    bad_entries += 1
+                elif col_val == "g" and DOSSIER_URGENT_WARN_RE.search(action_head):
+                    card_sum = str(entry.get("summary") or "")
+                    if not SCREENER_SUMMARY_WARN_RE.search(card_sum):
+                        errors.append(
+                            f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) badge contradiction — "
+                            f"card color='g' omits urgent placement/chase-buy warning from dossier ({action_head[:40]!r})"
+                        )
+                        bad_entries += 1
 
         if bad_entries >= 10:
             break
@@ -2200,7 +2284,11 @@ def run_gate_s6(
                         f"!= expected total ({expected_total})"
                     )
                 _validate_screener_json(
-                    screener_doc, expected_by_market, errors, gold_new_buy_blocked=gold_new_buy_blocked,
+                    screener_doc,
+                    expected_by_market,
+                    errors,
+                    gold_new_buy_blocked=gold_new_buy_blocked,
+                    market_state=market_state,
                 )
             elif screener_doc is not None and screener_doc.stock_row_count < 100:
                 errors.append(
@@ -2425,16 +2513,20 @@ def run_gate_s6(
                             check_eng=False, check_gold_tier0=True, gate_tag="S6",
                         )
 
-    # 7. Zero duplicate data_caveats titles on index.html (Gate S6 / G8).
-    if index_doc is not None and index_doc.caveat_titles:
+    # 7. Zero duplicate data_caveats titles on index.html and daily/*-latest.html (Gate S6 / G8).
+    for path, doc in sorted(parsed_htmls.items()):
+        if not (path == "index.html" or (path.startswith("daily/") and path.endswith("-latest.html"))):
+            continue
+        if not doc.caveat_titles:
+            continue
         seen_caveat_titles: dict[str, str] = {}
-        for raw_ct in index_doc.caveat_titles:
+        for raw_ct in doc.caveat_titles:
             norm_ct = re.sub(r"[\W_]+", "", raw_ct.lower())
             if not norm_ct:
                 continue
             if norm_ct in seen_caveat_titles:
                 errors.append(
-                    f"[S6] index.html: duplicate data_caveats title rendered: {raw_ct!r}"
+                    f"[S6] {path}: duplicate data_caveats title rendered: {raw_ct!r}"
                 )
             else:
                 seen_caveat_titles[norm_ct] = raw_ct
@@ -2450,6 +2542,19 @@ def run_gate_s6(
             if doc.h1_count != 1:
                 errors.append(
                     f"[S6] {path}: expected exactly 1 <h1> heading for accessibility, found {doc.h1_count}"
+                )
+
+    # 9. Permanent-invariant scan on reports/*.html & guide.html (Gate S6).
+    for path, doc in sorted(parsed_htmls.items()):
+        if not (path == "guide.html" or path.startswith("reports/")):
+            continue
+        vis = doc.visible_text
+        for inv_label, inv_re in S6_PERMANENT_INVARIANTS:
+            m_inv = inv_re.search(vis)
+            if m_inv:
+                win = " ".join(vis[max(0, m_inv.start() - 20) : min(len(vis), m_inv.end() + 20)].split())
+                errors.append(
+                    f"[S6] {path}: permanent invariant violation ({inv_label}) -> {win!r}"
                 )
 
 

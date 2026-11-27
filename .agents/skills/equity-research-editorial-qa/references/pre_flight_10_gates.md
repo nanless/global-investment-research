@@ -35,12 +35,12 @@
 
 ## 门禁 6｜小白友好三层写作、反重复读、零后台审计腔与反引号白名单
 - ☐ 落实 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据」**；`DXY`/`COT`/`CDS`/`ERP`/`IRR` 等专业词移出裸用名单，首次出现必配简短白话括注或交由站内术语白话浮窗。
-- ☐ **零后台审计腔与反重复读**：标题与导语严禁出现「旧缺口清零」「挂账核销成绩单」类运维话术，正文禁塞冗余核销成绩单表；开篇导语 ≤160 字；同一核心数字在正文提及 ≤3 次。
+- ☐ **零后台审计腔与反重复读**：标题与导语严禁出现「旧缺口清零」「挂账核销成绩单」类运维话术，正文禁塞冗余核销成绩单表；开篇导语 ≤200 字（推荐 ≤160 字）；同一核心数字在正文提及 ≤3 次。
 - ☐ 全部读者可见文件（含 `.md`、JSON、三大扩展数据库、`data_caveats`、SVG、`INDEX.md`、`CHANGELOG.md`、`SCORECARD.md`）**零**版本号、`Subagent`、`红队`/`法证`、`Tier 0–3`、`Tier A/B/C`、`Meta-RSI`、脚本名、内部规范/快照/账本文件名及居高临下说教口号（`1 分钟定心丸`/`小白词典`/`直接抄`/`蠢事`/`保命铁律`）；鼓励平等温和的「3 分钟速读结论」「关键词白话速查」。
 - ☐ 反引号代码白名单 100% 达标（正文避免裸写 `ON RRP`/`IOPV`/`数字+bp`/`熊平`/`¢` 及裸期限 `2Y/3Y/5Y/10Y/20Y/30Y`）。
 
 ## 门禁 7｜Gate 3B 排版密度、231 股零模板化 7 维深研与弹性龙头池闭环
-- ☐ 页面主标题（目标日报 ≤27 / 旗舰 ≤36 字）、一句话结论（≤50 字）、单段（≤130 字）、列表项（≤160 字）、粗体占比（≤12%）、主表 ≤5 列（日报焦点股表 3 列但须体现 7 维实质依据）全项达标。
+- ☐ 页面主标题（目标日报 ≤27 / 旗舰 ≤36 字）、一句话结论（≤50 字）、单段（≤130 字）、列表项（≤160 字）、粗体占比（**`5%–12%`**，底线 `≥4.5%`）、主表 ≤5 列（日报焦点股表 3 列但须体现 7 维实质依据与一手门槛）全项达标。
 - ☐ **旗舰附表二与 231 股深研闭环（Gate 3B）**：三本旗舰附表二行数 100% 等于 `report_meta_*.json`、`market_state.json.stock_pool_count`（76/75/80 = 231）及 `state/deep_dossiers.json` 覆盖数；每只焦点股与池内股票均为**零模板化** 7 维机构级深研档案。
 
 ## 门禁 8｜21 张矢量 SVG 图动态键覆写、`CHART_A2` 贴水正号与黄金红灯全载体锁（Gate C2）
@@ -48,15 +48,15 @@
 - ☐ **跨项目黄金红灯互斥锁全载体达标（Gate C2 & Gate S6）**：黄金红灯停期，Markdown、JSON、**三大扩展数据库（`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`）**、渲染后 SVG 与全站网页均零新买/补齐黄金指令，严禁将黄金/金矿股或 ETF（`518660`/`517520`/`02840`/`03081`/`IAUM`/`IGLN`/`NEM`/`601899`/`02899.HK`）标为绿色底座。
 
 ## 门禁 9｜三市六文件 + 三大扩展数据库同期 `edition_id` 锁、兄弟/孪生同步与审计账本闭环
-一次标准发版严禁 `edit_file`：中小 Markdown 与轻量状态文件（1–5、7 项）一律用 `write_file` 全量写盘；**第 6 项三大扩展大 JSON（合计 ~830 KB）统一写微型补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --apply` 原子合并（防 300s 超时）**：
+一次标准发版严禁 `edit_file`：中小 Markdown 与轻量状态文件（1–5 项）一律用 `write_file` 全量写盘；**第 6 项三大扩展大 JSON（合计 ~830 KB）写嵌套补丁 `_edition_patch.json` 走 `scripts/patch_state_dbs.py --apply`（只读查库用 `--inspect <target>`），第 7 项持续增长的 `state/audit_ledger.md` 强制写 3 键 `_audit_patch.json` 走 `--prepend-equity-audit` 无损头插（严禁全量重写），月初切换 `period_slug` 写 `_rollover_patch.json` 走 `--rollover-equity-month`（防 300s 超时）**：
 1. ☐ `daily/YYYY-MM-DD_{0730,1800}_{a_share,hk_stock,us_stock}.md`（或 `_r2`）
 2. ☐ `daily/INDEX.md`（刷新顶部 ≤4 列驾驶舱 + 100% 闭环总占比 + 最新行，仅纯网页/Markdown 链接，严禁离线附件链接；前刊勘误须联动更新）
 3. ☐ `daily/CHANGELOG.md`（纯读者中文观点演进，单条 ≤130 字）
 4. ☐ `daily/SCORECARD.md`（客观回填到期预判 + 工作日新登可证伪投资预判，禁混入后台数据回补工单；前刊勘误须联动更新）
 5. ☐ `state/market_state.json`（规范无日期键 + 黄金镜像 + `pending_backfills` + 纯读者中文 `data_caveats`）
 6. ☐ **`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`**（经 `_edition_patch.json` + `scripts/patch_state_dbs.py --apply` 原子合并并**强制同步 `edition_id`**，同步扫清修改标的关联兄弟字段与 A/H 双地孪生股口径，**严守诚实单股 `updated_at`（仅更新本期实审股票，绝不批量刷写未核查标的）**，按早/晚/周分层刷新矩阵更新 12 大渠道、140+ 重点 ETF 与当班 4–6 只焦点股 / 周日 6–10 只轮换龙头的 7 维深度档案）
-7. ☐ `state/audit_ledger.md`（一手源核验、红队纠偏 Diff 与数据回补记录）
-- ☐ 命中旗舰 5 条触发阈值时同步三本旗舰 `{market}_market_report_{slug}.md`、`{market}_market_report_latest.md`（字节一致）与 `report_meta_*.json`。
+7. ☐ `state/audit_ledger.md`（强制写 3 键 `equity/state/_audit_patch.json` 经 `scripts/patch_state_dbs.py --prepend-equity-audit` 无损头插一手源核验、红队纠偏 Diff 与数据回补记录）
+- ☐ 命中旗舰 5 条触发阈值或月初跨月滚存时，跨月一律写 `_rollover_patch.json` 走 `scripts/patch_state_dbs.py --rollover-equity-month` 原子克隆 `{market}_market_report_{slug}.md`、`{market}_market_report_latest.md`（字节一致）与 `report_meta_*.json`。
 
 ## 门禁 10｜纯网页源稿严检、Step 5 盲审闭环与单次静态门户发布
-- ☐ 运行 `lint_equity.py --strict`（覆盖 Gate 0–5、Gate 3B、三大深研库、21 张 SVG 演练、旗舰 `.md` 同步与跨项目黄金 C1–C3，退出码 0、0 错 0 警）→ Step 5 独立盲审闭环并复跑双轨严检 → 推进 `publish` 执行 `publish_site.py --edition-token <token>`（构建完整纯网页门户并通过 S1–S6 严检后推送）→ 执行 `edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功；如发布构建报错则用已授权的 `build_site.py` / `lint_site.py` / `unittest` 排障修复后再发布。
+- ☐ 运行 `lint_equity.py --strict`（覆盖 Gate 0–5、Gate 3B、三大深研库、21 张 SVG 演练、旗舰 `.md` 同步与跨项目黄金 C1–C3，退出码 0、0 错 0 警）→ Step 5 独立盲审闭环并经 `scripts/patch_state_dbs.py --append-equity-rsi`（及 `--append-gold-rsi`）无损追加 `rsi_metrics.json` 后复跑双轨严检 → 推进 `publish` 执行 `publish_site.py --edition-token <token>`（构建完整纯网页门户并通过 S1–S6 严检后推送）→ 执行 `edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功；如发布构建报错则用已授权的 `build_site.py` / `lint_site.py` / `unittest` 排障修复后再发布。

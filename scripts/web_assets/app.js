@@ -360,12 +360,37 @@
 
   function renderCmdList(query) {
     if (!cmdList) return;
-    const tokens = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
-    cmdFiltered = cmdItems.filter(function (it) {
+    const rawQ = String(query || "").trim();
+    const tokens = rawQ.toLowerCase().split(/\s+/).filter(Boolean);
+    const staticMatches = cmdItems.filter(function (it) {
       if (tokens.length === 0) return true;
       const hay = (it.title + " " + it.meta + " " + it.keywords + " " + it.href).toLowerCase();
       return tokens.every(function (tk) { return hay.indexOf(tk) !== -1; });
     });
+    const basePrefix = document.body.getAttribute("data-base-prefix") || "";
+    const jumpActions = rawQ.length >= 2
+      ? [
+          {
+            title: "在 231 股池搜索「" + rawQ + "」→",
+            meta: "直达筛选器",
+            href: basePrefix + "screener.html#q=" + encodeURIComponent(rawQ),
+            keywords: "",
+          },
+          {
+            title: "在 ETF 雷达搜索「" + rawQ + "」→",
+            meta: "直达 ETF 雷达",
+            href: basePrefix + "etfs.html#q=" + encodeURIComponent(rawQ),
+            keywords: "",
+          },
+          {
+            title: "在新手词典搜索「" + rawQ + "」→",
+            meta: "直达指南词条",
+            href: basePrefix + "guide.html#q=" + encodeURIComponent(rawQ),
+            keywords: "",
+          },
+        ]
+      : [];
+    cmdFiltered = staticMatches.concat(jumpActions);
     cmdIndex = 0;
 
     if (cmdFiltered.length === 0) {
@@ -610,7 +635,7 @@
     ah_premium: {
       term: "A/H 溢价与倒挂",
       plain: "同一家公司在 A 股和港股同时上市时的价格差。正值代表 A 股比港股贵；负值（倒挂）代表 A 股反而比港股便宜。",
-      avoid: "避坑提醒：别只看表面便宜就换港股，用内地港股通买 H 股分红要扣 20%–28% 红利税，务必算税后净股息。",
+      avoid: "避坑提醒：别只看表面便宜就换港股，用内地港股通买标准 H 股分红扣 20% 红利税（仅特定内地居民企业红筹股依发行人公告最高扣至约 28%），务必算税后净股息。",
     },
     etf_vs_feeder: {
       term: "场内 ETF vs 场外联接基金",
@@ -649,8 +674,8 @@
     },
     dividend_tax: {
       term: "红利税与通道税费差异",
-      plain: "A 股持股超 1 年免红利税；港股通收息直扣 20%（红筹最高 28%）；个人直买交易所公司债付息扣 20%，银行间债券 ETF 底层则更具税负优势。",
-      avoid: "避坑提醒：买港股高股息前先按税后打七到八折重算真实到手率；境外账户投资收益须依法履行年度全球纳税申报义务。",
+      plain: "A 股持股超 1 年免红利税；港股通收标准 H 股息直扣 20%（仅特定内地居民企业红筹依公告最高约 28%）；个人直买交易所公司债付息扣 20%，交易所公司债/科创债 ETF（551500/159600）底层债券付息环节仍扣 20% 税（区别于银行间短融 ETF 511360 等银行间标的）。",
+      avoid: "避坑提醒：买港股高股息前先按税后折算真实到手率，买交易所信用债 ETF 勿误当作免税债基；境外账户投资收益须依法履行年度全球纳税申报义务。",
     },
     mrf_hedged: {
       term: "香港互认基金（MRF）对冲累计份额",
@@ -710,7 +735,7 @@
     ex_div: {
       term: "除净（除权除息）",
       plain: "港股把上市公司分红或送股后、股价按派息金额等额下调的交易日称为「除净日」。除净当天买入不再享有本次分红，参考价会直接扣除每股派息额。",
-      avoid: "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收息还须先扣 20%–28% 红利税。",
+      avoid: "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收标准 H 股息须扣 20% 红利税（特定内地居民企业红筹依公告最高约 28%）。",
     },
     discount_ex_div: {
       term: "贴权（除净后走弱）",
@@ -721,6 +746,91 @@
       term: "孖展（港股保证金融资）",
       plain: "香港券商对「保证金融资借钱买股或打新」（英文 Margin 粤语音译）的统称，相当于把已有股票抵押给券商借钱加杠杆。",
       avoid: "避坑提醒：高波动市况下用孖展加杠杆，一旦股价跌破维持保证金比例会被券商强制平仓（斩仓）且利息高昂，普通投资者严禁借钱或开孖展买股打新。",
+    },
+    official_settle: {
+      term: "官结（期货官方结算价）",
+      plain: "交易所每日收市后按加权成交或收盘区间正式公布的官方结算基准价（有别于最后 1 秒撮合收盘价），用于期货盯市保证金清算与次日涨跌停基准。",
+      avoid: "避坑提醒：核对原油、黄金、国债与股指期货涨跌幅时，务必分清「官方结算价」与「实时最新成交价」，避免误把跨口径差额当成大涨大跌。",
+    },
+    basis_spread: {
+      term: "平水 / 升水 / 贴水",
+      plain: "衡量期货价与现货价差别的标尺：期货高于现货叫「升水」，低于现货叫「贴水」，两者几乎相等叫「平水」。",
+      avoid: "避坑提醒：商品期货长期大幅升水（如原油常见结构）在每次换月时都会持续磨损净值，切勿把带高升水磨损的品种当成长线躺赢标的。",
+    },
+    bps: {
+      term: "基点（bp / bps）",
+      plain: "金融市场计量利率与利差微小变动的最小常用单位：1 个基点 = 0.01%，100 个基点 = 1 个百分点（1%）。",
+      avoid: "避坑提醒：别小看「几十个基点」——对 30 年超长国债而言，收益率上行 25 个基点就足以带来约 4%–5% 的债券价格回撤。",
+    },
+    limit_order: {
+      term: "限价单（防滑点挂单）",
+      plain: "下单时自己写死最高买入价或最低卖出价，只有市场成交价满足你设定的价格才成交，绝不按盘口高价盲扫。",
+      avoid: "避坑提醒：买公募 REITs、冷门债券 ETF 或港股薄量中小盘时严禁市价一键扫单，否则瞬间吃掉 1%–3% 买卖价差滑点。",
+    },
+    discount_placement: {
+      term: "折价配售（港股闪电配股）",
+      plain: "港股上市公司向机构投资者以低于前一日市价（常见折价 5%–10%）发行新股快速募资，类似「打折批发增发」，短线常带来抛压与摊薄效应。",
+      avoid: "避坑提醒：盘前突现大额折价配售公告时，切勿急着按前日高价追买或盲目接飞刀，应先等股价在配售价附近充分消化抛压并企稳后再评估。",
+    },
+    cbbc_zone: {
+      term: "牛熊证重货区",
+      plain: "香港衍生品市场中大量散户牛证或熊证集中扎堆的强制收回价格区间。大盘逼近该区间时，做市商对冲盘容易引发短线急杀或急拉（俗称「屠牛/屠熊」）。",
+      avoid: "避坑提醒：普通投资者严禁直接买带强制收回机制的港股牛熊证；看盘时仅把它当短线波动预警信号，不在急杀扫损瞬间情绪化操作。",
+    },
+    hkd_weak_peg: {
+      term: "联汇弱方保证（7.85 港元）",
+      plain: "香港联系汇率制规定美元兑港元汇率波动区间为 7.75–7.85；一旦触及 7.85 弱方兑换保证线，金管局须被动买入港元回收流动性，令总结余下降、拆息跳涨。",
+      avoid: "避坑提醒：美元兑港元贴近 7.85 且金管局总结余逼近低水位时，港股高估值成长股往往承压加大，切忌逆势加杠杆。",
+    },
+    closing_auction: {
+      term: "收市竞价（港股 U 盘）",
+      plain: "港股 16:00–16:10 的收市竞价时段（俗称 U 盘），专门承接指数基金调仓、北水尾盘成交与机构大宗定价，最后在 16:08–16:10 随机收市。",
+      avoid: "避坑提醒：指数季检调仓日（如 MSCI/恒指生效日）尾盘竞价常现放量异动与瞬间跳价，普通散户无须在 U 盘跟风挂市价单凑热闹。",
+    },
+    margin_ratio: {
+      term: "两融与降保（融资保证金比例）",
+      plain: "「两融」指券商向投资者借钱买股（融资）或借股卖出（融券）；监管下调融资保证金比例（「降保」）可放大杠杆上限，但高企的两融余额也意味着市场筹码更脆弱。",
+      avoid: "避坑提醒：两融余额高位且行情急跌时极易触发连锁平仓踩踏；普通投资者坚决坚持全额自有资金投资，严禁开通融资加杠杆。",
+    },
+    pboc_omo: {
+      term: "央行逆回购（OMO 流动性操作）",
+      plain: "中国人民银行每天上午 09:20 通过公开市场操作（OMO）向银行体系投放短期流动性的工具（与个人在券商借钱的国债逆回购方向相反），净投放代表补水、净回笼代表抽水。",
+      avoid: "避坑提醒：月末、季末与税期紧盯央行净投放节奏，若资金面阶段性收敛，短端逆回购收益走高但股市短线波动也会放大。",
+    },
+    ann_basis: {
+      term: "年化贴水与期指基差",
+      plain: "把股指期货（如中证 500/1000 期货 IC/IM）低于现货指数的贴水幅度折算成年化百分比。贴水越深，说明机构对冲抛压或悲观预期越浓。",
+      avoid: "避坑提醒：贴水扩大时用「贴水负号」读懂真实方向（负基差 = 贴水），切忌把深度贴水误读成升水看多信号。",
+    },
+    top20_short: {
+      term: "前 20 席位净空（期指机构持仓）",
+      plain: "中金所每日收盘后公布的前 20 家期货公司会员多单与空单净差额，常用来追踪量化对冲与大型机构在股指期货上的套保力度变化。",
+      avoid: "避坑提醒：前 20 席位长期净空很大程度来自量化中性基金的现货套保，不能孤立当作单边看空信号，应重点看单日增减幅度与基差联动。",
+    },
+    ins_research_rate: {
+      term: "保险预定利率研究值",
+      plain: "中国保险行业协会按季度结合 5 年期以上 LPR、国债收益率与定存利率发布的行业基准参考值，用于动态约束新发传统险、分红险与万能险的预定利率上限。",
+      avoid: "避坑提醒：切勿被营销员「最后一天炒停售」话术逼单；买储蓄险先核对合同保证现价 IRR，确认是 10 年以上绝对不用的闲钱再决策。",
+    },
+    cornerstone_mech_b: {
+      term: "港股基石投资者与回拨机制 B",
+      plain: "港股新股发行中，提前锁定 6 个月禁售期的大机构叫「基石投资者」；「机制 B」是 2025 年港交所新规下取消强制大幅回拨散户的分配模式，使机构筹码更集中、首日流通盘偏薄。",
+      avoid: "避坑提醒：机制 B 新股首日易被资金炒高、6 个月基石解禁期抛压集中，普通人打新切忌借孖展重押，上市后也不宜高估值盲目追炒。",
+    },
+    creditwatch: {
+      term: "信用观察（CreditWatch / 负面观察）",
+      plain: "标普、穆迪、惠誉等权威评级机构把某公司或主权主体列入短期重点复核名单（通常 90 天内定夺），「负面信用观察」代表降级风险显著升温。",
+      avoid: "避坑提醒：重仓高负债公司或可转债前务必核查近 24 小时评级观察公告，一旦被纳入负面观察，债务再融资成本跃升常先于股价暴雷。",
+    },
+    redemption_gate: {
+      term: "赎回闸门（私募 / 半开放基金限赎）",
+      plain: "部分私募、海外私募信贷或半开放基金在单季/单月净赎回超过约定比例（如 5%）时启动的暂停或按比例限制赎回条款。",
+      avoid: "避坑提醒：高息宣传的私募信贷或非标类产品在市场恐慌时最易触发赎回闸门导致「看得见净值却取不出钱」，切勿拿短期周转钱去碰限赎产品。",
+    },
+    equal_weight: {
+      term: "等权指数（如标普 500 等权 RSP）",
+      plain: "给指数里每家成分股分配完全相同权重（例如 500 家各占 0.2%），而不按市值大小倾斜，用来分散少数超大科技巨头集中度过高的风险。",
+      avoid: "避坑提醒：当市场宽度极端收窄、前十大科技股占市值比重过高时，可用等权指数对照观察真实市场健康度，但也要留意其换手率与费率略高于市值加权宽基。",
     },
   };
 
@@ -1899,7 +2009,7 @@
         let ok =
           (!isSup || arcState.showSuperseded) &&
           (arcState.market === "all" || m === arcState.market) &&
-          (arcState.session === "all" || s === arcState.session) &&
+          (arcState.session === "all" || s === arcState.session || (arcState.session === "evening" && s === "midday")) &&
           (arcState.editionType === "all" || ed === arcState.editionType);
 
         if (ok && tokens.length > 0) {
@@ -2682,6 +2792,33 @@
         applyGuideFilter(true);
       });
     });
-    applyGuideFilter(false);
+    function applyGuideHash() {
+      const raw = (window.location.hash || "").replace(/^#/, "").trim();
+      if (!raw || raw.indexOf("=") === -1) return false;
+      let matched = false;
+      raw.split("&").forEach(function (pair) {
+        const eq = pair.indexOf("=");
+        if (eq <= 0) return;
+        const k = safeDecode(pair.slice(0, eq));
+        const v = safeDecode(pair.slice(eq + 1));
+        if (k === "q") {
+          gState.q = v;
+          if (gSearch) gSearch.value = v;
+          matched = true;
+        } else if (k === "cat" && v) {
+          gState.cat = v;
+          matched = true;
+        }
+      });
+      return matched;
+    }
+
+    const hadGuideHash = applyGuideHash();
+    applyGuideFilter(hadGuideHash);
+    window.addEventListener("hashchange", function () {
+      if (applyGuideHash()) {
+        applyGuideFilter(true);
+      }
+    });
   }
 })();

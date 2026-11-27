@@ -411,13 +411,16 @@ _REL_MD_LINK_RE = re.compile(
 # Internal engineering files/tooling that must never leak onto public scorecard/changelog pages
 _HARD_INFRA_RE = re.compile(
     r"(?:sidecar\.json|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|"
-    r"master_snapshot\.json|permissions\.json|unified-edition\.prompt\.md|"
+    r"master_snapshot\.json|multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|"
+    r"permissions\.json|unified-edition\.prompt\.md|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"lint_readability\.py|lint_equity\.py|lint_site\.py|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|"
+    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|"
+    r"_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|"
+    r"_rollover_patch\.json|_archive_patch\.json|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing|"
     r"5-plus-1-research-playbook(?:\.md)?|directives-and-snapshot-schema(?:\.md)?|"
     r"矢量\s*SVG\s*图表完成逐像素|"
@@ -1055,15 +1058,22 @@ def _parse_pe_num(valuation: str, market: str = "") -> float | None:
     txt = str(valuation or "").strip()
     if not txt:
         return None
-    m_lbl = re.search(
-        r"(?:(?:TTM|FWD|前瞻|静态|动态)?\s*PE\s*[（(]?(?:TTM|FWD)?[）)]?\s*[:：]?\s*[~≈<>≤≥]?\s*)([0-9]+(?:\.[0-9]+)?)",
+    # Strip 4-digit calendar/fiscal years (e.g., "2027 预期", "FY2026") so they are never mistaken for PE ratios
+    clean_txt = re.sub(
+        r"(?:FY)?20\d{2}\s*(?:年|E|预期|远期|前瞻)?",
+        " ",
         txt,
+        flags=re.IGNORECASE,
+    )
+    m_lbl = re.search(
+        r"(?:(?:TTM|FWD|前瞻|静态|动态|滚动|现价|扣现金经营)?\s*(?:(?<![A-Za-z])PE(?:\s*[-–—]\s*(?:TTM|FWD))?|市盈率)\s*[（(]?(?:TTM|FWD)?[）)]?\s*(?:预期|远期)?\s*[:：]?\s*[~≈<>≤≥约]?\s*)([0-9]+(?:\.[0-9]+)?)(?!\s*年)",
+        clean_txt,
         flags=re.IGNORECASE,
     )
     if m_lbl:
         v = _to_pos_float(m_lbl.group(1))
         return round(v, 1) if (v is not None and v < 5000) else None
-    target = txt.split("/", 1)[0].strip() if market in ("a-share", "hk-stock") else txt
+    target = clean_txt.split("/", 1)[0].strip() if market in ("a-share", "hk-stock") else clean_txt
     if any(tok in target for tok in _NON_PE_MULTIPLE_CN) or _NON_PE_MULTIPLE_EN_RE.search(target):
         return None
     m_x = re.search(
@@ -1117,11 +1127,27 @@ def _parse_ah_pct(
     code: str,
     ah_lookup: dict[str, float],
 ) -> float | None:
+    # Live market_state.ah_benchmarks lookup always takes precedence over stale flagship strings
+    if code:
+        if code in ah_lookup:
+            return round(ah_lookup[code], 1)
+        code_u = code.strip().upper()
+        if code_u in ah_lookup:
+            return round(ah_lookup[code_u], 1)
     for src in (str(valuation or ""), str(summary or "")):
-        m = re.search(r"AH\s*(?:溢价|折价|倒挂)?\s*[:：]?\s*([+\-−]?[0-9]+(?:\.[0-9]+)?)%", src, flags=re.IGNORECASE)
+        m = re.search(
+            r"(?:AH\s*(?:溢价|折价|倒挂)?|A\s*折\s*H)\s*[:：]?\s*([+\-−]?[0-9]+(?:\.[0-9]+)?)%",
+            src,
+            flags=re.IGNORECASE,
+        )
         if m:
             try:
-                v = float(m.group(1).replace("−", "-"))
+                raw_num = m.group(1).replace("−", "-")
+                v = float(raw_num)
+                if not raw_num.startswith(("+", "-")) and re.search(
+                    r"倒挂|折价|A\s*折\s*H", m.group(0), flags=re.IGNORECASE
+                ):
+                    v = -abs(v)
                 if isfinite(v) and -90.0 <= v <= 500.0:
                     return round(v, 1)
             except ValueError:
@@ -1137,9 +1163,79 @@ def _parse_ah_pct(
                         return round(v, 1)
                 except ValueError:
                     pass
-    if code and code in ah_lookup:
-        return round(ah_lookup[code], 1)
     return None
+
+
+def _sync_valuation_str(
+    valuation: str,
+    market: str,
+    *,
+    pe_num: float | None = None,
+    pb_num: float | None = None,
+    div_pct: float | None = None,
+    ah_pct: float | None = None,
+) -> str:
+    """Cleanly update PE/PB/Div/AH segments in stock['valuation'] without breaking chip formatting."""
+    val = str(valuation or "").strip()
+    if not val:
+        return val
+
+    # 1. Explicit inline AH chip replacement (e.g. "AH 倒挂 -16%" -> "AH 倒挂 -19.7%")
+    if ah_pct is not None:
+        ah_lbl = f"AH 倒挂 {ah_pct:+.1f}%" if ah_pct < 0 else f"AH 溢价 {ah_pct:+.1f}%"
+        val = re.sub(
+            r"(?:深度\s*)?(?:AH\s*(?:溢价|折价|倒挂)?|A\s*折\s*H)\s*[:：]?\s*[+\-−]?[0-9]+(?:\.[0-9]+)?%",
+            ah_lbl,
+            val,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
+    # 2. Structured slash-separated segments
+    if "/" in val:
+        parts = [p.strip() for p in val.split("/")]
+        if market == "a-share" and len(parts) >= 4:
+            if pe_num is not None and not (
+                any(tok in parts[0] for tok in _NON_PE_MULTIPLE_CN) or _NON_PE_MULTIPLE_EN_RE.search(parts[0])
+            ):
+                if re.search(r"[0-9].*x", parts[0], re.IGNORECASE):
+                    parts[0] = f"{pe_num:.1f}x"
+            if pb_num is not None and (re.search(r"[0-9].*x", parts[1], re.IGNORECASE) or parts[1] == "—"):
+                parts[1] = f"{pb_num:.2f}x"
+            if div_pct is not None and ("%" in parts[2] or parts[2] == "—"):
+                parts[2] = f"{div_pct:.1f}%"
+            if ah_pct is not None and re.fullmatch(r"[+\-−]?[0-9]+(?:\.[0-9]+)?%", parts[3]):
+                parts[3] = f"{ah_pct:+.1f}%"
+            return " / ".join(parts)
+        if market == "hk-stock" and len(parts) >= 2:
+            if pe_num is not None and not (
+                any(tok in parts[0] for tok in _NON_PE_MULTIPLE_CN) or _NON_PE_MULTIPLE_EN_RE.search(parts[0])
+            ):
+                if re.search(r"PE", parts[0], re.IGNORECASE):
+                    parts[0] = f"PE {pe_num:.1f}x"
+                elif re.search(r"[0-9].*x", parts[0], re.IGNORECASE):
+                    parts[0] = f"{pe_num:.1f}x"
+            if div_pct is not None and "AH" not in parts[1].upper() and not parts[1].startswith(("+", "-", "−")):
+                if "%" in parts[1]:
+                    parts[1] = f"{div_pct:.1f}%"
+            return " / ".join(parts)
+        return val
+
+    # 3. Single-segment valuation (primarily us-stock e.g. "9.1–10.7x" or "前瞻 PE 28x")
+    if pe_num is not None and not (
+        any(tok in val for tok in _NON_PE_MULTIPLE_CN) or _NON_PE_MULTIPLE_EN_RE.search(val)
+    ):
+        if re.search(r"(?:PE|市盈率)", val, re.IGNORECASE):
+            return re.sub(
+                r"(?:(?:TTM|FWD|前瞻|静态|动态)?\s*(?:PE(?:-TTM)?|市盈率)\s*(?:(?:FY)?20\d{2}\s*(?:年|E|预期|远期)?)?\s*[:：]?\s*[~≈<>≤≥约]?\s*)[0-9]+(?:\.[0-9]+)?(?:\s*[–—\-~]\s*[0-9]+(?:\.[0-9]+)?)?\s*x?\+?",
+                f"PE {pe_num:.1f}x",
+                val,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        if re.fullmatch(r"[~≈<>≤≥]?\s*[0-9]+(?:\.[0-9]+)?(?:\s*[–—\-~]\s*[0-9]+(?:\.[0-9]+)?)?\s*x\+?", val, re.IGNORECASE):
+            return f"{pe_num:.1f}x"
+    return val
 
 
 def _parse_anchor(summary: str, price_num: float | None) -> tuple[float | None, float | None, float | None]:
@@ -1184,6 +1280,8 @@ def _enrich_stock_metrics(entry: dict[str, Any], ah_lookup: dict[str, float]) ->
     pe_num = _parse_pe_num(entry["valuation"], entry["market"])
     div_pct = _parse_div_pct(entry["valuation"], entry["summary"], entry["market"])
     ah_pct = _parse_ah_pct(entry["valuation"], entry["summary"], entry["market"], entry["code"], ah_lookup)
+    if ah_pct is not None and entry["code"] in ah_lookup:
+        entry["valuation"] = _sync_valuation_str(entry["valuation"], entry["market"], ah_pct=ah_pct)
     anchor_low, anchor_high, anchor_gap_pct = _parse_anchor(entry["summary"], price_num)
     comb_txt = f"{entry['valuation']} {entry['summary']}"
     code_key = str(entry.get("code") or "").strip().upper()
@@ -1432,6 +1530,10 @@ _CAVEAT_SANITIZE_REPS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"`?market_state\.json`?", re.IGNORECASE), "三市状态快照"),
     (re.compile(r"`?master_snapshot\.json`?", re.IGNORECASE), "主报告基线快照"),
     (re.compile(r"`?market_calendar\.json`?", re.IGNORECASE), "全球交易日历"),
+    (re.compile(r"`?multi_asset_channels\.json`?", re.IGNORECASE), "个人多元渠道快照"),
+    (re.compile(r"`?etf_universe\.json`?", re.IGNORECASE), "全球 ETF 雷达快照"),
+    (re.compile(r"`?deep_dossiers\.json`?", re.IGNORECASE), "个股 7 维深研档案"),
+    (re.compile(r"`?_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json`?", re.IGNORECASE), "更新补丁"),
     (re.compile(r"`?audit_ledger\.md`?", re.IGNORECASE), "核查台账"),
     (re.compile(r"`?RSI_PLAYBOOK(?:\.md)?`?", re.IGNORECASE), "复盘手册"),
     (re.compile(r"`?rsi_metrics\.json`?", re.IGNORECASE), "复盘指标"),
@@ -1441,6 +1543,7 @@ _CAVEAT_SANITIZE_REPS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"`?gold-research-publishing`?", re.IGNORECASE), "黄金研究体系"),
     (re.compile(r"`?(?:AGENTS|SKILL|GEMINI)\.md`?", re.IGNORECASE), "研究规范"),
     (re.compile(r"`?(?:sidecar|permissions)\.json`?", re.IGNORECASE), "运行配置"),
+    (re.compile(r"`?(?:patch_state_dbs|svg_geometry)\.py`?", re.IGNORECASE), "核验流程"),
     (re.compile(r"(?<![A-Za-z0-9_/-])[A-Za-z0-9_/-]+\.py(?![A-Za-z0-9_])", re.IGNORECASE), "核验流程"),
     (re.compile(r"(?<![A-Za-z0-9])\d+\s*[-–—]\s*\d+\s*p\s*主刊", re.IGNORECASE), "完整主刊"),
     (re.compile(r"切\s*模式\s*2(?=\s*(?:美股|港股|A\s*股|休市|守望))"), "切换为"),
@@ -1991,7 +2094,7 @@ THEME_INIT_SCRIPT = (
     "}catch(e){}})();</script>"
 )
 
-# Shared Top-24 beginner-friendly glossary (rendered statically on guide.html & synced with app.js tooltip)
+# Shared Top-48 beginner-friendly glossary (rendered statically on guide.html & synced with app.js tooltip)
 GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
     {
         "key": "four_buckets",
@@ -2054,7 +2157,7 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "term": "A/H 溢价与倒挂",
         "cat": "大盘信号",
         "plain": "同一家公司在 A 股和港股同时上市时的价格差。正值代表 A 股比港股贵；负值（倒挂）代表 A 股反而比港股便宜。",
-        "avoid": "避坑提醒：别只看表面便宜就换港股，用内地港股通买 H 股分红要扣 20%–28% 红利税，务必算税后净股息。",
+        "avoid": "避坑提醒：别只看表面便宜就换港股，用内地港股通买标准 H 股分红扣 20% 红利税（仅特定内地居民企业红筹股依发行人公告最高扣至约 28%），务必算税后净股息。",
     },
     {
         "key": "etf_vs_feeder",
@@ -2109,8 +2212,8 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "key": "dividend_tax",
         "term": "红利税与通道税费差异",
         "cat": "税费与跨境",
-        "plain": "A 股持股超 1 年免红利税；港股通收息直扣 20%（红筹最高 28%）；个人直买交易所公司债付息扣 20%，银行间债券 ETF 底层则更具税负优势。",
-        "avoid": "避坑提醒：买港股高股息前先按税后打七到八折重算真实到手率；境外账户投资收益须依法履行年度全球纳税申报义务。",
+        "plain": "A 股持股超 1 年免红利税；港股通收标准 H 股息直扣 20%（仅特定内地居民企业红筹依公告最高约 28%）；个人直买交易所公司债付息扣 20%，交易所公司债/科创债 ETF（551500/159600）底层债券付息环节仍扣 20% 税（区别于银行间短融 ETF 511360 等银行间标的）。",
+        "avoid": "避坑提醒：买港股高股息前先按税后折算真实到手率，买交易所信用债 ETF 勿误当作免税债基；境外账户投资收益须依法履行年度全球纳税申报义务。",
     },
     {
         "key": "mrf_hedged",
@@ -2194,7 +2297,7 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "term": "除净（除权除息）",
         "cat": "基础入门",
         "plain": "港股把上市公司分红或送股后、股价按派息金额等额下调的交易日称为「除净日」。除净当天买入不再享有本次分红，参考价会直接扣除每股派息额。",
-        "avoid": "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收息还须先扣 20%–28% 红利税。",
+        "avoid": "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收标准 H 股息须扣 20% 红利税（特定内地居民企业红筹依公告最高约 28%）。",
     },
     {
         "key": "discount_ex_div",
@@ -2210,6 +2313,125 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "plain": "香港券商对「保证金融资借钱买股或打新」（英文 Margin 粤语音译）的统称，相当于把已有股票抵押给券商借钱加杠杆。",
         "avoid": "避坑提醒：高波动市况下用孖展加杠杆，一旦股价跌破维持保证金比例会被券商强制平仓（斩仓）且利息高昂，普通投资者严禁借钱或开孖展买股打新。",
     },
+    {
+        "key": "official_settle",
+        "term": "官结（期货官方结算价）",
+        "cat": "基础入门",
+        "plain": "交易所每日收市后按加权成交或收盘区间正式公布的官方结算基准价（有别于最后 1 秒撮合收盘价），用于期货盯市保证金清算与次日涨跌停基准。",
+        "avoid": "避坑提醒：核对原油、黄金、国债与股指期货涨跌幅时，务必分清「官方结算价」与「实时最新成交价」，避免误把跨口径差额当成大涨大跌。",
+    },
+    {
+        "key": "basis_spread",
+        "term": "平水 / 升水 / 贴水",
+        "cat": "大盘信号",
+        "plain": "衡量期货价与现货价差别的标尺：期货高于现货叫「升水」，低于现货叫「贴水」，两者几乎相等叫「平水」。",
+        "avoid": "避坑提醒：商品期货长期大幅升水（如原油常见结构）在每次换月时都会持续磨损净值，切勿把带高升水磨损的品种当成长线躺赢标的。",
+    },
+    {
+        "key": "bps",
+        "term": "基点（bp / bps）",
+        "cat": "基础入门",
+        "plain": "金融市场计量利率与利差微小变动的最小常用单位：1 个基点 = 0.01%，100 个基点 = 1 个百分点（1%）。",
+        "avoid": "避坑提醒：别小看「几十个基点」——对 30 年超长国债而言，收益率上行 25 个基点就足以带来约 4%–5% 的债券价格回撤。",
+    },
+    {
+        "key": "limit_order",
+        "term": "限价单（防滑点挂单）",
+        "cat": "基础入门",
+        "plain": "下单时自己写死最高买入价或最低卖出价，只有市场成交价满足你设定的价格才成交，绝不按盘口高价盲扫。",
+        "avoid": "避坑提醒：买公募 REITs、冷门债券 ETF 或港股薄量中小盘时严禁市价一键扫单，否则瞬间吃掉 1%–3% 买卖价差滑点。",
+    },
+    {
+        "key": "discount_placement",
+        "term": "折价配售（港股闪电配股）",
+        "cat": "大盘信号",
+        "plain": "港股上市公司向机构投资者以低于前一日市价（常见折价 5%–10%）发行新股快速募资，类似「打折批发增发」，短线常带来抛压与摊薄效应。",
+        "avoid": "避坑提醒：盘前突现大额折价配售公告时，切勿急着按前日高价追买或盲目接飞刀，应先等股价在配售价附近充分消化抛压并企稳后再评估。",
+    },
+    {
+        "key": "cbbc_zone",
+        "term": "牛熊证重货区",
+        "cat": "大盘信号",
+        "plain": "香港衍生品市场中大量散户牛证或熊证集中扎堆的强制收回价格区间。大盘逼近该区间时，做市商对冲盘容易引发短线急杀或急拉（俗称「屠牛/屠熊」）。",
+        "avoid": "避坑提醒：普通投资者严禁直接买带强制收回机制的港股牛熊证；看盘时仅把它当短线波动预警信号，不在急杀扫损瞬间情绪化操作。",
+    },
+    {
+        "key": "hkd_weak_peg",
+        "term": "联汇弱方保证（7.85 港元）",
+        "cat": "大盘信号",
+        "plain": "香港联系汇率制规定美元兑港元汇率波动区间为 7.75–7.85；一旦触及 7.85 弱方兑换保证线，金管局须被动买入港元回收流动性，令总结余下降、拆息跳涨。",
+        "avoid": "避坑提醒：美元兑港元贴近 7.85 且金管局总结余逼近低水位时，港股高估值成长股往往承压加大，切忌逆势加杠杆。",
+    },
+    {
+        "key": "closing_auction",
+        "term": "收市竞价（港股 U 盘）",
+        "cat": "基础入门",
+        "plain": "港股 16:00–16:10 的收市竞价时段（俗称 U 盘），专门承接指数基金调仓、北水尾盘成交与机构大宗定价，最后在 16:08–16:10 随机收市。",
+        "avoid": "避坑提醒：指数季检调仓日（如 MSCI/恒指生效日）尾盘竞价常现放量异动与瞬间跳价，普通散户无须在 U 盘跟风挂市价单凑热闹。",
+    },
+    {
+        "key": "margin_ratio",
+        "term": "两融与降保（融资保证金比例）",
+        "cat": "大盘信号",
+        "plain": "「两融」指券商向投资者借钱买股（融资）或借股卖出（融券）；监管下调融资保证金比例（「降保」）可放大杠杆上限，但高企的两融余额也意味着市场筹码更脆弱。",
+        "avoid": "避坑提醒：两融余额高位且行情急跌时极易触发连锁平仓踩踏；普通投资者坚决坚持全额自有资金投资，严禁开通融资加杠杆。",
+    },
+    {
+        "key": "pboc_omo",
+        "term": "央行逆回购（OMO 流动性操作）",
+        "cat": "债券与固收",
+        "plain": "中国人民银行每天上午 09:20 通过公开市场操作（OMO）向银行体系投放短期流动性的工具（与个人在券商借钱的国债逆回购方向相反），净投放代表补水、净回笼代表抽水。",
+        "avoid": "避坑提醒：月末、季末与税期紧盯央行净投放节奏，若资金面阶段性收敛，短端逆回购收益走高但股市短线波动也会放大。",
+    },
+    {
+        "key": "ann_basis",
+        "term": "年化贴水与期指基差",
+        "cat": "大盘信号",
+        "plain": "把股指期货（如中证 500/1000 期货 IC/IM）低于现货指数的贴水幅度折算成年化百分比。贴水越深，说明机构对冲抛压或悲观预期越浓。",
+        "avoid": "避坑提醒：贴水扩大时用「贴水负号」读懂真实方向（负基差 = 贴水），切忌把深度贴水误读成升水看多信号。",
+    },
+    {
+        "key": "top20_short",
+        "term": "前 20 席位净空（期指机构持仓）",
+        "cat": "大盘信号",
+        "plain": "中金所每日收盘后公布的前 20 家期货公司会员多单与空单净差额，常用来追踪量化对冲与大型机构在股指期货上的套保力度变化。",
+        "avoid": "避坑提醒：前 20 席位长期净空很大程度来自量化中性基金的现货套保，不能孤立当作单边看空信号，应重点看单日增减幅度与基差联动。",
+    },
+    {
+        "key": "ins_research_rate",
+        "term": "保险预定利率研究值",
+        "cat": "债券与固收",
+        "plain": "中国保险行业协会按季度结合 5 年期以上 LPR、国债收益率与定存利率发布的行业基准参考值，用于动态约束新发传统险、分红险与万能险的预定利率上限。",
+        "avoid": "避坑提醒：切勿被营销员「最后一天炒停售」话术逼单；买储蓄险先核对合同保证现价 IRR，确认是 10 年以上绝对不用的闲钱再决策。",
+    },
+    {
+        "key": "cornerstone_mech_b",
+        "term": "港股基石投资者与回拨机制 B",
+        "cat": "税费与跨境",
+        "plain": "港股新股发行中，提前锁定 6 个月禁售期的大机构叫「基石投资者」；「机制 B」是 2025 年港交所新规下取消强制大幅回拨散户的分配模式，使机构筹码更集中、首日流通盘偏薄。",
+        "avoid": "避坑提醒：机制 B 新股首日易被资金炒高、6 个月基石解禁期抛压集中，普通人打新切忌借孖展重押，上市后也不宜高估值盲目追炒。",
+    },
+    {
+        "key": "creditwatch",
+        "term": "信用观察（CreditWatch / 负面观察）",
+        "cat": "债券与固收",
+        "plain": "标普、穆迪、惠誉等权威评级机构把某公司或主权主体列入短期重点复核名单（通常 90 天内定夺），「负面信用观察」代表降级风险显著升温。",
+        "avoid": "避坑提醒：重仓高负债公司或可转债前务必核查近 24 小时评级观察公告，一旦被纳入负面观察，债务再融资成本跃升常先于股价暴雷。",
+    },
+    {
+        "key": "redemption_gate",
+        "term": "赎回闸门（私募 / 半开放基金限赎）",
+        "cat": "税费与跨境",
+        "plain": "部分私募、海外私募信贷或半开放基金在单季/单月净赎回超过约定比例（如 5%）时启动的暂停或按比例限制赎回条款。",
+        "avoid": "避坑提醒：高息宣传的私募信贷或非标类产品在市场恐慌时最易触发赎回闸门导致「看得见净值却取不出钱」，切勿拿短期周转钱去碰限赎产品。",
+    },
+    {
+        "key": "equal_weight",
+        "term": "等权指数（如标普 500 等权 RSP）",
+        "cat": "基金与ETF",
+        "plain": "给指数里每家成分股分配完全相同权重（例如 500 家各占 0.2%），而不按市值大小倾斜，用来分散少数超大科技巨头集中度过高的风险。",
+        "avoid": "避坑提醒：当市场宽度极端收窄、前十大科技股占市值比重过高时，可用等权指数对照观察真实市场健康度，但也要留意其换手率与费率略高于市值加权宽基。",
+    },
 )
 
 
@@ -2222,7 +2444,7 @@ def _term_tip(term_key: str, label: str) -> str:
     )
 
 
-# Automated first-occurrence glossary injector covering all 24 GLOSSARY_DICT keys.
+# Automated first-occurrence glossary injector covering all 48 GLOSSARY_DICT keys.
 _GLOSSARY_SKIP_TAGS: frozenset[str] = frozenset(
     {"svg", "a", "button", "h1", "h2", "h3", "h4", "code", "pre", "script", "style", "summary", "title", "option", "textarea"}
 )
@@ -2262,9 +2484,26 @@ _GLOSSARY_PHRASE_SPECS: tuple[tuple[str, str], ...] = (
     ("crs", r"(?<![A-Za-z0-9])CRS(?![A-Za-z0-9])|共同申报准则"),
     ("low_water", r"(?:期指|期货|现货)?低水(?!位|平)"),
     ("high_water", r"(?:期指|期货|现货)?高水(?!位|平)"),
-    ("ex_div", r"除净日|除净"),
+    ("ex_div", r"除净日|(?<!剔)除净(?!增)"),
     ("discount_ex_div", r"贴权"),
     ("margin_hk", r"孖展"),
+    ("official_settle", r"官方结算价|(?<![A-Za-z0-9])官结"),
+    ("basis_spread", r"升贴水|期货升水|期货贴水|期现升水|期现贴水|平水"),
+    ("bps", r"(?<![A-Za-z0-9_-])(?:基点|bps)(?![A-Za-z0-9_-])|(?<=\d)\s*bp(?![A-Za-z0-9_-])"),
+    ("limit_order", r"限价挂单|限价单"),
+    ("discount_placement", r"折价配售|配售新股|配售抛压"),
+    ("cbbc_zone", r"牛熊证重货区|牛熊证街货|重货区"),
+    ("hkd_weak_peg", r"联汇弱方保证|弱方兑换保证|弱方保证线|弱方保证"),
+    ("closing_auction", r"收市竞价时段|收市竞价|竞价盘"),
+    ("margin_ratio", r"融资保证金比例|两融与降保|两融余额|两融"),
+    ("pboc_omo", r"央行逆回购|公开市场逆回购|\bOMO\b"),
+    ("ann_basis", r"年化贴水率|年化贴水|期指基差|股指期货基差"),
+    ("top20_short", r"前\s*20\s*席位净空|前二十席位净空|前\s*20\s*大席位"),
+    ("ins_research_rate", r"预定利率研究值|预定利率动态调整"),
+    ("cornerstone_mech_b", r"基石与机制\s*B|机制\s*B|基石大解禁|基石解禁|基石投资者"),
+    ("creditwatch", r"负面信用观察|信用观察|\bCreditWatch\b"),
+    ("redemption_gate", r"赎回闸门|巨额赎回限制|赎回限制"),
+    ("equal_weight", r"标普\s*500\s*等权|等权重指数|等权指数"),
 )
 _GLOSSARY_COMBINED_RE = re.compile(
     "|".join(f"(?P<k_{key}>{pat})" for key, pat in _GLOSSARY_PHRASE_SPECS)
@@ -2273,7 +2512,7 @@ _GLOSSARY_ALL_KEYS_COUNT = len(_GLOSSARY_PHRASE_SPECS)
 
 
 def inject_glossary_tips(html_str: str) -> str:
-    """Wrap at most 1 first occurrence per glossary key with _term_tip outside protected tags."""
+    """Wrap at most 1 first occurrence per glossary key with _term_tip outside protected tags & collapsed <details>."""
     if not html_str:
         return html_str
     used_keys: set[str] = set(_GLOSSARY_EXISTING_KEY_RE.findall(html_str))
@@ -2297,6 +2536,8 @@ def inject_glossary_tips(html_str: str) -> str:
             continue
         tokens = _GLOSSARY_TOKEN_RE.split(block)
         skip_depth = 0
+        collapsed_details_stack: list[bool] = []
+        collapsed_details_depth = 0
         out_tokens: list[str] = []
         for tok in tokens:
             if not tok:
@@ -2310,7 +2551,16 @@ def inject_glossary_tips(html_str: str) -> str:
                     is_close = bool(tm.group(1))
                     tname = tm.group(2).lower()
                     is_self_close = tok.rstrip().endswith("/>")
-                    if tname in _GLOSSARY_SKIP_TAGS and not is_self_close:
+                    if tname == "details" and not is_self_close:
+                        if is_close:
+                            if collapsed_details_stack and collapsed_details_stack.pop():
+                                collapsed_details_depth = max(0, collapsed_details_depth - 1)
+                        else:
+                            is_collapsed = not bool(re.search(r"\bopen\b", tok, flags=re.IGNORECASE))
+                            collapsed_details_stack.append(is_collapsed)
+                            if is_collapsed:
+                                collapsed_details_depth += 1
+                    elif tname in _GLOSSARY_SKIP_TAGS and not is_self_close:
                         if is_close:
                             if skip_depth > 0:
                                 skip_depth -= 1
@@ -2318,7 +2568,12 @@ def inject_glossary_tips(html_str: str) -> str:
                             skip_depth += 1
                 out_tokens.append(tok)
                 continue
-            if skip_depth > 0 or len(used_keys) >= _GLOSSARY_ALL_KEYS_COUNT or not tok.strip():
+            if (
+                skip_depth > 0
+                or collapsed_details_depth > 0
+                or len(used_keys) >= _GLOSSARY_ALL_KEYS_COUNT
+                or not tok.strip()
+            ):
                 out_tokens.append(tok)
                 continue
             out_tokens.append(_GLOSSARY_COMBINED_RE.sub(_replace_match, tok))
@@ -2996,7 +3251,7 @@ _DEFAULT_CHANNEL_BEGINNER: dict[str, dict[str, Any]] = {
         "picks": ["头部低费同业存单 AAA 与高等级短债基金", "费率透明的多资产平衡型 ETF-FOF 或持牌稳健投顾"],
         "avoids": ["把近期宣传高业绩基准的银行固收+理财当保本存款买", "买入公募基金不满 7 天就频繁赎回白交 1.5% 惩罚费"],
         "faq": [
-            ("基金 A 类和 C 类到底怎么选？", "长期持有（通常 1 年以上）选 1 折申购费的 A 类更划算；几个月内波段选 C 类。注意 2026 费改后不少指数/债基 C 类满 1 年停收销服费，下单前查合同。"),
+            ("基金 A 类和 C 类到底怎么选？", "长期持有（通常 1 年以上）仍优先选 1 折申购费的 A 类；几个月内波段选 C 类。注意 2026 公募销售费改中 C 类满 1 年免收销服费不含货币基金，且旧合同过渡期至 2026-12-31、自 2027-01-01 起全面生效，下单前务必核对合同。"),
             ("理财显示 R2 中低风险为什么还会亏钱？", "R2 代表波动较小而非保本。债市利率突然反弹或底层信用债估值调整时，净值化理财同样会出现阶段性浮亏。"),
         ],
     },
@@ -3737,9 +3992,9 @@ def build_channel_detail_page(
       <div class="doc-toolbar-left">
         <nav class="breadcrumb" aria-label="面包屑">
           <a href="../index.html">总览</a>
-          <span class="bc-sep">/</span>
+          <span class="bc-sep" aria-hidden="true">/</span>
           <a href="../channels.html">多元渠道</a>
-          <span class="bc-sep">/</span>
+          <span class="bc-sep" aria-hidden="true">/</span>
           <span>{esc(cur_num)} {esc(ch.get("short_name") or ch.get("name", ""))}</span>
         </nav>
         <div class="doc-meta-pills">
@@ -5150,9 +5405,9 @@ def build_doc_toolbar(
         '<div class="doc-toolbar-left">'
         '<nav class="breadcrumb" aria-label="面包屑">'
         '<a href="../index.html">总览</a>'
-        '<span class="bc-sep">/</span>'
+        '<span class="bc-sep" aria-hidden="true">/</span>'
         f'<a href="../archive.html#{market}">{esc(mm["short"])}</a>'
-        '<span class="bc-sep">/</span>'
+        '<span class="bc-sep" aria-hidden="true">/</span>'
         f'<span>{esc(crumb_tail)}</span>'
         "</nav>"
         f'<div class="doc-meta-pills">{"".join(p for p in meta_pills if p)}</div>'
@@ -5272,8 +5527,17 @@ def _extract_dossier_badge(
     return None
 
 
+_EXCLUDED_PCT_CONTEXT_RE = re.compile(
+    r"ADR|隔夜|布油|两日累跌|累计|溢价|折价|倒挂|股息|息率|沽空|浮亏|回撤|占比|仓位|每手",
+    re.IGNORECASE,
+)
+_URGENT_DOSSIER_WARN_RE = re.compile(
+    r"折价配售|暂勿立即加仓|切勿.{0,12}追买|严禁追高"
+)
+
+
 def _extract_fresh_price_from_baseline(baseline_note: str, market: str) -> str | None:
-    """Extract a concise latest quote snippet (<= 42 chars) from dossier baseline_note."""
+    """Extract a concise latest quote snippet (<= 42 chars) from dossier baseline_note with strict currency lock."""
     raw = clean_md_inline_plain(baseline_note or "")
     if not raw:
         return None
@@ -5294,54 +5558,98 @@ def _extract_fresh_price_from_baseline(baseline_note: str, market: str) -> str |
     elif market == "hk-stock" and re.search(r"/\s*A\s*股", clause, re.IGNORECASE):
         clause = re.split(r"/\s*A\s*股", clause, maxsplit=1, flags=re.IGNORECASE)[0].strip()
 
-    # Keep only the first price segment before trailing comma commentary (e.g. "，深港通南向...")
-    # while still keeping a percentage change inside the first parenthetical.
+    # Split on progression arrows ("→", "->") FIRST, then dual-date slashes ("/ 11/25 ..."), keeping rightmost segment
+    arrow_parts = [p.strip() for p in re.split(r"\s*(?:→|->)\s*", clause) if p.strip()]
+    if len(arrow_parts) > 1:
+        clause = arrow_parts[-1]
+    slash_parts = [p.strip() for p in re.split(r"\s*/\s*(?=\d{1,2}/\d{1,2})", clause) if p.strip()]
+    if len(slash_parts) > 1:
+        clause = slash_parts[-1]
+
     m_date = re.search(r"(?<![0-9])(\d{1,2}/\d{1,2})(?![0-9])", clause)
     dt_tok = m_date.group(1) if m_date else ""
-    has_close = bool(re.search(r"官收|官方终盘|终盘|铁锁|收盘|(?<![0-9A-Za-z])收\s*[\$0-9]", clause))
 
     price_tok = ""
+    price_start = 0
     price_end = 0
-    m_usd = re.search(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)", clause)
-    m_cny_hkd = re.search(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(港元|美元|元)", clause)
-    if market == "us-stock" and m_usd:
-        price_tok = f"${m_usd.group(1)}"
-        price_end = m_usd.end()
-    elif m_cny_hkd:
-        price_tok = f"{m_cny_hkd.group(1)} {m_cny_hkd.group(2)}"
-        price_end = m_cny_hkd.end()
-    elif m_usd:
-        price_tok = f"${m_usd.group(1)}"
-        price_end = m_usd.end()
-    else:
-        m_bare = re.search(
-            r"(?:官收|官方终盘|终盘|校准为|铁锁|收)\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
-            clause,
-        )
-        if m_bare:
-            num_s = m_bare.group(1)
-            if market == "us-stock":
-                price_tok = f"${num_s}"
-            elif market == "hk-stock":
-                price_tok = f"{num_s} 港元"
-            else:
-                price_tok = f"{num_s} 元"
-            price_end = m_bare.end()
+
+    if market == "us-stock":
+        m_usd = re.search(r"(?<!HK)\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)", clause, re.IGNORECASE)
+        m_usd_cn = re.search(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*美元", clause)
+        if m_usd:
+            price_tok = f"${m_usd.group(1)}"
+            price_start, price_end = m_usd.start(), m_usd.end()
+        elif m_usd_cn:
+            price_tok = f"${m_usd_cn.group(1)}"
+            price_start, price_end = m_usd_cn.start(), m_usd_cn.end()
+    elif market == "hk-stock":
+        m_hk_sym = re.search(r"HK\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)", clause, re.IGNORECASE)
+        m_hk_cn = re.search(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*港元", clause)
+        if m_hk_cn:
+            price_tok = f"{m_hk_cn.group(1)} 港元"
+            price_start, price_end = m_hk_cn.start(), m_hk_cn.end()
+        elif m_hk_sym:
+            price_tok = f"{m_hk_sym.group(1)} 港元"
+            price_start, price_end = m_hk_sym.start(), m_hk_sym.end()
+        else:
+            m_hk_bare = re.search(
+                r"(?:官收|官方终盘|终盘|校准为|铁锁|收盘|午逼空|午飙至|午收|午盘|午|(?<![0-9A-Za-z])收)\s*(?:约|~|≈|至)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?![0-9.,]|\s*(?:%|美元|(?<!港)元|万|亿|手|股|倍|x))",
+                clause,
+            )
+            if m_hk_bare:
+                pre_ctx = clause[max(0, m_hk_bare.start() - 12) : m_hk_bare.start(1)]
+                if not re.search(r"[$＄¥￥]|ADR|布油|美股|A\s*股", pre_ctx, re.IGNORECASE):
+                    price_tok = f"{m_hk_bare.group(1)} 港元"
+                    price_start, price_end = m_hk_bare.start(1), m_hk_bare.end(1)
+    elif market == "a-share":
+        m_rmb_sym = re.search(r"[¥￥]\s*([0-9][0-9,]*(?:\.[0-9]+)?)", clause)
+        m_rmb_cn = re.search(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?<!港)(?<!美)元", clause)
+        if m_rmb_cn:
+            price_tok = f"{m_rmb_cn.group(1)} 元"
+            price_start, price_end = m_rmb_cn.start(), m_rmb_cn.end()
+        elif m_rmb_sym:
+            price_tok = f"{m_rmb_sym.group(1)} 元"
+            price_start, price_end = m_rmb_sym.start(), m_rmb_sym.end()
+        else:
+            m_a_bare = re.search(
+                r"(?:官收|官方终盘|终盘|校准为|铁锁|收盘|(?<![0-9A-Za-z])收)\s*(?:约|~|≈|至)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?![0-9.,]|\s*(?:%|港元|美元|万|亿|手|股|倍|x))",
+                clause,
+            )
+            if m_a_bare:
+                pre_ctx = clause[max(0, m_a_bare.start() - 12) : m_a_bare.start(1)]
+                if not re.search(r"[$＄]|HK\$|ADR|布油|H\s*股", pre_ctx, re.IGNORECASE):
+                    price_tok = f"{m_a_bare.group(1)} 元"
+                    price_start, price_end = m_a_bare.start(1), m_a_bare.end(1)
 
     if not price_tok:
         return None
 
-    # Extract optional daily % change right after the price (never pick AH溢价/沽空/浮亏/股息 %)
+    has_close = bool(
+        re.search(
+            r"官收|官方终盘|终盘|铁锁|收盘|(?<![0-9A-Za-z])收\s*[\$¥￥0-9约~≈]",
+            clause[:price_end],
+        )
+    )
+
+    # Extract optional daily % change right after the price (never pick ADR/隔夜/布油/累计/溢价/折价/沽空/股息 %)
     chg_tok = ""
-    tail = clause[price_end : price_end + 36]
+    tail = clause[price_end : price_end + 48]
     m_paren = re.match(r"\s*[（(]([^）)]+)[）)]", tail)
     if m_paren:
         inner = m_paren.group(1)
         first_part = re.split(r"[，,；;]", inner, maxsplit=1)[0]
-        if not re.search(r"溢价|折价|倒挂|股息|息率|沽空|浮亏|回撤|占比|仓位|每手", first_part):
+        if not _EXCLUDED_PCT_CONTEXT_RE.search(first_part):
             m_chg = re.search(r"([+\-−][0-9]+(?:\.[0-9]+)?%)", first_part)
             if m_chg:
                 chg_tok = m_chg.group(1).replace("−", "-")
+    if not chg_tok and price_start > 0:
+        # Handle pattern like "11/25 更新 -1.92%（~$294.51）" or "11/25 官收大跌 -3.05%（约 11.13 港元）"
+        pre_seg = clause[:price_start]
+        m_pre_chg = re.search(r"([+\-−][0-9]+(?:\.[0-9]+)?%)\s*[（(][^）)]*$", pre_seg)
+        if m_pre_chg:
+            pre_ctx = pre_seg[max(0, m_pre_chg.start() - 12) : m_pre_chg.end()]
+            if not _EXCLUDED_PCT_CONTEXT_RE.search(pre_ctx):
+                chg_tok = m_pre_chg.group(1).replace("−", "-")
 
     parts: list[str] = []
     if dt_tok:
@@ -5373,12 +5681,16 @@ def _overlay_fresher_dossier_on_stock(
     dossier: dict[str, Any],
     flagship_date_str: str,
     gold_tier0_locked: bool,
+    *,
+    ah_lookup: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    """Synchronize screener stock card badge, price & summary with fresher deep_dossiers.json data."""
+    """Synchronize screener stock card badge, price, PE/Div/AH, anchors & summary with fresher deep_dossiers.json data."""
     if not isinstance(stock, dict) or not isinstance(dossier, dict):
         return stock
 
-    code_key = str(stock.get("code") or "").strip().upper()
+    market = str(stock.get("market") or "").strip()
+    code_raw = str(stock.get("code") or "").strip()
+    code_key = code_raw.upper()
     is_gold_locked = bool(
         stock.get("is_gold_locked")
         or stock.get("gold_locked")
@@ -5391,6 +5703,7 @@ def _overlay_fresher_dossier_on_stock(
     flagship_dt = _extract_iso_date(flagship_date_str)
     action_etf = str(dossier.get("action_etf") or "").strip()
     baseline_note = str(dossier.get("baseline_note") or "").strip()
+    is_strictly_fresher = bool(updated_at and (not flagship_dt or updated_at > flagship_dt))
 
     # 1. Action Badge Sync
     badge = _extract_dossier_badge(
@@ -5416,10 +5729,27 @@ def _overlay_fresher_dossier_on_stock(
         stock["color"] = "y"
         stock["action_label"] = COLOR_LABELS["y"]
 
-    # 2. Fresh Price & Summary Overlay (strictly fresher than flagship date)
-    is_strictly_fresher = bool(updated_at and (not flagship_dt or updated_at > flagship_dt))
+    # 2. Live AH% Sync (ah_lookup always takes precedence; else fresher baseline_note)
+    ah_map = ah_lookup or {}
+    live_ah: float | None = None
+    if code_raw in ah_map:
+        live_ah = round(ah_map[code_raw], 1)
+    elif code_key in ah_map:
+        live_ah = round(ah_map[code_key], 1)
+    elif is_strictly_fresher and baseline_note:
+        live_ah = _parse_ah_pct(baseline_note, "", market, "", {})
+    if live_ah is not None:
+        stock["ah_pct"] = live_ah
+        if stock.get("valuation"):
+            stock["valuation"] = _sync_valuation_str(
+                str(stock.get("valuation") or ""),
+                market,
+                ah_pct=live_ah,
+            )
+
+    # 3. Fresh Price, PE/PB/Div & Summary Overlay (strictly fresher than flagship date)
+    prev_summary = str(stock.get("summary") or "")
     if is_strictly_fresher:
-        market = str(stock.get("market") or "").strip()
         fresh_price = _extract_fresh_price_from_baseline(baseline_note, market)
         old_price_num = stock.get("price_num")
         if old_price_num is None and stock.get("price"):
@@ -5438,10 +5768,37 @@ def _overlay_fresher_dossier_on_stock(
                 if new_price_num is not None:
                     stock["price_num"] = new_price_num
 
-        # Refresh summary if badge flipped OR stale anchor/price contradicts fresh dossier
-        old_summary = str(stock.get("summary") or "")
-        old_lo, old_hi, _ = _parse_anchor(old_summary, stock.get("price_num"))
-        new_lo, new_hi, _ = _parse_anchor(f"{baseline_note} {action_etf}", stock.get("price_num"))
+        # Refresh PE, PB, and Dividend Yield from fresher baseline_note (incl. US dividend yield when div_pct is None)
+        fresh_pe: float | None = None
+        fresh_pb: float | None = None
+        fresh_div: float | None = None
+        if baseline_note:
+            pe_candidate = _parse_pe_num(baseline_note, "")
+            if pe_candidate is not None and re.search(r"(?:PE|市盈率)", baseline_note, re.IGNORECASE):
+                fresh_pe = pe_candidate
+                stock["pe_num"] = fresh_pe
+            m_pb = re.search(r"(?<![A-Za-z])PB\s*[:：]?\s*[~≈约]?\s*([0-9]+(?:\.[0-9]+)?)x?", baseline_note, re.IGNORECASE)
+            if m_pb:
+                pb_v = _to_pos_float(m_pb.group(1))
+                if pb_v is not None and pb_v < 200:
+                    fresh_pb = round(pb_v, 2)
+            div_candidate = _parse_div_pct(baseline_note, "", "")
+            if div_candidate is not None:
+                fresh_div = div_candidate
+                stock["div_pct"] = fresh_div
+            if (fresh_pe is not None or fresh_pb is not None or fresh_div is not None) and stock.get("valuation"):
+                stock["valuation"] = _sync_valuation_str(
+                    str(stock.get("valuation") or ""),
+                    market,
+                    pe_num=fresh_pe,
+                    pb_num=fresh_pb,
+                    div_pct=fresh_div,
+                    ah_pct=live_ah,
+                )
+
+        # Refresh summary if badge flipped, urgent placement/chase-buy warning present, OR stale anchor/price contradicts fresh dossier
+        old_lo, old_hi, _ = _parse_anchor(prev_summary, stock.get("price_num"))
+        new_lo, new_hi, _ = _parse_anchor(f"{action_etf} {baseline_note}", stock.get("price_num"))
         anchor_contradicts = (
             old_lo is not None
             and new_lo is not None
@@ -5450,21 +5807,27 @@ def _overlay_fresher_dossier_on_stock(
         stale_price_in_sum = False
         if old_price_num is not None and stock.get("price_num") is not None:
             rel_move = abs(stock["price_num"] - old_price_num) / max(old_price_num, 1e-6)
-            if rel_move >= 0.08 and old_summary:
+            if rel_move >= 0.08 and prev_summary:
                 stale_price_in_sum = True
+        has_urgent_warn = bool(_URGENT_DOSSIER_WARN_RE.search(action_etf[:120]))
 
-        if action_etf and (badge_changed or anchor_contradicts or stale_price_in_sum):
+        if action_etf and (badge_changed or anchor_contradicts or stale_price_in_sum or has_urgent_warn):
             refreshed_sum = _truncate_clean_summary(action_etf, max_len=78)
             if refreshed_sum:
                 stock["summary"] = refreshed_sum
 
-        # Recompute anchor gap cleanly against the latest price & summary
-        if "summary" in stock:
-            cur_price_num = stock.get("price_num")
-            if cur_price_num is None and stock.get("price"):
-                cur_price_num = _parse_price_num(str(stock.get("price") or ""))
-                stock["price_num"] = cur_price_num
+    # 4. Recompute anchors from full dossier prose (action_etf + baseline_note), falling back to stock["summary"] / prev_summary
+    cur_price_num = stock.get("price_num")
+    if cur_price_num is None and stock.get("price"):
+        cur_price_num = _parse_price_num(str(stock.get("price") or ""))
+        stock["price_num"] = cur_price_num
+    if is_strictly_fresher or stock.get("anchor_low") is None:
+        a_lo, a_hi, a_gap = _parse_anchor(f"{action_etf} {baseline_note}", cur_price_num)
+        if a_lo is None:
             a_lo, a_hi, a_gap = _parse_anchor(str(stock.get("summary") or ""), cur_price_num)
+        if a_lo is None and prev_summary:
+            a_lo, a_hi, a_gap = _parse_anchor(prev_summary, cur_price_num)
+        if a_lo is not None or is_strictly_fresher:
             stock["anchor_low"] = a_lo
             stock["anchor_high"] = a_hi
             stock["anchor_gap_pct"] = a_gap
@@ -5478,6 +5841,7 @@ def merge_stock_dossiers(
     *,
     flagship_dates: dict[str, str] | None = None,
     gold_tier0_locked: bool = False,
+    ah_benchmarks: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Attach 7-dimension institutional deep-research dossiers onto matching pool stocks and sync fresher badges/prices."""
     if not isinstance(dossiers_payload, dict):
@@ -5485,6 +5849,18 @@ def merge_stock_dossiers(
     dmap = dossiers_payload.get("dossiers")
     if not isinstance(dmap, dict):
         return stocks
+    ah_lookup: dict[str, float] = {}
+    for row in ah_benchmarks or []:
+        if not isinstance(row, dict):
+            continue
+        pct = _safe_float(row.get("ah_premium_pct"))
+        if pct is None:
+            continue
+        for k in ("a", "h"):
+            c = str(row.get(k) or "").strip()
+            if c:
+                ah_lookup[c] = pct
+                ah_lookup[c.upper()] = pct
     for st in stocks:
         mkt = str(st.get("market", ""))
         key = f"{mkt}:{st.get('code', '')}"
@@ -5505,7 +5881,13 @@ def merge_stock_dossiers(
             st["dossier"] = dossier_obj
             if flagship_dates is not None or ("color" in st or "price" in st):
                 f_dt = (flagship_dates or {}).get(mkt, "")
-                _overlay_fresher_dossier_on_stock(st, dossier_obj, f_dt, gold_tier0_locked)
+                _overlay_fresher_dossier_on_stock(
+                    st,
+                    dossier_obj,
+                    f_dt,
+                    gold_tier0_locked,
+                    ah_lookup=ah_lookup,
+                )
     return stocks
 
 
@@ -6005,7 +6387,7 @@ def build_etfs_page(etf_data: dict[str, Any] | None, *, channel_count: int = 0) 
       </div>
       <div class="filter-row">
         <div class="search-wrap">
-          <input type="search" id="etf-search" class="search-input" placeholder="搜索代码 / 简称 / 跟踪指数 / 重仓股 / 联接代码（如 563360、159545、IB01、159509、红利）…" autocomplete="off">
+          <input type="search" id="etf-search" class="search-input" placeholder="搜索代码 / 简称 / 指数 / 联接（如 563360、IB01、红利）…" autocomplete="off">
           <button type="button" id="etf-clear" class="search-clear" aria-label="清空搜索" hidden>×</button>
           <kbd class="kbd-hint" aria-hidden="true">/</kbd>
         </div>
@@ -6220,18 +6602,87 @@ def build_guide_page(
     etf_data: dict[str, Any] | None,
     total_pool: int = 0,
 ) -> str:
-    """Render standalone Beginner 3-Minute Guide & Top-24 Financial Terms Page (guide.html)."""
+    """Render standalone Beginner 3-Minute Guide & Top-48 Financial Terms Page (guide.html)."""
     gs = gold_snap if isinstance(gold_snap, dict) else {}
+    es = eq_state if isinstance(eq_state, dict) else {}
     gold_blocked = (gs.get("new_buy_allowed") is False) or (str(gs.get("tier_code") or "").strip() == "Tier 0")
     gold_status_text = (
         "当前黄金处于红灯停阶段：老持仓稳拿不乱卖，新钱先停在稳钱池暂不新买黄金，等待四关信号逐步过关。"
         if gold_blocked
         else "黄金操作须严守家庭资产 10%–15% 上限，按四步信号分批推进、远离杠杆。"
     )
-    ch_cnt = len((channels_data or {}).get("channels") or []) if isinstance(channels_data, dict) else 0
+    ch_items = [
+        c for c in ((channels_data or {}).get("channels") or [])
+        if isinstance(c, dict) and str(c.get("id", "")).strip()
+    ]
+    ch_cnt = len(ch_items)
     etf_cnt = len((etf_data or {}).get("etfs") or []) if isinstance(etf_data, dict) else 0
     ch_lbl = f"{ch_cnt} 大个人多元渠道" if ch_cnt else "个人多元合规渠道"
     etf_lbl = f"{etf_cnt} 只重点 ETF" if etf_cnt else "全球重点 ETF"
+
+    # Compact live 4-market status strip from gold_snap + eq_state (graceful when None/{})
+    guide_live_strip_html = ""
+    eq_mkts = es.get("markets") if isinstance(es.get("markets"), dict) else {}
+    if gs or eq_mkts:
+        g_lamp_cls = "lamp-red" if gold_blocked else _lamp_css_class(gs.get("lamp", "amber"))
+        g_tier = str(gs.get("tier_short") or ("红灯停" if gold_blocked else "按档观察")).strip()
+        g_pass = str(gs.get("tier1_pass_count") or ("新仓 0%" if gold_blocked else "四关核验")).strip()
+        a_m = eq_mkts.get("a_share") if isinstance(eq_mkts.get("a_share"), dict) else {}
+        hk_m = eq_mkts.get("hk_stock") if isinstance(eq_mkts.get("hk_stock"), dict) else {}
+        us_m = eq_mkts.get("us_stock") if isinstance(eq_mkts.get("us_stock"), dict) else {}
+        mkt_strip_specs = (
+            ("🥇 黄金", g_lamp_cls, f"{g_tier} · {g_pass}", "daily/gold-latest.html"),
+            (
+                "🇨🇳 A 股",
+                _lamp_css_class(a_m.get("lamp", "red")),
+                f'{str(a_m.get("lamp_label") or "红灯防守").replace("🛡️", "").strip()} · {str(a_m.get("score") or "待核")}',
+                "daily/a-share-latest.html",
+            ),
+            (
+                "🇭🇰 港股",
+                _lamp_css_class(hk_m.get("lamp", "red")),
+                f'{str(hk_m.get("lamp_label") or "红灯防守").replace("🛡️", "").strip()} · {str(hk_m.get("score") or "待核")}',
+                "daily/hk-stock-latest.html",
+            ),
+            (
+                "🇺🇸 美股",
+                _lamp_css_class(us_m.get("lamp", "red")),
+                f'{str(us_m.get("lamp_label") or "红灯防守").replace("🛡️", "").strip()} · {str(us_m.get("score") or "待核")}',
+                "daily/us-stock-latest.html",
+            ),
+        )
+        strip_cards = "".join(
+            f'<a class="home-macro-card" href="{esc(href)}">'
+            f'<div class="home-macro-lbl">{esc(lbl)}</div>'
+            f'<div class="home-macro-val"><span class="lamp-pill {lcls}"><span class="lamp-dot"></span>{esc(val)}</span></div>'
+            f"</a>"
+            for lbl, lcls, val, href in mkt_strip_specs
+        )
+        guide_live_strip_html = (
+            '<div class="home-macro-bar" aria-label="四市场当下实时红绿灯状态">'
+            f'<div class="home-macro-grid">{strip_cards}</div>'
+            "</div>"
+        )
+
+    # Quick links across channels.html + all standard personal channels
+    guide_ch_links_html = ""
+    if ch_items:
+        seen_cids: set[str] = set()
+        ch_pills: list[str] = ['<a class="home-jump-pill" href="channels.html">全渠道对比总表</a>']
+        for idx, ch in enumerate(ch_items, start=1):
+            cid = str(ch["id"]).strip()
+            if cid in seen_cids:
+                continue
+            seen_cids.add(cid)
+            cname = str(ch.get("short_name") or ch.get("name") or cid).strip()
+            ch_pills.append(
+                f'<a class="home-jump-pill" href="channels/{esc(cid)}.html">{_fmt_ch_num(ch.get("order"), idx)} {esc(cname)}</a>'
+            )
+        guide_ch_links_html = (
+            '<nav class="home-jump-bar" aria-label="12 大个人多元渠道直达">'
+            + "".join(ch_pills)
+            + "</nav>"
+        )
 
     pitfalls: tuple[tuple[str, str, str, str], ...] = (
         (
@@ -6267,20 +6718,20 @@ def build_guide_page(
         (
             "A/C 类基金选反，或持有不满 7 天硬挨 1.5% 赎回费",
             "短期波段买了高申购费 A 类，或长期持有选了持续扣费的旧合同 C 类，甚至几天内频繁进出触发 1.5% 惩罚费。",
-            "短钱不动公募股债基；持有 7 天内不轻易赎回；长持 1 年以上优先对比 1 折 A 类与 2026 费改后满 1 年免销服费的 C 类。",
+            "短钱不动公募股债基；持有 7 天内不轻易赎回；长持 1 年以上仍优先选 1 折 A 类（2026 费改 C 类满 1 年免销服费不含货币基金，旧合同过渡期至 2026-12-31、自 2027-01-01 起全面生效）。",
             "channels/funds_wm.html",
         ),
         (
-            "忽略港股通 20%–28% 红利税与未锁汇汇率损失",
-            "冲着高表面股息买港股通，或用人民币新换汇买未锁汇美元债，结果红利税与人民币升值吃光全部利息。",
+            "忽略港股通 20% 红利税（特定红筹最高约 28%）与未锁汇汇率损失",
+            "冲着高表面股息买港股通，或用人民币新换汇买未锁汇美元债，结果标准 H 股 20% 红利税（特定内地居民企业红筹依发行人公告最高约 28%）与人民币升值吃光全部利息。",
             "买港股高股息前先按税后折算真实到手率；内地买香港互认债基认准「人民币对冲 + 累计份额」合法避税锁汇。",
             "etfs.html",
         ),
         (
             "周五借 1 天期逆回购踩空 & 二手存单提前支取实亏",
             "周五做 1 天期逆回购周末两天白闲置；单家银行存超 50 万超出存保上限；二手接盘大额存单提前支取按原票面退还致本金实亏。",
-            "周四借 1 天期吃 3 天息，周五闲钱放短融 ETF；单家独立法人银行存款控在 45–47 万内；二手存单变现只能再次挂单转让。",
-            "channels/reverse_repo.html",
+            "周四借 1 天期吃 3 天息，周五闲钱放短融 ETF；单家独立法人银行存款控在 45–47 万内；二手接盘前须先核实发卡行是否允许二次转让（多数国有大行禁止二次转让），仅用能持有到期的闲钱接盘，切忌提前支取导致本金实亏。",
+            "channels/large_cds.html",
         ),
     )
 
@@ -6325,6 +6776,9 @@ def build_guide_page(
         <a class="hero-cta" href="etfs.html">重点 ETF 雷达</a>
       </div>
     </section>
+
+    {guide_live_strip_html}
+    {guide_ch_links_html}
 
     <div class="sec-head" id="sec-guide-lamps">
       <h2>① 1 分钟看懂本站「红绿灯」与四笔钱路线图</h2>
@@ -6413,25 +6867,41 @@ def _first_pct(text: str, default: float | None = None) -> float | None:
 
 def parse_scorecard_stats(gold_sc_md: str, eq_sc_md: str) -> dict[str, dict[str, Any]]:
     """Extract settled/hit/partial/miss/tracking statistics from Gold & Equity SCORECARD.md files."""
-    # --- Gold SCORECARD.md ---
+    # --- Gold SCORECARD.md (supports reconciled investment-only summary & optional ops-record column) ---
     g_settled = g_scored = g_hit = g_partial = g_miss = g_untrig = g_track = 0
     g_full_pct: float | None = None
     g_part_pct: float | None = None
+    col_idx: dict[str, int] = {}
     for raw in (gold_sc_md or "").splitlines():
         st = raw.strip()
         if not (st.startswith("|") and st.endswith("|")):
             continue
         cells = _split_md_cells(st)
+        if len(cells) >= 8 and ("统计口径" in cells[0] or ("兑现" in " ".join(cells) and "证伪" in " ".join(cells))):
+            for idx_c, hdr in enumerate(cells):
+                if "部分兑现" in hdr and "率" not in hdr:
+                    col_idx["partial"] = idx_c
+                elif "兑现" in hdr and "部分" not in hdr and "率" not in hdr:
+                    col_idx["hit"] = idx_c
+                elif "证伪" in hdr:
+                    col_idx["miss"] = idx_c
+                elif "未触发" in hdr:
+                    col_idx["untrig"] = idx_c
+                elif "完全兑现" in hdr:
+                    col_idx["full_pct"] = idx_c
+                elif "至少部分" in hdr:
+                    col_idx["part_pct"] = idx_c
+            continue
         if len(cells) >= 8 and "已到期" in cells[0]:
             g_settled = _first_int(cells[1])
-            m_sc = re.search(r"计分\s*(\d+)", cells[1])
-            g_hit = _first_int(cells[2])
-            g_partial = _first_int(cells[3])
-            g_miss = _first_int(cells[4])
-            g_untrig = _first_int(cells[5])
+            m_sc = re.search(r"(?:投资)?计分\s*(\d+)", cells[1])
+            g_hit = _first_int(cells[col_idx.get("hit", 2)])
+            g_partial = _first_int(cells[col_idx.get("partial", 3)])
+            g_miss = _first_int(cells[col_idx.get("miss", 4)])
+            g_untrig = _first_int(cells[col_idx.get("untrig", 5)])
             g_scored = int(m_sc.group(1)) if m_sc else (g_hit + g_partial + g_miss)
-            g_full_pct = _first_pct(cells[6])
-            g_part_pct = _first_pct(cells[7])
+            g_full_pct = _first_pct(cells[col_idx.get("full_pct", len(cells) - 2)])
+            g_part_pct = _first_pct(cells[col_idx.get("part_pct", len(cells) - 1)])
         elif len(cells) >= 2 and "持续追踪" in cells[0]:
             g_track = _first_int(cells[1])
     if g_scored == 0 and (g_hit + g_partial + g_miss) > 0:
@@ -6526,10 +6996,31 @@ def _load_gold_ledger_with_archives(stem: str, *, is_audit_log: bool) -> str:
     ]
     archive_dir = GOLD_DIR / "daily" / "archive"
     if archive_dir.is_dir():
-        for arch_path in sorted(archive_dir.glob(f"{stem}_*.md"), key=lambda p: p.name, reverse=True):
+        for arch_path in sorted(archive_dir.rglob(f"{stem}_*.md"), key=lambda p: p.name, reverse=True):
             sanitized = sanitize_public_ledger_md(
                 arch_path.read_text(encoding="utf-8"),
                 is_audit_log=is_audit_log,
+            ).strip()
+            if sanitized:
+                parts.append(sanitized)
+    return "\n\n---\n\n".join(p for p in parts if p)
+
+
+def _load_equity_ledger_with_archives(stem: str) -> str:
+    """Load active equity ledger plus any monthly archived files (newest month first), sanitized."""
+    active_path = EQUITY_DIR / "daily" / f"{stem}.md"
+    parts = [
+        sanitize_public_ledger_md(
+            active_path.read_text(encoding="utf-8"),
+            is_audit_log=False,
+        ).strip()
+    ]
+    archive_dir = EQUITY_DIR / "daily" / "archive"
+    if archive_dir.is_dir():
+        for arch_path in sorted(archive_dir.rglob(f"{stem}_*.md"), key=lambda p: p.name, reverse=True):
+            sanitized = sanitize_public_ledger_md(
+                arch_path.read_text(encoding="utf-8"),
+                is_audit_log=False,
             ).strip()
             if sanitized:
                 parts.append(sanitized)
@@ -6560,8 +7051,9 @@ def build_scorecard_page(
     gd_sc_md = normalize_relative_md_links(
         protect_backticked_comments(_clean_soft_filenames(_strip_scorecard_top_nav(gd_sc_raw_md)))
     )
-    eq_cl_raw_md = (EQUITY_DIR / "daily" / "CHANGELOG.md").read_text(encoding="utf-8")
-    eq_cl_md = normalize_relative_md_links(_clean_soft_filenames(_strip_scorecard_top_nav(eq_cl_raw_md)))
+    eq_cl_md = normalize_relative_md_links(
+        _clean_soft_filenames(_strip_scorecard_top_nav(_load_equity_ledger_with_archives("CHANGELOG")))
+    )
     gd_cl_md = normalize_relative_md_links(
         protect_backticked_comments(
             _clean_soft_filenames(
@@ -6752,9 +7244,10 @@ def build_archive_page(
             old_badge = '<span class="session-pill arc-old-badge">修订前原版</span>' if is_superseded else ""
             sup_attrs = ' data-superseded="1" hidden' if is_superseded else ""
             search_text = f"{it.date_str} {mm['short']} {it.session_label} {it.title} {it.summary}".lower()
+            arc_session_key = "evening" if it.session_key == "midday" else it.session_key
             cards.append(
                 f'<a class="feed-card" href="{it.rel_url}" data-arc-item="1" '
-                f'data-market="{it.market}" data-session="{it.session_key}" '
+                f'data-market="{it.market}" data-session="{arc_session_key}" '
                 f'data-edition-type="{esc(it.edition_type)}" data-search="{esc(search_text)}"{sup_attrs}>'
                 f'<div class="feed-meta">'
                 f'<span class="mkt-badge mkt-{it.market}">{mm["emoji"]} {mm["short"]}</span>'
@@ -6963,6 +7456,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         dossiers_data,
         flagship_dates=flagship_dates,
         gold_tier0_locked=gold_tier0_locked,
+        ah_benchmarks=ah_benchmarks,
     )
     stock_counts: dict[str, int] = defaultdict(int)
     for st in stocks:
@@ -7120,12 +7614,18 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         )
         (out_dir / "reports" / f"{m_slug}.html").write_text(page_html, encoding="utf-8")
         flagship_stats[m_slug] = n_charts
+        baseline_disp = (
+            re.sub(r"[（(]周[一二三四五六日天][）)]", " ", str(meta.get("benchmark_time", "")))
+            .split("（", 1)[0]
+            .replace("北京时间", "")
+            .strip()
+        )
         flagship_info.append(
             {
                 "market": m_slug,
                 "badge": badge_lbl,
                 "title": doc_title,
-                "baseline": str(meta.get("benchmark_time", "")).split("（")[0],
+                "baseline": baseline_disp,
                 "charts": str(n_charts),
                 "href": f"reports/{m_slug}.html",
                 "accent": MARKET_META[m_slug]["accent"],

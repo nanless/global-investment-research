@@ -437,6 +437,359 @@ class TestCssAndGlossarySync(unittest.TestCase):
         for k in ("w8ben", "crs", "low_water", "ex_div", "discount_ex_div", "margin_hk"):
             self.assertIn(f'data-term="{k}"', matched)
 
+    def test_glossary_48_terms_exact_parity_ex_div_guard_and_collapsed_details_quota(self):
+        py_keys = [t["key"] for t in build_site.GLOSSARY_TERMS]
+        spec_keys = [k for k, _ in build_site._GLOSSARY_PHRASE_SPECS]
+        self.assertEqual(len(py_keys), 48)
+        self.assertEqual(set(py_keys), set(spec_keys))
+
+        app_js = (REPO_ROOT / "scripts" / "web_assets" / "app.js").read_text(encoding="utf-8")
+        m_dict = re.search(r"const GLOSSARY_DICT\s*=\s*\{(.*?)\n  \};", app_js, re.DOTALL)
+        self.assertIsNotNone(m_dict)
+        js_keys = re.findall(r"^\s{4}([a-z0-9_]+)\s*:\s*\{", m_dict.group(1), re.MULTILINE)
+        self.assertEqual(len(js_keys), 48)
+        self.assertEqual(set(py_keys), set(js_keys))
+
+        # ex_div regex must NOT false-match "零剔除净增"
+        no_ex_div = build_site.inject_glossary_tips("<p>本季份额零剔除净增 1.2 亿份。</p>")
+        self.assertNotIn('data-term="ex_div"', no_ex_div)
+
+        # Collapsed <details> must NOT steal first-occurrence quota from later visible prose
+        details_html = (
+            "<details><summary>展开</summary><p>内部提到 ERP 与 折价配售。</p></details>"
+            "<p>正文出现 ERP 与 折价配售。</p>"
+        )
+        injected = build_site.inject_glossary_tips(details_html)
+        head_details, tail_prose = injected.split("</details>", 1)
+        self.assertNotIn('data-term="erp"', head_details)
+        self.assertNotIn('data-term="discount_placement"', head_details)
+        self.assertIn('data-term="erp"', tail_prose)
+        self.assertIn('data-term="discount_placement"', tail_prose)
+
+    def test_dark_cover_tag_wcag_and_p2_contrast_tokens_and_cmd_palette_jumps(self):
+        css = (REPO_ROOT / "scripts" / "web_assets" / "app.css").read_text(encoding="utf-8")
+        self.assertIn('[data-theme="dark"] .cover-tag { color: #0f131a; }', css)
+        self.assertRegex(css, r"\.holiday-date\s*\{[^}]*color:\s*#854d0e;")
+        self.assertRegex(css, r"\.ch-risk-stars\s*\{[^}]*color:\s*#92400e;")
+        self.assertRegex(css, r"\.sector-cnt\s*\{[^}]*opacity:\s*0\.85;")
+        self.assertIn(".vm-g { color: #047857; }", css)
+        self.assertIn(".vm-y { color: #9a5504; }", css)
+        self.assertIn(".vm-r { color: #b94a00; }", css)
+
+        app_js = (REPO_ROOT / "scripts" / "web_assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('screener.html#q=', app_js)
+        self.assertIn('etfs.html#q=', app_js)
+        self.assertIn('guide.html#q=', app_js)
+        self.assertIn("applyGuideHash", app_js)
+
+
+class TestScreenerCurrencyPeAhAnchorAndSanitizer(unittest.TestCase):
+    """Tests for P0-1 currency lock & arrow/slash parsing, P0-2 PE/AH/Div/Anchor sync,
+    guide Pitfall #8 invariant, _HARD_INFRA_RE sanitizer, and extended Gate S6 checks."""
+
+    def test_a_share_600938_rejects_brent_usd_quote_and_preserves_rmb_price(self):
+        brent_note = (
+            "基线参考价：11/26 随油价走强上涨（隔夜沙特炼厂遇袭推布油 1 月官结至 $96.57/+2.07%）；"
+            "PE-TTM 10.54x / AH 溢价 +69.2%（按 11/26 央行中间价 0.85582 核算）。"
+        )
+        self.assertIsNone(build_site._extract_fresh_price_from_baseline(brent_note, "a-share"))
+        # Also verify strict cross-market currency locks
+        self.assertIsNone(build_site._extract_fresh_price_from_baseline("11/26 官收 23.30 元", "hk-stock"))
+        self.assertIsNone(build_site._extract_fresh_price_from_baseline("11/26 官收 $96.57", "hk-stock"))
+        self.assertIsNone(build_site._extract_fresh_price_from_baseline("11/26 官收 41.28 港元", "us-stock"))
+        self.assertIsNone(build_site._extract_fresh_price_from_baseline("11/26 官收 52.93 元", "us-stock"))
+
+        stock = {
+            "market": "a-share",
+            "code": "600938",
+            "name": "中国海油",
+            "price": "38.20 元",
+            "price_num": 38.20,
+            "valuation": "10.1x / 1.80x / 4.2% / +65.0%",
+            "color": "g",
+            "action_label": "当下底座",
+            "summary": "能源高息底座；锚 25.5–27.0 元",
+        }
+        dossier = {
+            "baseline_note": brent_note,
+            "action_etf": "IF 回调至 25.5–27.0 元 THEN 分批配能源底座。",
+            "updated_at": "2026-11-27",
+        }
+        updated = build_site._overlay_fresher_dossier_on_stock(
+            stock, dossier, "2026-11-25", gold_tier0_locked=True, ah_lookup={"600938": 69.2}
+        )
+        self.assertEqual(updated["price"], "38.20 元")
+        self.assertNotIn("$", updated["price"])
+        self.assertEqual(updated["ah_pct"], 69.2)
+        self.assertIn("+69.2%", updated["valuation"])
+
+    def test_arrow_and_slash_rightmost_price_extraction_and_adr_pct_guard(self):
+        # META arrow progression
+        self.assertEqual(
+            build_site._extract_fresh_price_from_baseline(
+                "基线价格：11/24 $589.82 (-1.30%) → 11/25 更新 $609.89 (+3.40%)；前瞻 PE 17.1–20.4x。",
+                "us-stock",
+            ),
+            "11/25 $609.89 (+3.40%)",
+        )
+        # 00700.HK arrow progression
+        self.assertEqual(
+            build_site._extract_fresh_price_from_baseline(
+                "基线价格与一手：11/24 收 341.60 → 11/26 官收 341.00 港元（+1.07%）；每手 100 股 ≈ 3.41 万港元。",
+                "hk-stock",
+            ),
+            "11/26 官收 341.00 港元 (+1.07%)",
+        )
+        # 00005.HK arrow progression
+        self.assertEqual(
+            build_site._extract_fresh_price_from_baseline(
+                "基线价格与一手：11/25 官收 128.60 港元（-1.53%）→ 11/26 官收 128.40 港元（-0.16%，伦敦盘 HSBA.L 平盘 +0.02%）；每手 400 股。",
+                "hk-stock",
+            ),
+            "11/26 官收 128.40 港元 (-0.16%)",
+        )
+        # Dual-date slash progression (01810.HK / 09626.HK / 09992.HK)
+        self.assertEqual(
+            build_site._extract_fresh_price_from_baseline(
+                "基线价格与一手：11/24 收 26.50 / 11/25 午逼空 27.58（官收 +0.23%）；每手 200 股。",
+                "hk-stock",
+            ),
+            "11/25 27.58 港元 (+0.23%)",
+        )
+        # 09618.HK must NEVER stitch overnight ADR +3.1% onto 11/24 HK close
+        jd_price = build_site._extract_fresh_price_from_baseline(
+            "基线价格与一手：11/24 收 97.05 港元（11/25 午大涨、隔夜美股 ADR +3.1%）；每手 50 股。",
+            "hk-stock",
+        )
+        self.assertEqual(jd_price, "11/24 官收 97.05 港元")
+        self.assertNotIn("+3.1%", jd_price)
+
+    def test_parse_pe_ignores_4_digit_year_and_ah_prefers_live_lookup(self):
+        # us-stock:LLY must parse 28.0, never 2027.0
+        self.assertEqual(
+            build_site._parse_pe_num("基线价格：11/25 官收 $1,392.22；前瞻 PE 2027 预期 ~28x（2026 预期 ~40x）。", "us-stock"),
+            28.0,
+        )
+        # _parse_ah_pct prefers live ah_lookup over stale valuation text
+        self.assertEqual(
+            build_site._parse_ah_pct("PE 15.2x / AH 倒挂 -16%", "", "hk-stock", "03750.HK", {"03750.HK": -19.7}),
+            -19.7,
+        )
+        # Unsigned 倒挂 / 折价 / A折H must be negated
+        self.assertEqual(build_site._parse_ah_pct("AH 倒挂 15.4%", "", "hk-stock", "99999.HK", {}), -15.4)
+        self.assertEqual(build_site._parse_ah_pct("A折H 2.4%", "", "a-share", "300308", {}), -2.4)
+
+    def test_anchor_preservation_us_div_sync_and_placement_warning_surface(self):
+        # 03750.HK preserves prior anchor (285) even after summary switches to red-avoid prose
+        catl_hk = {
+            "market": "hk-stock",
+            "code": "03750.HK",
+            "name": "宁德时代",
+            "price": "336.80",
+            "price_num": 336.80,
+            "valuation": "PE 15.2x / AH 倒挂 -16%",
+            "color": "b",
+            "action_label": "未来主攻",
+            "summary": "倒挂创 52 周新低；锚 285 下",
+        }
+        catl_dos = {
+            "baseline_note": "基线价格与一手：11/26 官收 297.00 港元（+0.47%）；PE 13.4x / 深度 AH 倒挂 -19.7%。",
+            "action_etf": "🔴 高危回避（AH 严重倒挂）：有 A 股账户者严禁在港股追高接盘，只观察便宜近两成的 A 股 300750。",
+            "updated_at": "2026-11-27",
+        }
+        res_catl = build_site._overlay_fresher_dossier_on_stock(
+            catl_hk, catl_dos, "2026-11-25", gold_tier0_locked=True, ah_lookup={"03750.HK": -19.7}
+        )
+        self.assertEqual(res_catl["anchor_low"], 285.0)
+        self.assertEqual(res_catl["anchor_high"], 285.0)
+        self.assertEqual(res_catl["pe_num"], 13.4)
+        self.assertEqual(res_catl["ah_pct"], -19.7)
+        self.assertIn("-19.7%", res_catl["valuation"])
+
+        # 02015.HK extracts anchor from full baseline_note/action_etf even when truncated summary omits it
+        li_hk = {
+            "market": "hk-stock",
+            "code": "02015.HK",
+            "name": "理想汽车",
+            "price": "42.00",
+            "price_num": 42.00,
+            "valuation": "亏损 / 无 A 股",
+            "color": "r",
+            "action_label": "高危回避",
+            "summary": "旧摘要无锚",
+        }
+        li_dos = {
+            "baseline_note": "基线参考价 11/26 官收 45.80 港元（+8.02%）；扭亏拐点期 / 纯港股（安全锚 38.0–40.0 港元）。",
+            "action_etf": "当前 🟡 分歧观察（基本面显著改善但忌追绩后 +8% 脉冲）：882 亿现金与 FCF 转正夯实底部，IF 回踩 38.0–40.0 港元再右侧跟踪。",
+            "updated_at": "2026-11-26",
+        }
+        res_li = build_site._overlay_fresher_dossier_on_stock(li_hk, li_dos, "2026-11-25", gold_tier0_locked=True)
+        self.assertEqual(res_li["anchor_low"], 38.0)
+        self.assertEqual(res_li["anchor_high"], 40.0)
+        self.assertIsNotNone(res_li["anchor_gap_pct"])
+
+        # US stock extracts div_pct from fresher baseline_note when div_pct is None
+        jpm = {
+            "market": "us-stock",
+            "code": "JPM",
+            "name": "摩根大通",
+            "price": "$310.00",
+            "price_num": 310.0,
+            "valuation": "13.0x",
+            "div_pct": None,
+            "color": "g",
+            "action_label": "当下底座",
+            "summary": "银行底座",
+        }
+        jpm_dos = {
+            "baseline_note": "基线价格：11/25 官收 $316.74；前瞻 PE 12.1–12.7x + 股息率 2.1%。",
+            "action_etf": "银行底座稳健持有。",
+            "updated_at": "2026-11-26",
+        }
+        res_jpm = build_site._overlay_fresher_dossier_on_stock(jpm, jpm_dos, "2026-11-25", gold_tier0_locked=True)
+        self.assertEqual(res_jpm["div_pct"], 2.1)
+        self.assertEqual(res_jpm["pe_num"], 12.1)
+
+        # 01088.HK placement warning immediately surfaces on summary
+        sh_hk = {
+            "market": "hk-stock",
+            "code": "01088.HK",
+            "name": "中国神华",
+            "price": "39.98",
+            "price_num": 39.98,
+            "valuation": "12.2x / 6.2% / AH +45%",
+            "color": "g",
+            "action_label": "当下底座",
+            "summary": "11/23 派中期息、煤电长协锁息",
+        }
+        sh_dos = {
+            "baseline_note": "基线价格与一手：11/26 官收 41.28 港元（+3.25%）；PE 12.7x / AH 溢价 +49.8%。",
+            "action_etf": "短期先避配售抛压，切勿在 41 港元附近立即追买！11/27 盘前按 38.10 港元折价配售 1.77 亿股。",
+            "updated_at": "2026-11-27",
+        }
+        res_sh = build_site._overlay_fresher_dossier_on_stock(
+            sh_hk, sh_dos, "2026-11-25", gold_tier0_locked=True, ah_lookup={"01088.HK": 49.8}
+        )
+        self.assertIn("配售", res_sh["summary"])
+        self.assertIn("切勿", res_sh["summary"])
+
+    def test_hard_infra_re_strips_patch_state_dbs_and_guide_pitfall8_cd_invariant(self):
+        for tok in (
+            "patch_state_dbs.py",
+            "svg_geometry.py",
+            "_edition_patch.json",
+            "_ledger_patch.json",
+            "_rsi_patch.json",
+            "_audit_patch.json",
+            "_rollover_patch.json",
+            "_archive_patch.json",
+            "multi_asset_channels.json",
+            "etf_universe.json",
+            "deep_dossiers.json",
+        ):
+            self.assertIsNotNone(build_site._HARD_INFRA_RE.search(tok), f"_HARD_INFRA_RE missed {tok}")
+            self.assertIsNotNone(lint_site.S3_INTERNAL_ENG_LEAK_RE.search(tok), f"S3_INTERNAL_ENG_LEAK_RE missed {tok}")
+            sanitized = build_site._sanitize_caveat_text(f"已完成 `{tok}` 更新")
+            self.assertNotIn(tok, sanitized, f"_sanitize_caveat_text leaked {tok}")
+
+        guide_html = build_site.build_guide_page({"tier_code": "Tier 0", "new_buy_allowed": False}, {}, None, None)
+        self.assertNotIn("二手存单变现只能再次挂单转让", guide_html)
+        self.assertIn("多数国有大行禁止二次转让", guide_html)
+        self.assertIn("channels/large_cds.html", guide_html)
+
+    def test_lint_site_s6_currency_ah_parity_bidirectional_badge_and_invariants(self):
+        benchmarks = {}
+        for mk in ("a-share", "hk-stock", "us-stock"):
+            meta_p = REPO_ROOT / "equity" / f"report_meta_{mk.replace('-', '_')}.json"
+            meta = json.loads(meta_p.read_text(encoding="utf-8"))
+            benchmarks[mk] = str(meta.get("benchmark_time") or "").split("（", 1)[0]
+
+        def _dos(act: str) -> dict[str, str]:
+            return {
+                "moat": "护城河",
+                "financials": "现金流",
+                "valuation_anchor": "估值锚",
+                "shareholder_flow": "回报",
+                "catalysts": "催化",
+                "bear_case": "风险",
+                "action_etf": act,
+            }
+
+        payload = [
+            {
+                "market": "a-share",
+                "sector": "石油",
+                "name": "中国海油",
+                "code": "600938",
+                "price": "11/26 $96.57",
+                "valuation": "10.5x",
+                "ah_pct": 50.0,
+                "color": "r",
+                "action_label": "高危回避",
+                "summary": "测试",
+                "benchmark_time": benchmarks["a-share"],
+                "dossier": _dos("🟢 当下底座：测试反向冲突。"),
+            },
+            {
+                "market": "hk-stock",
+                "sector": "煤炭",
+                "name": "中国神华",
+                "code": "01088.HK",
+                "price": "41.28 港元",
+                "valuation": "12.7x",
+                "ah_pct": 49.8,
+                "color": "g",
+                "action_label": "当下底座",
+                "summary": "旧摘要未提示风险",
+                "benchmark_time": benchmarks["hk-stock"],
+                "dossier": _dos("短期先避配售抛压，切勿在 41 港元附近立即追买！"),
+            },
+        ]
+        html = (
+            "<!doctype html><html><body><h1>筛选器</h1>"
+            f"<p>{benchmarks['a-share']} {benchmarks['hk-stock']} {benchmarks['us-stock']}</p>"
+            f'<script id="screener-data" type="application/json">{json.dumps(payload, ensure_ascii=False)}</script>'
+            "</body></html>"
+        )
+        doc = lint_site.parse_html_file("screener.html", Path("screener.html"), html)
+        errs: list[str] = []
+        ms = {
+            "cross_market_linkages": {
+                "ah_premium_radar": {
+                    "benchmarks": [{"a": "600938", "h": "00883.HK", "ah_premium_pct": 69.2}]
+                }
+            }
+        }
+        lint_site._validate_screener_json(
+            doc, {"a-share": 1, "hk-stock": 1, "us-stock": 0}, errs, gold_new_buy_blocked=True, market_state=ms
+        )
+        self.assertTrue(any("currency violation" in e and "600938" in e for e in errs), errs)
+        self.assertTrue(any("ah_pct parity mismatch" in e and "600938" in e for e in errs), errs)
+        self.assertTrue(any("badge contradiction" in e and "600938" in e for e in errs), errs)
+        self.assertTrue(any("omits urgent placement/chase-buy warning" in e and "01088.HK" in e for e in errs), errs)
+
+        # Duplicate caveat check on daily/*-latest.html + permanent invariant scan on guide.html & reports/*.html
+        daily_dup = (
+            "<!doctype html><html><body><h1>早报</h1>"
+            '<div class="caveat-item"><div class="caveat-title">美东休市顺延</div></div>'
+            '<div class="caveat-item"><div class="caveat-title">美东休市顺延！</div></div>'
+            "</body></html>"
+        )
+        bad_guide = "<!doctype html><html><body><h1>指南</h1><p>二手存单变现只能再次挂单转让。</p></body></html>"
+        bad_rep = "<!doctype html><html><body><h1>手册</h1><p>买 3081.HK 或借道债券 ETF 合法避税。</p></body></html>"
+        parsed = {
+            "daily/gold-latest.html": lint_site.parse_html_file("daily/gold-latest.html", Path("daily/gold-latest.html"), daily_dup),
+            "guide.html": lint_site.parse_html_file("guide.html", Path("guide.html"), bad_guide),
+            "reports/gold.html": lint_site.parse_html_file("reports/gold.html", Path("reports/gold.html"), bad_rep),
+        }
+        s6_errs: list[str] = []
+        s6_warns: list[str] = []
+        lint_site.run_gate_s6(parsed, {}, {}, s6_errs, s6_warns, already_checked_json_gold=True)
+        self.assertTrue(any("daily/gold-latest.html" in e and "duplicate data_caveats title" in e for e in s6_errs), s6_errs)
+        self.assertTrue(any("guide.html" in e and "permanent invariant violation" in e for e in s6_errs), s6_errs)
+        self.assertTrue(any("reports/gold.html" in e and "4-digit .HK" in e for e in s6_errs), s6_errs)
+        self.assertTrue(any("reports/gold.html" in e and "tax-avoidance" in e for e in s6_errs), s6_errs)
+
 
 if __name__ == "__main__":
     unittest.main()

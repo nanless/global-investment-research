@@ -417,14 +417,53 @@ class PatchStateDbsGuardsTests(unittest.TestCase):
             self.assertEqual(len(errs_watch), 1)
             self.assertIn("恢复申赎", errs_watch[0])
 
-            # Clarifying 仅恢复赎回 passes!
+            # Clarifying 仅恢复赎回 passes when action_role == 高危回避!
             eu["etfs"][1]["premium_status"] = "high_risk"
+            eu["etfs"][1]["action_role"] = "高危回避"
             eu["etfs"][1]["premium_note"] = "暂停申购仅恢复赎回（不开放申购，勿误读为恢复申赎）"
             errs_pass = psd._validate_merged_equity_dbs(
                 ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
                 as_of_date="2026-11-27", market_state=ms,
             )
             self.assertEqual(errs_pass, [])
+
+            # high_risk with action_role != 高危回避 must be rejected!
+            eu["etfs"][1]["action_role"] = "分歧观察"
+            errs_role = psd._validate_merged_equity_dbs(
+                ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-11-27", market_state=ms,
+            )
+            self.assertTrue(any("高危回避" in e and "510300" in e for e in errs_role))
+
+            # 盘中净值 is an accepted IOPV gloss
+            eu["etfs"][1]["action_role"] = "高危回避"
+            eu["etfs"][2]["premium_note"] = "买前核对盘中净值（IOPV），溢价超 2% 不追。"
+            errs_iopv_ok = psd._validate_merged_equity_dbs(
+                ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-11-27", market_state=ms,
+            )
+            self.assertEqual(errs_iopv_ok, [])
+
+            # OTC suspended note forbids unqualified 零溢价场外联接 unless 限购|暂停 disclosed (both word orders)
+            for susp_note in (
+                "溢价偏高且场外联接暂停申购，切忌追高。",
+                "自 2026-11-04 起持续暂停申购（场外/一级申购仍暂停）。",
+            ):
+                with self.subTest(susp_note=susp_note):
+                    eu["etfs"][1]["premium_note"] = susp_note
+                    eu["etfs"][1]["otc_feeder"] = "零溢价场外联接：050025(A) / 006075(C)"
+                    errs_otc = psd._validate_merged_equity_dbs(
+                        ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                        as_of_date="2026-11-27", market_state=ms,
+                    )
+                    self.assertTrue(any("零溢价场外联接" in e and "510300" in e for e in errs_otc))
+
+            eu["etfs"][1]["otc_feeder"] = "零溢价场外联接：050025(A)（当前暂停申购）"
+            errs_otc_ok = psd._validate_merged_equity_dbs(
+                ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-11-27", market_state=ms,
+            )
+            self.assertEqual(errs_otc_ok, [])
 
     def test_ah_benchmark_0_6pp_and_intra_dossier_dividend_guards(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -522,12 +561,199 @@ class PatchStateDbsGuardsTests(unittest.TestCase):
             self.assertEqual(stats["stocks_patched"], 1)
             self.assertIn("$60,357", merged["dossiers"]["us-stock:MSTR"]["moat"])
 
+            # 6-digit BTC ($100,000+) sibling token drift is also caught!
+            dd["dossiers"]["us-stock:MSTR"]["baseline_note"] = "比特币突破 $105,400。"
+            dd["dossiers"]["us-stock:MSTR"]["moat"] = "按币价 $105,400 测算浮盈扩大。"
+            with self.assertRaisesRegex(ValueError, r"\$105,400"):
+                psd._merge_deep_dossiers(
+                    dd,
+                    {
+                        "deep_dossiers": {
+                            "dossiers_patch": {
+                                "us-stock:MSTR": {
+                                    "baseline_note": "比特币回落至 $102,800。",
+                                }
+                            }
+                        }
+                    },
+                    "2026-11-27_0730",
+                    "2026-11-27",
+                )
+
+    def test_ah_sign_flip_historical_context_and_financials_dividend_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_clean_fixture(root)
+            ma = json.loads((root / "equity/state/multi_asset_channels.json").read_text("utf-8"))
+            eu = json.loads((root / "equity/state/etf_universe.json").read_text("utf-8"))
+            dd = json.loads((root / "equity/state/deep_dossiers.json").read_text("utf-8"))
+            ms = json.loads((root / "equity/state/market_state.json").read_text("utf-8"))
+
+            # Negative AH benchmark (-21.1%): unsigned 倒挂 / A折H / AH 折价 negate cleanly to -21.1%
+            ms["cross_market_linkages"]["ah_premium_radar"]["benchmarks"][0]["ah_premium_pct"] = -21.1
+            dd["dossiers"]["a-share:601088"]["baseline_note"] = (
+                "AH 倒挂 21.1%，A折H 21.1%，历史中枢 AH 溢价 +35.0%，过去五年 AH 溢价 30.0%。股息率 4.0%。"
+            )
+            dd["dossiers"]["a-share:601088"]["valuation_anchor"] = "AH 折价 21.1%（历史均值 AH 溢价 +25.0%）。"
+            dd["dossiers"]["hk-stock:01088.HK"]["baseline_note"] = "H 股相对 A 股呈 AH 倒挂 21.1%。"
+            dd["dossiers"]["hk-stock:01088.HK"]["valuation_anchor"] = "当前 A折H 21.1%。"
+
+            errs_ok = psd._validate_merged_equity_dbs(
+                ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-11-27", market_state=ms,
+            )
+            self.assertEqual(errs_ok, [])
+
+            # Unsigned 倒挂 with drifted magnitude (18.0% -> -18.0% vs -21.1%) MUST fail!
+            dd["dossiers"]["a-share:601088"]["baseline_note"] = "AH 倒挂 18.0%，股息率 4.0%。"
+            errs_drift = psd._validate_merged_equity_dbs(
+                ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-11-27", market_state=ms,
+            )
+            self.assertTrue(any("AH premium" in e and "601088" in e for e in errs_drift))
+
+            # Reset AH; verify financials dividend mismatch IS caught, while expanded qualifiers are excluded
+            dd["dossiers"]["a-share:601088"]["baseline_note"] = "AH 倒挂 21.1%，股息率 4.0%。"
+            dd["dossiers"]["a-share:601088"]["financials"] = "财务稳健，股息率 3.2%。"
+            errs_fin = psd._validate_merged_equity_dbs(
+                ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-11-27", market_state=ms,
+            )
+            self.assertTrue(any("dividend yield mismatch" in e and "financials" in e for e in errs_fin))
+
+            # Expanded qualifiers (行业/均值/中证红利/H股/净股息/同业/目标) are excluded
+            dd["dossiers"]["a-share:601088"]["financials"] = (
+                "财务稳健，低于中证红利股息率 5.2%、高于行业均值股息率 2.5%，H股股息率 6.0%，净股息率 3.2%。"
+            )
+            errs_fin_ok = psd._validate_merged_equity_dbs(
+                ma, eu, dd, edition_id="2026-11-27_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-11-27", market_state=ms,
+            )
+            self.assertEqual(errs_fin_ok, [])
+
+    def test_dec1_historical_ctx_cross_db_fee_products_scoping_and_etf_updated_at(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_clean_fixture(root, edition_id="2026-12-01_0730", as_of_date="2026-12-01")
+            ma = json.loads((root / "equity/state/multi_asset_channels.json").read_text("utf-8"))
+            eu = json.loads((root / "equity/state/etf_universe.json").read_text("utf-8"))
+            dd = json.loads((root / "equity/state/deep_dossiers.json").read_text("utf-8"))
+            ms = json.loads((root / "equity/state/market_state.json").read_text("utf-8"))
+
+            # 1. Dec 1 HISTORICAL_CTX_RE: 12/01 and 1/5 recognized as historical context (no false sibling drift)
+            self.assertIsNotNone(psd.HISTORICAL_CTX_RE.search("12/01收+2.50%"))
+            self.assertIsNotNone(psd.HISTORICAL_CTX_RE.search("1/5报-1.20%"))
+            self.assertIsNotNone(psd.HISTORICAL_CTX_RE.search("01/05报-1.20%"))
+            self.assertIsNone(psd.HISTORICAL_CTX_RE.search("13/01非法月份"))
+
+            ma["channels"][0]["summary"] = "12/01测算收益率 +2.50%，稳健运作。"
+            ma["channels"][0]["today_alert"] = "当前收益率 +2.50%。"
+            # Add two products sharing +3.50% to verify products_upsert scoping avoids unrelated product FP
+            ma["channels"][0]["products"] = [
+                {
+                    "code": "511360",
+                    "name": "短融ETF",
+                    "metric": "+3.50%",
+                    "fee": "管理费0.15%+托管0.05%=综合0.20%",
+                    "note": "产品A当前+3.50%",
+                },
+                {
+                    "code": "510300",
+                    "name": "沪深300ETF",
+                    "metric": "+3.50%",
+                    "fee": "0.20%/年",
+                    "note": "无关产品B仍为+3.50%",
+                },
+            ]
+            # Updating today_alert +2.50% -> +2.10% passes because summary has 12/01 historical context!
+            # Updating product 511360 (both metric & note) from +3.50% -> +2.80% MUST NOT flag unrelated product 510300!
+            merged_ma, _ = psd._merge_multi_asset(
+                ma,
+                {
+                    "multi_asset_channels": {
+                        "channels_patch": {
+                            "reverse_repo": {
+                                "today_alert": "当前收益率 +2.10%。",
+                                "products_upsert": [
+                                    {"code": "511360", "metric": "+2.80%", "note": "产品A更新至+2.80%"},
+                                ],
+                            }
+                        }
+                    }
+                },
+                "2026-12-01_0730",
+                "2026-12-01",
+            )
+            # Cross-DB fee check: "管理费0.15%+托管0.05%=综合0.20%" matches parsed_fees[-1]==0.20% cleanly!
+            errs_fee = psd._validate_merged_equity_dbs(
+                merged_ma, eu, dd, edition_id="2026-12-01_0730", gold_tier0_active=True, expected_pool=6,
+                as_of_date="2026-12-01", market_state=ms,
+            )
+            self.assertEqual(errs_fee, [])
+
+            # However, updating 511360's metric without updating 511360's own stale note STILL fails!
+            with self.assertRaisesRegex(ValueError, r"products\[0\]\.note"):
+                psd._merge_multi_asset(
+                    ma,
+                    {
+                        "multi_asset_channels": {
+                            "channels_patch": {
+                                "reverse_repo": {
+                                    "products_upsert": [{"code": "511360", "metric": "+2.80%"}],
+                                }
+                            }
+                        }
+                    },
+                    "2026-12-01_0730",
+                    "2026-12-01",
+                )
+
+            # 2. Per-ETF updated_at set ONLY on touched ETFs + --inspect etf-freshness
+            merged_eu, eu_stats = psd._merge_etf_universe(
+                eu,
+                {
+                    "etf_universe": {
+                        "etfs_upsert": [
+                            {"code": "510300", "aum": "2,300 亿元"},
+                        ]
+                    }
+                },
+                "2026-12-01_0730",
+                "2026-12-01",
+            )
+            self.assertEqual(eu_stats["etfs_updated"], 1)
+            by_code = {e["code"]: e for e in merged_eu["etfs"]}
+            self.assertEqual(by_code["510300"].get("updated_at"), "2026-12-01")
+            self.assertNotIn("updated_at", by_code["511360"])
+
+            (root / "equity/state/etf_universe.json").write_text(
+                json.dumps(merged_eu, ensure_ascii=False), encoding="utf-8"
+            )
+            freshness = psd.inspect_state_dbs(root, "etf-freshness")
+            self.assertEqual(freshness["latest_updated_at"], "2026-12-01")
+            self.assertEqual(freshness["recently_updated_codes"], ["510300"])
+            self.assertEqual(freshness["updated_at_histogram"]["2026-12-01"], 1)
+            self.assertEqual(freshness["updated_at_histogram"]["unset"], len(merged_eu["etfs"]) - 1)
+
+            # 3. BANNED_INTERNAL_RE catches svg_geometry.py, _rollover_patch.json, _archive_patch.json
+            for banned in ("svg_geometry.py", "_rollover_patch.json", "_archive_patch.json"):
+                with self.subTest(banned=banned):
+                    self.assertTrue(psd.BANNED_INTERNAL_RE.search(f"禁止提及 {banned}"))
+
 
 class AtomicRsiAuditAndInspectTests(unittest.TestCase):
     def _valid_rsi_entry(self, run_id: str) -> dict:
         return {
             "run_id": run_id,
             "edition_type": "weekday_evening_unified",
+            "scores": {
+                "data_freshness_and_zero_hallucination": 5,
+                "prior_forecast_calibration": 5,
+                "plain_language_and_strict_readability": 5,
+                "visual_layout_and_pagination": 4,
+                "research_efficiency_and_source_quality": 4,
+                "engine_and_guardrail_reliability": 5,
+            },
             "total_score": 28,
             "max_score": 30,
             "review_closure": {
@@ -568,13 +794,56 @@ class AtomicRsiAuditAndInspectTests(unittest.TestCase):
 
             gold_rsi = root / "gold/daily/rsi_metrics.json"
             eq_rsi = root / "equity/state/rsi_metrics.json"
-            seed = {"schema_version": "1.0", "runs": [{"run_id": "2026-11-27_0730"}]}
+            seed = {
+                "schema_version": "1.0",
+                "score_dimensions": list(psd.RSI_REQUIRED_SCORE_KEYS),
+                "runs": [{"run_id": "2026-11-27_0730"}],
+            }
             gold_rsi.write_text(json.dumps(seed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             eq_rsi.write_text(json.dumps(seed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
             gold_patch = root / "gold/daily/_rsi_patch.json"
             eq_patch = root / "equity/state/_rsi_patch.json"
             entry = self._valid_rsi_entry("2026-11-27_1800")
+
+            # Reject list-root rsi_metrics.json!
+            gold_rsi.write_text("[]\n", encoding="utf-8")
+            gold_patch.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "list-root"):
+                psd.append_gold_rsi(root)
+            gold_rsi.write_text(json.dumps(seed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            # Reject invalid scores: missing dim, bool value, out-of-range, wrong total_score, wrong max_score
+            bad_dims = json.loads(json.dumps(entry))
+            del bad_dims["scores"]["visual_layout_and_pagination"]
+            gold_patch.write_text(json.dumps(bad_dims, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "score_dimensions"):
+                psd.append_gold_rsi(root)
+
+            bad_bool = json.loads(json.dumps(entry))
+            bad_bool["scores"]["visual_layout_and_pagination"] = True
+            gold_patch.write_text(json.dumps(bad_bool, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not bool"):
+                psd.append_gold_rsi(root)
+
+            bad_range = json.loads(json.dumps(entry))
+            bad_range["scores"]["visual_layout_and_pagination"] = 6
+            bad_range["total_score"] = 30
+            gold_patch.write_text(json.dumps(bad_range, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, r"1\.\.5"):
+                psd.append_gold_rsi(root)
+
+            bad_total = json.loads(json.dumps(entry))
+            bad_total["total_score"] = 29
+            gold_patch.write_text(json.dumps(bad_total, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "total_score"):
+                psd.append_gold_rsi(root)
+
+            bad_max = json.loads(json.dumps(entry))
+            bad_max["max_score"] = 25
+            gold_patch.write_text(json.dumps(bad_max, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "max_score"):
+                psd.append_gold_rsi(root)
 
             # Reject open finding status
             bad_entry = json.loads(json.dumps(entry))
@@ -684,6 +953,326 @@ class AtomicRsiAuditAndInspectTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "already contains"):
                 psd.prepend_equity_audit(root)
 
+            # Reject entry_md missing a '## ' heading referencing edition_id
+            missing_hdr = {
+                "edition_id": "2026-11-28_0730",
+                "entry_md": "### 错误标题级别 `2026-11-28_0730`\n\n- 缺少二级标题。",
+            }
+            patch_path.write_text(json.dumps(missing_hdr, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must contain a '## ' heading"):
+                psd.prepend_equity_audit(root)
+
+            # Rollover fallback: header-only audit_ledger.md without '---' still prepends cleanly!
+            header_only = "# 内部后台审计账本\n\n> 月度归档后新月账本说明。\n> 第二行引用。\n"
+            audit_path.write_text(header_only, encoding="utf-8")
+            dec_payload = {
+                "edition_id": "2026-12-01_0730",
+                "entry_md": "## 2026-12-01 07:55 CST · `2026-12-01_0730` 十二月首刊\n\n- 新月首条审计记录。",
+            }
+            patch_path.write_text(json.dumps(dec_payload, ensure_ascii=False), encoding="utf-8")
+            res_roll = psd.prepend_equity_audit(root)
+            self.assertTrue(res_roll["order_proof_verified"])
+            rolled_txt = audit_path.read_text("utf-8")
+            self.assertIn("> 第二行引用。\n\n---\n\n## 2026-12-01 07:55 CST", rolled_txt)
+            self.assertTrue(
+                psd._preserves_order(
+                    psd._nonblank_lines(header_only.encode("utf-8")),
+                    psd._nonblank_lines(rolled_txt.encode("utf-8")),
+                )
+            )
+
+    def test_rollover_equity_month_and_atomic_new_file_rollback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "equity" / "state").mkdir(parents=True)
+
+            sample_md = {
+                "a_share": (
+                    "# 中国 A 股跨周期全景手册\n\n"
+                    "## 阅读导航（基准时点：2026 年 11 月 25 日 13:30 北京时间）\n\n"
+                    "## 附录二：全量龙头总表\n\n"
+                    "| 序号 | 代码 | 名称 |\n| :---: | :---: | :--- |\n"
+                    "| 1 | `600036` | 招商银行 |\n"
+                    "| 2 | `601088` | 中国神华 |\n"
+                ),
+                "hk_stock": (
+                    "# 香港股市跨周期全景手册\n\n"
+                    "## 阅读导航（基准时点：2026 年 11 月 25 日 13:30 北京时间）\n\n"
+                    "## 附表二：港股龙头总表\n\n"
+                    "| 序号 | 代码 | 名称 |\n| :---: | :---: | :--- |\n"
+                    "| 1 | `00700.HK` | 腾讯控股 |\n"
+                ),
+                "us_stock": (
+                    "# 美国股市跨周期全景手册\n\n"
+                    "## 一、底层逻辑（基准时点：2026 年 11 月 25 日 13:30 北京时间）\n\n"
+                    "## 附录二：美股龙头总表\n\n"
+                    "| 序号 | 代码 | 名称 |\n| :---: | :---: | :--- |\n"
+                    "| 1 | `MSFT` | 微软 |\n"
+                ),
+            }
+            for mkt, md in sample_md.items():
+                (root / "equity" / f"{mkt}_market_report_2026_11.md").write_text(md, encoding="utf-8")
+                (root / "equity" / f"{mkt}_market_report_latest.md").write_text(md, encoding="utf-8")
+                meta = {
+                    "period_slug": "2026_11",
+                    "version": "2026年11月刊",
+                    "title": f"{mkt} 标题",
+                    "benchmark_time": "2026-11-25 13:30 北京时间",
+                    "page_footer": f"{mkt} 手册（2026年11月）",
+                    "chart_live": {
+                        "as_of_full": "2026-11-25 13:30 北京时间",
+                        "as_of_year_float": 2026.908,
+                    },
+                }
+                (root / "equity" / f"report_meta_{mkt}.json").write_text(
+                    json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                )
+
+            patch_path = root / "equity/state/_rollover_patch.json"
+            valid_patch = {
+                "prev_period_slug": "2026_11",
+                "new_period_slug": "2026_12",
+                "as_of_full": "2026-12-01 07:55 北京时间",
+                "as_of_year_float": 2026.916,
+                "benchmark_time": "2026-12-01 07:55 北京时间",
+                "markets": {
+                    "a_share": {
+                        "header_replacements": [
+                            ["2026 年 11 月 25 日 13:30 北京时间", "2026 年 12 月 01 日 07:55 北京时间"]
+                        ],
+                        "subtitle": "十二月策略基线",
+                    },
+                    "us_stock": {
+                        "page_footer": "美股全景手册（2026-12 定制页脚）",
+                    },
+                },
+                "note": "十二月首日自动月度滚动",
+            }
+
+            # Unknown top key lists allowed keys
+            patch_path.write_text(json.dumps({**valid_patch, "bad_key": 1}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "allowed:"):
+                psd.rollover_equity_month(root, dry_run=True)
+
+            # Reject non-later period slug
+            patch_path.write_text(json.dumps({**valid_patch, "new_period_slug": "2026_11"}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "strictly later"):
+                psd.rollover_equity_month(root, dry_run=True)
+
+            # Reject as_of_full not matching new_period_slug month prefix
+            patch_path.write_text(
+                json.dumps({**valid_patch, "as_of_full": "2026-11-30 18:00 北京时间"}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "must start with '2026-12'"):
+                psd.rollover_equity_month(root, dry_run=True)
+
+            # Reject header_replacements that alters Appendix 2 stock rows!
+            bad_app2 = json.loads(json.dumps(valid_patch))
+            bad_app2["markets"]["a_share"]["header_replacements"] = [["招商银行", "改写龙头"]]
+            patch_path.write_text(json.dumps(bad_app2, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Appendix 2"):
+                psd.rollover_equity_month(root, dry_run=True)
+
+            # Reject header_replacements introducing banned internal term or local path
+            bad_leak = json.loads(json.dumps(valid_patch))
+            bad_leak["markets"]["a_share"]["header_replacements"] = [
+                ["2026 年 11 月 25 日 13:30 北京时间", "见 /Users/bob/secret.md"]
+            ]
+            patch_path.write_text(json.dumps(bad_leak, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "local filesystem path"):
+                psd.rollover_equity_month(root, dry_run=True)
+
+            # Atomic rollback test: fail os.replace on the 5th file -> brand-new 2026_12 files unlinked & existing restored!
+            patch_path.write_text(json.dumps(valid_patch, ensure_ascii=False), encoding="utf-8")
+            real_replace = psd.os.replace
+            call_count = {"n": 0}
+
+            def flaky_replace(src, dst):
+                call_count["n"] += 1
+                if call_count["n"] == 5:
+                    raise OSError("simulated disk error mid-rollover")
+                return real_replace(src, dst)
+
+            with patch.object(psd.os, "replace", side_effect=flaky_replace):
+                with self.assertRaisesRegex(OSError, "simulated disk error"):
+                    psd.rollover_equity_month(root)
+
+            # Brand-new 2026_12 files must be completely rolled back (deleted), existing files intact!
+            for mkt in psd.ROLLOVER_MARKETS:
+                self.assertFalse((root / "equity" / f"{mkt}_market_report_2026_12.md").exists())
+                self.assertEqual(
+                    (root / "equity" / f"{mkt}_market_report_latest.md").read_text("utf-8"),
+                    sample_md[mkt],
+                )
+                meta_rb = json.loads((root / "equity" / f"report_meta_{mkt}.json").read_text("utf-8"))
+                self.assertEqual(meta_rb["period_slug"], "2026_11")
+            self.assertTrue(patch_path.exists())
+
+            # Dry-run leaves disk untouched and retains patch
+            res_dry = psd.rollover_equity_month(root, dry_run=True)
+            self.assertEqual(res_dry["files_staged"], 9)
+            self.assertFalse((root / "equity/a_share_market_report_2026_12.md").exists())
+            self.assertTrue(patch_path.exists())
+
+            # Real rollover via CLI succeeds, writes 9 files atomically, deletes patch
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(StringIO()):
+                self.assertEqual(psd.main(["--rollover-equity-month"]), 0)
+            self.assertFalse(patch_path.exists())
+
+            for mkt in psd.ROLLOVER_MARKETS:
+                p_new = root / "equity" / f"{mkt}_market_report_2026_12.md"
+                p_lat = root / "equity" / f"{mkt}_market_report_latest.md"
+                self.assertTrue(p_new.is_file())
+                self.assertEqual(p_new.read_bytes(), p_lat.read_bytes())
+                self.assertEqual(stat.S_IMODE(p_new.stat().st_mode), 0o644)
+                meta_new = json.loads((root / "equity" / f"report_meta_{mkt}.json").read_text("utf-8"))
+                self.assertEqual(meta_new["period_slug"], "2026_12")
+                self.assertEqual(meta_new["version"], "2026年12月刊")
+                self.assertEqual(meta_new["benchmark_time"], "2026-12-01 07:55 北京时间")
+                self.assertEqual(meta_new["chart_live"]["as_of_full"], "2026-12-01 07:55 北京时间")
+                self.assertEqual(meta_new["chart_live"]["as_of_year_float"], 2026.916)
+            self.assertIn("2026 年 12 月 01 日", (root / "equity/a_share_market_report_2026_12.md").read_text("utf-8"))
+            self.assertEqual(
+                json.loads((root / "equity/report_meta_a_share.json").read_text("utf-8"))["subtitle"],
+                "十二月策略基线",
+            )
+            self.assertEqual(
+                json.loads((root / "equity/report_meta_a_share.json").read_text("utf-8"))["page_footer"],
+                "a_share 手册（2026年12月）",
+            )
+            self.assertEqual(
+                json.loads((root / "equity/report_meta_us_stock.json").read_text("utf-8"))["page_footer"],
+                "美股全景手册（2026-12 定制页脚）",
+            )
+
+            # Second identical rollover refuses to overwrite existing 2026_12 flagship!
+            patch_path.write_text(json.dumps(valid_patch, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Refusing to overwrite"):
+                psd.rollover_equity_month(root)
+
+    def test_archive_gold_ledgers_with_order_proof_and_subsequent_prepend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            daily = root / "gold" / "daily"
+            daily.mkdir(parents=True)
+
+            orig_cl = (
+                "# 黄金每日深度研报演化日志\n\n"
+                "> 公开演化日志导语第一行。\n"
+                "> 公开演化日志导语第二行。\n\n"
+                "---\n\n"
+                "<!-- GOLD_EDITION_CHANGELOG 2026-11-27_0730 -->\n\n"
+                "## 2026-11-27 早报演化记录\n"
+                "- 历史记录条目 A。\n"
+            )
+            orig_au = (
+                "# 黄金研报体系·审计账本（AUDIT_LOG）\n\n"
+                "> **档案定位**：内部法证审计说明。\n\n"
+                "---\n\n"
+                '<!-- GOLD_EDITION_REVIEW {"edition_id": "2026-11-27_0730"} -->\n\n'
+                "## 2026-11-27 审计条目\n"
+                "- 审计详录 B。\n"
+            )
+            cl_path = daily / "CHANGELOG.md"
+            au_path = daily / "AUDIT_LOG.md"
+            cl_path.write_text(orig_cl, encoding="utf-8")
+            au_path.write_text(orig_au, encoding="utf-8")
+
+            patch_path = daily / "_archive_patch.json"
+            # Unknown key error lists allowed keys
+            patch_path.write_text(json.dumps({"archive_period": "2026_11", "extra": 1}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, r"allowed: \['archive_period', 'note'\]"):
+                psd.archive_gold_ledgers(root, dry_run=True)
+
+            # Dry-run verifies proof without mutating files
+            patch_path.write_text(
+                json.dumps({"archive_period": "2026_11", "note": "十一月月度归档"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            res_dry = psd.archive_gold_ledgers(root, dry_run=True)
+            self.assertTrue(res_dry["order_proof_verified"])
+            self.assertFalse((daily / "archive" / "CHANGELOG_2026_11.md").exists())
+            self.assertTrue(patch_path.exists())
+
+            # Real archive via CLI
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(StringIO()):
+                self.assertEqual(psd.main(["--archive-gold-ledgers"]), 0)
+            self.assertFalse(patch_path.exists())
+
+            arc_cl = daily / "archive" / "CHANGELOG_2026_11.md"
+            arc_au = daily / "archive" / "AUDIT_LOG_2026_11.md"
+            self.assertEqual(arc_cl.read_bytes(), orig_cl.encode("utf-8"))
+            self.assertEqual(arc_au.read_bytes(), orig_au.encode("utf-8"))
+            for p in (arc_cl, arc_au, cl_path, au_path):
+                self.assertEqual(stat.S_IMODE(p.stat().st_mode), 0o644)
+
+            active_cl = cl_path.read_text("utf-8")
+            active_au = au_path.read_text("utf-8")
+            self.assertIn("archive/CHANGELOG_2026_11.md", active_cl)
+            self.assertIn("archive/AUDIT_LOG_2026_11.md", active_au)
+            self.assertNotIn("2026-11-27_0730", active_cl)
+            self.assertNotIn("2026-11-27_0730", active_au)
+
+            # Mathematical order preservation proof: archive_bytes + active_bytes preserves 100% of prior nonblank lines!
+            self.assertTrue(
+                psd._preserves_order(
+                    psd._nonblank_lines(orig_cl.encode("utf-8")),
+                    psd._nonblank_lines(arc_cl.read_bytes() + b"\n" + cl_path.read_bytes()),
+                )
+            )
+            self.assertTrue(
+                psd._preserves_order(
+                    psd._nonblank_lines(orig_au.encode("utf-8")),
+                    psd._nonblank_lines(arc_au.read_bytes() + b"\n" + au_path.read_bytes()),
+                )
+            )
+
+            # Refuses overwrite if archive already exists
+            patch_path.write_text(json.dumps({"archive_period": "2026_11"}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Refusing to overwrite"):
+                psd.archive_gold_ledgers(root)
+            patch_path.unlink()
+
+            # Subsequent --prepend-gold-ledgers works seamlessly on the newly reset active ledgers!
+            (root / "gold" / "data_snapshot.json").write_text(
+                json.dumps({"edition_id": "2026-12-01_0730", "as_of_short": "2026-12-01 07:55"}),
+                encoding="utf-8",
+            )
+            review_json = json.dumps(
+                {
+                    "edition_id": "2026-12-01_0730",
+                    "as_of_short": "2026-12-01 07:55",
+                    "note": "十二月首刊核验",
+                    "sources": {
+                        "real_yield": ["https://home.treasury.gov/test"],
+                        "rate_spread": ["https://markets.newyorkfed.org/test"],
+                        "vix": ["https://cdn-api.cboe.com/test"],
+                        "ny_close": ["https://www.lbma.org.uk/test"],
+                    },
+                    "forecast_review": {
+                        "status": "none_due",
+                        "note": "本班次无到期项",
+                        "sources": [],
+                    },
+                },
+                ensure_ascii=False,
+            )
+            (daily / "_ledger_patch.json").write_text(
+                json.dumps(
+                    {
+                        "edition_id": "2026-12-01_0730",
+                        "changelog_entry_md": "## 2026-12-01 早报\n- 十二月首刊记录。",
+                        "audit_review_block_md": f"<!-- GOLD_EDITION_REVIEW {review_json} -->\n\n## 2026-12-01 审计\n- 通过。",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            res_prep = psd.prepend_gold_ledgers(root)
+            self.assertTrue(res_prep["order_proof_verified"])
+            self.assertIn("GOLD_EDITION_CHANGELOG 2026-12-01_0730", cl_path.read_text("utf-8"))
+            self.assertIn("archive/CHANGELOG_2026_11.md", cl_path.read_text("utf-8"))
+
     def test_inspect_mode_all_six_targets_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -756,6 +1345,7 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                         "2026-11-27T18:10:00+08:00",
                         "2026-11-27T18:18:00+08:00",
                         "2026-11-27T18:30:00+08:00",
+                        "2026-11-27T18:32:00+08:00",
                         "2026-11-27T18:35:00+08:00",
                     ])
                     with patch.object(edition_run, "cst_now", side_effect=lambda: next(ts_seq)):
@@ -785,10 +1375,13 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                             edition_run.complete(runs, token, wait=0)
 
                     st = edition_run.status(runs)[0]
+                    self.assertEqual(st["deployed_commit"], sha)
+                    self.assertEqual(st["pushed_commit"], sha)
                     self.assertEqual(st["phase_timestamps"]["begin"], "2026-11-27T18:00:00+08:00")
                     self.assertEqual(st["phase_timestamps"]["gold"], "2026-11-27T18:10:00+08:00")
                     self.assertEqual(st["phase_timestamps"]["equity"], "2026-11-27T18:18:00+08:00")
                     self.assertEqual(st["phase_timestamps"]["publish"], "2026-11-27T18:30:00+08:00")
+                    self.assertEqual(st["phase_timestamps"]["pushed"], "2026-11-27T18:32:00+08:00")
                     self.assertEqual(st["phase_timestamps"]["complete"], "2026-11-27T18:35:00+08:00")
                     self.assertEqual(
                         st["phase_durations_sec"],
@@ -814,6 +1407,8 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
             "gold/daily/_rsi_patch.json",
             "equity/state/_rsi_patch.json",
             "equity/state/_audit_patch.json",
+            "equity/state/_rollover_patch.json",
+            "gold/daily/_archive_patch.json",
         ):
             with self.subTest(rel=rel):
                 self.assertTrue(publish_site._is_forbidden_stage_path(rel))
@@ -851,7 +1446,15 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
     def test_permissions_json_includes_new_patch_state_dbs_commands_safely(self):
         repo = Path(__file__).resolve().parent.parent
         perms = json.loads((repo / "automations" / "permissions.json").read_text("utf-8"))
-        for verb in ("--append-gold-rsi", "--append-equity-rsi", "--prepend-equity-audit", "--inspect"):
+        self.assertEqual(len(perms), 54)
+        for verb in (
+            "--append-gold-rsi",
+            "--append-equity-rsi",
+            "--prepend-equity-audit",
+            "--rollover-equity-month",
+            "--archive-gold-ledgers",
+            "--inspect",
+        ):
             self.assertIn(f"command(python3 __REPO_ROOT__/scripts/patch_state_dbs.py {verb})", perms)
             self.assertIn(f"command(__PYTHON_BIN__ __REPO_ROOT__/scripts/patch_state_dbs.py {verb})", perms)
         for entry in perms:

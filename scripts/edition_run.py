@@ -808,6 +808,7 @@ def record_push(token: str, *, sha: str, repository: str) -> None:
         runs.execute("INSERT OR IGNORE INTO publications (token, sha, repository) VALUES (?, ?, ?)",
                      (token, sha, repository))
         runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (utc_now(), token))
+        _record_phase_timestamp(runs, token, "pushed")
 
 
 def _gh_json(*args: str):
@@ -910,6 +911,7 @@ def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
     url = verify_pages(sha, repository, wait)
     runs.execute("BEGIN IMMEDIATE")
     _publishing_run(runs, token)
+    runs.execute("UPDATE publications SET deployed_sha = ? WHERE token = ?", (sha, token))
     runs.execute(
         "UPDATE runs SET status = 'complete', updated = ?, outcome = ? WHERE token = ?",
         (utc_now(), f"{sha} {url}", token),

@@ -1,7 +1,7 @@
 # 两阶段调研与红队复核操作手册（一体化 10+1 日常主力 · 独立黄金 5+1 单跑回退）
 
 > **调度架构总览**：
-> - **一体化 10+1（日常主力 · 每日 `07:30` / `18:00` 定时双班次强制执行）**：在单仓库一体化单会话任务（`daily-global-investment-research` / `daily-global-investment-research-evening`）中，**阶段 2A 并行启动共享 10 路 `research` 子代理**：① 黄金与贵金属、② 中国 A 股、③ 中国香港股市、④ 美国股市、⑤ 跨资产宏观汇率与大宗、⑥ 三地社区与谣言辟谣、**⑦A 境内稳健与税优 6 渠道**（活钱与现金管理 `reverse_repo`、人民币银行存款全家桶 `large_cds`、债券与债券 ETF `bonds`、公募基金/银行理财与投顾 `funds_wm`、储蓄型商业保险 `savings_insurance`、个人养老金与税优账户 `tax_advantaged_accounts`）、**⑦B 跨境/固收增强/另类/私募信托与打新反诈**（境内外币存款与理财 `fx_deposits_wm`、场内外 QDII/香港互认与理财通 `qdii_mrf`、可转债 `convertible_bonds`、公募 REITs 与不动产租金对比 `c_reits`、非黄金大宗商品与白银铂钯 `commodity_etfs`、合规私募与标品信托 300 万专享 `private_funds_trust` 及横向打新工具箱/双层风控警示墙）、**⑧A 全市场 140+ 重点 ETF 实时溢价/停牌/规模/费率专线**、**⑧B 当班 4–6 只焦点股（及周日 6–10 只全池轮换）7 维深研专线**。待全部返回后启动 **阶段 2B 1 路统一跨轨红队**，一次覆盖双轨 7 类官方信源、同步锁定共享宏观数字、跨轨统一税费口径与黄金红灯互斥锁，详见仓库根宪章 `<REPO_ROOT>/AGENTS.md`。
+> - **一体化 10+1（日常主力 · 每日 `07:30` / `18:00` 定时双班次强制执行）**：在单仓库一体化单会话任务（`daily-global-investment-research` / `daily-global-investment-research-evening`）中，**阶段 2A 并行启动共享 10 路 `research` 子代理**：① 黄金与贵金属、② 中国 A 股、③ 中国香港股市、④ 美国股市、⑤ 跨资产宏观汇率与大宗、⑥ 三地社区与谣言辟谣、**⑦A 境内稳健与税优 6 渠道**（活钱与现金管理 `reverse_repo`、人民币银行存款全家桶 `large_cds`、债券与债券 ETF `bonds`、公募基金/银行理财与投顾 `funds_wm`、储蓄型商业保险 `savings_insurance`、个人养老金与税优账户 `tax_advantaged_accounts`）、**⑦B 跨境/固收增强/另类/私募信托与打新反诈**（境内外币存款与理财 `fx_deposits_wm`、场内外 QDII/香港互认与理财通 `qdii_mrf`、可转债 `convertible_bonds`、公募 REITs 与不动产租金对比 `c_reits`、非黄金大宗商品与白银铂钯 `commodity_etfs`、合规私募与标品信托 300 万专享 `private_funds_trust` 及横向打新工具箱/双层风控警示墙）、**⑧A 全市场 140+ 重点 ETF 实时溢价/停牌/规模/费率专线**、**⑧B 当班全部约 16 只焦点股（A/港/美各 4–6 只及周日 6–10 只全池轮换）7 维深研与近 24 小时官方公告硬扫雷专线**。待全部返回后启动 **阶段 2B 1 路统一跨轨红队**，一次覆盖双轨 7 类官方信源、同步锁定共享宏观数字、跨轨统一税费口径与黄金红灯互斥锁，详见仓库根宪章 `<REPO_ROOT>/AGENTS.md`。
 > - **独立黄金 5+1（单跑回退 · 仅单独维护、勘误或手动重跑黄金轨时使用）**：当不联动权益与多元渠道轨、仅独立运行黄金深度研报时，回退至下文第 2–3 节的 **5 路黄金专项并发调研 + 第 6 路黄金红队**；其全部信源清单与一体化 10+1 的第 ①、⑤、⑥ 路一一对应。
 
 本文档固化 `global-investment-research/gold` 的全信源外部调研、无情红队对抗审计、周末/局部休市切换、`CHANGELOG.md` / `AUDIT_LOG.md` / `SCORECARD.md` 三账本维护及月度归档协议与 Step 5 RSI 盲审模板（纯网页版，不涉任何离线二进制文档）。
@@ -11,7 +11,7 @@
 ## 1. 安全、防卡壳、官收白/黑名单与抗阻塞前提
 
 1. **命令边界、防卡壳红线与三层 RSI 防篡改**：
-   - 在定时自动化任务中，主代理严禁运行 `date`、`ls`、`curl` 等未授权 shell 命令，**亦严禁调用 `edit_file`**：中小 Markdown 与轻量快照（日报、`data_snapshot.json`、`market_state.json`、`SCORECARD.md`、`RSI_*` 等）一律使用 `write_file` 全量写盘；**权益三大扩展大 JSON（合计 ~830 KB）与持续增长的黄金历史双账本（`gold/daily/CHANGELOG.md` / `gold/daily/AUDIT_LOG.md`）统一写微型补丁（`_edition_patch.json` / `_ledger_patch.json`）并调用预授权 `scripts/patch_state_dbs.py` 原子合并或无损头插（彻底防 300s 超时）**；
+   - 在定时自动化任务中，主代理严禁运行 `date`、`ls`、`curl` 等未授权 shell 命令，**亦严禁调用 `edit_file`**：中小 Markdown 与轻量快照（日报、`data_snapshot.json`、`market_state.json`、`SCORECARD.md`、两份 `RSI_PLAYBOOK.md` 等）一律使用 `write_file` 全量写盘；**所有大文件、增长型账本、双轨 `rsi_metrics.json` 与月初滚存/归档严禁整文件重写，统一写微型补丁并调用预授权 `scripts/patch_state_dbs.py` 原子命令（彻底防 300s 超时）**：权益三大扩展大 JSON（`_edition_patch.json` → `--apply`，只读查库用 `--inspect <target>`）、黄金历史双账本（`_ledger_patch.json` → `--prepend-gold-ledgers`；跨月归档 `_archive_patch.json` → `--archive-gold-ledgers`）、权益审计账本（`_audit_patch.json` → `--prepend-equity-audit`）、双轨 `rsi_metrics.json`（`gold/daily/_rsi_patch.json` → `--append-gold-rsi`、`equity/state/_rsi_patch.json` → `--append-equity-rsi`）及权益月初旗舰滚存（`_rollover_patch.json` → `--rollover-equity-month`）；
    - 正常发刊阶段（Step 1–4）严禁修改任何 `.py` 脚本与规则文件，仅在 Step 5 RSI 闭环中严格按 Tier A/B/C 权限边界执行受控自进化（永不削弱门禁，永不静默修改 `AGENTS.md` 或核心金融风控红线）；
    - 调用预授权质检、大库补丁与发布脚本（`scripts/patch_state_dbs.py`、`gold/lint_readability.py`、`equity/lint_equity.py`、`scripts/build_site.py`、`scripts/lint_site.py`、`scripts/publish_site.py`、`scripts/edition_run.py` 及排障用 `unittest`）必须使用绝对路径裸命令（禁加 `cd &&` 前缀）；常规班次执行**惰性主报告加载**（仅读 `master_snapshot.json` 核验 5 大触发条件，命中时才全量读取主报告 MD）；同场修订加 `_r2` 后缀严禁覆写既有归档。
 2. **联网边界**：所有外部实时行情、政策原文、研报与舆情调研，统一交由 `research` 子代理使用中英双语 `search_web` 完成。
@@ -39,7 +39,7 @@
 | **第 ⑤ 路：跨资产宏观、汇率与地缘专线** | **黄金专线 2 + 黄金专线 4** | G4 央行、美债 `DFII10`/`2Y-FF`、汇市/油气/VIX/信用配管、霍尔木兹与地缘排雷日历 |
 | **第 ⑥ 路：三地社区情绪与谣言辟谣专线** | **黄金专线 5** | 国内外金融论坛、社媒情绪极值、Polymarket/Kalshi 赔率与官方谣言证伪 |
 | **第 ⑦A / ⑦B 路：12 大个人多元渠道双专线** | *仅一体化班次启用（单跑跳过）* | ⑦A 境内稳健税优 6 渠道；⑦B 跨境/固收增强/另类/私募信托与打新反诈 |
-| **第 ⑧A / ⑧B 路：140+ ETF 与焦点股 7 维双专线** | *仅一体化班次启用（单跑跳过）* | ⑧A 全市场 140+ ETF 溢价/停牌/规模费率；⑧B 当班 4–6 只焦点股（周日 6–10 只）7 维深研 |
+| **第 ⑧A / ⑧B 路：140+ ETF 与焦点股 7 维双专线** | *仅一体化班次启用（单跑跳过）* | ⑧A 全市场 140+ ETF 溢价/停牌/规模费率；⑧B 当班全部约 16 只焦点股（A/港/美各 4–6 只及周日 6–10 只全池轮换）7 维深研与近 24h 扫雷 |
 
 - **独立黄金 5 路细分清单（单跑黄金轨时使用；亦作为一体化第 ①/⑤/⑥ 路的完整检索验收单）**：
 
@@ -104,11 +104,11 @@
 为确保面向读者的收敛主刊清爽精炼（且全篇零内部工程词/文件名泄露），同时保留机构级可审计性与公开可证伪承诺，以下三类账本**与报告正文物理分离**：
 
 1. **`daily/CHANGELOG.md`（迭代演进总账）**：
-   - 每发一刊，将同期标记 `<!-- GOLD_EDITION_CHANGELOG <edition_id> -->`、本刊完整相对路径（同场修订加 `_r2`）以及阶段 2B 输出的完整【新增 / 更新 / 修正 / 删除】摘要写入微型补丁 `_ledger_patch.json`，调用预授权 `scripts/patch_state_dbs.py` 在文件**最顶部**无损头插（防 300s 超时）；
-   - 后续任务继承时若超过 150 行仅读取前 150 行；跨月膨胀时支持将已完成月份条目按月归档至 **`gold/daily/archive/CHANGELOG_YYYY_MM.md`**（归档 + 活跃合并保留全部历史非空行原序）。
+   - 每发一刊，将同期标记 `<!-- GOLD_EDITION_CHANGELOG <edition_id> -->`、本刊完整相对路径（同场修订加 `_r2`）以及阶段 2B 输出的完整【新增 / 更新 / 修正 / 删除】摘要写入微型补丁 `_ledger_patch.json`，调用预授权 `scripts/patch_state_dbs.py --prepend-gold-ledgers` 在文件**最顶部**无损头插（防 300s 超时）；
+   - 后续任务继承时若超过 150 行仅读取前 150 行；跨月膨胀时写 `gold/daily/_archive_patch.json` 运行预授权 `scripts/patch_state_dbs.py --archive-gold-ledgers`，将已完成月份条目无损归档至 **`gold/daily/archive/CHANGELOG_YYYY_MM.md`**（归档 + 活跃合并保留全部历史非空行原序）。
 2. **`daily/AUDIT_LOG.md`（独立红队质检与法证账本）**：
-   - 同样经 `_ledger_patch.json` + `scripts/patch_state_dbs.py` 无损头插同期 `<!-- GOLD_EDITION_REVIEW {...} -->`（含四关 HTTPS 证据与 `forecast_review`），并持续维护「三大信任资产」（拦谣、升级、校准及 `0 / N` 核心影响）与一手官方数据库索引；
-   - 跨月膨胀时支持将历史月度记录按月归档至 **`gold/daily/archive/AUDIT_LOG_YYYY_MM.md`**（归档 + 活跃合并保留全部历史非空行原序）；报告正文面向读者，严禁出现内部工程文件名、版本号或「红队」「法证」等内部术语。
+   - 同样经 `_ledger_patch.json` + `scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插同期 `<!-- GOLD_EDITION_REVIEW {...} -->`（含四关 HTTPS 证据与 `forecast_review`），并持续维护「三大信任资产」（拦谣、升级、校准及 `0 / N` 核心影响）与一手官方数据库索引；
+   - 跨月膨胀时写 `gold/daily/_archive_patch.json` 运行预授权 `scripts/patch_state_dbs.py --archive-gold-ledgers`，将历史月度记录无损归档至 **`gold/daily/archive/AUDIT_LOG_YYYY_MM.md`**（归档 + 活跃合并保留全部历史非空行原序）；报告正文面向读者，严禁出现内部工程文件名、版本号或「红队」「法证」等内部术语。
 3. **`daily/SCORECARD.md`（面向投资者的公开可证伪预测记分卡）**：
    - 每刊写入 `<!-- GOLD_EDITION_SCORECARD <edition_id> -->`，同步回验到期预判（`✅ 兑现` / `⚠️ 部分兑现` / `❌ 证伪` / `⚪ 条件未触发`）并锁定追加新追踪预判，严守**历史记录零篡改宣言**；
    - 全文必须**零内部工程/RSI/脚本文件名词汇**，受 `lint_readability.py` 强制检验。
@@ -138,4 +138,4 @@
 
 ### Meta-RSI 周期总复盘与纯网页站点单次发布
 - 当 `daily/rsi_metrics.json` 中 `len(runs) % 10 == 0` 时，盲审子代理额外对比近 10 刊的 6 维均值趋势、一次过 `--strict` 比率、高频扣分项与预判命中率，输出 1–3 条系统级 Tier C 进化提案呈报用户。
-- **终检全绿与纯网页单次发布**：修正已证实盲审发现并完成 Tier A/B 落盘后，复跑黄金与权益严格门禁；一体化班次按根契约登记进入 `publish`，用同一班次 token 执行一次 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`，随后运行 `edition_run.py complete <token>` 验证 GitHub Pages 部署成功后结束。
+- **终检全绿与纯网页单次发布**：修正已证实盲审发现并经 `scripts/patch_state_dbs.py --append-gold-rsi`（及一体化班次 `--append-equity-rsi`）无损追加两轨 `rsi_metrics.json`、完成 Tier A/B 落盘后，复跑黄金与权益严格门禁；一体化班次按根契约登记进入 `publish`，用同一班次 token 执行一次 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`，随后运行 `edition_run.py complete <token>` 验证 GitHub Pages 部署成功后结束。

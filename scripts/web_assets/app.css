@@ -900,7 +900,7 @@ h1.cover-title,
   font-family: var(--font-mono);
   font-size: 11.5px;
   font-weight: 750;
-  color: var(--accent-gold);
+  color: #854d0e;
   white-space: nowrap;
 }
 [data-theme="dark"] .holiday-date { color: #f6d58a; }
@@ -1939,6 +1939,7 @@ body[data-market="us-stock"] .cover-banner {
   border-radius: 5px;
   margin-bottom: 10px;
 }
+[data-theme="dark"] .cover-tag { color: #0f131a; }
 .cover-title,
 h1.cover-title {
   font-size: 22px;
@@ -2050,10 +2051,10 @@ body[data-market="us-stock"] .kpi-val { color: #7cc4fa; }
 .st-warn { background: var(--st-amber-bg); color: var(--st-amber-txt); border: 1px solid var(--st-amber-brd); }
 
 .vmark { display: inline-block; font-size: 14px; font-weight: 900; line-height: 1; vertical-align: -1px; margin: 0 3px 0 1px; }
-.vm-g { color: #009e73; }
+.vm-g { color: #047857; }
 .vm-b { color: #0072b2; }
-.vm-y { color: #c26d06; }
-.vm-r { color: #d55e00; }
+.vm-y { color: #9a5504; }
+.vm-r { color: #b94a00; }
 [data-theme="dark"] .vm-g { color: #34d399; }
 [data-theme="dark"] .vm-b { color: #38bdf8; }
 [data-theme="dark"] .vm-y { color: #fbbf24; }
@@ -2633,7 +2634,7 @@ body[data-market="us-stock"] .kpi-val { color: #7cc4fa; }
 .sector-cnt {
   font-family: var(--font-mono);
   font-size: 11px;
-  opacity: 0.72;
+  opacity: 0.85;
 }
 
 .filter-pill {
@@ -4283,7 +4284,7 @@ table.screener-table tbody tr.row-r td:first-child { border-left: 3.5px solid #c
   font-variant-numeric: tabular-nums;
 }
 .ch-risk-stars {
-  color: #b45309;
+  color: #92400e;
   letter-spacing: 0.04em;
 }
 [data-theme="dark"] .ch-risk-stars {
@@ -5531,10 +5532,10 @@ table.screener-table tbody tr.row-r td:first-child { border-left: 3.5px solid #c
   [data-theme="dark"] .chg-up { color: #b91c1c !important; }
   [data-theme="dark"] .chg-dn { color: #0d6963 !important; }
   [data-theme="dark"] .filter-pill.active { background: #171716 !important; color: #ffffff !important; border-color: #171716 !important; }
-  [data-theme="dark"] .vm-g { color: #009e73 !important; }
+  [data-theme="dark"] .vm-g { color: #047857 !important; }
   [data-theme="dark"] .vm-b { color: #0072b2 !important; }
-  [data-theme="dark"] .vm-y { color: #c26d06 !important; }
-  [data-theme="dark"] .vm-r { color: #d55e00 !important; }
+  [data-theme="dark"] .vm-y { color: #9a5504 !important; }
+  [data-theme="dark"] .vm-r { color: #b94a00 !important; }
   [data-theme="dark"] .svg-scroll, [data-theme="dark"] .chart-svg-stage { background: #ffffff !important; }
   [data-theme="dark"] .chart-box svg { filter: none !important; }
   .chart-box, .verdict-card, .persona-card, .persona-lead, .callout, .cover-banner,

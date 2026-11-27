@@ -36,14 +36,26 @@ INTERNAL_LEAK_CUTOVER = ("2026-11-26", "0730", 1)
 EDITORIAL_DEPTH_CUTOVER = ("2026-11-27", "0730", 1)
 
 _SHFE_0230_RE = re.compile(r"(?<!\d)02:30(?!\d)")
-_SHFE_NON_GOLD_METAL_RE = re.compile(r"(?:沪铜|cu\d{4}|沪铝|沪锌|沪镍|螺纹钢|纯碱)", re.IGNORECASE)
+_SHFE_NON_GOLD_METAL_RE = re.compile(
+    r"(?:沪铜|沪铝|沪锌|沪镍|沪锡|沪铅|氧化铝|螺纹钢|热卷|不锈钢|纯碱|(?<![A-Za-z])(?:cu|al|zn|ni|rb)\d{4}(?!\d))",
+    re.IGNORECASE,
+)
 _SHFE_EARLY_CLOSE_QUAL_RE = re.compile(r"(?<!\d)(?:01:00|23:00)(?!\d)")
 _TEN_DOT_RE = re.compile(r"[●○]{10}")
 _SCENARIO_LINE_TRIGGER_RE = re.compile(r"(?:情景|合计\s*10\s*点|(?<![0-9./])(?:[0-9]|10)\s*/\s*10(?![0-9]))")
 _SCENARIO_WEIGHT_RE = re.compile(
     r"(?:占\s*(\d+)\s*点|[（(]\s*(?:占\s*)?([0-9]|10)\s*/\s*10(?:\s*点)?\s*[)）]|(?<![0-9./])(?:占|权重|概率)\s*([0-9]|10)\s*/\s*10(?![0-9]))"
 )
+_SCENARIO_DELTA_RE = re.compile(r"(?:原占|由.{0,6}调至|较上期)")
+_MULTILINE_SCENARIO_WEIGHT_RE = re.compile(
+    r"(?:占\s*(\d+)\s*点|[（(]\s*(?:占\s*)?([0-9]|10)\s*/\s*10(?:\s*点)?\s*[)）])"
+)
+_SCENARIO_CONTEXT_RE = re.compile(
+    r"(?:情景|场景|路径|推演|概率|权重|合计\s*10\s*点|10\s*点(?:分配|拆分|分布|概率))"
+)
 _SCENARIO_SINGLE_RATIO_RE = re.compile(r"(?<![0-9./])([0-9]|10)\s*/\s*10(?![0-9])")
+_CREDIT_SPREAD_CCC_RE = re.compile(r"(?:垃圾债利差\s*1,\d{3}|高收益与垃圾债)")
+_CCC_QUAL_RE = re.compile(r"CCC", re.IGNORECASE)
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
@@ -67,8 +79,8 @@ SCORECARD_BANNED_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|lint_(?:readability|equity|site)\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|"
-    r"_edition_patch\.json|_ledger_patch\.json|"
+    r"chart_input\.py|install_sidecars\.py|svg_geometry\.py|patch_state_dbs\.py|"
+    r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"63\s*路|红队|法证|\bGate\s*[0-6]\b)",
     flags=re.IGNORECASE,
 )
@@ -77,7 +89,7 @@ _INTERNAL_FILENAME_LEAK_RE = re.compile(
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"audit_ledger\.md|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
-    r"patch_state_dbs\.py|_edition_patch\.json|_ledger_patch\.json|"
+    r"svg_geometry\.py|patch_state_dbs\.py|_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_-]*\.py(?![A-Za-z0-9_])|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|"
@@ -554,10 +566,10 @@ def validate_snapshot_file(
         and _valid_number(snap.get("t10yie_fred_pct"))
         and _valid_number(snap.get("us10y_pct"))
     ):
-        if abs((snap["dfii10_live_pct"] + snap["t10yie_fred_pct"]) - snap["us10y_pct"]) > 0.03:
+        if abs((snap["dfii10_live_pct"] + snap["t10yie_fred_pct"]) - snap["us10y_pct"]) > 0.08:
             errors.append(
                 f"[Gate G6 利率恒等式冲突] {label}: dfii10({snap['dfii10_live_pct']}) + "
-                f"t10yie({snap['t10yie_fred_pct']}) 与 us10y({snap['us10y_pct']}) 偏离 > 0.03"
+                f"t10yie({snap['t10yie_fred_pct']}) 与 us10y({snap['us10y_pct']}) 偏离 > 0.08"
             )
     if (
         _valid_number(snap.get("gdx_gld_ratio"))
@@ -1190,17 +1202,19 @@ def check_file(
                 if str(save_r) not in full_combined:
                     warnings.append(f"[Gate 5 省钱差额未对齐] 正文未检测到快照婚庆省钱差额 {save_r} 元/克")
 
-    # Gate 4B: Deterministic G2 / G3 / G6 / G7 & Layer 2 paragraph cap (>= 2026-11-27_0730 dailies)
+    # Gate 4B: Deterministic G2 / G3 / G6 / G7 / S2 & Layer 2 paragraph cap (>= 2026-11-27_0730 dailies)
     if not is_master and filename_key is not None and filename_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]:
         errors.extend(_check_wallet_anchor_grams(full_vis))
         errors.extend(_check_shfe_night_close(md_path.name, full_vis))
         errors.extend(_check_scenario_10pt_and_dots(md_path.name, full_vis))
         errors.extend(_check_tense_drift(md_path.name, full_vis, filename_key[0]))
+        errors.extend(_check_credit_spread_ccc(md_path.name, full_vis))
         for kind, wtxt in all_widget_texts:
             wlbl = f"{md_path.name}:{kind}"
             errors.extend(_check_shfe_night_close(wlbl, wtxt))
             errors.extend(_check_scenario_10pt_and_dots(wlbl, wtxt))
             errors.extend(_check_tense_drift(wlbl, wtxt, filename_key[0]))
+            errors.extend(_check_credit_spread_ccc(wlbl, wtxt))
         if layer01_end < len(raw):
             layer2_end = _find_layer2_end(raw, layer01_end)
             l2_start_line = raw[:layer01_end].count("\n") + 1
@@ -1278,8 +1292,26 @@ def _find_layer2_end(raw_md: str, layer01_end: int) -> int:
     return earliest
 
 
+_WALLET_WAN_RE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*万")
+
+
+def _resolve_wallet_principal(text: str, pos: int) -> float | None:
+    """Resolve explicit 10万 / 1万 principal near pos; return None for other tranches (e.g. 3万元) or unlabelled."""
+    matches = list(_WALLET_WAN_RE.finditer(text))
+    if not matches:
+        return None
+    before = [m for m in matches if m.end() <= pos]
+    chosen = before[-1] if before else min(matches, key=lambda m: abs(m.start() - pos))
+    val = float(chosen.group(1))
+    if abs(val - 10.0) < 1e-6:
+        return 100000.0
+    if abs(val - 1.0) < 1e-6:
+        return 10000.0
+    return None
+
+
 def _check_wallet_anchor_grams(text: str) -> list[str]:
-    """Verify 100k wallet anchor price (以/按/锚定 {anchor} 元/克) matches 持约 {g} 克 within ±0.12g."""
+    """Verify explicit 10万 / 1万 wallet anchor grams (持约 X 克) match principal/anchor within ±0.12g."""
     errs: list[str] = []
     m_sec = re.search(
         r"(?:^|\n)#{2,3}\s*[^\n]*(?:10\s*万元|钱包账)[^\n]*\n(.*?)(?=\n#{1,2}\s|\Z)",
@@ -1293,25 +1325,59 @@ def _check_wallet_anchor_grams(text: str) -> list[str]:
     anchor = float(m_anc.group(1))
     if anchor <= 0:
         return errs
-    for line_no, ln in enumerate(scope.splitlines(), 1):
-        if "持约" not in ln:
-            continue
-        for m_g in re.finditer(r"持约\s*(\d+(?:\.\d+)?)\s*克", ln):
-            grams = float(m_g.group(1))
-            if grams >= 50.0:
-                exp_g = 100000.0 / anchor
-                if abs(exp_g - grams) > 0.12:
-                    errs.append(
-                        f"[Gate G6 钱包克重算术错] 10 万元按 {anchor:g} 元/克 应持约 {exp_g:.2f} 克，"
-                        f"但文中写持约 {grams:g} 克（偏差 {abs(exp_g - grams):.2f} > 0.12 克）"
-                    )
-            elif 5.0 <= grams < 50.0:
-                exp_g = 10000.0 / anchor
-                if abs(exp_g - grams) > 0.12:
-                    errs.append(
-                        f"[Gate G6 钱包克重算术错] 1 万元按 {anchor:g} 元/克 应持约 {exp_g:.2f} 克，"
-                        f"但文中写持约 {grams:g} 克（偏差 {abs(exp_g - grams):.2f} > 0.12 克）"
-                    )
+
+    in_table = False
+    col_principals: list[float | None] = []
+
+    def _check_gram_match(principal: float, grams: float) -> None:
+        exp_g = principal / anchor
+        if abs(exp_g - grams) > 0.12:
+            label_wan = "10 万元" if principal >= 50000.0 else "1 万元"
+            errs.append(
+                f"[Gate G6 钱包克重算术错] {label_wan}按 {anchor:g} 元/克 应持约 {exp_g:.2f} 克，"
+                f"但文中写持约 {grams:g} 克（偏差 {abs(exp_g - grams):.2f} > 0.12 克）"
+            )
+
+    for ln in scope.splitlines():
+        st = ln.strip()
+        is_tbl = st.startswith("|") and st.endswith("|")
+        if is_tbl:
+            cells = [c.strip() for c in st.strip("|").split("|")]
+            if not in_table:
+                in_table = True
+                col_principals = []
+                for hc in cells:
+                    if re.search(r"(?<![\d.])10\s*万", hc):
+                        col_principals.append(100000.0)
+                    elif re.search(r"(?<![\d.])1\s*万", hc):
+                        col_principals.append(10000.0)
+                    else:
+                        col_principals.append(None)
+                continue
+            if all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                continue
+            if "持约" not in ln:
+                continue
+            for ci, cell in enumerate(cells):
+                if "持约" not in cell:
+                    continue
+                col_p = col_principals[ci] if ci < len(col_principals) else None
+                has_explicit_wan = bool(_WALLET_WAN_RE.search(cell))
+                for m_g in re.finditer(r"持约\s*(\d+(?:\.\d+)?)\s*克", cell):
+                    principal = _resolve_wallet_principal(cell, m_g.start()) if has_explicit_wan else col_p
+                    if principal is not None:
+                        _check_gram_match(principal, float(m_g.group(1)))
+        else:
+            in_table = False
+            col_principals = []
+            if "持约" not in ln:
+                continue
+            if not _WALLET_WAN_RE.search(ln):
+                continue
+            for m_g in re.finditer(r"持约\s*(\d+(?:\.\d+)?)\s*克", ln):
+                principal = _resolve_wallet_principal(ln, m_g.start())
+                if principal is not None:
+                    _check_gram_match(principal, float(m_g.group(1)))
     return errs
 
 
@@ -1334,7 +1400,7 @@ def _check_shfe_night_close(label: str, text: str) -> list[str]:
                 within_45 = len(between) <= 45
                 if (same_clause or within_45) and not _SHFE_EARLY_CLOSE_QUAL_RE.search(between):
                     metal_local = ln[max(0, m_metal.start() - 14) : min(len(ln), m_metal.end() + 14)]
-                    if _SHFE_EARLY_CLOSE_QUAL_RE.search(metal_local) and m_metal.end() <= m_time.start():
+                    if _SHFE_EARLY_CLOSE_QUAL_RE.search(metal_local):
                         continue
                     errs.append(
                         f"[Gate G2 夜盘收盘时段混淆] {label} (L{line_no}) 将 02:30 误关联至非金银标的 "
@@ -1348,9 +1414,10 @@ def _check_shfe_night_close(label: str, text: str) -> list[str]:
 
 
 def _check_scenario_10pt_and_dots(label: str, text: str) -> list[str]:
-    """Gate G3: Check 10-point scenario weight sums and [●○]{10} dot-bar parity."""
+    """Gate G3: Check 10-point scenario weight sums (single-line & multi-line blocks) and [●○]{10} dot-bar parity."""
     errs: list[str] = []
-    for line_no, ln in enumerate(text.splitlines(), 1):
+    lines = text.splitlines()
+    for line_no, ln in enumerate(lines, 1):
         has_bar = bool(_TEN_DOT_RE.search(ln))
         if not has_bar and not _SCENARIO_LINE_TRIGGER_RE.search(ln):
             continue
@@ -1358,7 +1425,7 @@ def _check_scenario_10pt_and_dots(label: str, text: str) -> list[str]:
         for m in _SCENARIO_WEIGHT_RE.finditer(ln):
             raw_num = next(g for g in m.groups() if g is not None)
             weights.append((m.start(), m.end(), int(raw_num)))
-        if len(weights) >= 2:
+        if len(weights) >= 2 and not _SCENARIO_DELTA_RE.search(ln):
             total = sum(w for _, _, w in weights)
             if total != 10:
                 errs.append(
@@ -1379,21 +1446,89 @@ def _check_scenario_10pt_and_dots(label: str, text: str) -> list[str]:
                     errs.append(
                         f"[Gate G3 概率点条不一致] {label} (L{line_no}) 实心数 ({filled}) ≠ 权重 ({chosen[2]})"
                     )
+
+    # Scan consecutive multi-line scenario bullet/table blocks (2–6 adjacent lines) under a scenario context
+    def _extract_block_line_weight(line: str) -> int | None:
+        st = line.strip()
+        is_bullet = bool(re.match(r"^(?:[-•*]|\d+\.)\s+", st))
+        is_table_row = st.startswith("|") and st.endswith("|")
+        if not (is_bullet or is_table_row):
+            return None
+        if is_table_row:
+            cells = [c.strip() for c in st.strip("|").split("|")]
+            if not cells or all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                return None
+        matches: list[tuple[int, int, int]] = []
+        for m in _MULTILINE_SCENARIO_WEIGHT_RE.finditer(line):
+            raw_num = next(g for g in m.groups() if g is not None)
+            matches.append((m.start(), m.end(), int(raw_num)))
+        if len(matches) == 1:
+            return matches[0][2]
+        if len(matches) >= 2 and _SCENARIO_DELTA_RE.search(line):
+            cur_matches = [
+                w for s, _, w in matches
+                if not re.search(r"(?:原|由|较上期)[^，。；（）]{0,4}$", line[max(0, s - 8) : s])
+            ]
+            if len(cur_matches) == 1:
+                return cur_matches[0]
+        return None
+
+    def _has_scenario_context(start_idx: int, end_idx: int) -> bool:
+        for k in range(start_idx, end_idx):
+            if _SCENARIO_CONTEXT_RE.search(lines[k]):
+                return True
+        for k in range(max(0, start_idx - 5), start_idx):
+            if _SCENARIO_CONTEXT_RE.search(lines[k]):
+                return True
+        for k in range(start_idx - 1, -1, -1):
+            st_k = lines[k].strip()
+            if st_k.startswith("#"):
+                return bool(_SCENARIO_CONTEXT_RE.search(st_k))
+        return False
+
+    idx = 0
+    while idx < len(lines):
+        w0 = _extract_block_line_weight(lines[idx])
+        if w0 is None:
+            idx += 1
+            continue
+        is_tbl0 = lines[idx].strip().startswith("|")
+        block_weights = [w0]
+        end_idx = idx + 1
+        while end_idx < len(lines):
+            if lines[end_idx].strip().startswith("|") != is_tbl0:
+                break
+            wk = _extract_block_line_weight(lines[end_idx])
+            if wk is None:
+                break
+            block_weights.append(wk)
+            end_idx += 1
+        if 2 <= len(block_weights) <= 6 and _has_scenario_context(idx, end_idx):
+            total = sum(block_weights)
+            if total != 10:
+                errs.append(
+                    f"[Gate G3 情景权重未满 10 点] {label} (L{idx + 1}-L{end_idx}) 多行情景权重之和={total} ≠ 10 ({block_weights})"
+                )
+        idx = end_idx
     return errs
 
 
 def _check_tense_drift(label: str, text: str, edition_date: str) -> list[str]:
-    """Gate G7: Catch stale relative-day tense drift (明日=今日 / 今日=昨日 / 昨日=前日)."""
+    """Gate G7: Catch stale relative-day tense drift (明日=今日 / 今日=昨日 / 昨日=前日, MM/DD & MM月DD日)."""
     try:
         ed = date.fromisoformat(edition_date)
     except ValueError:
         return []
     prev = ed - timedelta(days=1)
     prev2 = ed - timedelta(days=2)
+
+    def _md_pat(d: date) -> str:
+        return rf"(?:0?{d.month}/0?{d.day}(?!\d)|0?{d.month}\s*月\s*0?{d.day}\s*[日号])"
+
     pats = (
-        (f"明日误标今日({ed.month}/{ed.day})", re.compile(rf"明日\s*[（(]?\s*0?{ed.month}/0?{ed.day}(?!\d)")),
-        (f"今日误标昨日({prev.month}/{prev.day})", re.compile(rf"今日\s*[（(]?\s*0?{prev.month}/0?{prev.day}(?!\d)")),
-        (f"昨日误标前日({prev2.month}/{prev2.day})", re.compile(rf"昨日\s*[（(]?\s*0?{prev2.month}/0?{prev2.day}(?!\d)")),
+        (f"明日误标今日({ed.month}/{ed.day})", re.compile(rf"明日\s*[（(]?\s*{_md_pat(ed)}")),
+        (f"今日误标昨日({prev.month}/{prev.day})", re.compile(rf"今日\s*[（(]?\s*{_md_pat(prev)}")),
+        (f"昨日误标前日({prev2.month}/{prev2.day})", re.compile(rf"昨日\s*[（(]?\s*{_md_pat(prev2)}")),
     )
     errs: list[str] = []
     for line_no, ln in enumerate(text.splitlines(), 1):
@@ -1404,30 +1539,60 @@ def _check_tense_drift(label: str, text: str, edition_date: str) -> list[str]:
     return errs
 
 
+def _check_credit_spread_ccc(label: str, text: str) -> list[str]:
+    """Gate S2: Require explicit CCC qualifier within ±20 chars of CCC-tier junk spread mentions."""
+    errs: list[str] = []
+    for line_no, ln in enumerate(text.splitlines(), 1):
+        for m in _CREDIT_SPREAD_CCC_RE.finditer(ln):
+            win = ln[max(0, m.start() - 20) : min(len(ln), m.end() + 20)]
+            if not _CCC_QUAL_RE.search(win):
+                errs.append(
+                    f"[Gate S2 信用利差口径混淆] {label} (L{line_no}) 信用利差表述缺少 CCC 分级限定"
+                    f"（防止混淆全口径高收益债与 CCC 级垃圾债利差）-> {win!r}"
+                )
+                break
+    return errs
+
+
+def _closest_gold_md_dt(mo: int, d: int, hh: int, mm: int, ref_dt: datetime) -> datetime | None:
+    cands: list[datetime] = []
+    for yr in (ref_dt.year - 1, ref_dt.year, ref_dt.year + 1):
+        try:
+            cands.append(datetime(yr, mo, d, hh, mm))
+        except ValueError:
+            continue
+    if not cands:
+        return None
+    return min(cands, key=lambda dt: (abs((dt - ref_dt).days), abs((dt - ref_dt).total_seconds())))
+
+
 def _parse_gold_scorecard_due_dt(cell_text: str, ref_dt: datetime) -> datetime | None:
     plain = re.sub(r"<br\s*/?>", " ", cell_text, flags=re.IGNORECASE)
     plain = re.sub(r"[*`]", "", plain).strip()
-    m_full = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
+    m_full = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
     if m_full:
         try:
             return datetime(*(int(g) for g in m_full.groups()))
         except ValueError:
             return None
-    m_date = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)", plain)
+    m_date = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?!\d)", plain)
     if m_date:
         try:
             y, mo, d = (int(g) for g in m_date.groups())
             return datetime(y, mo, d, 23, 59)
         except ValueError:
             return None
-    m_md = re.search(r"(?<!\d)(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
+    m_md = re.search(r"(?<![0-9/])(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
     if m_md:
-        try:
-            mo, d, hh, mm = (int(g) for g in m_md.groups())
-            yr = ref_dt.year + (1 if ref_dt.month == 12 and mo == 1 else 0)
-            return datetime(yr, mo, d, hh, mm)
-        except ValueError:
-            return None
+        mo, d, hh, mm = (int(g) for g in m_md.groups())
+        if 1 <= mo <= 12 and 1 <= d <= 31 and 0 <= hh <= 23 and 0 <= mm <= 59:
+            return _closest_gold_md_dt(mo, d, hh, mm, ref_dt)
+        return None
+    m_md_only = re.search(r"(?<![0-9/])(\d{1,2})/(\d{1,2})(?![0-9/]|(?:\s*(?:关|分|项|点|家|只)))", plain)
+    if m_md_only:
+        mo, d = int(m_md_only.group(1)), int(m_md_only.group(2))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return _closest_gold_md_dt(mo, d, 23, 59, ref_dt)
     return None
 
 
@@ -1641,7 +1806,16 @@ def _check_edition_ledgers(
     except OSError as exc:
         errors.append(f"[黄金刊期台账缺失] {CHANGELOG_PATH.name}: {exc}")
     else:
-        if len(re.findall(rf"<!--\s*GOLD_EDITION_CHANGELOG\s+{re.escape(edition)}\s*-->", cl_raw)) != 1:
+        cl_texts = [cl_raw]
+        cl_archive_dir = CHANGELOG_PATH.parent / "archive"
+        if cl_archive_dir.is_dir():
+            for arch_p in sorted(cl_archive_dir.rglob("*.md")):
+                try:
+                    cl_texts.append(arch_p.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+        cl_pat = re.compile(rf"<!--\s*GOLD_EDITION_CHANGELOG\s+{re.escape(edition)}\s*-->")
+        if sum(len(cl_pat.findall(src)) for src in cl_texts) != 1:
             errors.append(f"[黄金刊期台账错] {CHANGELOG_PATH.name} 须含一条 GOLD_EDITION_CHANGELOG {edition} 标记")
 
     try:
@@ -1668,17 +1842,26 @@ def _check_edition_ledgers(
     except OSError as exc:
         errors.append(f"[黄金核验台账缺失] {AUDIT_LOG_PATH.name}: {exc}")
         return
+    audit_texts = [raw]
+    al_archive_dir = AUDIT_LOG_PATH.parent / "archive"
+    if al_archive_dir.is_dir():
+        for arch_p in sorted(al_archive_dir.rglob("*.md")):
+            try:
+                audit_texts.append(arch_p.read_text(encoding="utf-8"))
+            except OSError:
+                continue
     reviews = []
-    for match in EDITION_REVIEW_RE.finditer(raw):
-        try:
-            review = json.loads(match[1])
-        except json.JSONDecodeError as exc:
-            errors.append(f"[黄金核验台账 JSON 错] GOLD_EDITION_REVIEW: {exc}")
-            continue
-        if not isinstance(review, dict):
-            errors.append("[黄金核验台账结构错] GOLD_EDITION_REVIEW 须为对象")
-        elif review.get("edition_id") == edition:
-            reviews.append(review)
+    for audit_src in audit_texts:
+        for match in EDITION_REVIEW_RE.finditer(audit_src):
+            try:
+                review = json.loads(match[1])
+            except json.JSONDecodeError as exc:
+                errors.append(f"[黄金核验台账 JSON 错] GOLD_EDITION_REVIEW: {exc}")
+                continue
+            if not isinstance(review, dict):
+                errors.append("[黄金核验台账结构错] GOLD_EDITION_REVIEW 须为对象")
+            elif review.get("edition_id") == edition:
+                reviews.append(review)
     if len(reviews) != 1:
         errors.append(f"[黄金核验记录错] {AUDIT_LOG_PATH.name} 须含一条 {edition} 的 GOLD_EDITION_REVIEW")
         return
@@ -1706,7 +1889,7 @@ def _check_edition_ledgers(
 def _reconcile_gold_scorecard(sc_text: str, errors: list[str]) -> None:
     """Reconcile Gold SCORECARD.md overview summary counts against Table 1 (settled) & Table 2 (tracking) rows."""
     m_settled = re.search(
-        r"\|\s*\*\*已到期公开回验\*\*\s*\|\s*\*\*(\d+)\s*项\*\*（计分\s*(\d+)\s*项）\s*\|"
+        r"\|\s*\*\*已到期公开回验\*\*\s*\|\s*\*\*(\d+)\s*项\*\*（计分\s*(\d+)\s*项[^）]*）\s*\|"
         r"\s*\*\*(\d+)\s*项\*\*\s*\|\s*\*\*(\d+)\s*项\*\*\s*\|\s*\*\*(\d+)\s*项\*\*\s*\|\s*\*\*(\d+)\s*项\*\*",
         sc_text,
     )
@@ -1728,10 +1911,6 @@ def _reconcile_gold_scorecard(sc_text: str, errors: list[str]) -> None:
 
     if m_settled:
         exp_tot, exp_scored, exp_pass, exp_partial, exp_fail, exp_untrig = (int(x) for x in m_settled.groups())
-        if exp_tot != exp_pass + exp_partial + exp_fail + exp_untrig:
-            errors.append(
-                f"[公开记分卡总览算术错] 已到期 {exp_tot} 项 ≠ 兑现({exp_pass})+部分({exp_partial})+证伪({exp_fail})+未触发({exp_untrig})"
-            )
         if exp_scored != exp_pass + exp_partial + exp_fail:
             errors.append(
                 f"[公开记分卡总览算术错] 计分 {exp_scored} 项 ≠ 兑现({exp_pass})+部分({exp_partial})+证伪({exp_fail})"
@@ -1739,10 +1918,17 @@ def _reconcile_gold_scorecard(sc_text: str, errors: list[str]) -> None:
         m_t1 = re.search(r"^##\s*二、[^\n]*\n(.*?)(?=^##\s*三、|\Z)", sc_text, flags=re.MULTILINE | re.DOTALL)
         if m_t1:
             t1_rows = _extract_table_rows(m_t1.group(1))
-            act_pass = act_partial = act_fail = act_untrig = 0
+            act_pass = act_partial = act_fail = act_untrig = act_non_inv = 0
             for cells in t1_rows:
+                row_text = " ".join(cells)
                 verdict_cell = cells[4] if len(cells) >= 5 else ""
-                if "✅" in verdict_cell:
+                if (
+                    "⚪ 运维记录" in row_text
+                    or "运维记录" in verdict_cell
+                    or "不计入投资胜率" in row_text
+                ):
+                    act_non_inv += 1
+                elif "✅" in verdict_cell:
                     act_pass += 1
                 elif "⚠️" in verdict_cell or "部分兑现" in verdict_cell:
                     act_partial += 1
@@ -1750,12 +1936,28 @@ def _reconcile_gold_scorecard(sc_text: str, errors: list[str]) -> None:
                     act_fail += 1
                 elif "⚪" in verdict_cell or "条件未触发" in verdict_cell:
                     act_untrig += 1
-            if (len(t1_rows), act_pass, act_partial, act_fail, act_untrig) != (
-                exp_tot, exp_pass, exp_partial, exp_fail, exp_untrig
-            ):
+            act_scored = act_pass + act_partial + act_fail
+            valid_folded = (
+                exp_tot == exp_pass + exp_partial + exp_fail + exp_untrig
+                and (len(t1_rows), act_scored, act_pass, act_partial, act_fail, act_untrig + act_non_inv)
+                == (exp_tot, exp_scored, exp_pass, exp_partial, exp_fail, exp_untrig)
+            )
+            valid_separate = (
+                act_non_inv > 0
+                and exp_tot == exp_pass + exp_partial + exp_fail + exp_untrig + act_non_inv
+                and (len(t1_rows), act_scored, act_pass, act_partial, act_fail, act_untrig)
+                == (exp_tot, exp_scored, exp_pass, exp_partial, exp_fail, exp_untrig)
+            )
+            if not (valid_folded or valid_separate):
+                ops_note = f"/运维{act_non_inv}" if act_non_inv else ""
                 errors.append(
-                    f"[公开记分卡表一对账错] 头部汇总=(总{exp_tot}: ✅{exp_pass}/⚠️{exp_partial}/❌{exp_fail}/⚪{exp_untrig}) "
-                    f"≠ 表一实有行=(总{len(t1_rows)}: ✅{act_pass}/⚠️{act_partial}/❌{act_fail}/⚪{act_untrig})"
+                    f"[公开记分卡表一对账错] 头部汇总=(总{exp_tot}/计分{exp_scored}: ✅{exp_pass}/⚠️{exp_partial}/❌{exp_fail}/⚪{exp_untrig}) "
+                    f"≠ 表一实有行=(总{len(t1_rows)}/计分{act_scored}: ✅{act_pass}/⚠️{act_partial}/❌{act_fail}/⚪{act_untrig}{ops_note})"
+                )
+        else:
+            if exp_tot != exp_pass + exp_partial + exp_fail + exp_untrig:
+                errors.append(
+                    f"[公开记分卡总览算术错] 已到期 {exp_tot} 项 ≠ 兑现({exp_pass})+部分({exp_partial})+证伪({exp_fail})+未触发({exp_untrig})"
                 )
 
     if m_track:

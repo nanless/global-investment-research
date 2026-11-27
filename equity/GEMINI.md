@@ -32,7 +32,7 @@
 
 1. **机构级内容必含项与反重复读**：
    - 每篇主刊落实小白三层结构（30 秒白话结论 → 10 万/1 万元双刻度钱包实算与三步怎么买 → 7 维硬核证据），并强制配齐：**6 维体检拆解分项**、**1 句利率→汇率→信用→大宗→股票风险溢价（ERP）跨资产传导链**、**未来 48 小时上行/下行双向催化剧本**、**10 万/1 万元情景回撤压力实算**、**完整四情景 10 点概率拆分与理由**及 **4–6 只焦点股 × 5 项硬核锚点**（按现价实算实际股息率 `年化分红 ÷ 现价` 与同口径市盈率，与 `deep_dossiers.json` 100% 同步）；
-   - **零后台审计腔与反重复读**：标题与导语禁写「旧缺口清零」「挂账核销成绩单」类运维话术；开篇导语 ≤160 字，同一核心数字提及 ≤3 次；升级版 3 层术语标准将 `DXY`/`COT`/`CDS`/`ERP`/`IRR` 移出裸用名单（首现配简短白话括注或交由站内术语浮窗），正文避免裸写 `ON RRP`/`IOPV`/`数字+bp`/`熊平`/`¢` 及裸期限 `2Y/3Y/5Y/10Y/20Y/30Y`。
+   - **零后台审计腔与反重复读**：标题与导语禁写「旧缺口清零」「挂账核销成绩单」类运维话术；开篇导语 ≤200 字（推荐 ≤160 字），同一核心数字提及 ≤3 次；升级版 3 层术语标准将 `DXY`/`COT`/`CDS`/`ERP`/`IRR` 移出裸用名单（首现配简短白话括注或交由站内术语浮窗），正文避免裸写 `ON RRP`/`IOPV`/`数字+bp`/`熊平`/`¢` 及裸期限 `2Y/3Y/5Y/10Y/20Y/30Y`。
 2. **代码、费率与税费高危陷阱（详表见 `dual_account_tax_and_rules.md`）**：
    - **可转债 ETF 跨库费率护栏**：全市场 **`511380` 综合费率 0.20%/年**，投资级 AA+ **`511180` 综合费率 0.30%/年**，严禁跨库混写；
    - **A 股低费与防混淆**：首选 0.20% 宽基/现金流/红利/银行 ETF（`510300`/`563360`/`159201`/`563020`/`515180`/`516310`）；严防把 `561910`（电池）误作银行、`515080`（中证红利）误作红利质量（`159758`）或推荐微型 `158008`/`020035`；
@@ -47,7 +47,8 @@
 
 ## 3. 分级写盘、三库原子补丁、门禁与受控 RSI 闭环
 
-- **分级写盘与三库原子合并（防 300s 超时）**：无人值守禁 `edit_file`。中小源稿与轻量账簿用 `write_file` 全量写盘；三大扩展大 JSON（`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`，合计 ~830 KB）一律写微型补丁 `equity/state/_edition_patch.json` 并运行预授权 `scripts/patch_state_dbs.py --apply` 原子合并：
-  - 强制同步顶层 `edition_id`、校验 12 大渠道/140+ ETF/231 股完整度、黄金红灯锁与跨库费率一致性；
+- **分级写盘、增长账本、月初滚存与三库原子合并（防 300s 超时）**：无人值守禁 `edit_file`。中小源稿与轻量账簿（日报、`INDEX`/`CHANGELOG`/`SCORECARD`、`state/market_state.json`、`state/RSI_PLAYBOOK.md`）用 `write_file` 全量写盘；所有持续增长大文件与月初旗舰滚存一律走预授权 `scripts/patch_state_dbs.py` 原子命令：
+  - **三大扩展大 JSON（合计 ~830 KB）**：写紧凑嵌套补丁 `equity/state/_edition_patch.json` 运行 `--apply` 原子合并（强制同步顶层 `edition_id`、校验 12 大渠道/140+ ETF/231 股完整度、黄金红灯锁与跨库费率一致性）；只读查库用 `--inspect <target>`（`channels`/`channel:<id>`/`etf:<code>`/`stock:<key>`/`stale-dossiers`/`ah-benchmarks`/`etf-freshness`）；
+  - **增长账本、RSI 与月初跨月滚存**：`state/audit_ledger.md` 写 3 键 `equity/state/_audit_patch.json` 走 `--prepend-equity-audit` 无损头插；`state/rsi_metrics.json` 写裸单条运行对象 `equity/state/_rsi_patch.json` 走 `--append-equity-rsi` 无损追加；月初切换 `period_slug` 写 `equity/state/_rollover_patch.json` 走 `--rollover-equity-month` 原子克隆三旗舰与 `_latest.md` 并更新 `report_meta_*.json`；
   - **兄弟字段扫清、A/H 孪生股同步与诚实单股 `updated_at`**：修改任一标的时须同步检查其关联兄弟字段及 A/H 双地孪生股口径；仅更新本期实际核查标的的 `updated_at`，**严禁批量刷写未核查股票日期**。
-- **独立门禁与受控三层 RSI 闭环**：运行 `python3 <REPO_ROOT>/equity/lint_equity.py --strict`（Gate 0–5 / Gate 3B / 21 图含 `CHART_A2` 符号与零碰撞 / 三库 / 跨项目黄金 C1–C3，必须 `0 errors, 0 warnings`）→ Step 5 启动 1 路独立只读盲审按 6 维 `/30` 打分并闭环登记 `review_closure`（Tier A 自动更新 `state/{rsi_metrics.json,RSI_PLAYBOOK.md}` ≤180 行；Tier B 单次 ≤1 处 ≤40 行确定性修 Bug 且必过 `--strict` + 静态站 + 单测，败则回滚；Tier C 宪法/技能/权限仅提案）→ 复跑双轨严检并按令牌完成 `publish_site.py` 与 `edition_run.py complete` 纯网页上线验收。
+- **独立门禁与受控三层 RSI 闭环**：运行 `python3 <REPO_ROOT>/equity/lint_equity.py --strict`（Gate 0–5 / Gate 3B / 21 图含 `CHART_A2` 符号与零碰撞 / 三库 / 跨项目黄金 C1–C3，必须 `0 errors, 0 warnings`）→ Step 5 启动 1 路独立只读盲审按 6 维 `/30` 打分并闭环登记 `review_closure`（Tier A 经 `--append-equity-rsi` 无损追加 `state/rsi_metrics.json` 并更新 `state/RSI_PLAYBOOK.md` ≤180 行；Tier B 单次 ≤1 处 ≤40 行确定性修 Bug 且必过 `--strict` + 静态站 + 单测，败则回滚；Tier C 宪法/技能/权限仅提案）→ 复跑双轨严检并按令牌完成 `publish_site.py` 与 `edition_run.py complete` 纯网页上线验收。

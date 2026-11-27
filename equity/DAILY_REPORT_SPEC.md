@@ -8,7 +8,7 @@
 
 ## 一、读者可见五大绝对红线与纯网页量化排版标准
 
-1. **零工程、后台/RSI 噪声与说教口号泄露**：面向读者的全部文档、JSON（含 `multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）、`data_caveats` 与渲染后 SVG（含正文、`kpis`、`chart_live`、页眉页脚）中，严禁出现版本号（`V9.x`/`V10.x`）、`Subagent`、`红队`/`法证`、Python 脚本名（含 `patch_state_dbs.py`/`svg_geometry.py`）、内部规范或状态/快照/补丁/账本/RSI 文件名与术语（`AGENTS.md`/`GEMINI.md`/`DAILY_REPORT_SPEC.md`/`DAILY_FORMAT_SPEC.md`/`SKILL.md`/`sidecar.json`/`permissions.json`/`unified-edition.prompt.md`/`market_state.json`/`data_snapshot.json`/`master_snapshot.json`/`_edition_patch.json`/`_ledger_patch.json`/`audit_ledger.md`/`RSI_PLAYBOOK`/`rsi_metrics.json`/`Meta-RSI`/`next_run_watch`/`Tier A/B/C`）、API 公告编号、原始 CSV 名及内部 Diff 表。禁用居高临下的说教口号（`1 分钟定心丸`、`小白词典`、`直接抄`、`蠢事`、`保命铁律`）。**严禁将后台审计腔搬上主标题或导语**（禁写「旧缺口清零」「挂账核销成绩单」等后台运维话术，正文不塞冗余核销成绩单表）。全部溯源隔离写入 `state/audit_ledger.md`，自评与进化隔离写入 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`。
+1. **零工程、后台/RSI 噪声与说教口号泄露**：面向读者的全部文档、JSON（含 `multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）、`data_caveats` 与渲染后 SVG（含正文、`kpis`、`chart_live`、页眉页脚）中，严禁出现版本号（`V9.x`/`V10.x`）、`Subagent`、`红队`/`法证`、Python 脚本名（含 `patch_state_dbs.py`/`svg_geometry.py`）、内部规范或状态/快照/补丁/账本/RSI 文件名与术语（`AGENTS.md`/`GEMINI.md`/`DAILY_REPORT_SPEC.md`/`DAILY_FORMAT_SPEC.md`/`SKILL.md`/`sidecar.json`/`permissions.json`/`unified-edition.prompt.md`/`market_state.json`/`data_snapshot.json`/`master_snapshot.json`/`_edition_patch.json`/`_ledger_patch.json`/`_rsi_patch.json`/`_audit_patch.json`/`_rollover_patch.json`/`_archive_patch.json`/`audit_ledger.md`/`RSI_PLAYBOOK`/`rsi_metrics.json`/`Meta-RSI`/`next_run_watch`/`Tier A/B/C`）、API 公告编号、原始 CSV 名及内部 Diff 表。禁用居高临下的说教口号（`1 分钟定心丸`、`小白词典`、`直接抄`、`蠢事`、`保命铁律`）。**严禁将后台审计腔搬上主标题或导语**（禁写「旧缺口清零」「挂账核销成绩单」等后台运维话术，正文不塞冗余核销成绩单表）。全部溯源隔离写入 `state/audit_ledger.md`，自评与进化隔离写入 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`。
 2. **反引号代码白名单**：严禁对普通数字、涨跌幅、金额、股票中文名、口诀或概念套反引号 `` ` ``；**仅允许对股票、ETF、可转债、期货、指数代码**（如 `601398`、`03067`、`563020`、`113050`、`IF2612`、`BRK.B`、`SGOV`）轻标。
 3. **纯网页排版密度、反重复读与 Gate 3B 量化目标与警告线**：
    - **封面主标题**：写作目标 **日报 ≤ 27 字 / 旗舰手册 ≤ 36 字**；Gate 3B 门禁警告线 **日报 > 32 字 / 旗舰 > 38 字**；
@@ -114,7 +114,7 @@
 
 ## 五、三份旗舰手册 5 条硬触发更新阈值与弹性龙头池治理
 
-1. **三份旗舰常青手册（纯网页百科深度 · 7 张高清矢量 SVG 图）**：完整覆盖 7 维度大盘架构 + **本市与跨渠道低费 ETF 矩阵** + **核心代表龙头 7 维深度解剖精选** + 12 大个人多元渠道指引 + **65–85 只/市**全板块龙头附表二（正文零相对日期词）。仅当命中 5 条阈值之一（灯号/仓位变 ≥0.5 成、核心指数偏离 ≥±5% 或破 200 日/200 周线、四色评级变 ≥3 只或池内增删、重磅政策落地改变跨周期框架、周期 7–14 天刷新或跨月滚存）时全量更新并同步 `{market}_market_report_{slug}.md`、`{market}_market_report_latest.md` 与 `report_meta_*.json`。
+1. **三份旗舰常青手册（纯网页百科深度 · 7 张高清矢量 SVG 图）**：完整覆盖 7 维度大盘架构 + **本市与跨渠道低费 ETF 矩阵** + **核心代表龙头 7 维深度解剖精选** + 12 大个人多元渠道指引 + **65–85 只/市**全板块龙头附表二（正文零相对日期词）。仅当命中 5 条阈值之一（灯号/仓位变 ≥0.5 成、核心指数偏离 ≥±5% 或破 200 日/200 周线、四色评级变 ≥3 只或池内增删、重磅政策落地改变跨周期框架、周期 7–14 天刷新或跨月滚存）时同步 `{market}_market_report_{slug}.md`、`{market}_market_report_latest.md` 与 `report_meta_*.json`；**月初跨月滚存一律写紧凑 `equity/state/_rollover_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --rollover-equity-month` 原子克隆三旗舰与 `_latest.md` 并更新 `report_meta_*.json`（杜绝 636 KB 全写超时）**。
 2. **三市核心标杆池弹性扩容与治理规则**：每市弹性维持 **65–85 只**（当前基准 **A 股 76 / 港股 75 / 美股 80，合计 231 只**）；`lint_equity.py` Gate 3B 强制校验三本旗舰附表二行数与 `report_meta_*.json`、`market_state.json.stock_pool_count` 及 `state/deep_dossiers.json` 100% 一致。
 
 ---
@@ -122,7 +122,7 @@
 ## 六、T+1 滞后数据透明披露、三大深度扩展数据库与四大协同文件
 
 1. **反阻塞透明披露（`pending_backfills` + `data_caveats`）与规范无日期状态键**：未披露或暂不可取数据严禁编造、亦不阻塞准点发刊，须挂入 `pending_backfills` 并同步写入纯读者中文 `data_caveats` 数组供门户自动披露；状态键坚持无日期后缀规范键。
-2. **三大结构化深度扩展数据库与增长型账本增量机制（`equity/state/`，防 300s 超时）**：三大扩展大 JSON（合计 ~830 KB，强制同期 `edition_id`、全纯读者中文、零内部文件名、零裸 `IOPV`、严守黄金红灯互斥锁）一律由 `write_file` 写微型补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --apply` 原子合并（只读查库用 `--inspect`）；持续增长的 `state/audit_ledger.md` 与 `state/rsi_metrics.json` 分别走 `--prepend-equity-audit` 与 `--append-equity-rsi` 无损增量写入：
+2. **三大结构化深度扩展数据库、月初滚存与增长型账本增量机制（`equity/state/`，防 300s 超时）**：三大扩展大 JSON（合计 ~830 KB，强制同期 `edition_id`、全纯读者中文、零内部文件名、零裸 `IOPV`、严守黄金红灯互斥锁）一律由 `write_file` 写紧凑嵌套补丁 `_edition_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --apply` 原子合并（只读查库用 `--inspect <target>`，支持 `channels`/`channel:<id>`/`etf:<code>`/`stock:<key>`/`stale-dossiers`/`ah-benchmarks`/`etf-freshness`）；持续增长的 `state/audit_ledger.md`、`state/rsi_metrics.json` 与月初旗舰滚存分别走 `--prepend-equity-audit`（`_audit_patch.json`）、`--append-equity-rsi`（`_rsi_patch.json`）与 `--rollover-equity-month`（`_rollover_patch.json`）无损原子写入：
    - **`state/multi_asset_channels.json`**：全部 **12 大个人多元合规渠道** + 横向「全市场打新工具箱」+「双层风控警示墙」实盘数据、小白一句话、今日避坑提醒、统一红/黄/绿灯与税费/退市/存保红线（驱动首页 12 张概览卡与 12 个独立 `channels/<id>.html` 详情页）；
    - **`state/etf_universe.json`**：**140+ 只** 跨 **6 大通道** 重点 ETF 深度矩阵（驱动首页 5 大市场/资产分组 ETF 概览卡【底层覆盖 6 大交易通道】与预筛选 `etfs.html`；严格落实跨库费率一致性，如 `511380` 0.20%/年 vs `511180` 0.30%/年）；
    - **`state/deep_dossiers.json`**：全部 **231 只** 池内股票的零模板化 7 维机构级深度档案（以 `market:code` 为键，每班增量更新 4–6 只焦点/财报/变色股，每周日轮换精修 6–10 只重点龙头；实盘股息率须按 `年化分红 ÷ 当期现价` 实时复算、与日报正文 100% 同步；同步扫清关联兄弟字段与 A/H 双地孪生股口径；严守诚实单股 `updated_at`，仅刷新本期实审标的，绝不批量刷写未核查股票日期）。
@@ -132,6 +132,6 @@
 
 ## 七、后台受控 RSI 文件隔离与门禁治理
 
-- **后台专属存储**：`state/RSI_PLAYBOOK.md`（≤180 行软限 / ≤200 行硬限）与 `state/rsi_metrics.json` 永久隔离于 `state/`，严禁泄露至读者可见文件或三大扩展数据库。
+- **后台专属存储**：`state/RSI_PLAYBOOK.md`（≤180 行软限 / ≤200 行硬限）与 `state/rsi_metrics.json`（经 `scripts/patch_state_dbs.py --append-equity-rsi` 无损追加）永久隔离于 `state/`，严禁泄露至读者可见文件或三大扩展数据库。
 - **独立门禁统一终检**：`lint_equity.py --strict` 统一校验手册行数、JSON 合法性、三大扩展数据库完整性与黄金红灯锁（Gate 4 / Gate C2）、21 张 SVG 实时渲染零碰撞、旗舰源稿同步、`run_id` 唯一性及零工程词泄露。
 - **三层改写边界**：Tier A 每刊自动落盘；Tier B 单次 ≤1 处 ≤40 行确定性修 Bug 且必过 `--strict` + 静态站构建严检 + 单元测试；Tier C 宪法锁定永不自动改写。

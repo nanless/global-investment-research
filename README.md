@@ -7,7 +7,7 @@
 [![Zero Dependencies](https://img.shields.io/badge/Zero_Dependencies-Python_3.9+-2563eb?style=flat-square)](#本地快速上手--zero-dependency-quick-start)
 [![Web-Only](https://img.shields.io/badge/Web--Only-0_Offline_Binaries-b45309?style=flat-square)](#核心亮点--why-this-repository)
 [![Workflow](https://img.shields.io/badge/Workflow-10%2B1_Research_%26_Red--Team-7c3aed?style=flat-square)](#双班次节拍与-101-协同流水线--schedule--pipeline)
-[![Unit Tests](https://img.shields.io/badge/Unit_Tests-95%2B_Passing-15803d?style=flat-square)](#三道严格质量防线--three-tier-quality-gates)
+[![Unit Tests](https://img.shields.io/badge/Unit_Tests-135%2B_Passing-15803d?style=flat-square)](#三道严格质量防线--three-tier-quality-gates)
 
 > 统一覆盖 **黄金**、**中国 A 股 × 中国香港股市 × 美国股市**（231 只龙头 7 维深研 + 140+ 只跨 6 通道重点 ETF 雷达）与 **中国大陆 12 大个人多元合规渠道**，每日 `07:30 / 18:00` 北京时间经共享 `10+1` 调研红队、黄金 SSOT 红灯联防与三道零容忍门禁自动发布至纯网页静态门户。  
 > *An institutional-grade, beginner-friendly, web-only multi-asset research monorepo unifying Gold, China A-Share / HK / US Equities (231 seven-dimension dossiers + 140+ ETFs across 6 trading channels), and 12 MECE China Personal Multi-Asset Channels — built and verified with zero third-party dependencies.*
@@ -17,7 +17,7 @@
 | 页面入口 | 在线直达链接 | 核心内容与使用场景 |
 | :--- | :--- | :--- |
 | **1. 首页总控驾驶舱** | [index.html](https://nanless.github.io/global-investment-research/) | 4 大市场红绿灯、小白「今日行动红绿灯 + 钱怎么分四笔」、12 大渠道概览卡、5 大市场/资产分组 ETF 概览卡与 `data_caveats` 透明提示 |
-| **2. 新手 3 分钟指南** | [guide.html](https://nanless.github.io/global-investment-research/guide.html) | 四笔钱框架、四灯四色锁仓速读、三步怎么买与 24 词高频金融术语白话速查 |
+| **2. 新手 3 分钟指南** | [guide.html](https://nanless.github.io/global-investment-research/guide.html) | 四笔钱框架、四灯四色锁仓速读、三步怎么买与 48 词高频金融术语白话速查 |
 | **3. 12 大多元渠道与独立详情页** | [channels.html](https://nanless.github.io/global-investment-research/channels.html) | 中国大陆 12 大个人合规投资渠道总览 + 12 个独立详情页 `channels/<id>.html` + 横向「全市场打新工具箱」与「双层风控警示墙」 |
 | **4. 140+ 只重点 ETF 深度雷达** | [etfs.html](https://nanless.github.io/global-investment-research/etfs.html) | 覆盖 6 大交易通道的费率、规模、实时折溢价预警、税负口径与 7 维配置拆解弹窗 |
 | **5. 231 股 7 维龙头筛选器** | [screener.html](https://nanless.github.io/global-investment-research/screener.html) | A 股 76 / 港股 75 / 美股 80 全行业龙头四色锁仓筛选、实时鲜度徽章覆盖层与零模板化 7 维机构档案弹窗 |
@@ -28,8 +28,8 @@
 
 ## 核心亮点 · Why This Repository
 
-- **① 小白三层漏斗 × 24 词全站术语白话浮窗 × WCAG 深浅色模式**
-  全站严格落实 **「30 秒红绿灯白话结论 → 10 万/1 万元双刻度钱包实算与三步怎么买 → 机构级 7 维硬核证据与官方自查」**，摒弃黑话墙与居高临下说教；站内自动为 `DXY`/`COT`/`CDS`/`ERP`/`IRR`/`DFII10` 等 **24 个核心金融术语**提供全站范围点按/悬停白话释义浮窗，配备 **WCAG 对比度达标的深色/浅色切换模式** 与 `guide.html` 三分钟入门图解。
+- **① 小白三层漏斗 × 48 词全站术语白话浮窗 × WCAG 深浅色模式**
+  全站严格落实 **「30 秒红绿灯白话结论 → 10 万/1 万元双刻度钱包实算与三步怎么买 → 机构级 7 维硬核证据与官方自查」**，摒弃黑话墙与居高临下说教；站内自动为 `DXY`/`COT`/`CDS`/`ERP`/`IRR`/`DFII10` 等 **48 个核心金融术语**提供全站范围点按/悬停白话释义浮窗，配备 **WCAG 对比度达标的深色/浅色切换模式** 与 `guide.html` 三分钟入门图解。
 - **② 黄金 SSOT 红灯跨轨互斥锁 × 跨库费率与图表符号硬门禁**
   `gold/data_snapshot.json` 拥有全仓库唯一写入权；当买金四步红绿灯处于 `Tier 0` 红灯或 `new_buy_allowed == false` 时，跨项目门禁（Gate C2）与静态站门禁（Gate S6）联合阻断全仓正文、三大扩展 JSON、全站网页与矢量 SVG 中任何新买/补仓黄金指令及金矿标绿；同时叠加 **跨库费率一致性检验**（如 `511380` 0.20% vs `511180` 0.30%）与 **`CHART_A2` 期货贴水正负符号校验**，防口径撕裂。
 - **③ 非阻塞 `data_caveats` 信息透明 × 公开零篡改记分卡 × 维护者 `complete-superseded` 运维闭环**
@@ -87,7 +87,7 @@ flowchart TD
 
 ## 双班次节拍与 10+1 协同流水线 · Schedule & Pipeline
 
-工作日执行每日两场 **All-4-Main（四市全主刊）+ 共享 10+1 深研红队（含全焦点股近 24 小时公告硬扫雷与 T-0 宏观官源四铁律）+ 5 项真核验盲审 + 纯网页发布**；单向截点宽限严格统一为 **`[-5 分钟, +6 小时]`**（`07:25–13:30` / `17:55–次日 00:00` CST，黄金截点须早于或同分钟于权益且间隔 ≤6 小时）；`edition_run.py begin --scheduled` 会自动清理**严格较早期号**、超 **2 小时**无进展且尚未进入推送的僵尸锁；为防大文件回写撞 300 秒流式超时，权益三大扩展大 JSON（合计 ~830 KB）、黄金历史双账本、权益审计账本与双轨 `rsi_metrics.json` 统一经预授权 **`scripts/patch_state_dbs.py`** 增量原子写入（`--apply` / `--prepend-gold-ledgers` / `--prepend-equity-audit` / `--append-gold-rsi` / `--append-equity-rsi` / 只读 `--inspect`）。
+工作日执行每日两场 **All-4-Main（四市全主刊）+ 共享 10+1 深研红队（含全焦点股近 24 小时公告硬扫雷与 T-0 宏观官源四铁律）+ 5 项真核验盲审 + 纯网页发布**；单向截点宽限严格统一为 **`[-5 分钟, +6 小时]`**（`07:25–13:30` / `17:55–次日 00:00` CST，黄金截点须早于或同分钟于权益且间隔 ≤6 小时）；`edition_run.py begin --scheduled` 会自动清理**严格较早期号**、超 **2 小时**无进展且尚未进入推送的僵尸锁；本地双班次定时模板内置 **54 项精确无通配符预授权**（`automations/permissions.json`）；为防大文件回写与月初（如 `12/01`）跨月切换撞 300 秒流式超时，权益三大扩展大 JSON（合计 ~830 KB）、黄金历史双账本与跨月归档、权益审计账本、三市旗舰月初滚存及双轨 `rsi_metrics.json` 统一经预授权 **`scripts/patch_state_dbs.py`** 增量原子写入（`--apply` / `--prepend-gold-ledgers` / `--prepend-equity-audit` / `--append-gold-rsi` / `--append-equity-rsi` / `--rollover-equity-month` / `--archive-gold-ledgers` / 只读 `--inspect <target>`）。
 
 | 班次（CST） | 任务 ID | 单会话串行产出与分层刷新重点 |
 | :--- | :--- | :--- |
@@ -112,7 +112,7 @@ flowchart TD
 仅需 **Python 3.9+** 标准库，无需安装任何第三方包或浏览器二进制：
 
 ```bash
-# 1. 运行全链路零依赖回归测试（95+ 用例）
+# 1. 运行全链路零依赖回归测试（135+ 用例）
 python3 -m unittest discover -s tests
 
 # 2. 构建纯网页静态门户并执行 S1–S6 严格门禁（含 SVG 几何校验）
@@ -130,19 +130,21 @@ python3 gold/lint_readability.py --strict gold/daily/<YYYY-MM-DD_HHMM_班次_黄
 python3 equity/lint_equity.py --strict
 python3 scripts/publish_site.py --check-manuscripts
 
-# 5. 大文件与增长型账本增量补丁（防 300s 超时）与纯网页发布
-python3 scripts/patch_state_dbs.py --inspect
+# 5. 大文件、增长型账本与月初跨月滚存原子命令（防 300s 超时）与纯网页发布
+python3 scripts/patch_state_dbs.py --inspect channels
 python3 scripts/patch_state_dbs.py --apply --dry-run
 python3 scripts/patch_state_dbs.py --prepend-gold-ledgers --dry-run
 python3 scripts/patch_state_dbs.py --prepend-equity-audit --dry-run
 python3 scripts/patch_state_dbs.py --append-gold-rsi --dry-run
 python3 scripts/patch_state_dbs.py --append-equity-rsi --dry-run
+python3 scripts/patch_state_dbs.py --rollover-equity-month --dry-run
+python3 scripts/patch_state_dbs.py --archive-gold-ledgers --dry-run
 python3 scripts/publish_site.py --dry-run
 python3 scripts/publish_site.py --no-push
 python3 scripts/publish_site.py --edition-token <token>
 python3 scripts/edition_run.py complete <token>
 
-# 6. 本机双班次定时模板安装、漂移校验与运行锁查看
+# 6. 本机双班次定时模板安装（54 项精确预授权）、漂移校验与运行锁查看
 python3 scripts/install_sidecars.py --dry-run
 python3 scripts/install_sidecars.py
 python3 scripts/install_sidecars.py --check
@@ -158,7 +160,7 @@ python3 scripts/edition_run.py status
 global-investment-research/
 ├── AGENTS.md                        # 单仓库顶层统一编排宪章（纯网页 10+1、12 渠道与跨轨红线）
 ├── .agents/skills/                  # 统一工作区三 Skill（黄金出版 + 权益出版 + 权益编辑审校）
-├── automations/                     # 共享双班次提示词、无通配符权限清单与脱敏定时模板
+├── automations/                     # 共享双班次提示词、54 项无通配符精确权限清单与脱敏定时模板
 ├── gold/                            # 黄金深度研报体系（跨项目 SSOT 唯一写入源）
 │   ├── AGENTS.md / market_calendar.json / data_snapshot.json / master_snapshot.json
 │   ├── lint_readability.py / edition_validation.py / chart_input.py
@@ -171,11 +173,11 @@ global-investment-research/
 ├── scripts/                         # 零第三方依赖纯网页门户、几何检验、大库原子补丁与发布引擎
 │   ├── build_site.py                # 静态门户构建器（首页/12 独立渠道页/ETF 雷达/231 股/新手指南/记分卡/档案）
 │   ├── svg_geometry.py              # SVG 矢量文本边界框解析与零碰撞/零越界几何校验引擎
-│   ├── patch_state_dbs.py           # 三库原子合并、账本头插、双轨 RSI 无损追加与 --inspect 只读查库工具（防 300s 超时）
+│   ├── patch_state_dbs.py           # 三库原子合并、账本头插、双轨 RSI 无损追加、月初原子滚存/归档与 --inspect <target> 只读查库工具（防 300s 超时）
 │   ├── lint_site.py                 # 静态站 S1–S6 法证与安全严格门禁
 │   ├── publish_site.py / edition_run.py / install_sidecars.py
-│   └── web_assets/                  # WCAG 深浅色双端样式与零依赖交互脚本（含 24 词全站术语浮窗与 7 维/ETF 详情弹窗）
-├── tests/                           # 全链路零依赖回归测试（95+ 用例）
+│   └── web_assets/                  # WCAG 深浅色双端样式与零依赖交互脚本（含 48 词全站术语浮窗与 7 维/ETF 详情弹窗）
+├── tests/                           # 全链路零依赖回归测试（135+ 用例）
 └── .github/workflows/deploy-pages.yml
 ```
 

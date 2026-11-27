@@ -16,7 +16,7 @@
 
 | 层级 | 允许改动的文件范围 | 动作权限 | 强制验证与失败回滚机制 |
 | :--- | :--- | :--- | :--- |
-| **Tier A（每刊自动）** | `state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json` | 每刊全自动追加 1 条三市盲审遥测、滚动精炼经验手册并更新 `next_run_watch` | 手册严格 **≤180 行**（181–200 行告警，>200 行阻断；合并重复、淘汰已固化项，且不得残留 3 项已证伪税务/ETF/转债旧口径）；JSON 合法、`run_id` 唯一、`total_score == sum(scores)`、`max_score == 30`；须通过 `lint_equity.py --strict` 终检 |
+| **Tier A（每刊自动）** | `state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json` | 每刊经 `equity/state/_rsi_patch.json` + `scripts/patch_state_dbs.py --append-equity-rsi`（黄金经 `gold/daily/_rsi_patch.json` + `--append-gold-rsi`）无损追加 1 条盲审遥测、滚动精炼经验手册并更新 `next_run_watch` | 手册严格 **≤180 行**（181–200 行告警，>200 行阻断；合并重复、淘汰已固化项，且不得残留 3 项已证伪税务/ETF/转债旧口径）；JSON 合法、`run_id` 唯一、`total_score == sum(scores)`、`max_score == 30`；须通过 `lint_equity.py --strict` 终检 |
 | **Tier B（按需慎改）** | `equity/edition_plan.py`、`lint_equity.py`、`DAILY_REPORT_SPEC.md` 及站内 SVG 图表辅助模块 | 仅当本轮复现了确凿的排期判定、SVG 渲染碰撞、JSON 解析或 Linter 漏网 Bug 时，允许实施 **≤1 处、≤40 行** 最小补丁 | 改后必须通过 **`lint_equity.py --strict`**（0 错 0 警）+ 静态站构建严检（`build_site.py --out _site` + `lint_site.py _site --strict`）+ 单元测试；**任一步报错、误报或网页效果恶化，必须立即回滚**并降级写入 Tier C 提案区 |
 | **Tier C（宪法锁定）** | `<REPO_ROOT>/AGENTS.md`、`GEMINI.md`、核心风控红线（四灯阈值、三市危机总熔断阀、AI 跨市 ≤20%、单股 ≤8%、黄金红灯锁、5 万美元购汇红线、6 万美元美国遗产税边界）、工作区三 Skill（`<REPO_ROOT>/.agents/skills/`）、`<REPO_ROOT>/automations/`（含 `scripts/install_sidecars.py`）与本地 `sidecar.json` | **严禁无人值守自改**；仅作为结构化提案写入 `state/RSI_PLAYBOOK.md` 第四节与 `rsi_metrics.json` 的 `tier_c_proposals` | 在最终快报中向用户明确呈报，等待用户在交互会话中明确审批后再执行 |
 
@@ -47,7 +47,7 @@
 
 ## 四、`state/rsi_metrics.json` 单条运行记录 Schema 与 `review_closure` 闭环规则
 
-每刊向 `runs` 数组末尾追加 1 个对象，保留历史记录（纯网页交付，**不再记录已退役的历史页数字段**；周六 `07:30` 仅发美股主刊或半日市 `holiday_watch` 时，`reports` 仅列当期实际新发日报路径，周五滞后美股盘后终盘与 BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股周度前瞻主刊）。联合班次按 [共享任务提示词](../../../../automations/unified-edition.prompt.md) 与发布门禁脚本登记 `review_closure`。
+每刊严禁整文件重写 `rsi_metrics.json`，须分别写裸单条运行对象根 `gold/daily/_rsi_patch.json` 与 `equity/state/_rsi_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --append-gold-rsi` 与 `--append-equity-rsi` 无损追加至 `runs` 数组末尾，保留历史记录（纯网页交付，**不再记录已退役的历史页数字段**；周六 `07:30` 仅发美股主刊或半日市 `holiday_watch` 时，`reports` 仅列当期实际新发日报路径，周五滞后美股盘后终盘与 BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股周度前瞻主刊）。联合班次按 [共享任务提示词](../../../../automations/unified-edition.prompt.md) 与发布门禁脚本登记 `review_closure`。
 
 ### `review_closure.findings[].status` 合法终态定义（`open` 将阻断发布）
 - **`resolved`**：已证实的事实、图表或结构问题已完成修正并复验；`evidence` 须为非空字符串，写清修改文件、具体改动与复验结果。
@@ -116,4 +116,4 @@
 ## 五、每 10 刊 Meta-RSI 跨周期趋势总复盘与终检收官
 
 1. **Meta-RSI 触发**：每当 `len(runs) > 0` 且 `len(runs) % 10 == 0` 时，盲审子代理同步统计最近 10 刊总分均值、一次过率（`first_pass_clean` 占比）与 6 个维度各自均分，锁定连续得分最低的 1–2 个结构性瓶颈维度，输出 **≤2 条高价值 Tier C 根因升级提案** 写入 `state/RSI_PLAYBOOK.md` 第四节待用户审批，同时彻底淘汰过时条目保持手册 ≤180 行。
-2. **统一终检与单次纯网页站点发布**：Tier A（及按需 Tier B）落盘后复跑双轨严检，确认手册行数、JSON 合法性、`run_id` 唯一性及各维分数在 1–5 且合计正确。推进本期令牌到 `publish`，执行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`（若构建或门禁异常可用预授权 `build_site.py` / `lint_site.py` / `unittest` 排障修复后重跑），再执行 `python3 <REPO_ROOT>/scripts/edition_run.py complete <token>` 验证 GitHub Pages 部署成功即闭环。
+2. **统一终检与单次纯网页站点发布**：Tier A 经 `--append-gold-rsi` / `--append-equity-rsi` 无损追加（及按需 Tier B）落盘后复跑双轨严检，确认手册行数、JSON 合法性、`run_id` 唯一性及各维分数在 1–5 且合计正确。推进本期令牌到 `publish`，执行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`（若构建或门禁异常可用预授权 `build_site.py` / `lint_site.py` / `unittest` 排障修复后重跑），再执行 `python3 <REPO_ROOT>/scripts/edition_run.py complete <token>` 验证 GitHub Pages 部署成功即闭环。

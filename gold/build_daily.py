@@ -365,9 +365,9 @@ def render_persona_cards(cfg: dict) -> str:
     title = esc(cfg.get("title", "对号入座：不管你现在是什么情况，今天到底该怎么办？"))
     cards = cfg.get("cards", [])
     accent_map = {
-        "A": ("#0284c7", "#f0f9ff"),
+        "A": ("#0369a1", "#f0f9ff"),
         "B": ("#b45309", "#fffbeb"),
-        "C": ("#059669", "#ecfdf5"),
+        "C": ("#047857", "#ecfdf5"),
         "D": ("#4f46e5", "#eef2ff"),
     }
     rendered_cards = []
