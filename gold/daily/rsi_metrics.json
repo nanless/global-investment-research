@@ -739,6 +739,82 @@
         "【黑五半日市盘前美债 4.91% 与布油冲击哨兵】追踪亚盘上冲至 4.910% 的 10 年美债与布油 $96.46 在欧盘及黑五盘前延续性，验证第 1 关实际利率是否远离 2.72% 门槛，并结案当日 SCORECARD 到期项",
         "【冲刺双零首轮一次通过】晚报落盘前逐项核对 spot_gold_live_change_pct 纽约官收口径、DAILY_CHART_CROSS 降序排列与段长 ≤220 字，冲刺 first_pass_strict=true 且 lint_retries=0"
       ]
+    },
+    {
+      "run_id": "2026-11-27_1800",
+      "edition_type": "weekday_evening_unified",
+      "report_file": "daily/2026-11-27_1800_晚报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-27 18:30",
+      "first_pass_strict": true,
+      "lint_retries": 0,
+      "visual_retries": 0,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "首轮 gold/lint_readability.py --strict 一次达成 0 errors / 0 warnings（3 张 640px SVG 零碰撞，visual_retries=0）；Step 5 独立盲审与第 10/10 刊 Meta-RSI 检出双账本 11:30 孤悬标题（G-01）与 L255 裸 PMI 及 summary 90 字略超预算（G-02），均已发前热修并复过 --strict"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 27,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/27 12:30 追踪：【18:00 日终封账 + 第 10/10 刊 Meta-RSI 总复盘】封账 15:30 上金 Au99.99/Au(T+D) 与沪金日终官收及同刻溢价、SHFE pm20261127.dat 前 20 席位、三大金基 11/27 份额流、山东黄金说明会纪要与老铺 06181.HK 日终表现并完成首轮 10/10 Meta-RSI",
+          "outcome": "partial",
+          "evidence": "18:00 晚报完整封账 15:30 上金 Au99.99 784.00 元（同刻溢价 +0.83 元）、Au(T+D) 783.35、上海金早/午定盘 775.47/784.26（公开纠偏午刊早盘定盘）、沪金 au2702 收 785.84（前 20 净多 +2,647 手至 56,631）、沪银 ag2702 暴涨 +12.33% 至 10,483（前 20 空头激增 +6,716 手）、老铺 06181.HK 日终收 264.20（填权 87.65%）并完成 10/10 Meta-RSI 总复盘；国内金基 11/27 官净/份额流与山东黄金纪要属晚间滞后表，挂账周六早报核销"
+        },
+        {
+          "claim": "11/27 12:30 追踪：【黑五半日市盘前美债 4.91% 与布油冲击哨兵】追踪亚盘 4.910% 美债与布油 $96.46 在欧盘及黑五盘前延续性，验证红灯停与 SCORECARD 结案",
+          "outcome": "hit",
+          "evidence": "18:11 欧盘布油 1 月合约续升至 $97.25、10 年美债稳居 4.912%、2 年爬至 4.687%（压制第 1/2 关仍紧锁 1/4 红灯停，新仓 0%），并严苛结案 161226 与老铺除净首日为部分兑现"
+        },
+        {
+          "claim": "11/27 12:30 追踪：【冲刺双零首轮一次通过】晚报落盘前核对纽约口径、图 2 降序与段长，冲刺 first_pass_strict=true 且 lint_retries=0",
+          "outcome": "hit",
+          "evidence": "gold/lint_readability.py --strict 首轮一次 0 errors / 0 warnings、3 张 SVG 零碰撞（visual_retries=0），仅独立盲审额外揪出双账本标记位与尾表裸 PMI，发前热修归零"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "G-01 [HIGH]: gold/daily/CHANGELOG.md L12 与 gold/daily/AUDIT_LOG.md L7 因历史 11:30 标题位于注释标记之前，导致 --prepend-gold-ledgers 头插后 11:30 空标题孤悬于 18:00 晚报条目上方",
+            "status": "resolved",
+            "evidence": "已将 18:00 晚报完整块（首行严格保留 GOLD_EDITION_CHANGELOG / GOLD_EDITION_REVIEW 标记）整体前置至 11:30 标题上方，既消除孤悬空标题又 100% 保持 HEAD 历史行顺序不触发顺序守护报错"
+          },
+          {
+            "description": "G-02 [MEDIUM]: gold/daily/2026-11-27_1800_晚报_黄金深度研报.md L255 首次出现 PMI 未配白话括注，且 L6 summary 90 字略超 62–78 字预算",
+            "status": "resolved",
+            "evidence": "已将 L255 改为“制造业采购经理指数（PMI）”，并将 L6 summary 精炼至 74 字，复过 gold/lint_readability.py --strict（0 errors / 0 warnings）"
+          },
+          {
+            "description": "G-03 [DISCLOSED_CAVEAT]: 国内四大黄金基金 11/27 正式净值份额与山东黄金纪要、11/27 伦敦定盘与黑五美盘早收官值、11/25 美国联邦滞后统计（OAS/SOFR/TGA）截至 18:30 尚未披露",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.lbma.org.uk/prices-and-data/precious-metal-prices",
+              "due_edition": "2026-11-28_0730",
+              "disposition": "3 项外部滞后表均已按班次 1:1 写入 gold/data_snapshot.json data_caveats 与晚报正文末尾透明披露，严禁估算或拿欧盘薄量抢跑改判红绿灯，明晨 07:30 周六早报一次性核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【第 10/10 刊 Meta-RSI 总复盘固化 1】双账本标记首行铁律：写 _ledger_patch.json 时 GOLD_EDITION_CHANGELOG / GOLD_EDITION_REVIEW 注释标记必须位于条目第 1 行（在标题之前），根治头插劈裂旧标题",
+        "【第 10/10 刊 Meta-RSI 总复盘固化 2】全篇尾表与日历裸缩写零容忍：发前专项扫尾表与日历中的 PMI/COT/CDS/DXY/LME/GLD，稳守 summary ≤78 字与自然段 ≤220 字",
+        "【第 10/10 刊 Meta-RSI 总复盘固化 3】跨班次滞后表分期核销清单：冷启动优先按 next_review == 当班 edition_id 一次性清零上期 data_caveats，抬升最低维 research_efficiency_and_source_quality（10 期均分 4.00）"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周六 07:30 黑五半日市封账与 3 项 data_caveats 清零】一次性核销 11/27 黑五纽约官收（验证第 4 关 3,590 与第 1/2 关 4.91% 美债是否仍锁红灯）、11/27 伦敦定盘、11/25 美国联邦统计（OAS/SOFR/TGA）及国内四大金基 11/27 官净/份额与山东黄金纪要",
+        "【11/29 周日第 42 届产油国会议与沪银空头压力追踪】跟踪布油 1 月合约（$97.25）与下周日产油国产量决议对再通胀与美债利率的传导，观察沪银 ag2702 暴涨 +12.33% 后空头大增 +6,716 手的回吐风险",
+        "【新周期第 1/10 刊零失误起跑】贯彻双账本标记首行铁律与尾表缩写自检，守住 first_pass_strict=true 且总分冲刺 ≥28/30"
+      ]
     }
   ]
 }

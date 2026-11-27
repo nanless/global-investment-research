@@ -1,7 +1,7 @@
 {
   "schema_version": "2.1",
-  "as_of_cst": "2026-11-27T12:28:00+08:00",
-  "edition_id": "2026-11-27_1130",
+  "as_of_cst": "2026-11-27T18:30:00+08:00",
+  "edition_id": "2026-11-27_1800",
   "period_slug": "2026_11",
   "schedule_cst": [
     "07:30",
@@ -14,51 +14,51 @@
     "18:00"
   ],
   "alert_level": "L1",
-  "alert_label": "关键节点临近 · 10月工企利润+20.1%引爆科创50(+4.43%)与金银轧空，14只停牌跨境基复牌续涨，美债反跳4.91%",
+  "alert_label": "关键节点临近 · 国常会首提国家队引爆三市破2万亿与科创飙15%，但期指机构大增空头、美债稳4.91%仍锁红灯",
   "rsi_enabled": true,
   "ssot_links": {
     "gold_snapshot_path": "../gold/data_snapshot.json",
-    "gold_snapshot_as_of": "2026-11-27 12:28",
-    "gold_edition_id": "2026-11-27_1130"
+    "gold_snapshot_as_of": "2026-11-27 18:30",
+    "gold_edition_id": "2026-11-27_1800"
   },
   "markets": {
     "a_share": {
       "lamp": "red",
       "lamp_label": "🛡️ 红灯防守期",
-      "score": "2.5/6",
-      "score_num": 2.5,
+      "score": "3.0/6",
+      "score_num": 3.0,
       "equity_cap_pct": 40,
-      "fomo_threshold": "上证稳守3,500上方且沪深300连续3日放量收站4,025点、期指贴水持续收窄",
-      "benchmark_sse": 3486.76,
-      "benchmark_csi300": 3909.93,
-      "benchmark_csi_dividend": 5404.07,
+      "fomo_threshold": "上证稳守3,500上方且沪深300连续3日放量收站4,025点（今为第1/3日）、机构空头不再逆势激增",
+      "benchmark_sse": 3606.49,
+      "benchmark_csi300": 4063.06,
+      "benchmark_csi_dividend": 5483.72,
       "csi300_200w": 4025,
       "sse_200w": 3427,
-      "margin_balance_100m": 21416.29,
+      "margin_balance_100m": 21346.42,
       "margin_balance_date": "2026-11-26",
       "pboc_total_net_100m": 2225,
       "pboc_op_date": "2026-11-27",
-      "pe_ttm": 13.27,
-      "pe_fwd": 12.33,
-      "cgb10y_pct": 1.594,
-      "erp_ttm_pct": 5.94,
-      "erp_fwd_pct": 6.52,
+      "pe_ttm": 13.79,
+      "pe_fwd": 12.81,
+      "cgb10y_pct": 1.597,
+      "erp_ttm_pct": 5.65,
+      "erp_fwd_pct": 6.21,
       "stock_pool_count": 76,
-      "latest_daily": "daily/2026-11-27_1130_a_share.md",
+      "latest_daily": "daily/2026-11-27_1800_a_share.md",
       "flagship_last_updated": "2026-11-25",
       "index_matrix": [
-        {"id": "idx_sh000001", "code": "000001", "name": "上证指数", "value": 3486.76, "change_pct": 0.28},
-        {"id": "idx_sh000300", "code": "000300", "name": "沪深300", "value": 3909.93, "change_pct": 0.24},
-        {"id": "idx_sz399001", "code": "399001", "name": "深证成指", "value": 10301.4, "change_pct": 2.16},
-        {"id": "idx_sh000510", "code": "000510", "name": "中证A500", "value": 4654.19, "change_pct": 0.85},
-        {"id": "idx_sh000016", "code": "000016", "name": "上证50", "value": 2741.1, "change_pct": -0.46},
-        {"id": "idx_sz399006", "code": "399006", "name": "创业板指", "value": 2272.72, "change_pct": 3.79},
-        {"id": "idx_sh000688", "code": "000688", "name": "科创50", "value": 1221.79, "change_pct": 4.43},
-        {"id": "idx_sh000905", "code": "000905", "name": "中证500", "value": 6018.34, "change_pct": 2.64},
-        {"id": "idx_sh000852", "code": "000852", "name": "中证1000", "value": 5714.69, "change_pct": 3.31},
-        {"id": "idx_sh000922", "code": "000922", "name": "中证红利", "value": 5404.07, "change_pct": -1.39},
-        {"id": "idx_bj899050", "code": "899050", "name": "北证50", "value": 779.96, "change_pct": 3.66},
-        {"id": "idx_sh000832", "code": "000832", "name": "中证转债", "value": 420.75, "change_pct": 0.73}
+        {"id": "idx_sh000001", "code": "000001", "name": "上证指数", "value": 3606.49, "change_pct": 3.73},
+        {"id": "idx_sh000300", "code": "000300", "name": "沪深300", "value": 4063.06, "change_pct": 4.17},
+        {"id": "idx_sz399001", "code": "399001", "name": "深证成指", "value": 10814.02, "change_pct": 7.24},
+        {"id": "idx_sh000510", "code": "000510", "name": "中证A500", "value": 4853.29, "change_pct": 5.16},
+        {"id": "idx_sh000016", "code": "000016", "name": "上证50", "value": 2834.68, "change_pct": 2.94},
+        {"id": "idx_sz399006", "code": "399006", "name": "创业板指", "value": 2443.96, "change_pct": 11.61},
+        {"id": "idx_sh000688", "code": "000688", "name": "科创50", "value": 1346.25, "change_pct": 15.07},
+        {"id": "idx_sh000905", "code": "000905", "name": "中证500", "value": 6313.63, "change_pct": 7.68},
+        {"id": "idx_sh000852", "code": "000852", "name": "中证1000", "value": 5982.91, "change_pct": 8.15},
+        {"id": "idx_sh000922", "code": "000922", "name": "中证红利", "value": 5483.72, "change_pct": 0.07},
+        {"id": "idx_bj899050", "code": "899050", "name": "北证50", "value": 851.79, "change_pct": 13.2},
+        {"id": "idx_sh000832", "code": "000832", "name": "中证转债", "value": 433.45, "change_pct": 3.77}
       ]
     },
     "hk_stock": {
@@ -69,39 +69,39 @@
       "offshore_equity_cap_pct": 35,
       "onshore_connect_cap_pct": 25,
       "fomo_threshold": "恒生指数连续3日放量收站23,515点且港汇稳守7.840下方、总结余守稳500亿",
-      "benchmark_hsi": 22416.44,
-      "benchmark_hstech": 3528.59,
-      "benchmark_hscei": 7557.51,
+      "benchmark_hsi": 22694.77,
+      "benchmark_hstech": 3637.88,
+      "benchmark_hscei": 7644.18,
       "hsi_200d": 23515,
-      "hsi_ma200_gap_pct": -4.67,
+      "hsi_ma200_gap_pct": -3.49,
       "hstech_200d": 3917,
-      "hstech_ma200_gap_pct": -9.92,
+      "hstech_ma200_gap_pct": -7.13,
       "hsi_52w_high": 28056.1,
-      "hsi_night_live": 22117,
+      "hsi_night_live": 22645,
       "hsi_adr_implied": null,
-      "turnover_hkd_b": 94.31,
-      "short_sell_ratio_pct": 19.23,
-      "southbound_daily_hkd_b": -21.351,
-      "southbound_mtd_hkd_b": 6.787,
-      "southbound_ytd_hkd_b": 415.05,
-      "hsahp_index": 136.35,
-      "pe_ttm": 10.39,
-      "pe_fwd": 9.78,
-      "erp_usd_anchor_ttm_pct": 4.77,
-      "erp_cny_anchor_ttm_pct": 8.03,
-      "erp_usd_anchor_fwd_pct": 5.37,
-      "erp_cny_anchor_fwd_pct": 8.63,
+      "turnover_hkd_b": 257.14,
+      "short_sell_ratio_pct": 17.48,
+      "southbound_daily_hkd_b": 4.587,
+      "southbound_mtd_hkd_b": 11.374,
+      "southbound_ytd_hkd_b": 418.49,
+      "hsahp_index": 137.9,
+      "pe_ttm": 10.52,
+      "pe_fwd": 9.9,
+      "erp_usd_anchor_ttm_pct": 4.66,
+      "erp_cny_anchor_ttm_pct": 7.91,
+      "erp_usd_anchor_fwd_pct": 5.25,
+      "erp_cny_anchor_fwd_pct": 8.5,
       "stock_pool_count": 75,
       "delisted_blocked_tickers": [
         "00011.HK"
       ],
-      "latest_daily": "daily/2026-11-27_1130_hk_stock.md",
+      "latest_daily": "daily/2026-11-27_1800_hk_stock.md",
       "flagship_last_updated": "2026-11-25",
       "index_matrix": [
-        {"id": "idx_hkHSI", "code": "HSI", "name": "恒生指数", "value": 22416.44, "change_pct": 0.85},
-        {"id": "idx_hkHSTECH", "code": "HSTECH", "name": "恒生科技", "value": 3528.59, "change_pct": 3.25},
-        {"id": "idx_hkHSCEI", "code": "HSCEI", "name": "恒生国企", "value": 7557.51, "change_pct": 0.86},
-        {"id": "idx_HSCI", "code": "HSCI", "name": "恒生综合", "value": 3204.49, "change_pct": 1.13}
+        {"id": "idx_hkHSI", "code": "HSI", "name": "恒生指数", "value": 22694.77, "change_pct": 2.11},
+        {"id": "idx_hkHSTECH", "code": "HSTECH", "name": "恒生科技", "value": 3637.88, "change_pct": 6.45},
+        {"id": "idx_hkHSCEI", "code": "HSCEI", "name": "恒生国企", "value": 7644.18, "change_pct": 2.01},
+        {"id": "idx_HSCI", "code": "HSCI", "name": "恒生综合", "value": 3246.87, "change_pct": 2.47}
       ]
     },
     "us_stock": {
@@ -125,152 +125,152 @@
       "erp_ttm_pct": -0.72,
       "erp_fwd_pct": 0.94,
       "stock_pool_count": 80,
-      "latest_daily": "daily/2026-11-27_1130_us_stock.md",
+      "latest_daily": "daily/2026-11-27_1800_us_stock.md",
       "flagship_last_updated": "2026-11-25",
       "index_matrix": [
         {"id": "idx_SPX", "code": "SPX", "name": "标普500", "value": 7182.78, "change_pct": -0.25},
-        {"id": "idx_IXIC", "code": "IXIC", "name": "纳斯达克综合", "value": 23685.12, "change_pct": -0.58},
+        {"id": "idx_IXIC", "code": "IXIC", "name": "纳斯达克综合", "value": 23585.8, "change_pct": -0.62},
         {"id": "idx_NDX", "code": "NDX", "name": "纳斯达克100", "value": 26046.9, "change_pct": -0.64},
         {"id": "idx_DJI", "code": "DJI", "name": "道琼斯工业", "value": 50182.95, "change_pct": 0.33},
-        {"id": "idx_RUT", "code": "IWM", "name": "罗素2000·IWM", "value": 270.42, "change_pct": 0.42},
-        {"id": "idx_SPXEW", "code": "RSP", "name": "标普等权·RSP", "value": 215.74, "change_pct": 0.38},
-        {"id": "idx_SOX", "code": "SOX", "name": "费城半导体", "value": 8774.86, "change_pct": -1.12},
+        {"id": "idx_RUT", "code": "IWM", "name": "罗素2000·IWM", "value": 268.87, "change_pct": 0.65},
+        {"id": "idx_SPXEW", "code": "RSP", "name": "标普等权·RSP", "value": 215.74, "change_pct": 0.83},
+        {"id": "idx_SOX", "code": "SOX", "name": "费城半导体", "value": 8774.86, "change_pct": -0.65},
         {"id": "idx_VIX", "code": "VIX", "name": "VIX恐慌指数", "value": 28.29, "change_pct": 7.32}
       ]
     },
     "gold_mirror_readonly": {
       "source": "../gold/data_snapshot.json",
-      "as_of_short": "2026-11-27 12:28",
+      "as_of_short": "2026-11-27 18:30",
       "tier_code": "Tier 0",
       "lamp": "red",
       "gates_passed": "1/4",
-      "edition_id": "2026-11-27_1130",
+      "edition_id": "2026-11-27_1800",
       "new_buy_allowed": false,
       "spot_ny_close_usd": 3588.78,
-      "spot_live_usd": 3633.88,
+      "spot_live_usd": 3671.08,
       "spot_change_pct": 0.96,
       "comex_front_settle_usd": 3534.7,
       "comex_gcz26_settle_usd": 3537.9,
-      "sge_au9999_day_rmb": 778.32,
-      "sge_autd_day_rmb": 778.19,
+      "sge_au9999_day_rmb": 784.0,
+      "sge_autd_day_rmb": 783.35,
       "sge_autd_night_rmb": 764.0,
-      "sge_same_ts_premium_rmb": 1.48,
+      "sge_same_ts_premium_rmb": 0.83,
       "dfii10_pct": 2.73,
       "index_matrix": [
-        {"id": "cmd_XAU", "code": "XAU", "name": "伦敦现货黄金", "value": 3633.88, "change_pct": 1.26},
-        {"id": "cmd_GC", "code": "GC", "name": "COMEX黄金主力", "value": 3660.95, "change_pct": 2.7},
-        {"id": "cmd_AU0", "code": "AU0", "name": "沪金主力(au2702)", "value": 780.22, "change_pct": 3.16},
-        {"id": "cmd_Au9999", "code": "Au99.99", "name": "上金所Au99.99", "value": 778.32, "change_pct": 1.63},
-        {"id": "cmd_XAG", "code": "XAG", "name": "伦敦现货白银", "value": 43.47, "change_pct": 4.77},
-        {"id": "cmd_AG0", "code": "AG0", "name": "沪银主力(ag2702)", "value": 10335.0, "change_pct": 10.75}
+        {"id": "cmd_XAU", "code": "XAU", "name": "伦敦现货黄金", "value": 3671.08, "change_pct": 2.29},
+        {"id": "cmd_GC", "code": "GC", "name": "COMEX黄金主力", "value": 3701.3, "change_pct": 3.83},
+        {"id": "cmd_AU0", "code": "AU0", "name": "沪金主力(au2702)", "value": 785.84, "change_pct": 3.9},
+        {"id": "cmd_Au9999", "code": "Au99.99", "name": "上金所Au99.99", "value": 784.0, "change_pct": 2.37},
+        {"id": "cmd_XAG", "code": "XAG", "name": "伦敦现货白银", "value": 44.12, "change_pct": 6.54},
+        {"id": "cmd_AG0", "code": "AG0", "name": "沪银主力(ag2702)", "value": 10483.0, "change_pct": 12.33}
       ]
     }
   },
   "cross_market_linkages": {
     "macro_index_matrix": [
-      {"id": "cmd_OIL", "code": "OIL", "name": "布伦特原油(1月)", "value": 96.46, "change_pct": -0.11},
-      {"id": "cmd_CL", "code": "CL", "name": "WTI原油", "value": 85.79, "change_pct": 2.52},
-      {"id": "cmd_HG", "code": "HG", "name": "COMEX铜", "value": 5.5635, "change_pct": 4.25},
-      {"id": "fx_DXY", "code": "DXY", "name": "美元指数", "value": 103.7, "change_pct": 0.03},
-      {"id": "rate_US10Y", "code": "US10Y", "name": "美债10Y收益率", "value": 4.91, "change_pct": 1.28},
-      {"id": "fx_USDCNH", "code": "USDCNH", "name": "离岸人民币", "value": 6.6652, "change_pct": 0.06},
-      {"id": "fx_USDJPY", "code": "USDJPY", "name": "美元兑日元", "value": 159.22, "change_pct": -0.02},
-      {"id": "crypto_BTC", "code": "BTC-USD", "name": "比特币", "value": 61428.0, "change_pct": 2.38}
+      {"id": "cmd_OIL", "code": "OIL", "name": "布伦特原油(1月)", "value": 97.25, "change_pct": 0.7},
+      {"id": "cmd_CL", "code": "CL", "name": "WTI原油", "value": 85.78, "change_pct": 2.51},
+      {"id": "cmd_HG", "code": "HG", "name": "COMEX铜", "value": 5.68, "change_pct": 4.77},
+      {"id": "fx_DXY", "code": "DXY", "name": "美元指数", "value": 103.85, "change_pct": 0.06},
+      {"id": "rate_US10Y", "code": "US10Y", "name": "美债10Y收益率", "value": 4.912, "change_pct": 1.28},
+      {"id": "fx_USDCNH", "code": "USDCNH", "name": "离岸人民币", "value": 6.6552, "change_pct": -0.09},
+      {"id": "fx_USDJPY", "code": "USDJPY", "name": "美元兑日元", "value": 159.52, "change_pct": 0.17},
+      {"id": "crypto_BTC", "code": "BTC-USD", "name": "比特币", "value": 61572.0, "change_pct": 1.88}
     ],
     "rates_fx_chain": {
       "us10y_pct": 4.85,
       "us2y_pct": 4.61,
       "us30y_pct": 5.24,
       "dfii10_pct": 2.73,
-      "cgb10y_pct": 1.594,
-      "cn_us_10y_spread_bp": -326,
-      "dxy": 103.7,
-      "usd_cny_1630": 6.66,
+      "cgb10y_pct": 1.597,
+      "cn_us_10y_spread_bp": -325,
+      "dxy": 103.85,
+      "usd_cny_1630": 6.6544,
       "usd_cny_night": 6.6609,
-      "usd_cnh": 6.6652,
+      "usd_cnh": 6.6552,
       "cfets_cny_fixing": 6.7075,
       "cfets_fixing_date": "2026-11-27",
       "pboc_fx_rrr_pct": 6.0,
-      "usd_hkd": 7.8343,
+      "usd_hkd": 7.8282,
       "hkma_base_rate_pct": 4.25,
       "hibor_1m_pct": 3.132,
       "hibor_3m_pct": 3.462,
       "sofr_pct": 3.94,
       "sofr_hibor1m_carry_bp": 80.8,
-      "hkma_agg_bal_hkd_100m": 561.12,
+      "hkma_agg_bal_hkd_100m": 541.09,
       "hkd_cny_mid": 0.8558,
-      "usd_jpy": 159.22
+      "usd_jpy": 159.52
     },
     "ah_premium_radar": {
-      "hsahp_index": 136.35,
+      "hsahp_index": 137.9,
       "as_of_date": "2026-11-27",
       "pe_physics_locks": [
-        {"name": "中芯国际", "a_pe_ttm": 122.0, "h_pe_ttm": 42.6, "ah_premium_pct": 186.6, "preferred_channel": "offshore_hk"},
-        {"name": "中国神华", "a_pe_ttm": 18.0, "h_pe_ttm": 11.8, "ah_premium_pct": 52.2, "preferred_channel": "offshore_hk"},
-        {"name": "紫金矿业", "a_pe_ttm": 9.0, "h_pe_ttm": 7.7, "ah_premium_pct": 16.7, "preferred_channel": "neutral"},
-        {"name": "美的集团", "a_pe_ttm": 14.8, "h_pe_ttm": 13.8, "ah_premium_pct": 7.1, "preferred_channel": "neutral"},
-        {"name": "中际旭创", "a_pe_ttm": 19.2, "h_pe_ttm": 19.9, "ah_premium_pct": -3.7, "preferred_channel": "onshore_a_inverted"},
-        {"name": "招商银行", "a_pe_ttm": 7.1, "h_pe_ttm": 7.5, "ah_premium_pct": -5.4, "preferred_channel": "onshore_a_inverted"},
-        {"name": "药明康德", "a_pe_ttm": 17.6, "h_pe_ttm": 19.6, "ah_premium_pct": -10.4, "preferred_channel": "onshore_a_inverted"},
-        {"name": "宁德时代", "a_pe_ttm": 10.8, "h_pe_ttm": 13.9, "ah_premium_pct": -22.1, "preferred_channel": "onshore_a_inverted"}
+        {"name": "中芯国际", "a_pe_ttm": 134.8, "h_pe_ttm": 45.7, "ah_premium_pct": 194.1, "preferred_channel": "offshore_hk"},
+        {"name": "中国神华", "a_pe_ttm": 20.3, "h_pe_ttm": 13.2, "ah_premium_pct": 52.0, "preferred_channel": "offshore_hk"},
+        {"name": "紫金矿业", "a_pe_ttm": 9.3, "h_pe_ttm": 8.0, "ah_premium_pct": 17.3, "preferred_channel": "neutral"},
+        {"name": "美的集团", "a_pe_ttm": 14.95, "h_pe_ttm": 13.8, "ah_premium_pct": 8.4, "preferred_channel": "neutral"},
+        {"name": "中际旭创", "a_pe_ttm": 23.5, "h_pe_ttm": 23.4, "ah_premium_pct": 0.9, "preferred_channel": "neutral"},
+        {"name": "招商银行", "a_pe_ttm": 7.0, "h_pe_ttm": 7.4, "ah_premium_pct": -4.4, "preferred_channel": "onshore_a_inverted"},
+        {"name": "药明康德", "a_pe_ttm": 17.7, "h_pe_ttm": 19.3, "ah_premium_pct": -8.1, "preferred_channel": "onshore_a_inverted"},
+        {"name": "宁德时代", "a_pe_ttm": 11.4, "h_pe_ttm": 14.3, "ah_premium_pct": -19.7, "preferred_channel": "onshore_a_inverted"}
       ],
       "benchmarks": [
-        {"name": "华虹半导体", "a": "688347", "h": "01347.HK", "ah_premium_pct": 217.4, "preferred_channel": "offshore_hk"},
-        {"name": "中芯国际", "a": "688981", "h": "00981.HK", "ah_premium_pct": 186.6, "preferred_channel": "offshore_hk"},
-        {"name": "中国人寿", "a": "601628", "h": "02628.HK", "ah_premium_pct": 92.8, "preferred_channel": "offshore_hk"},
+        {"name": "华虹半导体", "a": "688347", "h": "01347.HK", "ah_premium_pct": 217.6, "preferred_channel": "offshore_hk"},
+        {"name": "中芯国际", "a": "688981", "h": "00981.HK", "ah_premium_pct": 194.1, "preferred_channel": "offshore_hk"},
         {"name": "三花智控", "a": "002050", "h": "02050.HK", "ah_premium_pct": 86.5, "preferred_channel": "offshore_hk"},
-        {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 68.5, "preferred_channel": "offshore_hk_check_withholding", "is_red_chip_28": true},
-        {"name": "中国移动", "a": "600941", "h": "00941.HK", "ah_premium_pct": 62.6, "preferred_channel": "offshore_hk_check_withholding", "is_red_chip_28": true},
+        {"name": "中国人寿", "a": "601628", "h": "02628.HK", "ah_premium_pct": 80.4, "preferred_channel": "offshore_hk"},
+        {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.0, "preferred_channel": "offshore_hk_check_withholding", "is_red_chip_28": true},
         {"name": "中广核电力", "a": "003816", "h": "01816.HK", "ah_premium_pct": 61.8, "preferred_channel": "offshore_hk"},
+        {"name": "中国移动", "a": "600941", "h": "00941.HK", "ah_premium_pct": 58.5, "preferred_channel": "offshore_hk_check_withholding", "is_red_chip_28": true},
         {"name": "中信证券", "a": "600030", "h": "06030.HK", "ah_premium_pct": 57.0, "preferred_channel": "offshore_hk"},
-        {"name": "中国神华", "a": "601088", "h": "01088.HK", "ah_premium_pct": 52.2, "preferred_channel": "offshore_hk"},
-        {"name": "比亚迪", "a": "002594", "h": "01211.HK", "ah_premium_pct": 51.2, "preferred_channel": "offshore_hk"},
+        {"name": "中国神华", "a": "601088", "h": "01088.HK", "ah_premium_pct": 52.0, "preferred_channel": "offshore_hk"},
         {"name": "中国石油", "a": "601857", "h": "00857.HK", "ah_premium_pct": 51.0, "preferred_channel": "offshore_hk"},
         {"name": "中国铝业", "a": "601600", "h": "02600.HK", "ah_premium_pct": 51.0, "preferred_channel": "offshore_hk"},
-        {"name": "工商银行", "a": "601398", "h": "01398.HK", "ah_premium_pct": 37.6, "preferred_channel": "offshore_hk"},
+        {"name": "比亚迪", "a": "002594", "h": "01211.HK", "ah_premium_pct": 50.8, "preferred_channel": "offshore_hk"},
+        {"name": "工商银行", "a": "601398", "h": "01398.HK", "ah_premium_pct": 39.5, "preferred_channel": "offshore_hk"},
         {"name": "洛阳钼业", "a": "603993", "h": "03993.HK", "ah_premium_pct": 34.0, "preferred_channel": "offshore_hk"},
         {"name": "百济神州", "a": "688235", "h": "06160.HK", "ah_premium_pct": 32.8, "preferred_channel": "offshore_hk"},
         {"name": "顺丰控股", "a": "002352", "h": "06936.HK", "ah_premium_pct": 30.4, "preferred_channel": "offshore_hk"},
-        {"name": "中国平安", "a": "601318", "h": "02318.HK", "ah_premium_pct": 28.5, "preferred_channel": "offshore_hk"},
         {"name": "恒瑞医药", "a": "600276", "h": "01276.HK", "ah_premium_pct": 27.1, "preferred_channel": "offshore_hk"},
+        {"name": "中国平安", "a": "601318", "h": "02318.HK", "ah_premium_pct": 24.5, "preferred_channel": "offshore_hk"},
         {"name": "福耀玻璃", "a": "600660", "h": "03606.HK", "ah_premium_pct": 23.6, "preferred_channel": "offshore_hk"},
         {"name": "中远海控", "a": "601919", "h": "01919.HK", "ah_premium_pct": 19.3, "preferred_channel": "neutral"},
-        {"name": "紫金矿业", "a": "601899", "h": "02899.HK", "ah_premium_pct": 16.7, "preferred_channel": "neutral"},
+        {"name": "紫金矿业", "a": "601899", "h": "02899.HK", "ah_premium_pct": 17.3, "preferred_channel": "neutral"},
         {"name": "立讯精密", "a": "002475", "h": "02475.HK", "ah_premium_pct": 16.6, "preferred_channel": "offshore_hk"},
-        {"name": "美的集团", "a": "000333", "h": "00300.HK", "ah_premium_pct": 7.1, "preferred_channel": "neutral"},
-        {"name": "中际旭创", "a": "300308", "h": "03308.HK", "ah_premium_pct": -3.7, "preferred_channel": "onshore_a_inverted"},
-        {"name": "招商银行", "a": "600036", "h": "03968.HK", "ah_premium_pct": -5.4, "preferred_channel": "onshore_a_inverted"},
-        {"name": "药明康德", "a": "603259", "h": "02359.HK", "ah_premium_pct": -10.4, "preferred_channel": "onshore_a_inverted"},
-        {"name": "宁德时代", "a": "300750", "h": "03750.HK", "ah_premium_pct": -22.1, "preferred_channel": "onshore_a_inverted"}
+        {"name": "美的集团", "a": "000333", "h": "00300.HK", "ah_premium_pct": 8.4, "preferred_channel": "neutral"},
+        {"name": "中际旭创", "a": "300308", "h": "03308.HK", "ah_premium_pct": 0.9, "preferred_channel": "neutral"},
+        {"name": "招商银行", "a": "600036", "h": "03968.HK", "ah_premium_pct": -4.4, "preferred_channel": "onshore_a_inverted"},
+        {"name": "药明康德", "a": "603259", "h": "02359.HK", "ah_premium_pct": -8.1, "preferred_channel": "onshore_a_inverted"},
+        {"name": "宁德时代", "a": "300750", "h": "03750.HK", "ah_premium_pct": -19.7, "preferred_channel": "onshore_a_inverted"}
       ]
     },
     "commodity_mirror": {
       "brent_usd": 96.57,
       "brent_contract": "BRNF27",
       "brent_chg_pct": 2.07,
-      "brent_live_usd": 96.46,
-      "brent_live_chg_pct": -0.11,
+      "brent_live_usd": 97.25,
+      "brent_live_chg_pct": 0.7,
       "wti_usd": 83.68,
-      "wti_live_usd": 85.79,
+      "wti_live_usd": 85.78,
       "comex_copper_usd_lb": 5.3325,
       "comex_copper_chg_pct": -0.56,
-      "shfe_copper_day_rmb": 92980,
-      "shfe_copper_day_chg_pct": 4.74,
+      "shfe_copper_day_rmb": 93660,
+      "shfe_copper_day_chg_pct": 5.51,
       "shfe_copper_night_rmb": 89270,
       "shfe_copper_night_chg_pct": 0.56,
-      "copper_regime": "midday_rebound_above_90k_watch_close",
+      "copper_regime": "rebound_above_90k_watch_black_friday_close",
       "gold_ny_close_usd": 3588.78,
-      "gold_live_usd": 3633.88,
-      "btc_usd": 61428,
-      "btc_chg_pct": 2.38
+      "gold_live_usd": 3671.08,
+      "btc_usd": 61572,
+      "btc_chg_pct": 1.88
     },
     "erp_ruler": {
-      "csi300_erp_ttm_pct": 5.94,
-      "csi300_erp_fwd_pct": 6.52,
-      "hsi_erp_cny_ttm_pct": 8.03,
-      "hsi_erp_usd_ttm_pct": 4.77,
-      "hsi_erp_cny_fwd_pct": 8.63,
-      "hsi_erp_usd_fwd_pct": 5.37,
+      "csi300_erp_ttm_pct": 5.65,
+      "csi300_erp_fwd_pct": 6.21,
+      "hsi_erp_cny_ttm_pct": 7.91,
+      "hsi_erp_usd_ttm_pct": 4.66,
+      "hsi_erp_cny_fwd_pct": 8.5,
+      "hsi_erp_usd_fwd_pct": 5.25,
       "sp500_erp_ttm_pct": -0.72,
       "sp500_erp_fwd_pct": 0.94
     },
@@ -289,14 +289,14 @@
     },
     "ai_tech_factor_cap": {
       "combined_household_cap_pct": 20,
-      "supply_chain_stress": "HBM/DRAM通胀延至2027（英央行与欧央行双双点名逾4万亿美元债务融资AI基建脆弱性、CoreWeave CDS 1,314bp、ORCL CDS 356bp、NVDA暂停东南亚四国部分AI服务器发运且遭标普负面信用观察，反而催化国产算力早盘飙涨）"
+      "supply_chain_stress": "HBM/DRAM通胀延至2027（英央行与欧央行点名逾4万亿美元举债AI基建脆弱性、CoreWeave CDS 1,314bp、ORCL CDS 356bp、NVDA暂停东南亚部分AI服务器发运且遭标普负面信用观察，催化国产算力日终暴涨但需防拥挤）"
     },
     "crisis_correlation_brake": {
       "vix_close": 28.29,
-      "vix_live": null,
-      "vix_intraday_high": null,
+      "vix_live": 24.82,
+      "vix_intraday_high": 25.01,
       "vix_brake_threshold": 30.0,
-      "usdjpy_level": 159.22,
+      "usdjpy_level": 159.52,
       "usdjpy_3d_drop_brake_pct": -3.0,
       "us10y_brake_pct": 5.25,
       "hkma_agg_bal_brake_100m": 400.0,
@@ -310,46 +310,45 @@
   },
   "policy_radars": {
     "a_share": {
-      "fiscal_top": "green_oct_ind_profit_plus201_ytd_plus160",
-      "monetary_fx": "green_1127_pboc_net_plus2225b_cfets_67075_cgb10y_1594",
-      "capital_market_floor": "green_big4_600b_buyback_relend_1130_margin_80pct_1126_margin_21416b",
+      "fiscal_top": "green_1127_state_council_national_team_huijin_stabilization_oct_profit_plus201",
+      "monetary_fx": "green_1127_pboc_net_plus2225b_cny_1630_66544_cgb10y_15972",
+      "capital_market_floor": "green_huijin_stabilization_big4_600b_1130_margin_80pct_1126_margin_21346b",
       "anti_involution_property": "yellow_828_tier1_plus02_2ndhand_plus114",
       "tech_trade": "green_miit_6g_plan_guangdong_ai_chip_nvda_sea_pause_sub",
       "next_anchors": [
-        "2026-11-27 15:00 A股日终收官（盯半日9,205亿放量续航与中证红利回踩承接）+ 美的10派5股权登记",
-        "2026-11-28 商务部59号公告暂缓生效",
-        "2026-11-30 降保80%撞MSCI剔22A股+11月PMI+美的除息",
+        "2026-11-28 商务部59号公告暂缓生效 + 晚间复核美股黑五早收与A股2万亿放量持续性",
+        "2026-11-30 降保80%撞MSCI剔22A股+11月PMI+美的除息+大成000834限购减半",
         "2026-12-01 海波转债123080到期119.44元净兑付(12/02摘牌)",
-        "2026-12 中央经济工作会议+4742亿解禁",
+        "2026-12-03/04 镇洋113681/财通113043末日",
+        "2026-12 中央政治局与经济工作会议+4742亿解禁",
         "2027-01-10 中美休战大限"
       ]
     },
     "hk_stock": {
-      "mainland_connect_policy": "green_10_measures_800b_bond_ah_wave_1127_hstech_plus325",
-      "hkex_microstructure": "green_cmu_dap_launch_usm_lot_reform_hsbc_350k_buyback_catl_a_only_buyback",
-      "peg_us_rate_valve": "red_78343_56112_100m_1m_hibor_jump_3132",
+      "mainland_connect_policy": "green_state_council_national_team_1127_hstech_plus645_southbound_plus459b",
+      "hkex_microstructure": "green_cmu_dap_launch_usm_lot_reform_hsbc_350k_buyback_shenhua_held_3810",
+      "peg_us_rate_valve": "red_78282_54109_100m_1m_hibor_jump_3132_us10y_4912",
       "cross_border_geopolitics": "red_ustr_125pct_hk301_part851_1207_bis_apex_fedreg",
       "dividend_tax_cut_enacted": false,
       "next_anchors": [
-        "2026-11-27 16:00 11月期指结算收官 + 美团Q3盘后财报(19:00电话会) + 神华H38.58守38.10配售价 + 老铺填权检验 + 03707.HK招股",
-        "2026-11-30 MSCI剔15港股及金沙",
-        "2026-12-04 恒生系列合并季检(恒指+恒科30扩50)",
+        "2026-11-27 19:00 美团Q3电话会（经调净利18.5亿逊预期22亿）+ 贝斯特材/袁记/微亿3只新股招股",
+        "2026-11-30 MSCI剔15港股及金沙、纳中际H 03308.HK",
+        "2026-12-04 恒生系列合并季检(恒指+恒科30扩50超125亿美元流)",
         "2026-12-07 美Part851截止",
         "2026-12-10 联储/HKMA联汇考"
       ]
     },
     "us_stock": {
       "political_fiscal": "orange_divided_congress_56_44_259_173",
-      "tariff_toolbox": "red_scotus_ieepa_to_301_14_partners",
-      "fed_independence_qra": "red_asia_us10y_4910_warsh_hawk_218b_settle_net58b_onrrp300m",
+      "tariff_toolbox": "red_scotus_ieepa_to_301_14_partners_comment_open",
+      "fed_independence_qra": "red_live_us10y_4912_us2y_4687_warsh_hawk_218b_settle_net58b_onrrp300m",
       "tech_antitrust_ai_power": "yellow_nvda_sea_pause_sp_creditwatch_neg_1201_hearings_1204_10q",
       "sector_regulation": "yellow_cms_round3_settled_1123_abbv_win_unh_crush_rule",
       "next_anchors": [
-        "2026-11-27 晚黑五半日市（28日02:00股/03:00债/06:00盘后收）",
-        "2026-11-28 13:00 美联储缄默期开始",
-        "2026-11-29 第42届OPEC+会议",
+        "2026-11-28 02:00 黑五美股早收 / 03:00 美债早收 / 03:45 期金 / 06:00 盘后 / 13:00 联储缄默期",
+        "2026-11-29 19:00 第42届OPEC+线上部长会",
         "2026-11-30 2180亿美债交割(净抽水580亿+)+MSCI剔MSTR",
-        "2026-12-01/04 NVDA听证+10-Q/12-02黑石BCRED赎回",
+        "2026-12-01/04 NVDA听证+10-Q / 12-02 黑石BCRED赎回 / 12-04 非农",
         "2026-12-10 03:00 沃什联储议息 / 12-12 停摆大限"
       ]
     }
@@ -357,17 +356,17 @@
   "pending_backfills": [
     {
       "market": "a_share",
-      "item": "2026-11-27 A 股 15:00 日终收盘、北交所全市场半日/全天总成交、932047 日终与山东黄金业绩会文字纪要",
-      "due_session": "2026-11-27_1800"
+      "item": "2026-11-27 中证指数官方市盈率终值、公募基金 11/27 正式净值与份额流、山东黄金 11/26 业绩会文字纪要及 11/27 两融日终余额",
+      "due_session": "2026-11-28_0730"
     },
     {
       "market": "hk_stock",
-      "item": "2026-11-27 港股 16:10 日终官收、南向港股通全天净流向（港交所盘中不披露半日净买卖）与美团盘后三季报初报",
-      "due_session": "2026-11-27_1800"
+      "item": "2026-11-27 港交所 11 月期指最终官方结算价（EAS）、美团 19:00 业绩电话会管理层指引与 11/27 恒指夜期终盘",
+      "due_session": "2026-11-28_0730"
     },
     {
       "market": "us_stock",
-      "item": "2026-11-25 美国高收益债与 CCC 级利差、隔夜基准利率、财政部一般账户及 11/27 黑五早收官方终值",
+      "item": "2026-11-25 美国高收益债与 CCC 级信用利差、隔夜基准利率、财政部一般账户及 11/27 黑五半日市美股债官方终值",
       "due_session": "2026-11-28_0730"
     }
   ],
@@ -380,7 +379,7 @@
       "gold_event_id": "us_thanksgiving_2026",
       "source_url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34",
       "mode": "mode_2_watch_brief",
-      "note": "美国感恩节全天休市（11/26 18:00、11/27 07:30 与 11/27 11:30 切美股休市守望刊，A 股/港股发午间主刊）"
+      "note": "美国感恩节全天休市（11/26 18:00、11/27 07:30 与 11/27 11:30 切美股休市守望刊，A 股/港股发主刊）"
     },
     {
       "date_cst": "2026-11-27",
@@ -422,46 +421,46 @@
     {"date_cst": "2027-06-18", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2027-06-18_1800", "2027-06-19_0730"], "gold_event_id": "us_juneteenth_2027", "mode": "mode_2_watch_brief", "note": "美国六月节补休全天休市"}
   ],
   "rates_bonds_core": {
-    "as_of": "2026-11-27 12:28",
+    "as_of": "2026-11-27 18:30",
     "lamp": "yellow",
     "lamp_label": "黄灯控久期",
-    "headline": "中美 10 年期国债利差倒挂 -326bp；中债短端筑盾，美债长端承压，未锁汇美元短债须计入汇兑损耗",
+    "headline": "中美 10 年期国债官曲利差倒挂 -325 基点（实盘 -331 基点）；中债短端筑盾、全市场债基微落至 0.99 万亿，美债稳 4.91%",
     "cn_rates": {
-      "cgb2y_pct": 1.214,
-      "cgb10y_pct": 1.594,
-      "cgb10y_official_curve_pct": 1.5912,
-      "cgb10y_official_curve_date": "2026-11-26",
-      "cgb30y_pct": 2.066,
-      "cgb30y_official_curve_pct": 2.0662,
-      "cgb30y_official_curve_date": "2026-11-26",
-      "gc001_pct": 1.41,
-      "dr001_pct": 1.279,
+      "cgb2y_pct": 1.209,
+      "cgb10y_pct": 1.597,
+      "cgb10y_official_curve_pct": 1.5972,
+      "cgb10y_official_curve_date": "2026-11-27",
+      "cgb30y_pct": 2.073,
+      "cgb30y_official_curve_pct": 2.0732,
+      "cgb30y_official_curve_date": "2026-11-27",
+      "gc001_pct": 1.47,
+      "dr001_pct": 1.282,
       "policy_rate_7d_omo_pct": 1.25,
-      "bond_etf_market_aum_trillion_rmb": 1.05,
+      "bond_etf_market_aum_trillion_rmb": 0.99,
       "bond_etf_count": 53,
-      "note": "11/27 午盘中债 2Y 报 1.214%、10Y 报 1.594%（11/26 中债官曲 1.5912%）、30Y 报 2.066%（11/26 官曲 2.0662%）；GC001 1.410%、DR001 1.279%、7 天政策利率 1.25%；境内全市场债券 ETF 规模达 1.05 万亿元（共 53 只）。"
+      "note": "11/27 中债官方收盘曲线：2 年期 1.2094%、10 年期 1.5972%、30 年期 2.0732%；上交所 1 天期逆回购收 1.470%、银行间隔夜利率 1.2823%、7 天政策利率 1.25%；受股市突破 2 万亿吸金影响，全市场 53 只债券基金最新总规模微落至 9,878 亿元（约 0.99 万亿元）。"
     },
     "us_rates": {
       "us2y_pct": 4.61,
       "us10y_pct": 4.85,
-      "us10y_asia_live_pct": 4.91,
+      "us10y_asia_live_pct": 4.912,
       "us30y_pct": 5.24,
       "dfii10_pct": 2.73,
       "sofr_pct": 3.94,
-      "note": "11/25 美债官收 2Y 4.61%、10Y 4.85%（11/27 亚盘反跳至 4.91%）、30Y 5.24%、10Y 抗通胀实际利率 2.73%、隔夜担保融资利率 SOFR 3.94%；美债长端持续承压于高实际利率与财政发债。"
+      "note": "11/25 美债官收 2 年期 4.61%、10 年期 4.85%、30 年期 5.24%、10 年抗通胀实际利率 2.73%；11/27 欧盘 10 年期稳居 4.912%、2 年期爬上 4.687%、30 年期逼近 5.295%，持续压制长端估值。"
     },
-    "cn_us_10y_spread_bp": -326,
+    "cn_us_10y_spread_bp": -325,
     "unhedged_usd_fx_drag": {
-      "usd_cny_spot": 6.6647,
+      "usd_cny_spot": 6.6544,
       "cfets_cny_fixing": 6.7075,
-      "real_rmb_drag_range": "-1.0% 至 -2.7%",
-      "summary": "在岸即期汇率 6.6647（11/27 外汇交易中心中间价 6.7075）下，人民币走强叠加汇兑损耗，使未锁汇美元短债折算人民币后实际收益被拖累约 -1.0% 至 -2.7%，切忌把美元票息直接当成人民币无风险收益。"
+      "real_rmb_drag_range": "-1.09% 至 -2.52%",
+      "summary": "在岸人民币 16:30 官收走强至 6.6544（年内升值 +5.03%、美元汇损 -4.79%），叠加约 0.40% 结售汇点差，使未锁汇美元短债与定存折算人民币后实际收益倒亏约 -1.09% 至 -2.52%，切忌把美元票息直接当成人民币无风险收益。"
     },
     "duration_stance": {
-      "cn_short_cash": "优先筑盾（短融 511360、国债逆回购 GC001，低波动防回撤）",
-      "cn_intermediate_long": "中性波段（10 年国债 511260 逢回调观察，30 年国债 511090 严控仓位防股市吸金引发的长久期回撤）",
+      "cn_short_cash": "优先筑盾（银行间短融 511360 今日成交放量至 670 亿、国债逆回购 GC001，低波动防回撤）",
+      "cn_intermediate_long": "中性波段（股市吸金致 10 年国债 511260 跌 -0.19%、30 年国债 511090 跌 -0.62%，超长债严控仓位防回撤）",
       "us_short_tbill": "离岸美元池主力防弹衣（0–3 月美债 SGOV / 爱尔兰 0–1 年美债 IB01，仅适配已有美元资金，不建议换汇追息）",
-      "us_long_treasury": "红灯谨慎（20+ 年美债 TLT 在 10Y 亚盘逼近 4.91% 阶段波动剧烈，严防过早抄底重仓）",
+      "us_long_treasury": "红灯谨慎（20+ 年美债 TLT 在 10 年期美债欧盘稳居 4.912% 阶段波动剧烈，严防过早抄底重仓）",
       "summary": "债市坚持「短端筑盾、长端控久期、跨币种先算汇损」：境内以短融与中短国债护本，离岸存量美元以超短美债吃息，美长债与未锁汇套息均保持克制。"
     },
     "key_etfs": [
@@ -478,8 +477,8 @@
     ]
   },
   "non_us_global_satellite": {
-    "as_of": "2026-11-27 12:28",
-    "headline": "非美海外卫星四极雷达：日股与欧股境内可平价直达，台韩侧重离岸半导体晴雨表，印度场内严避高费退市雷",
+    "as_of": "2026-11-27 18:30",
+    "headline": "非美海外卫星四极雷达：东证 513800 零溢价、中韩 513310 涨停爆炒勿追，欧债承压、印度收跌避退市基",
     "allocation_guardrail": "非美海外仅作全球分散卫星仓（单区不重仓）；境内跨境工具买前必核盘中参考净值（IOPV），场内溢价超过 2% 严禁追高。",
     "markets": [
       {
@@ -489,17 +488,17 @@
         "lamp_label": "⚖️ 黄灯观察",
         "kline_id": "idx_N225",
         "benchmarks": [
-          {"name": "日经225", "code": "N225", "value": 58711.06, "change_pct": 2.11, "as_of": "2026-11-27"},
-          {"name": "东证TOPIX", "code": "TOPIX", "value": 3815.36, "change_pct": 1.73, "as_of": "2026-11-27"}
+          {"name": "日经225", "code": "N225", "value": 58711.11, "change_pct": 2.11, "as_of": "2026-11-27 官收"},
+          {"name": "东证TOPIX", "code": "TOPIX", "value": 3815.2, "change_pct": 1.73, "as_of": "2026-11-27 官收"}
         ],
         "access_grade": "A 级 · 境内平价",
         "onshore_vehicles": [
-          {"code": "513800", "name": "南方日本东证指数ETF", "fee_note": "管理托管 0.25%/年（穿透总费率约 0.34%）", "note": "中日互通平价低费首选"}
+          {"code": "513800", "name": "南方日本东证指数ETF", "fee_note": "管理托管 0.25%/年（穿透总费率约 0.34%）", "note": "11/27 收 1.735（+2.00%），盘中参考折价 -0.18% 平价首选"}
         ],
         "offshore_vehicles": [
           {"code": "VXUS", "name": "Vanguard 全球除美国股票ETF", "note": "离岸账户低费分散覆盖日本及非美发达市场"}
         ],
-        "warning": "警惕华夏野村日经 225（513520）场内溢价偏高风险，且美元兑日元逼近 160 敏感关口（159.22），谨防汇率干预导致日股与汇价双杀，买前必核盘中参考净值（IOPV）。"
+        "warning": "华夏野村日经 225（513520）今收 2.002（+3.41%）盘中参考溢价扩至 +3.94% 触发严禁追高红线，且美元兑日元逼近 160 仅差 0.48 日元（159.52），严防干预双杀。"
       },
       {
         "id": "eu",
@@ -508,19 +507,19 @@
         "lamp_label": "⚖️ 黄灯观察",
         "kline_id": "idx_GDAXI",
         "benchmarks": [
-          {"name": "德国DAX", "code": "GDAXI", "value": 25215.52, "change_pct": 2.08, "as_of": "2026-11-26 官收"},
-          {"name": "欧洲斯托克50", "code": "STOXX50E", "value": 6014.74, "change_pct": 2.04, "as_of": "2026-11-26 官收"},
-          {"name": "法国CAC40", "code": "FCHI", "value": 8108.74, "change_pct": 1.61, "as_of": "2026-11-26 官收"},
-          {"name": "富时100", "code": "FTSE", "value": 10609.30, "change_pct": 1.75, "as_of": "2026-11-26 官收"}
+          {"name": "德国DAX", "code": "GDAXI", "value": 25420.07, "change_pct": 0.81, "as_of": "2026-11-27 欧盘"},
+          {"name": "欧洲斯托克50", "code": "STOXX50E", "value": 6086.19, "change_pct": 1.19, "as_of": "2026-11-27 欧盘"},
+          {"name": "法国CAC40", "code": "FCHI", "value": 8132.11, "change_pct": 0.29, "as_of": "2026-11-27 欧盘"},
+          {"name": "富时100", "code": "FTSE", "value": 10686.45, "change_pct": 0.73, "as_of": "2026-11-27 欧盘"}
         ],
         "access_grade": "A- 级 · 直投低费",
         "onshore_vehicles": [
-          {"code": "159561", "name": "嘉实德国DAX ETF", "fee_note": "综合费率 0.60%/年（较华安 513030 每年省 0.40%）", "note": "境内直投德国核心指数低费首选"}
+          {"code": "159561", "name": "嘉实德国DAX ETF", "fee_note": "综合费率 0.60%/年（较华安 513030 每年省 0.40%）", "note": "11/27 收 1.245（+1.30%），盘中参考溢价 +0.81% 温和可控"}
         ],
         "offshore_vehicles": [
           {"code": "VGK", "name": "Vanguard 富时欧洲股票ETF", "note": "离岸一键覆盖全欧发达市场"}
         ],
-        "warning": "境内尚无泛欧宽基 ETF，只能借德法单国标的替代；场内溢价超过 2% 绝不追买，下单前务必核对盘中参考净值（IOPV）。"
+        "warning": "德国 11 月失业率升至 6.4% 创六年新高、欧央行 1 年通胀预期跳至 3.5% 且法债 4.73% 倒挂意债；境内借德法单国替代须严守盘中参考净值（IOPV）溢价 ≤2% 纪律。"
       },
       {
         "id": "tw_kr",
@@ -529,8 +528,8 @@
         "lamp_label": "⚖️ 黄灯观察",
         "kline_id": "idx_TWII",
         "benchmarks": [
-          {"name": "台湾加权指数", "code": "TWII", "value": 39308.08, "change_pct": 0.40, "as_of": "2026-11-27"},
-          {"name": "韩国KOSPI", "code": "KS11", "value": 4915.68, "change_pct": 4.34, "as_of": "2026-11-27"}
+          {"name": "台湾加权指数", "code": "TWII", "value": 39308.08, "change_pct": 0.4, "as_of": "2026-11-27 官收"},
+          {"name": "韩国KOSPI", "code": "KS11", "value": 4915.68, "change_pct": 4.34, "as_of": "2026-11-27 官收"}
         ],
         "access_grade": "B 级 · 离岸AI链",
         "onshore_vehicles": [
@@ -539,7 +538,7 @@
         "offshore_vehicles": [
           {"code": "IEMG", "name": "iShares 核心MSCI新兴市场ETF", "note": "离岸低费覆盖中国台湾与韩国芯片权重（含韩国）"}
         ],
-        "warning": "境内暂无纯中国台湾或纯韩国宽基 ETF；中韩半导体（513310）场内溢价常超 10% 且底层约 50% 为 A 股半导体成分，切忌误作纯韩国或台韩工具追高。"
+        "warning": "中韩半导体（513310）今日封死 +9.99% 涨停、单日成交暴增至 345.3 亿元（换手率 377%）且盘中参考溢价冲上 +4.64% 以上，底层半数为 A 股芯片，绝不可追高！"
       },
       {
         "id": "in",
@@ -548,7 +547,7 @@
         "lamp_label": "🛡️ 红灯避雷",
         "kline_id": "idx_NSEI",
         "benchmarks": [
-          {"name": "印度Nifty50", "code": "NSEI", "value": 25695.05, "change_pct": -0.73, "as_of": "2026-11-27"}
+          {"name": "印度Nifty50", "code": "NSEI", "value": 25593.85, "change_pct": -1.12, "as_of": "2026-11-27 官收"}
         ],
         "access_grade": "C 级 · 防LOF退市",
         "onshore_vehicles": [
@@ -558,39 +557,39 @@
         "offshore_vehicles": [
           {"code": "IEMG", "name": "iShares 核心MSCI新兴市场ETF", "note": "离岸低费分散覆盖印度及新兴市场"}
         ],
-        "warning": "严禁场内追买工银印度基金上市开放式基金（164824）：综合费率高达 1.40%/年且面临最晚 2027 年底 LOF 强制退市触发溢价瞬间蒸发的高危风险！"
+        "warning": "严禁场内追买工银印度基金上市开放式基金（164824，今跌 -3.73% 收 1.342）：综合费率高达 1.40%/年且面临最晚 2027 年底强制退市高危风险！"
       }
     ]
   },
   "data_caveats": [
     {
-      "id": "a_share_1127_midday_eod_pending",
+      "id": "a_share_1127_eod_postclose_pending",
       "market": "a_share",
-      "category": "provisional_close",
+      "category": "delayed_official",
       "severity": "info",
-      "item": "A 股 12 大指数锁定 11:30 早盘官收，全天总成交与山东黄金纪要待 18:00 晚刊封账",
-      "detail": "本午刊精确锁定沪深 11:30 官方早盘收盘（上证 3,486.76 / 沪深 300 3,909.93 / 科创 50 1,221.79 / 沪深半日成交 9,205.20 亿元）与 11/26 全市场两融余额终值（21,416.29 亿元）；北交所全市场半日总成交、932047 日终及山东黄金业绩会文字纪要待 18:00 晚刊补齐。",
-      "impact": "12 大优先指数、中金所午盘基差与 14 只跨境基 10:30 复牌实盘均已齐备，不影响红灯防守裁决。",
-      "next_review": "2026-11-27_1800"
+      "item": "A 股 12 指数、三市 2.02 万亿成交、期指与 932047 已全封账，晚间基金净值与中证官估待周六早刊补齐",
+      "detail": "本晚刊已完整锁定 11/27 15:00 全市场日终官收（上证 3,606.49 / 沪深 300 4,063.06 / 三市成交 20,175.91 亿 / 中证不动产全收益 932047 收 929.56）及 11/26 纠偏后三市两融余额 21,346.42 亿；沪深 300 市盈率（13.79 倍）暂按连续盈利基线折算，中证官估、公募 11/27 官净/份额流及山东黄金 11/26 说明会文字纪要待周六早刊核销。",
+      "impact": "大盘评分与期指前 20 机构大增空头核心证据齐备，不影响红灯防守（3.0/6、上限 ≤40%）裁决。",
+      "next_review": "2026-11-28_0730"
     },
     {
-      "id": "hk_stock_1127_midday_southbound_pending",
+      "id": "hk_stock_1127_eod_eas_call_pending",
       "market": "hk_stock",
       "category": "delayed_official",
       "severity": "info",
-      "item": "港股锁定 12:00 午盘官收，南向港股通当日净流向待 18:00 晚刊揭晓",
-      "detail": "港交所已锁定 12:00 午盘官收（恒指 22,416.44 / 恒科 3,528.59 / 主板半日成交 943.12 亿港元）与 11:15 官方 1 个月拆息（3.13214%）；港交所盘中不公布半日南向净买卖（暂沿用 11/26 全天 -213.51 亿港元），美团盘后三季报亦于 18:00 晚刊核验。",
-      "impact": "午盘价差与拆息均已精算完毕，不影响离岸 ≤35% / 港股通 ≤25% 仓位纪律。",
-      "next_review": "2026-11-27_1800"
+      "item": "港股 16:10 官收、南向 +45.87 亿与美团三季报初报已落账，11 月期指官方结算价与美团 19:00 电话会待早刊补齐",
+      "detail": "已锁定恒指 22,694.77 / 恒科 3,637.88 / 主板成交 2,571.4 亿 / 南向净买 +45.87 亿港元及 16:30 美团三季报官方公告（营收 1,155.6 亿、经调净利 18.50 亿）；11 月期指官方最终结算价（估算约 22,530）与 19:00 美团电话会管理层指引于周六早刊更新。",
+      "impact": "所有价格、拆息与财报硬指标均已齐备，不影响港股红灯防守（2.0/6、离岸 ≤35% / 港股通 ≤25%）纪律。",
+      "next_review": "2026-11-28_0730"
     },
     {
-      "id": "us_stock_1127_midday_black_friday_watch",
+      "id": "us_stock_1127_evening_black_friday_watch",
       "market": "us_stock",
       "category": "holiday_thin",
       "severity": "warn",
-      "item": "11/26 感恩节全休且今晚黑五提前收市，11/25 美国利差顺延至周六早刊",
-      "detail": "11/26 美股债全休沿用 11/25 标普 7,182.78 与恐慌指数 28.29；亚盘纳指期指急涨 +2.36% 但 10 年美债收益率同步反跳至 4.910%。11/25 美国信用利差、隔夜利率与黑五半日市官收（周六 02:00 股/03:00 债）均于周六早刊封账。",
-      "impact": "不改变 28% 防弹衣 + 62% 短债 + 10% 存量金守阵纪律，严防薄量高开追涨。",
+      "item": "今晚黑五半日市尚未开盘且美国联邦统计顺延，11/25 美利差、欧债差异与黑五早收官值待周六早刊封账",
+      "detail": "本晚刊已校准 11/25 八大美股官方终值（纳综 23,585.80、罗素代理 IWM 268.87 等）并锁定 18:11–18:20 黑五盘前（纳指期 +2.41%、10 年美债 4.912%、实时恐慌指数 24.82）；11/25 高收益/最低评级信用利差、隔夜利率、财政部账户与明晨 02:00/03:00 黑五早收均于周六早刊补齐（注：英国 10 年国债东方财富实盘 5.338% 高于延迟行情约 5.15%，以实时源标注）。",
+      "impact": "维持美股红灯防守（1.0/6、28% 防弹衣 + 62% 短债 + 10% 存量金），严禁追高薄盘脉冲。",
       "next_review": "2026-11-28_0730"
     }
   ]

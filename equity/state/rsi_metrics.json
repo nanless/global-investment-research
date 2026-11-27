@@ -822,6 +822,95 @@
         "【黑五半日市晚刊 + 461 只 K 线与 QDII 日终溢价刷新】更新 14 只复牌跨境基日终溢价与次日停牌名单、重跑 fetch_kline_data.py 同步收盘 K 线分片，跟踪布油 $96.46 与亚盘上冲至 4.910% 的 10 年美债对黑五早收（02:00/03:00）的冲击",
         "【零量级口误 + 零兄弟字段漂移冲刺】发前逐项反算中文量级词（成/倍/%）、全扫顶层与渠道兄弟字段、严守短标签 action_role 与自然段 ≤130 字，冲刺 first_pass_clean=true"
       ]
+    },
+    {
+      "run_id": "2026-11-27_1800",
+      "edition_type": "weekday_evening_unified",
+      "reports": [
+        "daily/2026-11-27_1800_a_share.md",
+        "daily/2026-11-27_1800_hk_stock.md",
+        "daily/2026-11-27_1800_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-27T18:30:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "lint_errors_fixed": [
+        "18:00 三市全发主刊（6 张 SVG 零碰撞，visual_retries=0）与 480/480 全市场 K 线刷新达成 lint_equity.py --strict 0/0，并完成 SCORECARD 4 项到期结案与首次公开证伪记录；Step 5 独立盲审与第 10/10 刊 Meta-RSI 检出三大扩展库局部午盘滞后（E-01：qdii_channel_comparison / key_2026_rules[3] / 5 只纳指 ETF）、2 处档案旧值冲突（E-02：01347.HK 与 UNH）及裸 9M/PMI/QDII/CFETS（E-03），全部发前热修归零并复过 --strict"
+      ],
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 3,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 25,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/27 12:30 追踪：【18:00 晚报收盘封账 + 第 10/10 刊 Meta-RSI 总复盘】封账 15:00/16:10 A/港官收、两融与 932047、16:30 汇率/中金所/南向、美团盘后三季报与老铺日终并结案 SCORECARD 4 项到期预判",
+          "outcome": "hit",
+          "evidence": "完整封账上证 3,606.49(+3.73%) / 沪深 300 4,063.06(+4.17%) / 三市成交 20,175.91 亿 / 科创 50 +15.07% / 恒指 22,694.77 / 恒科 +6.45% / 南向 +45.87 亿 / 中金所净空 +18,058 手 / 美团经调净利 18.50 亿 / 两融纠偏 21,346.42 亿，结案 4 项到期预判并首记公开证伪，完成 10/10 Meta-RSI"
+        },
+        {
+          "claim": "11/27 12:30 追踪：【黑五半日市晚刊 + 交互 K 线与 QDII 日终溢价刷新】更新 14 只复牌跨境基日终溢价与停牌名单、重跑 K 线抓取并追踪美债 4.91% 与布油冲击",
+          "outcome": "hit",
+          "evidence": "完成 480/480 全市场 K 线收盘分片刷新，精准捕捉上交所对 513100(+21.10%)/501225(+33.13%) 二次临停、159509 飙至 +45.34%、大成 000834 11/30 限购砍半及博时 050025 部分代销停申，跟踪黑五盘前纳指期 +2.41% 与 10 年美债 4.912%"
+        },
+        {
+          "claim": "11/27 12:30 追踪：【零量级口误 + 零兄弟字段漂移冲刺】发前全扫顶层与渠道兄弟字段、冲刺 first_pass_clean=true",
+          "outcome": "partial",
+          "evidence": "零量级口误、CHART_A2 正负号与 6 张 SVG 一次零碰撞全部达标，但 patch_state_dbs 遇首错早退且首版遗漏 qdii_channel_comparison / key_2026_rules[3] / 5 只纳指 ETF / 01347.HK / UNH 联动刷新，已借盲审全部发前热修归零"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "E-01 [HIGH]: multi_asset_channels.json qdii_channel_comparison（16 行）、etf_universe.json key_2026_rules[3] 及 5 只纳指 ETF（159941/513300/159632/159501/159696）滞留 11:30 午盘溢价与大成旧限购",
+            "status": "resolved",
+            "evidence": "已通过 equity/state/_edition_patch.json + scripts/patch_state_dbs.py --apply 全面刷新 16 行 QDII 表、key_2026_rules[3]、5 只纳指 ETF 与 3 只国内金基至 11/27 日终实盘（大成砍半至 50/5 元、513100/501225 二度临停、159509 +45.34%、513800 -0.18%），复过 lint_equity.py --strict"
+          },
+          {
+            "description": "E-02 [MEDIUM]: deep_dossiers.json 中 hk-stock:01347.HK 滞留 12:00 午收 71.10 / AH +217.4%，us-stock:UNH 滞留 11/25 旧价 $346.19（与 SCORECARD $347.52 冲突），policy_calendar.json 12/07 会议仍写“冲击 4,025”",
+            "status": "resolved",
+            "evidence": "已通过 _edition_patch.json 同步更新 hk-stock:01347.HK 至 16:10 官收 78.15(+20.69%)/AH +217.6%/A 股 75.56 亿定增、修正 us-stock:UNH 至核实官收 $347.52(+1.65%)，并更新 policy_calendar 12/07 upside_bull 为“稳固并扩大 4,025 年线上方优势”"
+          },
+          {
+            "description": "E-03 [MEDIUM]: a_share.md L77 寒武纪残留裸 9M、a_share.md/INDEX.md 首现 PMI/QDII 未配白话括注、hk_stock.md CHART_H6 裸 CFETS",
+            "status": "resolved",
+            "evidence": "已将裸 9M 改为“前三季度”，并全量补齐 PMI（制造业采购经理指数）、QDII（合格境内机构投资者跨境基金）与 CFETS（中国外汇交易中心）白话括注，复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-05 [DISCLOSED_CAVEAT]: A 股中证官估/11/27 基金官净与两融日终、港股 11 月期指官方结算价与美团 19:00 电话会、美股黑五半日市早收官值与 11/25 美国联邦统计截至 18:30 尚未披露",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.hkex.com.hk/Market-Data/Futures-and-Options-Prices/Equity-Index/Hang-Seng-Index-Futures-and-Options",
+              "due_edition": "2026-11-28_0730",
+              "disposition": "3 项外部滞后官方数据已 1:1 写入 market_state.json data_caveats、pending_backfills 及三市晚报正文末尾透明披露，严禁估算替代，周六 07:30 早刊一次性核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【第 10/10 刊 Meta-RSI 总复盘固化 1】大库更新“派生表 + 同赛道群组 + 勘误股”三联动铁律：改动跨境限购/溢价或焦点股时必同步核查 qdii_channel_comparison、key_2026_rules、5 只纳指 ETF、A/H 孪生股与 SCORECARD 勘误涉股",
+        "【第 10/10 刊 Meta-RSI 总复盘固化 2】18:00 晚刊“清扫午盘残迹”10 秒全局自检：落盘前跨三库与 policy_calendar 扫清 午收/11:30/12:00/10:30复牌 过期状态词",
+        "【第 10/10 刊 Meta-RSI 总复盘固化 3】裸期限禁令扩至 9M/Q1–Q4 与尾表/INDEX 首现缩写全覆盖（PMI/QDII/CFETS），冲刺新周期首个 first_pass_clean=true"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周六 07:30 黑五美股周五复盘主刊 + 3 项 pending_backfills 清零】封账明晨 02:00/03:00 黑五早收美股债官值与 11/25 美国联邦统计（OAS/SOFR/TGA），同步核销中证官估、公募 11/27 净值份额、两融日终、港股期指官结与美团电话会指引",
+        "【下周一 11/30 四重催化交汇哨兵】紧盯 09:30 中国 11 月官方 PMI、A 股融资保证金降至 80%、15:00 明晟剔除 22 A 股与 15 港股尾盘调仓、大成 000834 限购砍半及沪深 300 站稳 4,025 第 2 日检验",
+        "【新周期第 1/10 刊首轮双零冲刺】贯彻派生表+同赛道+勘误股三联动与裸期限/尾表缩写全扫，力争首个 first_pass_clean=true"
+      ]
     }
   ]
 }

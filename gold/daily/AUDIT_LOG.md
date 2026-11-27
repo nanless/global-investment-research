@@ -4,6 +4,30 @@
 
 ---
 
+<!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-27_1800",
+  "as_of_short": "2026-11-27 18:30",
+  "note": "完成 2026-11-27 18:00 工作日晚报（黑五半日市盘前 A 类局部休市）四重交叉验证：全量封账 SGE 15:30 官方日终（Au99.99 784.00/+2.37%/加权 777.79、Au(T+D) 783.35 多付空、Ag(T+D) 10,456 多付空、上海金早 775.47[纠偏午报 768.24 旧值]/午 784.26）及 15:30 同刻溢价（+0.83 元/+0.11%）、SHFE kx20261127.dat（au2702 收 785.84/结 775.18、ag2702 收 10,483/结 9,971、cu2701 收 93,660/结 91,820）与 pm20261127.dat 前 20 席位（au2702 净多 +56,631/+2,647、ag2702 净多 +17,228/-3,147）；直核 18:20 BJT（05:20 EST，落入 Cboe 11/27 首窗 03:15-09:25 EST）实时现货恐慌 24.82（官收死守 11/25 28.29，11/26 no_row_confirmed），同步 18:11 欧盘现货金 $3,671.08 (+2.29% vs NY)、欧盘 10 年美债 4.912%/2 年 4.687%、布油 1 月 $97.25 与 16:30 在岸人民币 6.6544；买金维持 Tier 0 红灯停（1/4 关、新仓 0%）与主报告 0/5 锁。",
+  "sources": {
+    "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"],
+    "rate_spread": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv", "https://markets.newyorkfed.org/api/rates/all/latest.json"],
+    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv", "https://www.cboe.com/tradable_products/vix/"],
+    "ny_close": ["https://www.sge.com.cn/sjzx/mrhqsj", "https://www.shfe.com.cn/data/tradedata/future/dailydata/kx20261127.dat", "https://www.shfe.com.cn/data/tradedata/future/dailydata/pm20261127.dat"]
+  },
+  "forecast_review": {
+    "status": "settled",
+    "note": "客观结案 2026-11-27 07:30 早报 161226 白银上市基金溢价压缩与老铺黄金 06181.HK 除净首日防贴权追踪项：161226 收涨 +5.22% 至 1.289 元但按 ag2702 官结 9,971 估值真实溢价反扩至 +14.88%-+15.25%；老铺大涨 +7.51% 盘中触 270.00 港元（填权 115.2%）、日终官收 264.20 港元（填权 87.65%，距 266.80 差 2.60 港元），严格记为 ⚠️ 部分兑现（累计投资计分 8 项：3 兑现 / 5 部分兑现 / 0 证伪，完全兑现率 37.5%），并新增 11/30 沪银空头与产油国会议追踪项。",
+    "sources": ["https://www.shfe.com.cn/data/tradedata/future/dailydata/kx20261127.dat", "https://www.hkex.com.hk/"]
+  }
+} -->
+
+### 2026-11-27 18:00 晚报核验记录（截点 2026-11-27 18:30）
+
+- **三大信任资产增量（累计拦谣 44 条 · 模型升级 18 项 · 细节校准 38 项 · 核心结论影响 0/38）**：① 新增拦谣 #43–#44：拆穿“欧盘冲 3,671 已转黄灯/161226 溢价归零”（按 `ag2702` 官结 9,971 估值真实溢价仍约 +14.9%）与“银行金条紧缺断货”谣言；② 新增校准 #37–#38：纠偏 11/27 上海金早盘基准价为 `775.47` 元/克（替换滞后 11/26 旧值 `768.24`），并依黑五首发布窗（03:15–09:25 EST）精准记录 `18:20` 实盘恐慌 `24.82`（拦截 `26.80` 盘外杂讯作为官收）。
+- **剩余晚间未挂网挂账（归 `2026-11-28_0730`）**：11/27 LBMA 早/午定盘、国内四大黄金 ETF 11/27 官方净值与份额流、山东黄金 11/26 业绩说明会文字纪要、LME 17:00 官收及 11/27 美盘黑五早收与 11/25 美国联邦滞后统计。
+
+---
+
 ### 2026-11-27 11:30 午报核验记录（截点 2026-11-27 12:28）
 
 <!-- GOLD_EDITION_REVIEW {
