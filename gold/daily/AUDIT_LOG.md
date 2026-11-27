@@ -4,6 +4,29 @@
 
 ---
 
+### 2026-11-27 11:30 午报核验记录（截点 2026-11-27 12:28）
+
+<!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-27_1130",
+  "as_of_short": "2026-11-27 12:28",
+  "note": "首次运行 11:30 午报：精确锁定 11:30 上金/沪金早盘官收与同刻平价溢价（+1.48 元）、11:11 国有四大行金条上调至 795.87 元/克、09:30 中国 10 月工企利润 +20.1% 及亚盘 10 年美债反跳 4.910%；严守四关以官方收盘为准（1/4 红灯停，新仓 0%），日终清算与份额流透明挂账至 18:00 晚报。",
+  "sources": {
+    "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026"],
+    "rate_spread": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve&field_tdr_date_value=2026"],
+    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"],
+    "ny_close": ["https://www.lbma.org.uk/prices-and-data/precious-metal-prices"]
+  },
+  "forecast_review": {
+    "status": "none_due",
+    "note": "本午报无到期结案项（11/27 早报 161226 与老铺除净项于今日 18:00 晚报按日终官收结案），新增 1 项黑五亚盘轧空不改红灯追踪项（周六 07:30 验真）。",
+    "sources": ["https://www.sge.com.cn/sjzx/yshqbg", "https://www.stats.gov.cn/"]
+  }
+} -->
+
+- **三大信任资产增量（累计拦谣 42 条 · 模型升级 18 项 · 细节校准 36 项 · 核心结论影响 0/36）**：① 拦截“现货金盘中破 3,630 已提前闯过第 4 关”、“沪银飙涨 10.75% 填平 161226 溢价（实测实时溢价仍约 +9% 且叠 2027 退市线）”与“银行金条半日涨 12.8 元系缺金恐慌”3 条午间误导；② 落地 `11:30` 三时段午报同刻溢价精算与 `index_matrix` 多锚点同步；③ 精确核实日本统计局东京都 11 月初报公报与国家统计局 10 月工企利润结构。
+
+---
+
 <!-- GOLD_EDITION_REVIEW {
   "edition_id": "2026-11-27_0730",
   "as_of_short": "2026-11-27 07:55",
@@ -315,6 +338,10 @@
 | **28** | 12 月美联储会议美东日期偶见误标 12/09–10，且第三方站点将 VIX 日内高低 `34.95 / 27.49` 混归 Cboe 官网 | 直查美联储官网日历确认美东议息日为 **`12/08–09`（北京 `12/10 03:00` 决议）**；核查 `cboe.com/tradable_products/vix/` 仅披露 16:15 EST 官收 **`28.29 (+7.32%)`** 而不含日高/日低，禁止将第三方区间归属 Cboe 官方。 | **否 (0)** |
 | **29** | 11/26 晚报调研初稿将盘中高点 `770.00` 混充 `SGE Au99.99` 日盘收盘，并警惕周大福 `939` 投资金条混充足金饰品价 | 跨源核定 11/26 15:30 `SGE Au99.99` 官收 **`765.82 元/克 (+1.12%)`**（与上海金午盘 `765.96`、`Au(T+D) 765.78`、`SHFE au2702 767.62` 闭环）；周大福足金饰品维持 **`1,068 元/克`**（`939` 系投资金条）。 | **否 (0)** |
 | **30** | 11/26 港股老铺黄金（`06181.HK`）公开源出现 `254.0 / 264.40 / 272.60 / 274.80` 严重撕裂，含误用 11/24 旧收 `272.60` 作分母 | 严格裁定 11/26 收盘挂账 `pending`、沿用 11/25 官收 **`HK$265.40`** 并提示明日除净 `RMB 18.02 / HK$21.05`；同步补齐 11/25 `LBMA AM $3,533.20 / PM $3,466.35`、`SPDR GLD 1,027.88t (+0.57t)`、`VanEck GDX NAV $73.70` 与 11/24 `HY/CCC OAS 372/1,405bp`。 | **否 (0)** |
+
+---
+
+| 2026-11-27 11:30 午报 | 国家统计局 10 月工企利润 +20.1%（`stats.gov.cn`）、CFETS `6.7075` 与在岸现汇 `6.6647`（`chinamoney.com.cn`）、上金所午盘 `Au99.99 778.32`（`sge.com.cn`）、四大行 11:11 金条均价 `795.87` 与日本统计局东京 CPI 官方公报（`stat.go.jp`） | 四关官方基线沿用 11/25，亚盘美债反跳 4.910% 维持 1/4 红灯停 |
 
 ---
 

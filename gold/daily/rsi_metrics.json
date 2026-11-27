@@ -655,6 +655,90 @@
         "【黑五半日市盘前哨兵与布油冲击追踪】跟踪沙特吉赞炼厂遇袭后布伦特原油近月（$96.57）欧盘与美东黑五开盘走势、欧债法意倒挂及周日第 42 届 OPEC+ 会议前瞻，预置周六早报验收黑五 02:00/03:00/03:45 提前收官与第 1 关（≤2.72%）/第 4 关（>$3,589.85）裁决",
         "【零裸期限与同图统一口径守稳】延续 lint_retries=0 与 visual_retries=0，全篇（含第三部分表格）彻底禁用裸 2Y−FF/US2Y、首现即注 GLD/LME 且图 2 国内夜盘单条标清参照口径"
       ]
+    },
+    {
+      "run_id": "2026-11-27_1130",
+      "edition_type": "weekday_midday_unified",
+      "report_file": "daily/2026-11-27_1130_午报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-27 12:30",
+      "first_pass_strict": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "首轮 lint_readability.py --strict 检出 spot_gold_live_change_pct 纽约口径对日内口径差异、红灯 status_line 含黄灯字样、图 3 reverse_items 宽度与 L156 长段，1 轮修正即达 0 errors / 0 warnings（3 张 640px SVG 一次零碰撞，visual_retries=0）；Step 5 独立盲审检出图 2 DAILY_CHART_CROSS 柱序（G-01）、data_snapshot.json sge_am_fix_rmb=768.24 / us10y_prev_close_pct=4.85 锚点补齐与 CHANGELOG.md 双基数消歧（G-02），全部发前热修并复过 --strict"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 5,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 28,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/27 07:55 追踪：【国内日盘与晚报封账】封账 09:00 四大行金条与品牌金店实盘调价、上金/沪金实盘与溢价、老铺 06181.HK 除净首日表现及日终 15:30 封账项",
+          "outcome": "partial",
+          "evidence": "11:30 午报率先封账 11/27 09:00 四大行金条 776–779 元/克、周大福首饰 978 元/克、11:30 上金早盘定盘 768.24 / Au99.99 777.95（+1.63%）/ 沪金主连 779.10（+1.79%）与同刻 12:27 国际折合平价 778.65 元/克（贴水 -0.70 元），并实录老铺 06181.HK 除净参考 245.75 后午盘报 256.80（+4.50%）；15:30 日终官收、SHFE 席位与三大金基份额流按班次归今晚 18:00 晚报封账"
+        },
+        {
+          "claim": "11/27 07:55 追踪：【黑五半日市盘前哨兵与布油冲击追踪】跟踪布油近月、亚盘美债与欧债前瞻及黑五提前收盘哨兵",
+          "outcome": "hit",
+          "evidence": "午间同步锁定布油 1 月合约稳守 $96.46、亚盘 10 年美债跳升至 4.910%（较 11/25 官收 4.85% 上冲 +6bp，压制实际利率难破 2.72% 第 1 关）及国际现货金 12:27 反弹至 $3,633.88（较纽约收 +1.26% / 日内 +1.90%），明示黑五周六 02:00/03:00/03:45 提前收官且严守四步红绿灯 1/4 红灯不抢跑"
+        },
+        {
+          "claim": "11/27 07:55 追踪：【零裸期限与同图统一口径守稳】全篇禁裸 2Y−FF/US2Y、首现即注 GLD/LME 且 3 张 640px SVG 零碰撞",
+          "outcome": "hit",
+          "evidence": "首次 11:30 午报全篇零裸期限、零未注缩写、3 张 SVG 零碰撞（visual_retries=0），独立盲审仅检出图 2 柱序与快照两项轻量锚点，全部发前热修清零"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "G-01 [MEDIUM]: gold/daily/2026-11-27_1130_午报_黄金深度研报.md 图 2（DAILY_CHART_CROSS）前两条柱顺序为 现货黄金(+1.26%) 排在 上金Au99.99(+1.63%) 之前，破坏降序排列一致性",
+            "status": "resolved",
+            "evidence": "已将图 2 items 调整为严格降序（沪金主连 +1.79% -> 上金Au99.99 +1.63% -> 现货黄金12:27 +1.26% -> COMEX近月 +1.07% -> 伦银/沪银/布油/美债），复过 gold/lint_readability.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "G-02 [LOW]: gold/data_snapshot.json 缺少 11:30 早盘定盘锚 sge_am_fix_rmb=768.24 与美债前收基准 us10y_prev_close_pct=4.85；gold/daily/CHANGELOG.md 仅标 +1.90% 易与正文较纽约收 +1.26% 混淆",
+            "status": "resolved",
+            "evidence": "已在 gold/data_snapshot.json 补齐 sge_am_fix_rmb: 768.24 与 us10y_prev_close_pct: 4.85，并在 gold/daily/CHANGELOG.md 明确双标 $3,633.88 (较纽约收 +1.26% / 日内 +1.90%)，全量复过 --strict"
+          },
+          {
+            "description": "2026-11-27 美东黑五半日市尚未开盘（周六 02:00 股 / 03:00 债 / 03:45 期金提前收），午间非 VIX 常规时段 vix_live 依法留空，四步红绿灯严格沿用 11/25 官收终值",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+              "due_edition": "2026-11-28_0730",
+              "disposition": "严禁拿亚盘薄量现货 $3,633.88 抢跑改判红绿灯，已在 data_snapshot.json data_caveats 与午报正文纯中文披露"
+            }
+          },
+          {
+            "description": "国内 15:30 上金/沪金日终官收、SHFE pm20261127.dat 前 20 席位、国内三大金基 11/27 份额流、山东黄金说明会纪要与美东 11/25 FRED OAS/SOFR/TGA 午间尚未公布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.sge.com.cn/sjzx/mrhqsj",
+              "due_edition": "2026-11-27_1800",
+              "disposition": "国内日终项归今晚 2026-11-27_1800 晚报封账，美东休假顺延统计归明晨 2026-11-28_0730 早报核销，均已纯中文写入 data_caveats"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化 11:30 午报“双基数消歧 + 早盘定盘双锚”规范：国际金现货在快照与 CHANGELOG 同步明示较前纽约官收与较亚盘日内开盘双口径，并同步写入 sge_am_fix_rmb 与 us10y_prev_close_pct 防止锚点缺失",
+        "固化图 2（DAILY_CHART_CROSS）全部条目落盘前按数值严格降序自查，消除高低柱倒置"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【18:00 晚报日终封账 + 第 10/10 刊 Meta-RSI 总复盘】封账 15:30 上金 Au99.99/Au(T+D) 与沪金日终官收及同刻溢价、SHFE pm20261127.dat 前 20 席位、三大金基 11/27 份额流、山东黄金纪要与老铺 06181.HK 日终表现，并执行累计 10/10 刊首轮 Meta-RSI 跨周期趋势总复盘",
+        "【黑五半日市盘前美债 4.91% 与布油冲击哨兵】追踪亚盘上冲至 4.910% 的 10 年美债与布油 $96.46 在欧盘及黑五盘前延续性，验证第 1 关实际利率是否远离 2.72% 门槛，并结案当日 SCORECARD 到期项",
+        "【冲刺双零首轮一次通过】晚报落盘前逐项核对 spot_gold_live_change_pct 纽约官收口径、DAILY_CHART_CROSS 降序排列与段长 ≤220 字，冲刺 first_pass_strict=true 且 lint_retries=0"
+      ]
     }
   ]
 }

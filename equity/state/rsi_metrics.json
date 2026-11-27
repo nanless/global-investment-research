@@ -721,6 +721,107 @@
         "【美股黑五半日市晚刊哨兵与三库日终刷新】按 --plan 2026-11-27_1800 交付黑五盘前晚刊，跟踪欧股与布油 $96.57 后续、法意国债倒挂与美股黑五盘前动向，预警明晨 02:00/03:00 早收与下周一 11/30 2,180 亿美债净抽水 580 亿+；同步刷新三大库晚盘债基/逆回购/转债/REITs/非金商品（161226 日终溢价）与次日停牌跨境基名单",
         "【焦点股全 8 字段零漂移 + 首轮零重试冲刺】发前逐项核验所有更新焦点股的 baseline_note ↔ valuation_anchor 零漂移、零“明日”跨日残留、港股 5 位代码及所有自然段 <=130 字（引用块独立空行分隔），冲刺 first_pass_clean=true"
       ]
+    },
+    {
+      "run_id": "2026-11-27_1130",
+      "edition_type": "weekday_midday_unified",
+      "reports": [
+        "daily/2026-11-27_1130_a_share.md",
+        "daily/2026-11-27_1130_hk_stock.md",
+        "daily/2026-11-27_1130_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-27T12:30:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "lint_errors_fixed": [
+        "首次 11:30 午报三市全发主刊（A/港/美共 6 张 SVG 零碰撞，visual_retries=0）并完成 461/461 全市场交互 K 线抓取与 16 行 QDII 直销 vs 支付宝全渠道矩阵扩库（181 只 ETF / 231 股）；首轮 patch_state_dbs.py 拦截 4 只新 high_risk ETF action_role 与 13 对 A/H 孪生股同步，1 轮修正即达 lint_equity.py --strict 0/0",
+        "Step 5 独立盲审揪出 1 处 P0（hk_stock.md 误把中国神华 H 股跌 3.6% 写成“逾三成”）及 6 处 P1（顶层 macro_anchors/beginner_action_lights/bonds/convertible_bonds 与 key_2026_rules 未同步午间值、3 只新 ETF action_role 过长、MSTR 滞留 07:40 币价、hk_stock 裸 1M 及三市首次出现 QDII 未注白话、A 股指数矩阵第 5 序 000016），叠加 Playwright 真浏览器多视口巡检揪出 4 处 CSS 布局瑕（.kline-pill-strip[hidden]、390px .pulse-row 重叠、.role-pill 换行、.qdii-compare-table 首列挤压），已全部发前热修并复过四道严格门禁与真浏览器复验"
+      ],
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 5,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 27,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/27 07:55 追踪：【A/港 11:30 午盘与日终封账】核验 14 只停牌跨境基 10:30 复牌、09:30 中国 10 月工企利润、09:20 央行 5,715 亿对冲、老铺 06181.HK 除净首日及 15:00/16:10 收盘",
+          "outcome": "partial",
+          "evidence": "11:30 午报第一时间封账 09:20 央行净投放 +2,225 亿（GC001 1.410%/DR001 1.279%）、10:30 复牌 14 只跨境基反涨 +1.5%–+2.7%（159509 静态溢价 +42.25%）、11:15 HKAB 1 月期拆息 1.98%、A 股上证 3,486.76（+0.42%）领衔 12 指数及老铺 06181.HK 午盘 256.80（+4.50%）；15:00/16:10 日终官收、美团盘后三季报及 11/26 两融归今晚 18:00 晚报最终结案"
+        },
+        {
+          "claim": "11/27 07:55 追踪：【美股黑五半日市哨兵与三大库刷新】交付黑五盘前分析并升级 12 大渠道（含场内 vs 直销 App vs 支付宝 QDII 全景矩阵）与 181 只 ETF",
+          "outcome": "hit",
+          "evidence": "完整上线 16 行 QDII 场内溢价 vs 官方直销 App vs 支付宝限购比价表与回本天数计算器、新增 7 只关键跨境 ETF 至 181 只（461/461 交互 K 线 100% 鲜活），全站落实上证 #1 领衔的多指数优先级、首屏 3 秒熔断条、钱包一键试算器与 27 对 A/H 税后股息矩阵"
+        },
+        {
+          "claim": "11/27 07:55 追踪：【零符号错 + 零兄弟字段漂移冲刺】CHART_A2 正号、三库兄弟字段与 A/H 孪生联动、零“明日”残留",
+          "outcome": "partial",
+          "evidence": "CHART_A2 正号、A/H 13 对孪生股联动、零“明日”残留与 6 张 SVG 一次零碰撞全部达成；但首版遗漏 multi_asset_channels 顶层与 bonds/convertible_bonds 午间刷新及 hk_stock “逾三成”笔误，已借盲审全部发前拦截并热修清零"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "E-01 [CRITICAL]: equity/daily/2026-11-27_1130_hk_stock.md L1 与 L97 将中国神华 H 股（01088.HK）午盘跌幅 -3.6% 误写为“逾三成”（>30%）",
+            "status": "resolved",
+            "evidence": "已将 hk_stock.md L1 与 L97 全部精确修正为“逾 3%”（-3.6%），同步核验全仓无类似百分比量级笔误并复过 lint_equity.py --strict"
+          },
+          {
+            "description": "E-02 [MEDIUM]: multi_asset_channels.json 顶层 macro_anchors/beginner_action_lights/bonds/convertible_bonds 及 etf_universe.key_2026_rules 仍留 11/26 午间前基数；3 只新 ETF（513400/159561/159687）action_role 过长导致窄屏溢出；us-stock:MSTR 滞留 07:40 BTC $60,357",
+            "status": "resolved",
+            "evidence": "已通过 equity/state/_edition_patch.json + patch_state_dbs.py --apply 全量同步上述顶层及兄弟字段、将 3 只新 ETF action_role 规范为短标签“分歧观察/非美分散卫星”、刷新 MSTR 至 12:28 BTC $61,428（浮亏 -$119.3 亿 / -18.6%），复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-03 [LOW]: hk_stock.md 残留 2 处裸 1M、三市首现 QDII 未配白话括注、market_state.json A 股指数矩阵第 5 序 000016 错位，及 Playwright 真浏览器检出 4 项 CSS 布局瑕（.kline-pill-strip[hidden]、390px .pulse-row 重叠、.role-pill 换行、.qdii-compare-table 首列挤压）",
+            "status": "resolved",
+            "evidence": "已修正 hk_stock.md 1M→1 月期拆息、三市首现 QDII 补白话括注、校准 market_state.json A 股指数矩阵排序，并在 scripts/web_assets/app.css 修复全部 4 项 CSS 布局瑕，重构建站通过 lint_site.py --strict（S1–S7 0/0）与 Playwright 复验"
+          },
+          {
+            "description": "2026-11-27 美股黑五半日市未开盘，且港股通午盘资金流在 12:00 后披露，11:30 午报依法沿用 11/25 美股官收并标注南向午盘待 18:00 晚报封账",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.hkex.com.hk/Mutual-Market/Stock-Connect/Statistics/Historical-Daily",
+              "due_edition": "2026-11-27_1800",
+              "disposition": "严禁提前估算南向净额或拿亚盘期货替代美股官收，已纯中文写入 market_state.json data_caveats 与午报正文"
+            }
+          },
+          {
+            "description": "A 股 15:00 与港股 16:10 日终官收、美团 03690.HK 盘后三季报、11/26 两融与 932047 及美东 11/25 FRED OAS/SOFR/TGA 午间尚未公布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.sse.com.cn/market/othersdata/margin/sum/",
+              "due_edition": "2026-11-27_1800",
+              "disposition": "国内日终与美团财报归今晚 2026-11-27_1800 晚报结案，美国联邦滞后统计归明晨 2026-11-28_0730 早报核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化中文量级红线核查：正文与标题中凡写“逾X成/近X成/X倍”，必须与同句百分比（如 -3.6% 必写“逾 3%”而非“逾三成”）做 1:1 数量级反算，杜绝 10 倍级中文口误",
+        "固化 ETF action_role 短标签枚举规范（≤6 汉字，如“分歧观察”“非美分散卫星”“高危回避”）与 11:30 午报顶层宏观锚点（macro_anchors/beginner_action_lights/bonds/convertible_bonds）连带刷新清单",
+        "固化每次门户 UI/CSS 改动必跑 Playwright 真浏览器三视口（1440/768/390）与双主题实测，拦截 [hidden] 被 display:flex 覆盖及窄屏卡片碰撞"
+      ],
+      "tier_b_patches": [
+        "scripts/web_assets/app.css: 修复 .kline-pill-strip[hidden]、.pulse-row 窄屏双行排版、.role-pill 移动端换行与 .qdii-compare-table 首列最小宽度（4 项真浏览器布局修复）"
+      ],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【18:00 晚报收盘封账 + 第 10/10 刊 Meta-RSI 总复盘】封账 15:00 A 股与 16:10 港股日终官收、10 月工企利润、两融与 932047、16:30 汇率/中金所/南向终值、美团 03690.HK 盘后三季报与老铺 06181.HK 除净日终，结案 SCORECARD 今日 4 项到期预判并执行 10/10 首轮 Meta-RSI 跨周期总复盘",
+        "【黑五半日市晚刊 + 461 只 K 线与 QDII 日终溢价刷新】更新 14 只复牌跨境基日终溢价与次日停牌名单、重跑 fetch_kline_data.py 同步收盘 K 线分片，跟踪布油 $96.46 与亚盘上冲至 4.910% 的 10 年美债对黑五早收（02:00/03:00）的冲击",
+        "【零量级口误 + 零兄弟字段漂移冲刺】发前逐项反算中文量级词（成/倍/%）、全扫顶层与渠道兄弟字段、严守短标签 action_role 与自然段 ≤130 字，冲刺 first_pass_clean=true"
+      ]
     }
   ]
 }

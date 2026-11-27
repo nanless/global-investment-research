@@ -1,15 +1,15 @@
 {
-  "edition_id": "2026-11-27_0730",
-  "as_of_bjt": "2026年11月27日（周五）07:55",
-  "as_of_short": "2026-11-27 07:55",
+  "edition_id": "2026-11-27_1130",
+  "as_of_bjt": "2026年11月27日（周五）12:28",
+  "as_of_short": "2026-11-27 12:28",
   "master_version": "V7.2 零门槛·真深度普通人终审定版",
   "daily_alert_level": "L1",
-  "daily_alert_label": "关键节点临近 · 沙特炼厂遇袭推布油至 96.57 美元，黑五半日市前金价 3,567 仍守红灯停",
+  "daily_alert_label": "关键节点临近 · 工企利润+20.1%触发亚盘金银轧空至 3,634，美债反跳 4.91% 仍锁红灯停",
   "tier_code": "Tier 0",
   "new_buy_allowed": false,
   "tier_label": "红灯停（暂不新买 · 新仓 0%）",
-  "tier_status_sub": "一关通过（1/4 关）· 红灯停（美休沿用 11/25 官数，恐慌 11/26 无行已确认，真实利息 2.73% 差 1 基点）",
-  "tier_cover_sub": "暂不新买 · 仅过一关 · 今晚黑五半日市检验 3,590 新门槛",
+  "tier_status_sub": "一关通过（1/4 关）· 红灯停（亚盘现货急拉至 $3,634 但非纽约官收，美债亚盘跳升 4.91%，静待黑五收盘检验）",
+  "tier_cover_sub": "暂不新买 · 仅过一关 · 亚盘轧空不改红灯，待黑五官收",
   "tier1_passed": 1,
   "tier1_total": 4,
   "a_class_tranche_split": "30% + 45% + 25%",
@@ -18,43 +18,51 @@
       "id": "real_yield",
       "name": "第 1 关：真实利息降下来",
       "passed": false,
-      "reading": "11/25 美国财政部官方 2.73%（11/26 美休沿用）",
+      "reading": "11/25 美国财政部官方 2.73%（亚盘 10 年名义美债跳升 +6.2bp 至 4.910%）",
       "threshold": "需降到 2.72% 及以下",
-      "detail": "10年真实利息停留在 2.73%，距 2.72% 过关线仅差 1 基点，待今晚黑五半日市检验"
+      "detail": "11/25 官方 10 年真实利息 2.73% 差 1 基点，午间亚盘 10 年美债反升至 4.910% 令实际利率承压，待黑五官方曲线检验"
     },
     {
       "id": "rate_spread",
       "name": "第 2 关：市场不再疯狂押加息",
       "passed": false,
-      "reading": "高出 0.73%（+73 基点，11/26 美债休市沿用）",
+      "reading": "高出 0.73%（+73 基点，11/25 官方；亚盘 2 年美债反跳至 4.681%）",
       "threshold": "需降到 0.55%（+55 基点）以内",
-      "detail": "2年美债 4.61% 减基准利率 3.88% 等于 +73 基点（仍超线 18 基点）"
+      "detail": "11/25 官方 2 年美债 4.61% 减基准利率 3.88% 等于 +73 基点（仍超线 18 基点），午间亚盘 2 年美债走高至 4.681% 令利差进一步偏紧"
     },
     {
       "id": "vix",
       "name": "第 3 关：全球股市恐慌回落",
       "passed": true,
-      "reading": "11/25 官方终值 28.29（11/26 感恩节无行已确认）",
+      "reading": "11/25 官方终值 28.29（11/26 感恩节无行已确认，非美东盘口留空）",
       "threshold": "低于 30，或较最近十个交易日峰值回落至少 10%",
-      "detail": "芝加哥期权交易所官方历史日线原表确认 11/25 收 28.29（较十日峰 35.89 低 21.18%），且 11/26 感恩节无常规日线行"
+      "detail": "芝加哥期权交易所官方历史日线原表确认 11/25 收 28.29（较十日峰 35.89 低 21.18%），11/26 感恩节无常规日线行"
     },
     {
       "id": "ny_close",
       "name": "第 4 关：金价收盘站上关键高点",
       "passed": false,
-      "reading": "11/25 纽约官收 $3,588.78（11/26 感恩节无新收）",
+      "reading": "11/25 纽约官收 $3,588.78（午间亚盘现货报 $3,633.88，非已完成纽约官收）",
       "threshold": "周三纽约日收须高于周二高点 $3,678.15",
-      "detail": "11/25 官收 $3,588.78 未过周二高点 $3,678.15；今晚黑五下期检验线自动滚降至 $3,589.85"
+      "detail": "第 4 关严格以已完成纽约 17:00 现货官收裁定，亚盘薄量拉升至 $3,634 不构成过关；今晚黑五收盘门槛滚降至 $3,589.85"
     }
+  ],
+  "index_matrix": [
+    {"id": "cmd_XAU", "code": "XAU", "name": "伦敦现货黄金", "value": 3633.88, "change_pct": 1.26},
+    {"id": "cmd_GC", "code": "GC", "name": "COMEX黄金主力", "value": 3660.95, "change_pct": 2.7},
+    {"id": "cmd_AU0", "code": "AU0", "name": "沪金主力(au2702)", "value": 780.22, "change_pct": 3.16},
+    {"id": "cmd_Au9999", "code": "Au99.99", "name": "上金所Au99.99", "value": 778.32, "change_pct": 1.63},
+    {"id": "cmd_XAG", "code": "XAG", "name": "伦敦现货白银", "value": 43.47, "change_pct": 4.77},
+    {"id": "cmd_AG0", "code": "AG0", "name": "沪银主力(ag2702)", "value": 10335.0, "change_pct": 10.75}
   ],
   "spot_gold_ny_close_usd": 3588.78,
   "spot_gold_ny_close_rounded": 3589,
   "spot_gold_ny_close_date": "2026-11-25",
   "spot_gold_ny_change_pct": 0.96,
-  "spot_gold_live_usd": 3567.32,
-  "spot_gold_live_change_pct": -0.6,
-  "spot_gold_intraday_high_usd": 3607.12,
-  "spot_gold_intraday_low_usd": 3551.57,
+  "spot_gold_live_usd": 3633.88,
+  "spot_gold_live_change_pct": 1.26,
+  "spot_gold_intraday_high_usd": 3636.92,
+  "spot_gold_intraday_low_usd": 3557.8,
   "spot_gold_asia_open_usd": 3566.84,
   "spot_gold_prev_close_usd": 3554.77,
   "spot_gold_fri_close_usd": 3534.64,
@@ -64,79 +72,80 @@
   "comex_front_settle_usd": 3534.7,
   "comex_front_change_pct": -0.71,
   "comex_gcz26_settle_usd": 3537.9,
-  "comex_gcz26_live_usd": 3566.0,
+  "comex_gcz26_live_usd": 3625.5,
   "comex_gcg27_settle_usd": 3564.6,
-  "comex_gcg27_live_usd": 3592.12,
-  "comex_gcg27_change_pct": -0.74,
+  "comex_gcg27_live_usd": 3660.95,
+  "comex_gcg27_change_pct": 2.7,
   "lbma_am_fix_usd": 3562.4,
   "lbma_pm_fix_usd": 3578.9,
   "lbma_fix_date": "2026-11-26",
   "spot_silver_usd": 41.41,
   "spot_silver_change_pct": 1.22,
-  "spot_silver_live_usd": 41.54,
-  "spot_silver_live_change_pct": 0.31,
+  "spot_silver_live_usd": 43.47,
+  "spot_silver_live_change_pct": 4.77,
   "comex_silver_settle_usd": 40.052,
   "comex_silver_change_pct": -1.74,
   "spot_platinum_usd": 1266.6,
   "spot_platinum_change_pct": 0.7,
-  "spot_platinum_live_usd": 1290.96,
+  "spot_platinum_live_usd": 1315.4,
   "comex_copper_usd_lb": 5.3325,
   "comex_copper_change_pct": -0.56,
-  "comex_copper_live_usd_lb": 5.389,
-  "shfe_copper_day_rmb": 89300,
-  "shfe_copper_day_change_pct": -0.51,
+  "comex_copper_live_usd_lb": 5.5635,
+  "shfe_copper_day_rmb": 92980,
+  "shfe_copper_day_change_pct": 4.74,
   "shfe_copper_night_rmb": 89270,
   "shfe_copper_night_change_pct": 0.56,
   "shfe_gold_night_rmb": 766.0,
   "shfe_gold_night_change_pct": 1.28,
-  "shfe_gold_day_rmb": 767.62,
-  "shfe_gold_day_change_pct": -0.17,
+  "shfe_gold_day_rmb": 780.22,
+  "shfe_gold_day_change_pct": 3.16,
   "shfe_au2612_night_rmb": 764.44,
   "shfe_au2612_night_change_pct": 1.4,
-  "shfe_au2612_day_rmb": 765.36,
-  "shfe_au2702_day_rmb": 767.62,
+  "shfe_au2612_day_rmb": 778.5,
+  "shfe_au2702_day_rmb": 780.22,
   "shfe_au2702_settle_rmb": 756.32,
-  "shfe_au2702_day_change_pct": -0.17,
+  "shfe_au2702_day_change_pct": 3.16,
   "sge_am_fix_rmb": 768.24,
   "sge_pm_fix_rmb": 765.96,
   "sge_autd_night_rmb": 764.0,
   "sge_autd_night_change_pct": 0.11,
-  "sge_autd_day_rmb": 765.78,
-  "sge_autd_day_change_pct": 1.17,
+  "sge_autd_day_rmb": 778.19,
+  "sge_autd_day_change_pct": 1.62,
   "sge_au9999_night_rmb": 765.0,
   "sge_au9999_night_change_pct": -0.11,
-  "sge_au9999_day_rmb": 765.82,
-  "sge_au9999_day_change_pct": 1.12,
-  "sge_au9999_weighted_rmb": 767.39,
-  "sge_same_ts_premium_rmb": 0.86,
+  "sge_au9999_day_rmb": 778.32,
+  "sge_au9999_day_change_pct": 1.63,
+  "sge_au9999_weighted_rmb": 775.4,
+  "sge_same_ts_premium_rmb": 1.48,
   "sge_autd_0230_premium_rmb": -0.08,
   "shfe_gold_0230_premium_rmb": 1.92,
-  "shfe_silver_day_rmb_kg": 9646,
-  "shfe_silver_day_change_pct": -0.71,
+  "shfe_silver_day_rmb_kg": 10335,
+  "shfe_silver_day_change_pct": 10.75,
   "shfe_silver_night_rmb_kg": 9667,
   "shfe_silver_night_change_pct": 3.59,
-  "sge_agtd_day_rmb_kg": 9606,
-  "sge_agtd_day_change_pct": 0.42,
+  "sge_agtd_day_rmb_kg": 10288,
+  "sge_agtd_day_change_pct": 7.1,
   "sge_agtd_night_rmb_kg": 9627,
   "sge_agtd_night_change_pct": 0.49,
-  "usd_cny": 6.66,
+  "usd_cny": 6.6647,
   "usd_cny_1630": 6.66,
   "usd_cny_night": 6.6609,
   "usd_cny_short": 6.66,
-  "usd_cnh_live": 6.664,
-  "cfets_cny_fixing": 6.7096,
-  "cfets_fixing_date": "2026-11-26",
-  "dxy": 103.76,
-  "dxy_change_pct": 0.05,
-  "usd_jpy": 159.25,
+  "usd_cnh_live": 6.6652,
+  "cfets_cny_fixing": 6.7075,
+  "cfets_fixing_date": "2026-11-27",
+  "dxy": 103.7,
+  "dxy_change_pct": 0.03,
+  "usd_jpy": 159.22,
   "us2y_pct": 4.61,
-  "us2y_te_pct": 4.65,
+  "us2y_te_pct": 4.681,
   "us10y_pct": 4.85,
-  "us10y_prev_close_pct": 4.91,
+  "us10y_live_pct": 4.91,
+  "us10y_prev_close_pct": 4.85,
   "us30y_pct": 5.24,
   "effr_pct": 3.88,
   "spread_2y_ff_bp": 73,
-  "spread_2y_ff_range": "+73bp（11/25 美债官曲；11/26 感恩节美债全休）",
+  "spread_2y_ff_range": "+73bp（11/25 美债官曲；亚盘 2 年美债跳升至 4.681% 折约 +80bp）",
   "dfii10_live_pct": 2.73,
   "dfii10_fred_official_pct": 2.73,
   "t10yie_fred_pct": 2.12,
@@ -159,12 +168,12 @@
   "sma_200w_q1_2027_usd": 3136,
   "brent_settle_usd": 96.57,
   "brent_change_pct": 2.07,
-  "brent_live_usd": 95.8,
-  "brent_live_chg_pct": -0.8,
+  "brent_live_usd": 96.46,
+  "brent_live_chg_pct": -0.11,
   "wti_settle_usd": 83.68,
   "wti_change_pct": 1.99,
-  "wti_live_usd": 84.6,
-  "wti_live_chg_pct": 1.1,
+  "wti_live_usd": 85.79,
+  "wti_live_chg_pct": 2.52,
   "ttf_gas_eur": 87.75,
   "vix_close": 28.29,
   "vix_change_pct": 7.32,
@@ -176,46 +185,16 @@
   "vix_10d_peak_date": "2026-11-20",
   "vix_10d_window_end": "2026-11-25",
   "vix_10d_session_closes": [
-    {
-      "date": "2026-11-12",
-      "close": 18.7
-    },
-    {
-      "date": "2026-11-13",
-      "close": 19.3
-    },
-    {
-      "date": "2026-11-16",
-      "close": 22.91
-    },
-    {
-      "date": "2026-11-17",
-      "close": 25.46
-    },
-    {
-      "date": "2026-11-18",
-      "close": 24.56
-    },
-    {
-      "date": "2026-11-19",
-      "close": 28.44
-    },
-    {
-      "date": "2026-11-20",
-      "close": 35.89
-    },
-    {
-      "date": "2026-11-23",
-      "close": 26.62
-    },
-    {
-      "date": "2026-11-24",
-      "close": 26.36
-    },
-    {
-      "date": "2026-11-25",
-      "close": 28.29
-    }
+    {"date": "2026-11-12", "close": 18.7},
+    {"date": "2026-11-13", "close": 19.3},
+    {"date": "2026-11-16", "close": 22.91},
+    {"date": "2026-11-17", "close": 25.46},
+    {"date": "2026-11-18", "close": 24.56},
+    {"date": "2026-11-19", "close": 28.44},
+    {"date": "2026-11-20", "close": 35.89},
+    {"date": "2026-11-23", "close": 26.62},
+    {"date": "2026-11-24", "close": 26.36},
+    {"date": "2026-11-25", "close": 28.29}
   ],
   "vix_daily_row_checks": {
     "2026-11-25": {
@@ -229,7 +208,7 @@
       "checked_at": "2026-11-27 07:34",
       "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
       "confirmation_source": "https://www.cboe.com/about/hours/us-options/",
-      "note": "截至 2026-11-27 07:34 BJT（美东 11/26 18:34，已过 11:30 EST 节日核查门槛），直连 Cboe 官方历史日线表确认末行止于 2026-11-25（收 28.29），11/26 美国感恩节休市无常规日线行，同时拒采盘外零星报价。"
+      "note": "截至 2026-11-27 07:34 BJT（已过美东 11/26 11:30 节日核查门槛），直连 Cboe 官方历史日线表确认末行止于 2026-11-25（收 28.29），11/26 美国感恩节休市无常规日线行；午间非美东现货恐慌发布窗口，vix_live 依规留空。"
     }
   },
   "vix_daily_source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
@@ -241,19 +220,19 @@
   "ndx_change_pct": -0.64,
   "dow_close": 50182.95,
   "dow_change_pct": 0.33,
-  "btc_usd": 60357,
-  "btc_change_pct": -0.36,
+  "btc_usd": 61428,
+  "btc_change_pct": 2.38,
   "gdx_close_usd": 73.89,
   "gdx_change_pct": 3.53,
   "gdx_nav_usd": 73.7,
-  "gdx_note": "11/25 官收 $73.89（+3.53%），VanEck 官网已核实 11/25 官方 NAV 为 $73.70（+3.08%，市价小幅溢价 +0.26%）；11/26 美股感恩节休市沿用",
+  "gdx_note": "11/25 官收 $73.89（+3.53%），VanEck 官网 11/25 官方 NAV 为 $73.70；11/26 感恩节休市沿用，今晚黑五复市",
   "gld_close_usd": 327.45,
   "gld_change_pct": 0.61,
   "gld_holdings_tonnes": 1027.88,
   "gld_daily_flow_tonnes": 0.57,
-  "gld_holdings_as_of": "2026-11-25 多源交叉锁定 1,027.88 吨（+0.57 吨，与 11/24 官方表 1,027.31 吨精确衔接）；11/26 美盘休市沿用",
+  "gld_holdings_as_of": "2026-11-25 锁定 1,027.88 吨（+0.57 吨）；11/26 美盘休市沿用，待今晚黑五更新",
   "gdx_gld_ratio": 0.2257,
-  "gdx_gld_ratio_note": "11/25 官收精算 73.89/327.45=0.2257（较 11/24 0.2193 跳升 +2.90%）；11/26 美股休市沿用",
+  "gdx_gld_ratio_note": "11/25 官收精算 73.89/327.45=0.2257；11/26 休市沿用",
   "hy_oas_bp": 372,
   "ccc_oas_bp": 1405,
   "coreweave_cds_bp": 1314.0,
@@ -281,72 +260,72 @@
   "bank_2027_avg_sample_count": 4,
   "bank_2027_fx_median": 6.44,
   "etf_cn": {
-    "as_of_date": "2026-11-26",
+    "as_of_date": "2026-11-27",
     "518880": {
-      "close": 7.27,
-      "chg_pct": 1.41,
+      "close": 7.388,
+      "chg_pct": 1.62,
       "nav": 7.2749,
       "flow_100m": -1.86
     },
     "159937": {
-      "close": 7.251,
-      "chg_pct": 1.34,
+      "close": 7.373,
+      "chg_pct": 1.68,
       "nav": 7.2588,
       "flow_100m": -1.25
     },
     "518660": {
-      "close": 7.298,
-      "chg_pct": 1.36,
+      "close": 7.417,
+      "chg_pct": 1.63,
       "nav": 7.3051,
       "flow_100m": -0.31
     }
   },
   "data_caveats": [
     {
-      "id": "us_thanksgiving_and_black_friday_1127",
+      "id": "midday_1130_vs_eod_settlement_1127",
+      "market": "gold",
+      "category": "provisional_close",
+      "severity": "info",
+      "item": "国内黄金交易所午盘价与 ETF 为 11:30 早盘官收，日终清算与份额流待 18:00 晚报封账",
+      "detail": "本午报锁定 11:30 上金所 Au99.99（778.32 元/克，同刻溢价 +1.48 元）、Au(T+D)（778.19 元/克）、上期所 au2702（780.22 元/克）及三大黄金 ETF 早盘收市价（518880 7.388 / 159937 7.373 / 518660 7.417）；单位净值与份额流沿用 11/26 官终，今日日终清算、上期所席位龙虎榜与山东黄金业绩会文字纪要将于 18:00 晚报补齐。",
+      "impact": "11:30 实盘同刻溢价与四大行金条 11:11 调价均已精确核实，不影响红灯停判定。",
+      "next_review": "2026-11-27_1800"
+    },
+    {
+      "id": "us_black_friday_half_day_and_thin_squeeze_1127",
       "market": "gold",
       "category": "holiday_thin",
       "severity": "warn",
-      "item": "11/26 美国感恩节休市且今晚黑五提前收盘",
-      "detail": "11/26 美国股市、国债与纽约期金全天休市，恐慌指数官方历史日线已确认 11/26 无常规交易行；四步红绿灯严格沿用 11/25 美国财政部与纽约官收（$3,588.78）。芝商所电子盘已于今晨 07:00 复盘（现货金报 $3,567.32），但今晚黑五美股次日 02:00、美债 03:00、期金 03:45 提前收市，全天仍属薄量区间。",
-      "impact": "假期薄量易现急拉急砸，不改变买金四步红绿灯红灯停（1/4 关、新仓 0%）核心裁决。",
+      "item": "亚盘金银拉升发生在美盘感恩节后极薄流动性窗口，今晚黑五提前收市",
+      "detail": "09:30 中国 10 月规上工业利润同比大增 +20.1% 引发亚盘金属共振拉升，12:27 现货金升至 3,633.88 美元、沪银主力急涨 10.75%；但第 4 关须以已完成纽约 17:00 日收裁定且亚盘 10 年美债已反跳至 4.910%、2 年美债升至 4.681%。今晚黑五美股次日 02:00、美债 03:00、期金 03:45 提前收市。",
+      "impact": "薄量脉冲易急拉急撤，买金四步红绿灯维持 1/4 红灯停（新仓 0%），静待黑五官方收盘核验。",
       "next_review": "2026-11-27_1800"
     },
     {
-      "id": "domestic_0900_open_and_sdgold_pending",
+      "id": "us_1125_credit_and_tokyo_eu_core_delayed",
       "market": "gold",
       "category": "delayed_official",
       "severity": "info",
-      "item": "国内四大行金条、品牌金店今日牌价及山东黄金纪要待日盘更新",
-      "detail": "今晨截点早于国内 09:00 开盘，国有四大行金条均价（783.07 元/克）与品牌金店饰品价（1,068 元/克）暂沿用 11/26 官价；山东黄金 11/26 业绩说明会正式文字纪要截点前亦尚未公开挂网。",
-      "impact": "国内 02:30 沪金与上金所夜盘终盘均已齐备，09:00 牌价预计仅微调 1–3 元，不影响红灯停判定。",
-      "next_review": "2026-11-27_1800"
-    },
-    {
-      "id": "us_1125_credit_holiday_delayed",
-      "market": "gold",
-      "category": "delayed_official",
-      "severity": "info",
-      "item": "美国 11/25 信用利差、隔夜利率与财政部账户受感恩节顺延至美东周五发布",
-      "detail": "受美国感恩节联邦休假影响，11/25 美国高收益债与 CCC 级深度垃圾债信用利差、隔夜基准利率及财政部一般账户均顺延至美东周五（北京时间周六凌晨）发布，本期合法沿用 11/24 官方终值（372 / 1,405 基点）。",
-      "impact": "四关核心硬门槛均已锁定，上述联邦滞后统计不影响当前红灯停裁决。",
+      "item": "美国 11/25 信用利差/隔夜利率顺延至美东周五，东京 CPI 欧美口径待 e-Stat 全表",
+      "detail": "受美国感恩节联邦休假影响，11/25 美国高收益债与 CCC 级利差、隔夜基准利率及财政部一般账户顺延至美东周五发布；日本统计局初报公报公布 11 月东京总体 2.8%、不含生鲜 2.9% 与日央行版核心（剔生鲜与能源）2.5%，欧美口径剔全部食品能源以全表发布为准。",
+      "impact": "四关核心门槛均已锁定官方基线，不影响本午报红灯停核心结论。",
       "next_review": "2026-11-28_0730"
     }
   ],
   "rmb_channels": {
-    "etf_base_rmb": 766,
+    "etf_base_rmb": 778,
     "night_base_rmb": 766,
-    "bank_accum_rmb": 770,
-    "bank_bar_rmb": 783,
-    "bank_bar_exact_rmb": 783.07,
-    "bank_bar_plus_craft_rmb": 801,
-    "shuibei_nonmember_bar_rmb": 865,
-    "shuibei_taxed_jewelry_rmb": 919,
+    "bank_accum_rmb": 782,
+    "bank_bar_rmb": 796,
+    "bank_bar_exact_rmb": 795.87,
+    "bank_bar_plus_craft_rmb": 814,
+    "shuibei_nonmember_bar_rmb": 878,
+    "shuibei_taxed_jewelry_rmb": 932,
     "brand_store_rmb": 1068,
-    "wedding_save_per_g_rmb": 267,
-    "wedding_save_50g_rmb": 13350,
-    "wedding_save_pct": 25.0,
-    "note": "02:30 国内夜盘官收：上期所主力 au2702 收 766.00 元/克（较 15:00 日收 -0.21%，同刻溢价 +1.92 元）、上金所 Au(T+D) 收 764.00 元/克（同刻溢价 -0.08 元）、Au99.99 收 765.00 元/克（同刻溢价 +0.92 元）；国内银行与品牌金店今晨 09:00 前暂沿用 11/26 牌价——四大行金条均价 783.07 元/克（工 783.94 / 建 783.20 / 农 781.01 / 中 784.13），加 18 元素圈工费 801 元；周大福足金饰品稳于 1,068 元/克（严防混淆 939 元金条价），50 克婚庆仍立省 267 元/克（13,350 元 / 25.0%）；09:00 后受夜盘小幅回吐预计微调 1–3 元。"
+    "wedding_save_per_g_rmb": 254,
+    "wedding_save_50g_rmb": 12700,
+    "wedding_save_pct": 23.8,
+    "note": "11:30 午盘官收实测：同分钟现货金 3,625.43 美元 × 在岸汇率 6.6647 ÷ 31.1034768 = 国际理论价 776.84 元/克；上金所 Au99.99 报 778.32 元/克（+1.63%，同刻溢价 +1.48 元 / +0.19%）、Au(T+D) 报 778.19 元/克（+1.62%，同刻溢价 +1.35 元）、沪金 au2702 报 780.22 元/克（较昨结算 +3.16% / 较昨15:00日收 +1.64%）。国内国有四大行投资金条 11:11 牌价已随早盘拉升上调至均价 795.87 元/克（工行 791.47 / 建行 795.50 / 中行 795.91 / 农行 800.60，较昨日上调 +12.80 元），加 18 元素圈工费约 814 元；周大福足金饰品暂稳 1,068 元/克（老凤祥 1,070 / 周生生 1,072 / 六福 1,066 / 中国黄金 1,058），50 克婚庆立省 254 元/克（12,700 元 / 23.8%）。"
   },
   "cross_ratios": {
     "gold_wti_ratio": 42.89,
@@ -356,83 +335,17 @@
     "gold_spx_ratio": 0.5
   },
   "monthly_candles": [
-    {
-      "label": "1月",
-      "o": 4318,
-      "h": 5596,
-      "l": 4311,
-      "c": 4865
-    },
-    {
-      "label": "2月",
-      "o": 4865,
-      "h": 5281,
-      "l": 4404,
-      "c": 5278
-    },
-    {
-      "label": "3月",
-      "o": 5278,
-      "h": 5419,
-      "l": 4100,
-      "c": 4697
-    },
-    {
-      "label": "4月",
-      "o": 4697,
-      "h": 4890,
-      "l": 4510,
-      "c": 4623
-    },
-    {
-      "label": "5月",
-      "o": 4626,
-      "h": 4774,
-      "l": 4366,
-      "c": 4541
-    },
-    {
-      "label": "6月",
-      "o": 4540,
-      "h": 4545,
-      "l": 3942,
-      "c": 4006
-    },
-    {
-      "label": "7月",
-      "o": 4006,
-      "h": 4202,
-      "l": 3960,
-      "c": 4051
-    },
-    {
-      "label": "8月",
-      "o": 4043,
-      "h": 4697,
-      "l": 4020,
-      "c": 4452
-    },
-    {
-      "label": "9月",
-      "o": 4452,
-      "h": 4510,
-      "l": 4111,
-      "c": 4156
-    },
-    {
-      "label": "10月",
-      "o": 4156,
-      "h": 4225,
-      "l": 3870,
-      "c": 3875
-    },
-    {
-      "label": "11月*",
-      "o": 3875,
-      "h": 4146,
-      "l": 3427,
-      "c": 3589
-    }
+    {"label": "1月", "o": 4318, "h": 5596, "l": 4311, "c": 4865},
+    {"label": "2月", "o": 4865, "h": 5281, "l": 4404, "c": 5278},
+    {"label": "3月", "o": 5278, "h": 5419, "l": 4100, "c": 4697},
+    {"label": "4月", "o": 4697, "h": 4890, "l": 4510, "c": 4623},
+    {"label": "5月", "o": 4626, "h": 4774, "l": 4366, "c": 4541},
+    {"label": "6月", "o": 4540, "h": 4545, "l": 3942, "c": 4006},
+    {"label": "7月", "o": 4006, "h": 4202, "l": 3960, "c": 4051},
+    {"label": "8月", "o": 4043, "h": 4697, "l": 4020, "c": 4452},
+    {"label": "9月", "o": 4452, "h": 4510, "l": 4111, "c": 4156},
+    {"label": "10月", "o": 4156, "h": 4225, "l": 3870, "c": 3875},
+    {"label": "11月*", "o": 3875, "h": 4146, "l": 3427, "c": 3589}
   ],
   "mechanical_calendar": [
     {
@@ -473,96 +386,23 @@
     }
   ],
   "institutional_targets": [
-    {
-      "name": "麦格理（27年均价）",
-      "lo": 3500,
-      "hi": 4600,
-      "base": 4200,
-      "kind": "avg"
-    },
-    {
-      "name": "世界银行（27年均价）",
-      "lo": 3650,
-      "hi": 4600,
-      "base": 4250,
-      "kind": "avg"
-    },
-    {
-      "name": "摩根大通（27年末·11/24修）",
-      "lo": 3600,
-      "hi": 5200,
-      "base": 4500,
-      "kind": "pt"
-    },
-    {
-      "name": "高盛（27年末·11月修）",
-      "lo": 3500,
-      "hi": 4800,
-      "base": 4650,
-      "kind": "pt"
-    },
-    {
-      "name": "澳新银行（27年末）",
-      "lo": 3400,
-      "hi": 5200,
-      "base": 4800,
-      "kind": "pt"
-    },
-    {
-      "name": "美国银行（27年均价）",
-      "lo": 3700,
-      "hi": 5000,
-      "base": 4813,
-      "kind": "avg"
-    },
-    {
-      "name": "法国兴业（27年末）",
-      "lo": 4200,
-      "hi": 5400,
-      "base": 5000,
-      "kind": "pt",
-      "annual_average_usd": 4625
-    },
-    {
-      "name": "瑞银集团（27年末）",
-      "lo": 3750,
-      "hi": 5400,
-      "base": 5000,
-      "kind": "pt"
-    },
-    {
-      "name": "花旗集团（6–12月）",
-      "lo": 3500,
-      "hi": 6000,
-      "base": 5000,
-      "kind": "horizon"
-    },
-    {
-      "name": "汇丰银行（27年末）",
-      "lo": 3950,
-      "hi": 5300,
-      "base": 5025,
-      "kind": "pt"
-    },
-    {
-      "name": "德意志银行（27均价·旧稿†）",
-      "lo": 3950,
-      "hi": 5600,
-      "base": 5150,
-      "kind": "stale"
-    },
-    {
-      "name": "摩根士丹利（27年末）",
-      "lo": 4200,
-      "hi": 5600,
-      "base": 5250,
-      "kind": "pt"
-    }
+    {"name": "麦格理（27年均价）", "lo": 3500, "hi": 4600, "base": 4200, "kind": "avg"},
+    {"name": "世界银行（27年均价）", "lo": 3650, "hi": 4600, "base": 4250, "kind": "avg"},
+    {"name": "摩根大通（27年末·11/24修）", "lo": 3600, "hi": 5200, "base": 4500, "kind": "pt"},
+    {"name": "高盛（27年末·11月修）", "lo": 3500, "hi": 4800, "base": 4650, "kind": "pt"},
+    {"name": "澳新银行（27年末）", "lo": 3400, "hi": 5200, "base": 4800, "kind": "pt"},
+    {"name": "美国银行（27年均价）", "lo": 3700, "hi": 5000, "base": 4813, "kind": "avg"},
+    {"name": "法国兴业（27年末）", "lo": 4200, "hi": 5400, "base": 5000, "kind": "pt", "annual_average_usd": 4625},
+    {"name": "瑞银集团（27年末）", "lo": 3750, "hi": 5400, "base": 5000, "kind": "pt"},
+    {"name": "花旗集团（6–12月）", "lo": 3500, "hi": 6000, "base": 5000, "kind": "horizon"},
+    {"name": "汇丰银行（27年末）", "lo": 3950, "hi": 5300, "base": 5025, "kind": "pt"},
+    {"name": "德意志银行（27均价·旧稿†）", "lo": 3950, "hi": 5600, "base": 5150, "kind": "stale"},
+    {"name": "摩根士丹利（27年末）", "lo": 4200, "hi": 5600, "base": 5250, "kind": "pt"}
   ],
   "trust_assets": {
-    "myths_blocked": 39,
-    "model_upgrades": 17,
-    "minor_corrections": 35,
-    "minor_impact_on_core_verdict": "0 / 35"
+    "myths_blocked": 42,
+    "model_upgrades": 18,
+    "minor_corrections": 36,
+    "minor_impact_on_core_verdict": "0 / 36"
   }
 }

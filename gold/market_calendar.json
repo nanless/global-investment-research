@@ -72,7 +72,7 @@
       "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
       "event": "美国感恩节全天休市（美股/美债休市，CME 贵金属无周四官结）",
       "overlay_mode": "A",
-      "affected_editions": ["2026-11-26_1800", "2026-11-27_0730"],
+      "affected_editions": ["2026-11-26_1800", "2026-11-27_0730", "2026-11-27_1130"],
       "trading_hours_bjt": {
         "us_equity": "全天休市",
         "us_bond": "全天休市",
