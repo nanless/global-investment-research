@@ -485,7 +485,7 @@
       "next_run_watch": [
         "【A/港/美三市全主刊与晚间挂账清零】A/港 07:30 切回完整主刊（5–6 页、≥2 图），清零 11/26 中金所官结贴水、000922/123080/932047/HSAHP/HSHDYI 官收与老铺 06181 11/26 官收及今日除净参考价；A 股置顶 09:30 10 月工企利润、10:30 6 只停牌纳指基复牌风险、美的 000333 分红登记税坑与周五 1 天期逆回购仅计 1 天息（改泊 511360）；港股置顶四重撞车（期指结算 + 盘后美团 03690 三季报 + 老铺除净 + 黑五半日）",
         "【美股黑五半日市前瞻与挂账核销】按 --plan 2026-11-27_0730 校验美股半日市刊型，清零 11/25 Cboe CSV 原始行、11/25 FRED OAS/SOFR/EFFR、11/24–25 TGA 及欧洲央行 10 月纪要 + 07:30 东京核心 CPI 外溢，预警明晨 11/28 02:00 美股 / 03:00 美债早收薄量及下周一 11/30 2,180 亿美债交割与明晟剔除微策略",
-        "【零重试 + 零孤行冲刺（first_pass_clean=true）】发前执行五秒快检：表内左/右列代码 1:1 释义、美股代码全配中文简称、清零裸 2Y/3Y/5Y/10Y、禁用 ** 开头 >180 字长段、一句话结论 <=48 字、红筹股息声明统一用“并非一律单一税率”、粗体 <=12%，冲刺 lint_retries=0 与 visual_retries=0"
+        "【零重试冲刺（first_pass_clean=true）】发前核验无色系混用、无 Gate C2 误伤、us10y_zone 边界精准、全部列表 <=160 字、主刊尾页 >=700 字，实现 lint_retries=0 且 visual_retries=0"
       ]
     },
     {
@@ -595,6 +595,125 @@
         "【A/港/美周五主刊与剩余挂账清零】A/港 07:30 交付完整主刊，核销 11/26 932047 终盘、山东黄金说明会纪要、11/25 FRED OAS/SOFR/TGA 与 00:30 伦交所 UCITS 官收 + 07:30 东京核心 CPI；A 股紧盯 09:30 工企利润、10:30 沪深 12 只跨境基复牌与美的 000333 登记税坑；港股紧盯期指结算 + 美团 03690 盘后财报 + 老铺 06181 除净 245.75 首日表现",
         "【美股黑五半日市前瞻】按 --plan 2026-11-27_0730 交付黑五半日市守望/主刊，预警周六 02:00 美股 / 03:00 美债早收薄量及下周一 11/30 2,180 亿美债净抽水 580 亿+ 与明晟剔除微策略",
         "【零符号错 + 零兄弟字段漂移冲刺】发前逐项核对 CHART_A2 贴水正号、三库兄弟字段与 A/H 孪生档案联动一致、SCORECARD 同步及专业缩写首现括注，冲刺 first_pass_clean=true"
+      ]
+    },
+    {
+      "run_id": "2026-11-27_0730",
+      "edition_type": "weekday_morning_unified",
+      "reports": [
+        "daily/2026-11-27_0730_a_share.md",
+        "daily/2026-11-27_0730_hk_stock.md",
+        "daily/2026-11-27_0730_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-27T07:55:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 2,
+      "visual_retries": 0,
+      "lint_errors_fixed": [
+        "首轮 _edition_patch.json 在 600547/06181.HK 触发 2 处黄金红灯否定正则距离过远，改写后 100% 通过原子合并；首轮 lint_equity.py 0 错 5 警告（长段/港股粗体 13.5%/美股长列表），经两次拆段降密后全绿（lint_retries=2, visual_retries=0，5 张 SVG 一次零碰撞）",
+        "独立盲审（26/30，0 CRITICAL / 3 HIGH / 2 MEDIUM / 2 LOW）深度扫描大库兄弟字段，揪出美的 A/H baseline_note 旧股息率（E-01）、MSTR 浮亏算术误差 -127→-128.5 亿及兄弟字段滞留（E-02）、03690/06181/c_reits 3 处“明日”残留（E-03）、CVX/NVDA 兄弟字段旧估值（E-04）、fx_deposits_wm 实亏区间不统一（E-05）、520830 四位港股码 2830.HK（E-06）及 market_state/INDEX/hk_stock 轻度措辞项（E-07），全部发前热修并通过全部三道严格门禁"
+      ],
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 3
+      },
+      "total_score": 26,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/26 23:55 追踪：【A/港/美周五主刊与剩余挂账清零】A/港交付主刊、核销 00:30 伦交所 UCITS + 07:30 东京 CPI + 11/26 挂账，紧盯停牌复牌/工企利润/期指结算/美团财报/老铺除净",
+          "outcome": "partial",
+          "evidence": "准点交付 A/港完整主刊（≥2 图），铁锁 6 只伦交所爱尔兰 UCITS 11/26 官收（等权 XDEW 两日跑赢科技 IUIT 115bp）、07:30 东京核心 CPI（2.9%/2.3%）、布油 1 月官结 $96.57 与逐只核验后的沪深 14 只早盘停牌跨境基全名单（补 513390、推翻误判 159513），并置顶工企利润/美的登记/期指结算/美团财报/老铺除净 245.75；但 11/26 两融、932047、山东黄金纪要及休假顺延的 11/25 FRED OAS/SOFR/TGA 仍待发布，已分期透明挂账"
+        },
+        {
+          "claim": "11/26 23:55 追踪：【美股黑五半日市前瞻】按 --plan 交付黑五半日市刊型，预警早收薄量及 11/30 2,180 亿美债净抽水 580 亿+ 与明晟剔除微策略",
+          "outcome": "hit",
+          "evidence": "严格依 --plan 交付美股感恩节后守望早刊（holiday_watch，含图 U4），全北京时间明示黑五 02:00 股/03:00 债/06:00 盘后早收，封账欧债法意倒挂 43bp、英央行逾 4 万亿美元人工智能债务警示、英伟达季息涨 25 倍至 $0.25 与下周一 11/30 净抽水 580 亿+ 排雷"
+        },
+        {
+          "claim": "11/26 23:55 追踪：【零符号错 + 零兄弟字段漂移冲刺】CHART_A2 正号、三库兄弟字段与 A/H 孪生联动、SCORECARD 同步，冲刺 first_pass_clean=true",
+          "outcome": "partial",
+          "evidence": "CHART_A2 贴水正号、511380/511180 费率区分、14 只停牌/161226 溢价跨库同步、5 张 SVG 零碰撞（visual_retries=0）与黄金红灯锁全部一次达成；但首轮日报段落长度触发 lint_retries=2，且盲审检出 6 只焦点股 baseline_note 兄弟字段与 3 处“明日”残留，均发前热修清零"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "E-01 [HIGH]: equity/state/deep_dossiers.json a-share:000333 与 hk-stock:00300.HK 的 baseline_note 仍残留旧股息率 4.0% / 4.5%，与同条 valuation_anchor 现价实算 4.55% / 税前 4.89%（税后 3.91%）冲突",
+            "status": "resolved",
+            "evidence": "已通过 _edition_patch.json + patch_state_dbs.py --apply 同步更新两地 baseline_note 为 4.55% 与 税前 4.89%（港股通税后 3.91%），并通过 lint_equity.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "E-02 [HIGH]: equity/daily/2026-11-27_0730_us_stock.md L45 与 deep_dossiers.json us-stock:MSTR 将 851,305 枚均价 $75,446 对 $60,357 浮亏错算为 -127 亿（实为 -$128.5 亿 / -20.0%），且 baseline_note/moat 残留昨夜 $60,575、bear_case 仍假设跌破 1.0x",
+            "status": "resolved",
+            "evidence": "已同步更正 us_stock.md L45 与 deep_dossiers.json us-stock:MSTR 全部 4 个字段为 07:40 币价 $60,357 对应账面浮亏约 -128.5 亿美元（-20.0%）及 mNAV 在 0.96x 基础上进一步深折价，复过 lint_equity.py --strict"
+          },
+          {
+            "description": "E-03 [HIGH]: deep_dossiers.json hk-stock:03690.HK.financials（明日11/27盘后）、hk-stock:06181.HK.baseline_note（明日11/27除净）及 multi_asset_channels.json c_reits.key_metrics[2]（明日无新发）在 11/27 当日残留“明日”",
+            "status": "resolved",
+            "evidence": "已通过 _edition_patch.json + patch_state_dbs.py --apply 将 3 处“明日”全部更正为“今日”，消除跨日时间违和"
+          },
+          {
+            "description": "E-04 [MEDIUM]: deep_dossiers.json us-stock:CVX（baseline_note/shareholder_flow/bear_case 残留 12.5–13.0x / 3.4%–3.5%）与 us-stock:NVDA（baseline_note 缺 16.04x / $1.00 / 0.67%）未对齐 valuation_anchor",
+            "status": "resolved",
+            "evidence": "已通过 _edition_patch.json + patch_state_dbs.py --apply 同步对齐 CVX 3 处字段为 15.4x（2027 远期 11.7x）/ 3.38%，同步 NVDA baseline_note 纳入 16.04x / FY28 9.0–11.2x / 年息 $1.00（0.67%）"
+          },
+          {
+            "description": "E-05 [MEDIUM]: multi_asset_channels.json fx_deposits_wm 的 yield_range/beginner_avoids[0]/rules_and_redlines[0] 残留旧实亏区间 -1.3% 至 -2.3% 与 6.6600，与 today_alert/summary/key_metrics（-1.0% 至 -2.4% / 6.6609）不一致",
+            "status": "resolved",
+            "evidence": "已通过 _edition_patch.json + patch_state_dbs.py --apply 将 fx_deposits_wm 全 6 处统一为 -1.0% 至 -2.4% 与 6.6609"
+          },
+          {
+            "description": "E-06 [LOW]: etf_universe.json 520830 两处残留 4 位港股代码 2830.HK，未按 5 位补零规范写 02830.HK",
+            "status": "resolved",
+            "evidence": "已通过 _edition_patch.json + patch_state_dbs.py --apply 将 520830 的 top_holdings 与 tax_and_rules 均改为 02830.HK"
+          },
+          {
+            "description": "E-07 [LOW]: market_state.json data_caveats[1] 复核期混标 11/27_1800 与 pending_backfills[1]（11/28_0730）错位；INDEX.md L28 “20 项追踪预判”措辞偏松；hk_stock.md L58 QDII 先出后注、L158 CFETS 未注中文",
+            "status": "resolved",
+            "evidence": "已将 market_state.json data_caveats 拆为 3 条使美国联邦统计顺延精确对齐 2026-11-28_0730；更新 INDEX.md L28 为“20 项公开预判（12 项追踪中）”；补齐 hk_stock.md L58 QDII 与 L158 CFETS 中文全称，全量复过 lint_equity.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "2026-11-26 美国感恩节休市且今晚黑五早收（周六 02:00 股 / 03:00 债 / 06:00 盘后），Cboe 确认 11/26 无 VIX 行",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34",
+              "due_edition": "2026-11-27_1800",
+              "disposition": "美股按计划交付感恩节后守望早刊（holiday_watch，含图 U4），严守沿用 11/25 官收与零 09:00 盘后穿越，已纯中文披露于 market_state.json data_caveats 与正文"
+            }
+          },
+          {
+            "description": "A 股 11/26 两融终值、中证不动产基金指数 932047 与山东黄金说明会纪要 07:55 尚未挂网；美国 11/25 信用利差/SOFR/TGA 休市顺延至美东周五",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.sse.com.cn/market/othersdata/margin/sum/",
+              "due_edition": "2026-11-28_0730",
+              "disposition": "国内三项归 2026-11-27_1800 晚刊封账，美国联邦滞后统计归 2026-11-28_0730 早刊核销，均严守零编造并纯中文登记于 market_state.json data_caveats 与 pending_backfills"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "固化大库单股更新“全 8 字段联动核对清单”：凡更新任一焦点股的现价、PE、实算股息率或持仓浮亏（如 MSTR 必须用持仓量×(现价-均价)现算，禁沿用旧凑整数），必须同步刷新同条目的 baseline_note、moat、financials、shareholder_flow 与 bear_case，严防头尾打架",
+        "固化“当日更新清扫昨日相对时间词”铁律：发版前与写 _edition_patch.json 时强制核查所有当日更新条目，彻底清除“明日<今日月日>”“明日无新发”等隔日残留；同步核查所有港股代码 5 位补零（如 02830.HK）及正文自然段严格 <=130 字防首轮 Linter 重试",
+        "固化 data_caveats 复核期与 pending_backfills 1:1 严格对齐（国内日盘 18:00 vs 美国休假顺延次晨 07:30），避免跨班错位"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【A/港 18:00 晚刊收盘封账与 4 项 SCORECARD 算账】封账 11/27 15:00 A 股与 16:10 港股日终官收、09:30 中国 10 月工企利润、09:20 央行 5,715 亿对冲、11/26 两融与 932047 终盘、山东黄金说明会纪要、16:30 汇率与中金所/南向终值；客观结案 SCORECARD 今日 4 项到期预判（14 只停牌跨境基 10:30 复牌、10 月工企利润、港股期指结算、美团 03690.HK 盘后三季报初报与老铺 06181.HK 除净 245.75 首日表现）",
+        "【美股黑五半日市晚刊哨兵与三库日终刷新】按 --plan 2026-11-27_1800 交付黑五盘前晚刊，跟踪欧股与布油 $96.57 后续、法意国债倒挂与美股黑五盘前动向，预警明晨 02:00/03:00 早收与下周一 11/30 2,180 亿美债净抽水 580 亿+；同步刷新三大库晚盘债基/逆回购/转债/REITs/非金商品（161226 日终溢价）与次日停牌跨境基名单",
+        "【焦点股全 8 字段零漂移 + 首轮零重试冲刺】发前逐项核验所有更新焦点股的 baseline_note ↔ valuation_anchor 零漂移、零“明日”跨日残留、港股 5 位代码及所有自然段 <=130 字（引用块独立空行分隔），冲刺 first_pass_clean=true"
       ]
     }
   ]
