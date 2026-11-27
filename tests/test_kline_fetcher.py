@@ -272,6 +272,199 @@ class TestParsersAndColumnReordering(unittest.TestCase):
             ],
         )
 
+    def test_cnbc_harmony_and_rest_quote_t0_guards(self) -> None:
+        raw_harmony = json.dumps({
+            "barData": {
+                "priceBars": [
+                    {
+                        "open": "58383.4900",
+                        "high": "58472.5600",
+                        "low": "56502.9700",
+                        "close": "57011.6200",
+                        "volume": 1990653500,
+                        "tradeTime": "20261125000000",
+                    },
+                    {
+                        "open": "57429.5400",
+                        "high": "58251.9300",
+                        "low": "57288.1000",
+                        "close": "57499.1600",
+                        "volume": 1651446400,
+                        "tradeTime": "20261126000000",
+                    },
+                ]
+            }
+        })
+        hist = fk.parse_cnbc_harmony(raw_harmony)
+        self.assertEqual(len(hist), 2)
+        self.assertEqual(hist[1][0], "2026-11-26")
+
+        # restQuote with valid T-0 (.N225), pre-open OHLC=0 (.GDAXI), same-day (.FTSE), inverted H<L (.FCHI)
+        raw_quote = json.dumps({
+            "FormattedQuoteResult": {
+                "FormattedQuote": [
+                    {
+                        "symbol": ".N225",
+                        "open": "57,669.79",
+                        "high": "58,738.02",
+                        "low": "57,447.16",
+                        "last": "58,717.48",
+                        "volume": "0",
+                        "last_time": "2026-11-27T15:28:35.000+0900",
+                    },
+                    {
+                        "symbol": ".GDAXI",
+                        "open": "0",
+                        "high": "0",
+                        "low": "0",
+                        "last": "25,215.52",
+                        "volume": "0",
+                        "last_time": "2026-11-27T08:00:00.000+0100",
+                    },
+                    {
+                        "symbol": ".FTSE",
+                        "open": "10,426.06",
+                        "high": "10,636.49",
+                        "low": "10,425.37",
+                        "last": "10,609.30",
+                        "volume": "0",
+                        "last_time": "2026-11-26T16:35:00.000+0000",
+                    },
+                    {
+                        "symbol": ".FCHI",
+                        "open": "8,100.00",
+                        "high": "8,050.00",
+                        "low": "8,120.00",
+                        "last": "8,108.74",
+                        "volume": "0",
+                        "last_time": "2026-11-27T10:00:00.000+0100",
+                    },
+                ]
+            }
+        })
+        quotes = fk.parse_cnbc_rest_quote(raw_quote)
+        self.assertIn(".N225", quotes)
+        self.assertIn(".FTSE", quotes)
+        # Pre-open OHLC=0 and high < low strictly rejected
+        self.assertNotIn(".GDAXI", quotes)
+        self.assertNotIn(".FCHI", quotes)
+
+        # Valid newer date appends T-0 bar
+        merged_new = fk.sanitize_bars(fk.merge_cnbc_t0_quote(hist, quotes[".N225"]))
+        self.assertEqual(len(merged_new), 3)
+        self.assertEqual(merged_new[-1], ["2026-11-27", 57669.79, 58738.02, 57447.16, 58717.48, 0])
+
+        # Same-date quote does NOT append or overwrite last historical bar
+        merged_same = fk.sanitize_bars(fk.merge_cnbc_t0_quote(hist, quotes[".FTSE"]))
+        self.assertEqual(len(merged_same), 2)
+        self.assertEqual(merged_same[-1][0], "2026-11-26")
+        self.assertEqual(merged_same[-1][4], 57499.16)
+
+        # Direct pre-open OHLC=0 bar passed to merge helper is also rejected
+        merged_zero = fk.sanitize_bars(fk.merge_cnbc_t0_quote(hist, ["2026-11-27", 0, 0, 0, 58000, 0]))
+        self.assertEqual(len(merged_zero), 2)
+
+    def test_eastmoney_cgb_skips_null_rows(self) -> None:
+        raw_cgb = json.dumps({
+            "result": {
+                "data": [
+                    {"SOLAR_DATE": "2026-11-26 00:00:00", "EMM00588704": 1.214, "EMM00166466": 1.5912, "EMM00166469": 2.0662},
+                    {"SOLAR_DATE": "2026-11-25 00:00:00", "EMM00588704": None, "EMM00166466": None, "EMM00166469": 2.061},
+                    {"SOLAR_DATE": "2026-11-24 00:00:00", "EMM00588704": 1.2304, "EMM00166466": 1.5853, "EMM00166469": 2.045},
+                ]
+            }
+        })
+        bars_10y = fk.sanitize_bars(
+            fk.parse_eastmoney_cgb(raw_cgb, "EMM00166466"),
+            decimals_override=4,
+            force_no_volume=True,
+        )
+        self.assertEqual(
+            bars_10y,
+            [
+                ["2026-11-24", 1.5853, 1.5853, 1.5853, 1.5853, 0],
+                ["2026-11-26", 1.5912, 1.5912, 1.5912, 1.5912, 0],
+            ],
+        )
+        bars_30y = fk.sanitize_bars(
+            fk.parse_eastmoney_cgb(raw_cgb, "EMM00166469"),
+            decimals_override=4,
+            force_no_volume=True,
+        )
+        self.assertEqual(len(bars_30y), 3)
+        self.assertEqual(bars_30y[1], ["2026-11-25", 2.061, 2.061, 2.061, 2.061, 0])
+
+    def test_csindex_perf_ohlcv_and_close_only(self) -> None:
+        raw_932047 = json.dumps({
+            "code": "200",
+            "data": [
+                {"tradeDate": "20261125", "open": 935.25, "high": 935.71, "low": 930.36, "close": 931.36, "tradingVol": 67050313.0},
+                {"tradeDate": "20261126", "open": 929.73, "high": 934.3, "low": 929.05, "close": 930.45, "tradingVol": 54182565.0},
+            ],
+        })
+        bars_tr = fk.sanitize_bars(fk.parse_csindex_perf(raw_932047))
+        self.assertEqual(
+            bars_tr,
+            [
+                ["2026-11-25", 935.25, 935.71, 930.36, 931.36, 67050313],
+                ["2026-11-26", 929.73, 934.3, 929.05, 930.45, 54182565],
+            ],
+        )
+
+        raw_932006 = json.dumps({
+            "code": "200",
+            "data": [
+                {"tradeDate": "20261125", "open": None, "high": None, "low": None, "close": 680.65, "tradingVol": 67050313.0},
+                {"tradeDate": "20261126", "open": None, "high": None, "low": None, "close": 679.98, "tradingVol": 54182565.0},
+            ],
+        })
+        bars_close = fk.sanitize_bars(fk.parse_csindex_perf(raw_932006))
+        self.assertEqual(
+            bars_close,
+            [
+                ["2026-11-25", 680.65, 680.65, 680.65, 680.65, 67050313],
+                ["2026-11-26", 679.98, 679.98, 679.98, 679.98, 54182565],
+            ],
+        )
+
+    def test_core_taxonomy_and_counts(self) -> None:
+        specs = fk.build_core_specs()
+        self.assertEqual(len(specs), 68)
+        by_id = {s.id: s for s in specs}
+        self.assertEqual(len(by_id), 68)
+
+        # Pure precious metals only in gold_metal (no copper)
+        gold_ids = {s.id for s in specs if s.group == "gold_metal"}
+        self.assertEqual(
+            gold_ids,
+            {"cmd_XAU", "cmd_GC", "cmd_AU0", "cmd_Au9999", "cmd_AuTD",
+             "cmd_XAG", "cmd_SI", "cmd_AG0", "cmd_XPT", "cmd_AgTD"},
+        )
+        # Copper and new FX pairs in macro_cmd
+        for cid in ("cmd_HG", "cmd_CU0", "fx_EURUSD", "fx_GBPUSD", "fx_USDHKD"):
+            self.assertEqual(by_id[cid].group, "macro_cmd")
+            self.assertEqual(by_id[cid].market, "宏观商品与汇率")
+        # All sovereign yield curves (US + CN) and CSI REITs in rates_reits
+        rates_ids = {s.id for s in specs if s.group == "rates_reits"}
+        self.assertEqual(
+            rates_ids,
+            {"rate_US10Y", "rate_US2Y", "rate_US30Y", "rate_DFII10",
+             "rate_CN2Y", "rate_CN10Y", "rate_CN30Y", "idx_932047", "idx_932006"},
+        )
+        for rid in rates_ids:
+            self.assertEqual(by_id[rid].market, "债券与利率")
+        # 9 non-US global indices
+        global_ids = {s.id for s in specs if s.group == "global_index"}
+        self.assertEqual(
+            global_ids,
+            {"idx_N225", "idx_TOPIX", "idx_GDAXI", "idx_FCHI", "idx_STOXX50E",
+             "idx_FTSE", "idx_NSEI", "idx_TWII", "idx_KS11"},
+        )
+        # 5 HK indices including live idx_HSCI & idx_HSAHP
+        hk_ids = {s.id for s in specs if s.group == "hk_index"}
+        self.assertEqual(hk_ids, {"idx_hkHSI", "idx_hkHSTECH", "idx_hkHSCEI", "idx_HSCI", "idx_HSAHP"})
+        self.assertTrue(by_id["idx_HSAHP"].force_no_volume)
+
 
 class TestSanityFiltersAndCacheMerge(unittest.TestCase):
     def test_sanitize_bars_drops_corrupt_and_deduplicates(self) -> None:
@@ -333,7 +526,7 @@ class TestSanityFiltersAndCacheMerge(unittest.TestCase):
 
 
 class TestOfflineEndToEndWorkflow(unittest.TestCase):
-    def _build_mock_opener(self, *, fail_nvda: bool = False):
+    def _build_mock_opener(self, *, fail_nvda: bool = False, fail_cnbc_gdaxi: bool = False):
         def opener(req, timeout=12):
             url = req.full_url if hasattr(req, "full_url") else str(req)
             if "smartbox.gtimg.cn" in url:
@@ -371,8 +564,6 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
 
             if "hkfqkline" in url:
                 sym = url.split("param=")[1].split(",")[0]
-                if sym == "hkHSCI":
-                    return _FakeResponse(json.dumps({"code": 0, "data": {"hkHSCI": {"day": []}}}))
                 return _FakeResponse(json.dumps({
                     "code": 0,
                     "data": {
@@ -405,20 +596,89 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
                     {"day": "2026-11-25", "open": "760.0", "high": "770.0", "low": "748.0", "close": "752.4", "volume": "520000"},
                 ]))
 
+            if "ts-api.cnbc.com/harmony/app/charts/1Y.json" in url:
+                if fail_cnbc_gdaxi and ".GDAXI" in url:
+                    raise urllib.error.HTTPError(url, 503, "Service Unavailable", {}, None)
+                vol = 0 if ".HSCAHPI" in url else 1500000
+                return _FakeResponse(json.dumps({
+                    "barData": {
+                        "priceBars": [
+                            {"open": "1000.0", "high": "1020.0", "low": "990.0", "close": "1010.0", "volume": vol, "tradeTime": "20261125000000"},
+                            {"open": "1012.0", "high": "1030.0", "low": "1005.0", "close": "1025.0", "volume": vol, "tradeTime": "20261126000000"},
+                        ]
+                    }
+                }))
+
+            if "quote.cnbc.com/quote-html-webservice/restQuote" in url:
+                return _FakeResponse(json.dumps({
+                    "FormattedQuoteResult": {
+                        "FormattedQuote": [
+                            {
+                                "symbol": ".N225",
+                                "open": "1,028.00",
+                                "high": "1,042.00",
+                                "low": "1,020.00",
+                                "last": "1,040.00",
+                                "volume": "0",
+                                "last_time": "2026-11-27T15:00:00.000+0900",
+                            },
+                            {
+                                "symbol": ".GDAXI",
+                                "open": "0",
+                                "high": "0",
+                                "low": "0",
+                                "last": "1,025.00",
+                                "volume": "0",
+                                "last_time": "2026-11-27T08:00:00.000+0100",
+                            },
+                        ]
+                    }
+                }))
+
+            if "datacenter-web.eastmoney.com/api/data/v1/get" in url:
+                return _FakeResponse(json.dumps({
+                    "result": {
+                        "data": [
+                            {"SOLAR_DATE": "2026-11-26 00:00:00", "EMM00588704": 1.214, "EMM00166466": 1.5912, "EMM00166469": 2.0662},
+                            {"SOLAR_DATE": "2026-11-25 00:00:00", "EMM00588704": None, "EMM00166466": None, "EMM00166469": None},
+                            {"SOLAR_DATE": "2026-11-24 00:00:00", "EMM00588704": 1.2304, "EMM00166466": 1.5853, "EMM00166469": 2.045},
+                        ]
+                    }
+                }))
+
+            if "csindex.com.cn/csindex-home/perf/index-perf" in url:
+                if "indexCode=932006" in url:
+                    return _FakeResponse(json.dumps({
+                        "code": "200",
+                        "data": [
+                            {"tradeDate": "20261125", "open": None, "high": None, "low": None, "close": 680.65, "tradingVol": 67050313.0},
+                            {"tradeDate": "20261126", "open": None, "high": None, "low": None, "close": 679.98, "tradingVol": 54182565.0},
+                        ],
+                    }))
+                return _FakeResponse(json.dumps({
+                    "code": "200",
+                    "data": [
+                        {"tradeDate": "20261125", "open": 935.25, "high": 935.71, "low": 930.36, "close": 931.36, "tradingVol": 67050313.0},
+                        {"tradeDate": "20261126", "open": 929.73, "high": 934.3, "low": 929.05, "close": 930.45, "tradingVol": 54182565.0},
+                    ],
+                }))
+
             if "markets.ft.com/data/chartapi/series" in url:
+                req_body = json.loads(req.data.decode("utf-8")) if getattr(req, "data", None) else {}
+                elems = []
+                for el in req_body.get("elements", []):
+                    elems.append({
+                        "Label": el["Label"],
+                        "ComponentSeries": [
+                            {"Type": "Open", "Values": [138.0, 139.5]},
+                            {"Type": "High", "Values": [139.5, 140.3]},
+                            {"Type": "Low", "Values": [137.5, 139.0]},
+                            {"Type": "Close", "Values": [139.0, 140.08]},
+                        ],
+                    })
                 return _FakeResponse(json.dumps({
                     "Dates": ["2026-11-24T00:00:00", "2026-11-25T00:00:00"],
-                    "Elements": [
-                        {
-                            "Label": "VUAA",
-                            "ComponentSeries": [
-                                {"Type": "Open", "Values": [138.0, 139.5]},
-                                {"Type": "High", "Values": [139.5, 140.3]},
-                                {"Type": "Low", "Values": [137.5, 139.0]},
-                                {"Type": "Close", "Values": [139.0, 140.08]},
-                            ],
-                        }
-                    ],
+                    "Elements": elems,
                 }))
 
             if "VIX_History.csv" in url:
@@ -505,10 +765,10 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
 
             self.assertEqual(summary1["failed_count"], 0)
             self.assertEqual(summary1["stale_count"], 0)
-            self.assertIn("idx_hkHSCI", summary1["omitted_optional"])
-            # 49 non-optional core + 5 ETFs + 4 stocks = 58
-            self.assertEqual(summary1["ok_count"], 58)
-            self.assertEqual(summary1["total_instruments"], 58)
+            self.assertEqual(summary1["omitted_optional"], [])
+            # 68 core + 5 ETFs + 4 stocks = 77
+            self.assertEqual(summary1["ok_count"], 77)
+            self.assertEqual(summary1["total_instruments"], 77)
 
             # Verify US suffix cache persisted with exact suffixes
             saved_cache = json.loads(suffix_cache.read_text(encoding="utf-8"))
@@ -523,9 +783,30 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
             self.assertNotIn("NaN", manifest_raw)
             manifest = json.loads(manifest_raw)
             self.assertEqual(manifest["edition_id"], "2026-11-27_0730")
-            self.assertEqual(len(manifest["catalog"]), 58)
+            self.assertEqual(len(manifest["catalog"]), 77)
             ids = {c["id"]: c for c in manifest["catalog"]}
             self.assertNotIn("idx_hkHSCI", ids)
+            self.assertIn("idx_HSCI", ids)
+            self.assertIn("idx_HSAHP", ids)
+            self.assertEqual(ids["idx_HSCI"]["provider"], "cnbc_harmony")
+            self.assertFalse(ids["idx_HSAHP"]["has_volume"])
+            # .N225 got T-0 restQuote appended (2 hist + 1 live = 3), .GDAXI pre-open OHLC=0 rejected (2)
+            self.assertEqual(ids["idx_N225"]["bars_count"], 3)
+            self.assertEqual(ids["idx_N225"]["latest_date"], "2026-11-27")
+            self.assertEqual(ids["idx_GDAXI"]["bars_count"], 2)
+            self.assertEqual(ids["idx_GDAXI"]["latest_date"], "2026-11-26")
+            self.assertEqual(ids["rate_CN10Y"]["provider"], "eastmoney_cgb")
+            self.assertEqual(ids["rate_CN10Y"]["group"], "rates_reits")
+            self.assertEqual(ids["rate_CN10Y"]["bars_count"], 2)
+            self.assertFalse(ids["rate_CN10Y"]["has_volume"])
+            self.assertEqual(ids["rate_US10Y"]["group"], "rates_reits")
+            self.assertEqual(ids["rate_US10Y"]["market"], "债券与利率")
+            self.assertEqual(ids["idx_932047"]["provider"], "csindex_perf")
+            self.assertEqual(ids["idx_932006"]["provider"], "csindex_perf")
+            self.assertTrue(ids["idx_932006"]["has_volume"])
+            self.assertEqual(ids["fx_EURUSD"]["provider"], "sina_forex")
+            self.assertEqual(ids["cmd_HG"]["group"], "macro_cmd")
+            self.assertEqual(ids["cmd_CU0"]["group"], "macro_cmd")
             self.assertEqual(ids["stk_BRK.B"]["dossier_key"], "us-stock:BRK.B")
             self.assertEqual(ids["etf_VUAA"]["shard"], "etfs_offshore")
             self.assertEqual(ids["etf_VUAA"]["provider"], "ft_chartapi")
@@ -554,7 +835,7 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
                 http_client=http2,
             )
             # Partial scope="stocks" must preserve core + etfs in manifest!
-            self.assertEqual(summary2["ok_count"], 58)
+            self.assertEqual(summary2["ok_count"], 77)
             self.assertEqual(summary2["stale_count"], 1)
             self.assertEqual(summary2["failed_count"], 0)
             self.assertEqual(len(summary2["partial_failures"]), 1)
@@ -564,6 +845,24 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
             stocks_us = json.loads((out_dir / "stocks_us.json").read_text(encoding="utf-8"))
             self.assertTrue(stocks_us["series"]["stk_NVDA"]["stale"])
             self.assertEqual(stocks_us["series"]["stk_NVDA"]["bars_count"], 2)
+
+            # Third run: simulate CNBC failure on .GDAXI -> falls back cleanly to ft_chartapi
+            http3 = fk.RateLimitedHttpClient(retries=0, opener=self._build_mock_opener(fail_cnbc_gdaxi=True))
+            summary3 = fk.run_fetch(
+                scope="core",
+                bars_limit=150,
+                edition_id="2026-11-27_1800",
+                out_dir=out_dir,
+                workers=4,
+                etf_path=etf_path,
+                dossiers_path=dd_path,
+                us_suffix_cache_path=suffix_cache,
+                http_client=http3,
+            )
+            self.assertEqual(summary3["failed_count"], 0)
+            core_data = json.loads((out_dir / "core.json").read_text(encoding="utf-8"))
+            self.assertEqual(core_data["series"]["idx_GDAXI"]["provider"], "ft_chartapi")
+            self.assertFalse(core_data["series"]["idx_GDAXI"]["stale"])
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ Exit codes:
 
 from __future__ import annotations
 
+from collections import Counter
 import json
 import math
 import re
@@ -354,6 +355,31 @@ CSS_CLASS_RE = re.compile(r"\.([A-Za-z_-][A-Za-z0-9_-]*)")
 # ---------------------------------------------------------------------------
 # Gate S6 configuration (Live SSOT & Gold Tier 0 mutex)
 # ---------------------------------------------------------------------------
+ETF_ALLOWED_ASSET_CLASSES: frozenset[str] = frozenset(
+    {
+        "equity",
+        "fixed_income",
+        "gold",
+        "commodity",
+        "cash_mmf",
+        "convertible_bond",
+        "reits",
+    }
+)
+ETF_ALLOWED_REGIONS: frozenset[str] = frozenset(
+    {
+        "cn",
+        "hk",
+        "us",
+        "jp",
+        "eu",
+        "apac_em",
+        "global",
+    }
+)
+_ETF_ALLOWED_ASSET_CLASSES = ETF_ALLOWED_ASSET_CLASSES
+_ETF_ALLOWED_REGIONS = ETF_ALLOWED_REGIONS
+
 GOLD_ETF_CODES: frozenset[str] = frozenset(
     {
         "518660",
@@ -971,6 +997,133 @@ def parse_html_file(rel_path: str, abs_path: Path, raw_text: str) -> ParsedHtml:
     parser.feed(raw_text)
     parser.close()
     return parser.finish()
+
+
+@dataclass
+class _ElementSnapshot:
+    tag: str
+    classes: set[str]
+    inner_text: str
+    empty_m_sub_val_count: int = 0
+    m_sub_val_texts: list[str] = field(default_factory=list)
+
+
+class _ElementByIdParser(HTMLParser):
+    """Extract classes, visible text, and .m-sub-val span texts for a single element by id."""
+
+    def __init__(self, target_id: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.target_id = target_id
+        self.found = False
+        self.done = False
+        self.tag = ""
+        self.classes: set[str] = set()
+        self.empty_m_sub_val_count = 0
+        self.m_sub_val_texts: list[str] = []
+        self._tag_stack: list[str] = []
+        self._skip_depth = 0
+        self._text_chunks: list[str] = []
+        self._sub_val_frames: list[tuple[int, list[str]]] = []
+
+    def _on_open(self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool) -> None:
+        if self.done:
+            return
+        t = tag.lower()
+        attr_map = {k.lower(): ("" if v is None else v) for k, v in attrs if k}
+        classes = {c for c in attr_map.get("class", "").split() if c}
+
+        if not self.found:
+            if attr_map.get("id", "").strip() == self.target_id:
+                self.found = True
+                self.tag = t
+                self.classes = classes
+                if self_closing or t in VOID_ELEMENTS:
+                    self.done = True
+                    return
+                self._tag_stack.append(t)
+                if t in ("script", "style", "template"):
+                    self._skip_depth += 1
+            return
+
+        if t == "span" and "m-sub-val" in classes:
+            if self_closing:
+                self.empty_m_sub_val_count += 1
+                self.m_sub_val_texts.append("")
+            else:
+                self._sub_val_frames.append((len(self._tag_stack) + 1, []))
+
+        if t in BLOCK_TEXT_TAGS and self._skip_depth == 0:
+            self._text_chunks.append(" ")
+
+        if self_closing or t in VOID_ELEMENTS:
+            return
+        self._tag_stack.append(t)
+        if t in ("script", "style", "template"):
+            self._skip_depth += 1
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._on_open(tag, attrs, self_closing=False)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._on_open(tag, attrs, self_closing=True)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.found or self.done:
+            return
+        t = tag.lower()
+        if t in VOID_ELEMENTS:
+            return
+        for idx in range(len(self._tag_stack) - 1, -1, -1):
+            if self._tag_stack[idx] == t:
+                popped_depth_min = idx + 1
+                while self._sub_val_frames and self._sub_val_frames[-1][0] >= popped_depth_min:
+                    _, buf = self._sub_val_frames.pop()
+                    txt = " ".join("".join(buf).split())
+                    self.m_sub_val_texts.append(txt)
+                    if not txt:
+                        self.empty_m_sub_val_count += 1
+                for popped_tag in self._tag_stack[idx:]:
+                    if popped_tag in ("script", "style", "template") and self._skip_depth > 0:
+                        self._skip_depth -= 1
+                del self._tag_stack[idx:]
+                if not self._tag_stack:
+                    self.done = True
+                break
+        if t in BLOCK_TEXT_TAGS and self._skip_depth == 0:
+            self._text_chunks.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if not self.found or self.done or self._skip_depth > 0:
+            return
+        self._text_chunks.append(data)
+        for _, buf in self._sub_val_frames:
+            buf.append(data)
+
+    def result(self) -> _ElementSnapshot | None:
+        if not self.found:
+            return None
+        while self._sub_val_frames:
+            _, buf = self._sub_val_frames.pop()
+            txt = " ".join("".join(buf).split())
+            self.m_sub_val_texts.append(txt)
+            if not txt:
+                self.empty_m_sub_val_count += 1
+        return _ElementSnapshot(
+            tag=self.tag,
+            classes=self.classes,
+            inner_text="".join(self._text_chunks),
+            empty_m_sub_val_count=self.empty_m_sub_val_count,
+            m_sub_val_texts=self.m_sub_val_texts,
+        )
+
+
+def _inspect_element_by_id(raw_html: str, target_id: str) -> _ElementSnapshot | None:
+    if not raw_html or target_id not in raw_html:
+        return None
+    parser = _ElementByIdParser(target_id)
+    parser.feed(raw_html)
+    parser.close()
+    return parser.result()
 
 
 # ---------------------------------------------------------------------------
@@ -2263,6 +2416,33 @@ def run_gate_s6(
                     if isinstance(hcw, dict) and hcw:
                         _check_household_weights(hcw, index_doc.visible_text, errors)
 
+                # Production 6-market cockpit cards, HK offshore role & QDII prominence.
+                for req_card_id in (
+                    "card-a-share",
+                    "card-hk-stock",
+                    "card-us-stock",
+                    "card-rates",
+                    "card-gold",
+                    "card-nonus",
+                ):
+                    if req_card_id not in index_doc.ids:
+                        errors.append(
+                            f"[S6] index.html: missing required 6-market cockpit card #{req_card_id}"
+                        )
+                if "中国离岸折价腿" not in index_doc.visible_text:
+                    errors.append(
+                        "[S6] index.html: missing HK market positioning label '中国离岸折价腿'"
+                    )
+                idx_a_hrefs = {lk.value for lk in index_doc.links if lk.tag == "a"}
+                if (
+                    "channels/qdii_mrf.html#sec-qdii-compare" not in idx_a_hrefs
+                    and "etfs.html#preset=qdii" not in idx_a_hrefs
+                ):
+                    errors.append(
+                        "[S6] index.html: missing prominent QDII jump link "
+                        "('channels/qdii_mrf.html#sec-qdii-compare' or 'etfs.html#preset=qdii')"
+                    )
+
             # Screener total stock pool & embedded JSON fidelity across A / HK / US.
             expected_by_market: dict[str, int] = {}
             for mkey, slug in (("a_share", "a-share"), ("hk_stock", "hk-stock"), ("us_stock", "us-stock")):
@@ -2299,6 +2479,28 @@ def run_gate_s6(
                     f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) < 100 minimum floor"
                 )
 
+    # 2b. BTC compliance guard on index.html: any BTC/比特币 mention must carry read-only / onshore ban disclosure.
+    if index_doc is not None and ("BTC" in index_doc.visible_text or "比特币" in index_doc.visible_text):
+        if "境内禁交易" not in index_doc.visible_text and "仅作流动风向" not in index_doc.visible_text:
+            errors.append(
+                "[S6] index.html: BTC/比特币 appears without required compliance guard "
+                "('境内禁交易' or '仅作流动风向')"
+            )
+
+    # 2c. Production #card-nonus non-empty benchmark & ETF vehicle guard on index.html.
+    if index_doc is not None and "card-nonus" in index_doc.ids:
+        nonus_elem = _inspect_element_by_id(index_doc.raw_text, "card-nonus")
+        if nonus_elem is not None:
+            if re.search(r"境内\s*—\s*·\s*离岸\s*—", nonus_elem.inner_text):
+                errors.append(
+                    "[S6] index.html: #card-nonus contains unresolved placeholder '境内 — · 离岸 —'"
+                )
+            if nonus_elem.empty_m_sub_val_count > 0:
+                errors.append(
+                    f"[S6] index.html: #card-nonus has {nonus_elem.empty_m_sub_val_count} "
+                    'empty <span class="m-sub-val"></span> tile(s)'
+                )
+
     # 3. ETF universe SSOT fidelity: tbody static rows == #etf-data == etf_universe.json len(etfs) >= 140.
     etf_universe_obj = _load_required_json(
         ETF_UNIVERSE_PATH, "equity/state/etf_universe.json", errors
@@ -2313,6 +2515,51 @@ def run_gate_s6(
             )
         else:
             ssot_etf_count = len(ssot_etfs)
+            ac_counter: Counter[str] = Counter()
+            rg_counter: Counter[str] = Counter()
+            ssot_ortho_errs = 0
+            for sidx, sit in enumerate(ssot_etfs):
+                if not isinstance(sit, dict):
+                    errors.append(f"[S6] equity/state/etf_universe.json: etfs[{sidx}] must be an object")
+                    ssot_ortho_errs += 1
+                    continue
+                scd = str(sit.get("code", "")).strip() or f"#{sidx}"
+                ac_v = str(sit.get("asset_class", "")).strip()
+                rg_v = str(sit.get("region", "")).strip()
+                if ac_v not in _ETF_ALLOWED_ASSET_CLASSES:
+                    if ssot_ortho_errs < 10:
+                        errors.append(
+                            f"[S6] equity/state/etf_universe.json: ETF {scd} invalid/missing asset_class {ac_v!r} "
+                            f"(allowed: {sorted(_ETF_ALLOWED_ASSET_CLASSES)})"
+                        )
+                    ssot_ortho_errs += 1
+                else:
+                    ac_counter[ac_v] += 1
+                if rg_v not in _ETF_ALLOWED_REGIONS:
+                    if ssot_ortho_errs < 10:
+                        errors.append(
+                            f"[S6] equity/state/etf_universe.json: ETF {scd} invalid/missing region {rg_v!r} "
+                            f"(allowed: {sorted(_ETF_ALLOWED_REGIONS)})"
+                        )
+                    ssot_ortho_errs += 1
+                else:
+                    rg_counter[rg_v] += 1
+            if ssot_ortho_errs > 10:
+                errors.append(
+                    f"[S6] equity/state/etf_universe.json: ... plus {ssot_ortho_errs - 10} additional asset_class/region schema error(s)"
+                )
+            cbac = etf_universe_obj.get("counts_by_asset_class")
+            if not isinstance(cbac, dict) or cbac != dict(ac_counter):
+                errors.append(
+                    f"[S6] equity/state/etf_universe.json: counts_by_asset_class ({cbac!r}) "
+                    f"!= actual counts ({dict(ac_counter)!r})"
+                )
+            cbrg = etf_universe_obj.get("counts_by_region")
+            if not isinstance(cbrg, dict) or cbrg != dict(rg_counter):
+                errors.append(
+                    f"[S6] equity/state/etf_universe.json: counts_by_region ({cbrg!r}) "
+                    f"!= actual counts ({dict(rg_counter)!r})"
+                )
 
     etfs_doc = parsed_htmls.get("etfs.html")
     if etfs_doc is not None:
@@ -2346,6 +2593,9 @@ def run_gate_s6(
                         f"!= etf_universe.json len(etfs) ({ssot_etf_count})"
                     )
                 seen_etfs: set[str] = set()
+                payload_ac_counter: Counter[str] = Counter()
+                payload_rg_counter: Counter[str] = Counter()
+                payload_ortho_errs = 0
                 for idx, it in enumerate(etf_payload):
                     if not isinstance(it, dict):
                         errors.append(f"[S6] etfs.html: #etf-data[{idx}] must be an object")
@@ -2354,10 +2604,31 @@ def run_gate_s6(
                     if not cd or cd in seen_etfs:
                         errors.append(f"[S6] etfs.html: missing or duplicate ETF code {cd!r}")
                     seen_etfs.add(cd)
+                    ac_val = str(it.get("asset_class", "")).strip()
+                    rg_val = str(it.get("region", "")).strip()
+                    if ac_val not in _ETF_ALLOWED_ASSET_CLASSES:
+                        if payload_ortho_errs < 10:
+                            errors.append(
+                                f"[S6] etfs.html: #etf-data ETF {cd} invalid/missing asset_class {ac_val!r} "
+                                f"(allowed: {sorted(_ETF_ALLOWED_ASSET_CLASSES)})"
+                            )
+                        payload_ortho_errs += 1
+                    else:
+                        payload_ac_counter[ac_val] += 1
+                    if rg_val not in _ETF_ALLOWED_REGIONS:
+                        if payload_ortho_errs < 10:
+                            errors.append(
+                                f"[S6] etfs.html: #etf-data ETF {cd} invalid/missing region {rg_val!r} "
+                                f"(allowed: {sorted(_ETF_ALLOWED_REGIONS)})"
+                            )
+                        payload_ortho_errs += 1
+                    else:
+                        payload_rg_counter[rg_val] += 1
                     cd_upper = cd.upper()
                     cd_base = cd_upper.split(".", 1)[0]
                     is_gold_etf = (
                         bool(it.get("gold_locked"))
+                        or ac_val == "gold"
                         or cd_upper in GOLD_ETF_CODES
                         or cd_base in GOLD_ETF_CODES
                         or bool(GOLD_STOCK_RE.search(f"{it.get('name', '')} {cd_upper}"))
@@ -2370,6 +2641,23 @@ def run_gate_s6(
                         if isinstance(v, str) and SCREENER_RAW_MARKUP_RE.search(v):
                             errors.append(f"[S6] etfs.html: ETF {cd} field '{k}' contains raw markup")
                             break
+                if payload_ortho_errs > 10:
+                    errors.append(
+                        f"[S6] etfs.html: ... plus {payload_ortho_errs - 10} additional #etf-data asset_class/region error(s)"
+                    )
+                if isinstance(etf_universe_obj, dict) and payload_ortho_errs == 0:
+                    exp_ac = etf_universe_obj.get("counts_by_asset_class")
+                    if isinstance(exp_ac, dict) and dict(payload_ac_counter) != exp_ac:
+                        errors.append(
+                            f"[S6] etfs.html: #etf-data asset_class counts ({dict(payload_ac_counter)!r}) "
+                            f"!= etf_universe.json counts_by_asset_class ({exp_ac!r})"
+                        )
+                    exp_rg = etf_universe_obj.get("counts_by_region")
+                    if isinstance(exp_rg, dict) and dict(payload_rg_counter) != exp_rg:
+                        errors.append(
+                            f"[S6] etfs.html: #etf-data region counts ({dict(payload_rg_counter)!r}) "
+                            f"!= etf_universe.json counts_by_region ({exp_rg!r})"
+                        )
 
     # 4. Personal multi-asset channels SSOT (>= 12 standard MECE channels): verify index.html, channels.html, AND each channels/<id>.html.
     channels_obj = _load_required_json(
@@ -2398,6 +2686,14 @@ def run_gate_s6(
                 if ch_id in seen_ch_ids:
                     errors.append(f"[S6] multi_asset_channels.json: duplicate channel id {ch_id!r}")
                 seen_ch_ids.add(ch_id)
+                if ch_id == "qdii_mrf" and not ch_name.startswith("QDII"):
+                    errors.append(
+                        f"[S6] multi_asset_channels.json: channel 'qdii_mrf' name must start with 'QDII' (got {ch_name!r})"
+                    )
+                if ch_id == "qdii_mrf" and ch.get("high_net_worth_only") is True:
+                    errors.append(
+                        "[S6] multi_asset_channels.json: channel 'qdii_mrf' must NOT set high_net_worth_only=True"
+                    )
 
                 prods = [p for p in (ch.get("products") or []) if isinstance(p, dict)]
                 rules = [r.strip() for r in (ch.get("rules_and_redlines") or []) if isinstance(r, str) and r.strip()]
@@ -2469,6 +2765,22 @@ def run_gate_s6(
                 errors.append(
                     f"[S6] equity/state/multi_asset_channels.json: missing required standard channel IDs: {missing_ch_ids}"
                 )
+
+    # 4b. Channel 08 (qdii_mrf) must NEVER be misclassified as HNW 300万 on index.html, channels.html, or channels/qdii_mrf.html.
+    for pg_name, pg_doc in (("index.html", index_doc), ("channels.html", channels_doc)):
+        if pg_doc is None or "ch-qdii_mrf" not in pg_doc.ids:
+            continue
+        qdii_elem = _inspect_element_by_id(pg_doc.raw_text, "ch-qdii_mrf")
+        if qdii_elem is not None and ("ch-hnw" in qdii_elem.classes or "300万门槛" in qdii_elem.inner_text):
+            errors.append(
+                f"[S6] {pg_name}: #ch-qdii_mrf must NOT be misclassified as HNW 300万 "
+                "(found ch-hnw class or '300万门槛')"
+            )
+    qdii_detail_doc = parsed_htmls.get("channels/qdii_mrf.html")
+    if qdii_detail_doc is not None and "300万合格投资者专享" in qdii_detail_doc.visible_text:
+        errors.append(
+            "[S6] channels/qdii_mrf.html: Channel 08 (qdii_mrf) must NOT contain '300万合格投资者专享'"
+        )
 
     # 5. Restricted code warning guard across active pages (968118 / 968001 / 00011 must carry ±40-char warning).
     active_restricted_roots = {"index.html", "charts.html", "channels.html", "etfs.html", "screener.html", "guide.html"}
@@ -2565,6 +2877,24 @@ def run_gate_s6(
 S7_FORBIDDEN_RAW_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:NaN|Infinity)(?![A-Za-z0-9_])|/Users/|C:\\",
 )
+S7_REQUIRED_GLOBAL_BENCHMARKS: tuple[str, ...] = (
+    "idx_N225",
+    "idx_TOPIX",
+    "idx_GDAXI",
+    "idx_FCHI",
+    "idx_STOXX50E",
+    "idx_FTSE",
+    "idx_NSEI",
+    "idx_TWII",
+    "idx_KS11",
+    "idx_HSCI",
+    "idx_HSAHP",
+    "rate_CN2Y",
+    "rate_CN10Y",
+    "rate_CN30Y",
+    "idx_932047",
+    "idx_932006",
+)
 
 
 def run_gate_s7(
@@ -2592,6 +2922,20 @@ def run_gate_s7(
     charts_doc = parsed_htmls.get("charts.html")
     if charts_doc is None:
         errors.append("[S7] Missing charts.html interactive K-line terminal page")
+
+    kline_js_path = site_dir / "assets" / "kline.js"
+    if kline_js_path.is_file():
+        try:
+            kline_js_txt = kline_js_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            errors.append(f"[S7] assets/kline.js unreadable: {exc}")
+        else:
+            has_crypto_pat = ("crypto_" in kline_js_txt) or ("CRYPTO_ASSET_RE" in kline_js_txt)
+            if not has_crypto_pat or "境内严禁虚拟货币交易" not in kline_js_txt:
+                errors.append(
+                    "[S7] assets/kline.js: missing required crypto read-only compliance guard "
+                    "('crypto_' / 'CRYPTO_ASSET_RE' and '境内严禁虚拟货币交易')"
+                )
 
     klines_dir = site_dir / "assets" / "klines"
     manifest_path = klines_dir / "manifest.json"
@@ -2648,6 +2992,29 @@ def run_gate_s7(
             elif a_indices[0].get("id") != "idx_sh000001":
                 errors.append(
                     f"[S7] assets/klines/manifest.json: idx_sh000001 must be first a_index entry (got {a_indices[0].get('id')!r})"
+                )
+
+    # Full-site 6-tab K-line deck & expanded global/rates/REITs benchmarks (preserves minimal unit-test site support).
+    if len(catalog) >= 100:
+        if not kline_js_path.is_file():
+            errors.append("[S7] Missing assets/kline.js for full-site crypto compliance guard verification")
+        if index_doc is not None:
+            for req_tab_lbl in ("日欧台韩印非美", "中美债市与REITs"):
+                if req_tab_lbl not in index_doc.visible_text:
+                    errors.append(
+                        f"[S7] index.html: missing required 6-tab K-line deck label {req_tab_lbl!r}"
+                    )
+        if charts_doc is not None:
+            for req_grp in ('data-chart-group="non_us_global"', 'data-chart-group="bonds_reits"'):
+                if req_grp not in charts_doc.raw_text:
+                    errors.append(
+                        f"[S7] charts.html: missing required K-line group filter {req_grp}"
+                    )
+        catalog_ids = {str(c.get("id", "")).strip() for c in catalog if isinstance(c, dict)}
+        for req_sym_id in S7_REQUIRED_GLOBAL_BENCHMARKS:
+            if req_sym_id not in catalog_ids:
+                errors.append(
+                    f"[S7] assets/klines/manifest.json: missing required global/rates/REITs benchmark {req_sym_id!r}"
                 )
 
     # Resolve all shard filenames (supports both string "core.json" and dict {"file": "core.json", ...})

@@ -741,6 +741,195 @@ class PatchStateDbsGuardsTests(unittest.TestCase):
                 with self.subTest(banned=banned):
                     self.assertTrue(psd.BANNED_INTERNAL_RE.search(f"禁止提及 {banned}"))
 
+    def test_etf_orthogonal_asset_class_and_region_apply_and_reject_invalid_enums(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_clean_fixture(root)
+
+            # Populate valid orthogonal asset_class & region on all fixture ETFs while keeping _make_etf() legacy-compat
+            eu_path = root / "equity/state/etf_universe.json"
+            eu = json.loads(eu_path.read_text(encoding="utf-8"))
+            for item in eu["etfs"]:
+                if item["code"] == "511360":
+                    item["asset_class"] = "cash_mmf"
+                    item["region"] = "cn"
+                elif item["code"] == "02830.HK":
+                    item["asset_class"] = "equity"
+                    item["region"] = "hk"
+                else:
+                    item["asset_class"] = "equity"
+                    item["region"] = "cn"
+            eu["counts_by_asset_class"] = {"cash_mmf": 1, "equity": len(eu["etfs"]) - 1}
+            eu["counts_by_region"] = {"cn": len(eu["etfs"]) - 1, "hk": 1}
+            eu_path.write_text(json.dumps(eu, ensure_ascii=False), encoding="utf-8")
+
+            patch_path = root / "equity/state/_edition_patch.json"
+            good_patch = {
+                "edition_id": "2026-11-27_0730",
+                "as_of_date": "2026-11-27",
+                "gold_tier0_locked": True,
+                "etf_universe": {
+                    "etfs_upsert": [
+                        {"code": "510300", "asset_class": "fixed_income", "region": "us"},
+                        {"code": "02830.HK", "asset_class": "reits", "region": "jp"},
+                    ]
+                },
+            }
+            patch_path.write_text(json.dumps(good_patch, ensure_ascii=False), encoding="utf-8")
+            out_ok, err_ok = StringIO(), StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_ok), redirect_stderr(err_ok):
+                rc_ok = psd.main(["--apply"])
+            self.assertEqual(rc_ok, 0, err_ok.getvalue())
+            self.assertFalse(patch_path.exists())
+
+            eu_after = json.loads(eu_path.read_text(encoding="utf-8"))
+            by_code = {e["code"]: e for e in eu_after["etfs"]}
+            self.assertEqual(by_code["510300"]["asset_class"], "fixed_income")
+            self.assertEqual(by_code["510300"]["region"], "us")
+            self.assertEqual(by_code["02830.HK"]["asset_class"], "reits")
+            self.assertEqual(by_code["02830.HK"]["region"], "jp")
+            self.assertEqual(
+                eu_after["counts_by_asset_class"],
+                {"cash_mmf": 1, "fixed_income": 1, "reits": 1, "equity": len(eu_after["etfs"]) - 3},
+            )
+            self.assertEqual(
+                eu_after["counts_by_region"],
+                {"cn": len(eu_after["etfs"]) - 2, "us": 1, "jp": 1},
+            )
+
+            # Invalid asset_class & invalid region must both be rejected atomically with zero file mutation
+            before_bytes = eu_path.read_bytes()
+            for field_name, bad_val in (("asset_class", "crypto"), ("region", "mars")):
+                with self.subTest(field_name=field_name, bad_val=bad_val):
+                    bad_patch = {
+                        "edition_id": "2026-11-27_0730",
+                        "as_of_date": "2026-11-27",
+                        "gold_tier0_locked": True,
+                        "etf_universe": {
+                            "etfs_upsert": [{"code": "510300", field_name: bad_val}]
+                        },
+                    }
+                    patch_path.write_text(json.dumps(bad_patch, ensure_ascii=False), encoding="utf-8")
+                    out_bad, err_bad = StringIO(), StringIO()
+                    with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_bad), redirect_stderr(err_bad):
+                        rc_bad = psd.main(["--apply"])
+                    self.assertNotEqual(rc_bad, 0)
+                    self.assertIn(field_name, err_bad.getvalue())
+                    self.assertEqual(eu_path.read_bytes(), before_bytes)
+                    patch_path.unlink()
+
+    def test_apply_rejects_qdii_name_prefix_strip_and_gold_class_unlocked_under_tier0(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_clean_fixture(root)
+
+            # Seed canonical QDII-prefixed name on Channel 08 & orthogonal ETF fields
+            ma_path = root / "equity/state/multi_asset_channels.json"
+            ma = json.loads(ma_path.read_text(encoding="utf-8"))
+            for ch in ma["channels"]:
+                if ch["id"] == "qdii_mrf":
+                    ch["name"] = "QDII 跨境基金、香港互认与理财通"
+            ma_path.write_text(json.dumps(ma, ensure_ascii=False), encoding="utf-8")
+
+            eu_path = root / "equity/state/etf_universe.json"
+            eu = json.loads(eu_path.read_text(encoding="utf-8"))
+            for item in eu["etfs"]:
+                if item["code"] == "511360":
+                    item["asset_class"] = "cash_mmf"
+                    item["region"] = "cn"
+                elif item["code"] == "02830.HK":
+                    item["asset_class"] = "equity"
+                    item["region"] = "hk"
+                else:
+                    item["asset_class"] = "equity"
+                    item["region"] = "cn"
+            eu["counts_by_asset_class"] = {"cash_mmf": 1, "equity": len(eu["etfs"]) - 1}
+            eu["counts_by_region"] = {"cn": len(eu["etfs"]) - 1, "hk": 1}
+            eu_path.write_text(json.dumps(eu, ensure_ascii=False), encoding="utf-8")
+
+            patch_path = root / "equity/state/_edition_patch.json"
+            ma_before = ma_path.read_bytes()
+            eu_before = eu_path.read_bytes()
+
+            # (a) Stripping "QDII" prefix from Channel qdii_mrf.name must be rejected atomically
+            strip_qdii_patch = {
+                "edition_id": "2026-11-27_0730",
+                "as_of_date": "2026-11-27",
+                "gold_tier0_locked": True,
+                "multi_asset_channels": {
+                    "channels_patch": {
+                        "qdii_mrf": {
+                            "name": "场内外跨境基金、香港互认与理财通",
+                        }
+                    }
+                },
+            }
+            patch_path.write_text(json.dumps(strip_qdii_patch, ensure_ascii=False), encoding="utf-8")
+            out_a, err_a = StringIO(), StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_a), redirect_stderr(err_a):
+                rc_a = psd.main(["--apply"])
+            self.assertNotEqual(rc_a, 0)
+            self.assertIn("qdii_mrf", err_a.getvalue())
+            self.assertIn("QDII", err_a.getvalue())
+            self.assertEqual(ma_path.read_bytes(), ma_before)
+            patch_path.unlink()
+
+            # (b) Setting asset_class="gold" with gold_locked=False under Gold Tier-0 lock must be rejected atomically
+            gold_unlocked_patch = {
+                "edition_id": "2026-11-27_0730",
+                "as_of_date": "2026-11-27",
+                "gold_tier0_locked": True,
+                "etf_universe": {
+                    "etfs_upsert": [
+                        {
+                            "code": "510300",
+                            "asset_class": "gold",
+                            "gold_locked": False,
+                            "action_role": "红灯暂停新买",
+                        }
+                    ]
+                },
+            }
+            patch_path.write_text(json.dumps(gold_unlocked_patch, ensure_ascii=False), encoding="utf-8")
+            out_b, err_b = StringIO(), StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_b), redirect_stderr(err_b):
+                rc_b = psd.main(["--apply"])
+            self.assertNotEqual(rc_b, 0)
+            self.assertIn("gold_locked", err_b.getvalue())
+            self.assertIn("510300", err_b.getvalue())
+            self.assertEqual(eu_path.read_bytes(), eu_before)
+            patch_path.unlink()
+
+            # (c) Positive control: QDII-prefixed name + asset_class="gold" paired with gold_locked=True passes cleanly
+            valid_patch = {
+                "edition_id": "2026-11-27_0730",
+                "as_of_date": "2026-11-27",
+                "gold_tier0_locked": True,
+                "multi_asset_channels": {
+                    "channels_patch": {
+                        "qdii_mrf": {
+                            "name": "QDII 跨境基金（更新版）、香港互认与理财通",
+                        }
+                    }
+                },
+                "etf_universe": {
+                    "etfs_upsert": [
+                        {
+                            "code": "510300",
+                            "asset_class": "gold",
+                            "gold_locked": True,
+                            "action_role": "红灯暂停新买",
+                        }
+                    ]
+                },
+            }
+            patch_path.write_text(json.dumps(valid_patch, ensure_ascii=False), encoding="utf-8")
+            out_ok, err_ok = StringIO(), StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(out_ok), redirect_stderr(err_ok):
+                rc_ok = psd.main(["--apply"])
+            self.assertEqual(rc_ok, 0, err_ok.getvalue())
+            self.assertFalse(patch_path.exists())
+
 
 class AtomicRsiAuditAndInspectTests(unittest.TestCase):
     def _valid_rsi_entry(self, run_id: str) -> dict:

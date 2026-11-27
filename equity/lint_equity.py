@@ -33,6 +33,7 @@ STATE_PATH = BASE_DIR / "state" / "market_state.json"
 MULTI_ASSET_PATH = BASE_DIR / "state" / "multi_asset_channels.json"
 ETF_UNIVERSE_PATH = BASE_DIR / "state" / "etf_universe.json"
 DEEP_DOSSIERS_PATH = BASE_DIR / "state" / "deep_dossiers.json"
+KLINES_MANIFEST_PATH = BASE_DIR / "state" / "klines" / "manifest.json"
 BEIJING = timezone(timedelta(hours=8))
 MAX_EDITION_EARLY = timedelta(minutes=5)
 MAX_EDITION_LAG = timedelta(hours=6)
@@ -78,6 +79,26 @@ _ETF_ALLOWED_CHANNELS = frozenset({
     "境内场内", "境内场外", "离岸港交所", "境内非QDII港股通", "境内QDII", "离岸美股", "爱尔兰UCITS",
 })
 _ETF_ALLOWED_PREMIUM_STATUSES = frozenset({"normal", "watch", "high_risk"})
+_ETF_ALLOWED_ASSET_CLASSES = frozenset({
+    "equity",
+    "fixed_income",
+    "gold",
+    "commodity",
+    "cash_mmf",
+    "convertible_bond",
+    "reits",
+})
+_ETF_ALLOWED_REGIONS = frozenset({
+    "cn",
+    "hk",
+    "us",
+    "jp",
+    "eu",
+    "apac_em",
+    "global",
+})
+_COCKPIT_ALLOWED_LAMPS = frozenset({"red", "yellow", "green"})
+_HK_4DIGIT_RE = re.compile(r"(?<![0-9])\d{4}\.HK(?![A-Za-z0-9])")
 _DOSSIER_DIMENSIONS = (
     "moat",
     "financials",
@@ -469,7 +490,10 @@ def _walk_json_strings(
     obj: object,
     path: str = "",
     *,
-    skip_keys: frozenset[str] = frozenset({"schema_version", "id", "edition_id", "as_of_date", "updated_at", "category", "status_tone"}),
+    skip_keys: frozenset[str] = frozenset({
+        "schema_version", "id", "edition_id", "as_of_date", "updated_at",
+        "category", "status_tone", "asset_class", "region",
+    }),
 ) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     if isinstance(obj, str):
@@ -1332,6 +1356,9 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
         idx_path = DAILY_DIR / "INDEX.md"
         if idx_path.exists():
             errs.extend(_scan_text_for_gold_buy(idx_path.name, idx_path.read_text(encoding="utf-8")))
+        if st:
+            for jpath, sval in _walk_json_strings(st, STATE_PATH.name):
+                errs.extend(_scan_text_for_gold_buy(jpath, sval))
         if MULTI_ASSET_PATH.exists():
             try:
                 ma_obj = json.loads(MULTI_ASSET_PATH.read_text(encoding="utf-8"))
@@ -1365,8 +1392,11 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
                     code = str(etf.get("code", "")).strip()
                     code_norm = _normalize_etf_code(code)
                     name = str(etf.get("name", "")).strip()
+                    has_ac = "asset_class" in etf and etf.get("asset_class") is not None
+                    ac_str = str(etf.get("asset_class", "")).strip() if has_ac else ""
                     is_gold_etf = (
                         etf.get("gold_locked") is True
+                        or ac_str == "gold"
                         or code_norm in _GOLD_ETF_CODES
                         or bool(_GOLD_ETF_NAME_RE.search(name))
                     )
@@ -1376,6 +1406,17 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
                             errs.append(
                                 f"Gate C2 跨项目硬冲突 ({ETF_UNIVERSE_PATH.name}:{code})："
                                 f"黄金红灯停期严禁将黄金/金矿 ETF action_role 标为底座/买入/推荐/定投/配置 -> {role!r}"
+                            )
+                    if has_ac:
+                        if ac_str == "gold" and etf.get("gold_locked") is not True:
+                            errs.append(
+                                f"Gate C2 跨项目硬冲突 ({ETF_UNIVERSE_PATH.name}:{code})："
+                                f"黄金红灯停期 asset_class='gold' 须配 gold_locked=true"
+                            )
+                        elif etf.get("gold_locked") is True and ac_str != "gold":
+                            errs.append(
+                                f"Gate C2 跨项目硬冲突 ({ETF_UNIVERSE_PATH.name}:{code})："
+                                f"黄金红灯停期 gold_locked=true 须配 asset_class='gold'（当前为 {ac_str!r}）"
                             )
             except (OSError, ValueError) as exc:
                 errs.append(f"Gate C2 失败：{ETF_UNIVERSE_PATH.name} 解析异常: {exc}")
@@ -1868,6 +1909,10 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                             seen_ids.add(cid)
                         if not isinstance(ch.get("name"), str) or not ch["name"].strip():
                             errs.append(f"Gate 4 失败：multi_asset_channels.json channels[{idx}]({cid}) 缺少非空 name")
+                        elif not is_synthetic_small_pool and cid == "qdii_mrf" and not ch["name"].strip().startswith("QDII"):
+                            errs.append(
+                                f"Gate 4 失败：multi_asset_channels.json 渠道 qdii_mrf 名称须以 'QDII' 开头（当前为 {ch['name'].strip()!r}）"
+                            )
                         kms = ch.get("key_metrics")
                         if not isinstance(kms, list) or not kms:
                             errs.append(f"Gate 4 失败：multi_asset_channels.json channels[{idx}]({cid}) 缺少非空 key_metrics")
@@ -1982,6 +2027,8 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                     seen_codes: set[str] = set()
                     mkt_counter: Counter[str] = Counter()
                     ch_counter: Counter[str] = Counter()
+                    ac_counter: Counter[str] = Counter()
+                    reg_counter: Counter[str] = Counter()
                     for idx, item in enumerate(etfs):
                         if not isinstance(item, dict):
                             errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}] 须为对象")
@@ -2008,6 +2055,28 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                             ch_counter[ch_v] += 1
                             if ch_v not in _ETF_ALLOWED_CHANNELS:
                                 errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}]({code}).channel 非法枚举 ({ch_v!r})")
+                        ac_raw = item.get("asset_class")
+                        if "asset_class" in item and ac_raw is not None:
+                            ac_v = ac_raw.strip() if isinstance(ac_raw, str) else ""
+                            if ac_v not in _ETF_ALLOWED_ASSET_CLASSES:
+                                errs.append(
+                                    f"Gate 4 失败：etf_universe.json etfs[{idx}]({code}).asset_class 非法枚举 ({ac_raw!r})"
+                                )
+                            else:
+                                ac_counter[ac_v] += 1
+                        elif not is_synthetic_small_pool:
+                            errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}]({code}) 缺少必填 asset_class")
+                        reg_raw = item.get("region")
+                        if "region" in item and reg_raw is not None:
+                            reg_v = reg_raw.strip() if isinstance(reg_raw, str) else ""
+                            if reg_v not in _ETF_ALLOWED_REGIONS:
+                                errs.append(
+                                    f"Gate 4 失败：etf_universe.json etfs[{idx}]({code}).region 非法枚举 ({reg_raw!r})"
+                                )
+                            else:
+                                reg_counter[reg_v] += 1
+                        elif not is_synthetic_small_pool:
+                            errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}]({code}) 缺少必填 region")
                         if "premium_status" in item and item["premium_status"] not in _ETF_ALLOWED_PREMIUM_STATUSES:
                             errs.append(
                                 f"Gate 4 失败：etf_universe.json etfs[{idx}]({code}).premium_status 非法枚举 ({item['premium_status']!r})"
@@ -2069,6 +2138,18 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                         errs.append(
                             f"Gate 4 失败：etf_universe.json counts_by_channel ({cbc}) 与实表汇总 ({dict(ch_counter)}) 不一致"
                         )
+                    if "counts_by_asset_class" in eu or not is_synthetic_small_pool:
+                        cbac = eu.get("counts_by_asset_class")
+                        if not isinstance(cbac, dict) or cbac != dict(ac_counter):
+                            errs.append(
+                                f"Gate 4 失败：etf_universe.json counts_by_asset_class ({cbac}) 与实表汇总 ({dict(ac_counter)}) 不一致"
+                            )
+                    if "counts_by_region" in eu or not is_synthetic_small_pool:
+                        cbr = eu.get("counts_by_region")
+                        if not isinstance(cbr, dict) or cbr != dict(reg_counter):
+                            errs.append(
+                                f"Gate 4 失败：etf_universe.json counts_by_region ({cbr}) 与实表汇总 ({dict(reg_counter)}) 不一致"
+                            )
                 for jpath, sval in _walk_json_strings(eu, "etf_universe.json"):
                     hits = _BANNED_INTERNAL_RE.findall(sval)
                     if hits:
@@ -2547,6 +2628,222 @@ def _reconcile_equity_scorecard(sc_text: str, *, as_of_dt: datetime | None = Non
     return errs
 
 
+def _check_extended_cockpit_markets(state: dict | None, *, require_presence: bool = False) -> list[str]:
+    """Validate rates_bonds_core and non_us_global_satellite structure, lamp enums, intra-file rate parity, and text hygiene."""
+    errs: list[str] = []
+    if not isinstance(state, dict):
+        return errs
+
+    links = state.get("cross_market_linkages") if isinstance(state.get("cross_market_linkages"), dict) else {}
+    rates = links.get("rates_fx_chain") if isinstance(links.get("rates_fx_chain"), dict) else {}
+
+    kline_catalog_ids: set[str] | None = None
+    if KLINES_MANIFEST_PATH.is_file():
+        try:
+            kmanifest = json.loads(KLINES_MANIFEST_PATH.read_text(encoding="utf-8"))
+            if isinstance(kmanifest, dict) and isinstance(kmanifest.get("catalog"), list):
+                kline_catalog_ids = {
+                    str(entry.get("id", "")).strip()
+                    for entry in kmanifest["catalog"]
+                    if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry["id"].strip()
+                }
+            else:
+                errs.append("Gate 4 失败：state/klines/manifest.json 缺少有效的 catalog 数组")
+        except (OSError, ValueError) as exc:
+            errs.append(f"Gate 4 失败：state/klines/manifest.json 解析失败: {exc}")
+
+    def _scan_hygiene(obj: object, root_label: str) -> None:
+        for jpath, sval in _walk_json_strings(obj, root_label):
+            hits = _BANNED_INTERNAL_RE.findall(sval)
+            if hits:
+                errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
+            errs.extend(_check_retracted_facts(jpath, sval))
+            hk4 = _HK_4DIGIT_RE.findall(sval)
+            if hk4:
+                errs.append(f"Gate 4 失败：{jpath} 出现非法 4 位港股代码: {sorted(set(hk4))}")
+            for m_iopv in _BARE_IOPV_RE.finditer(sval):
+                win = sval[max(0, m_iopv.start() - 20) : min(len(sval), m_iopv.end() + 20)]
+                if not _IOPV_GLOSS_RE.search(win):
+                    errs.append(
+                        f"Gate G5 失败：{jpath} 出现未配白话释义（参考净值/实时净值/盘中净值）的裸 IOPV -> {win!r}"
+                    )
+                    break
+
+    # 1. rates_bonds_core
+    if "rates_bonds_core" not in state:
+        if require_presence:
+            errs.append("Gate 4 失败：market_state.json 缺少 rates_bonds_core 对象")
+    else:
+        rb = state.get("rates_bonds_core")
+        if not isinstance(rb, dict):
+            errs.append("Gate 4 失败：market_state.json.rates_bonds_core 须为对象")
+        else:
+            if rb.get("lamp") not in _COCKPIT_ALLOWED_LAMPS:
+                errs.append(f"Gate 4 失败：market_state.json.rates_bonds_core.lamp 非法枚举 ({rb.get('lamp')!r})")
+            for req_s in ("lamp_label", "headline"):
+                if not isinstance(rb.get(req_s), str) or not rb[req_s].strip():
+                    errs.append(f"Gate 4 失败：market_state.json.rates_bonds_core 缺少非空 {req_s}")
+            cn_r = rb.get("cn_rates")
+            if not isinstance(cn_r, dict):
+                errs.append("Gate 4 失败：market_state.json.rates_bonds_core.cn_rates 须为对象")
+            else:
+                for nk in ("cgb2y_pct", "cgb10y_pct", "cgb30y_pct", "gc001_pct", "dr001_pct"):
+                    if not _is_num(cn_r.get(nk)):
+                        errs.append(f"Gate 4 失败：market_state.json.rates_bonds_core.cn_rates.{nk} 须为有限数值")
+                if _is_num(cn_r.get("cgb10y_pct")) and _is_num(rates.get("cgb10y_pct")):
+                    if abs(float(cn_r["cgb10y_pct"]) - float(rates["cgb10y_pct"])) > 0.005:
+                        errs.append(
+                            f"Gate G6 失败：rates_bonds_core.cn_rates.cgb10y_pct ({cn_r['cgb10y_pct']}) "
+                            f"≠ rates_fx_chain.cgb10y_pct ({rates['cgb10y_pct']})"
+                        )
+            us_r = rb.get("us_rates")
+            if not isinstance(us_r, dict):
+                errs.append("Gate 4 失败：market_state.json.rates_bonds_core.us_rates 须为对象")
+            else:
+                for nk in ("us2y_pct", "us10y_pct", "us30y_pct", "dfii10_pct", "sofr_pct"):
+                    if not _is_num(us_r.get(nk)):
+                        errs.append(f"Gate 4 失败：market_state.json.rates_bonds_core.us_rates.{nk} 须为有限数值")
+                    elif _is_num(rates.get(nk)) and abs(float(us_r[nk]) - float(rates[nk])) > 0.01:
+                        errs.append(
+                            f"Gate G6 失败：rates_bonds_core.us_rates.{nk} ({us_r[nk]}) "
+                            f"≠ rates_fx_chain.{nk} ({rates[nk]})"
+                        )
+            sp = rb.get("cn_us_10y_spread_bp")
+            if not _is_num(sp):
+                errs.append("Gate 4 失败：market_state.json.rates_bonds_core.cn_us_10y_spread_bp 须为有限数值")
+            else:
+                if _is_num(rates.get("cn_us_10y_spread_bp")) and abs(float(sp) - float(rates["cn_us_10y_spread_bp"])) > 1.0:
+                    errs.append(
+                        f"Gate G6 失败：rates_bonds_core.cn_us_10y_spread_bp ({sp}) "
+                        f"≠ rates_fx_chain.cn_us_10y_spread_bp ({rates['cn_us_10y_spread_bp']})"
+                    )
+                if isinstance(cn_r, dict) and isinstance(us_r, dict) and _is_num(cn_r.get("cgb10y_pct")) and _is_num(us_r.get("us10y_pct")):
+                    exp_sp = round((float(cn_r["cgb10y_pct"]) - float(us_r["us10y_pct"])) * 100.0)
+                    if abs(float(sp) - exp_sp) > 1.0:
+                        errs.append(
+                            f"Gate G6 失败：rates_bonds_core.cn_us_10y_spread_bp ({sp}) "
+                            f"与 round(({cn_r['cgb10y_pct']}-{us_r['us10y_pct']})*100)={exp_sp} 偏离 > 1bp"
+                        )
+            fx_drag = rb.get("unhedged_usd_fx_drag")
+            if not isinstance(fx_drag, dict):
+                errs.append("Gate 4 失败：market_state.json.rates_bonds_core.unhedged_usd_fx_drag 须为对象")
+            else:
+                if not _is_num(fx_drag.get("usd_cny_spot")):
+                    errs.append("Gate 4 失败：rates_bonds_core.unhedged_usd_fx_drag.usd_cny_spot 须为有限数值")
+                else:
+                    spot_ref = next(
+                        (
+                            (rk, float(rates[rk]))
+                            for rk in ("usd_cny_spot", "usd_cny_night", "usd_cny_1630", "usd_cnh")
+                            if _is_num(rates.get(rk))
+                        ),
+                        None,
+                    )
+                    if spot_ref is not None and abs(float(fx_drag["usd_cny_spot"]) - spot_ref[1]) > 0.05:
+                        errs.append(
+                            f"Gate G6 失败：rates_bonds_core.unhedged_usd_fx_drag.usd_cny_spot ({fx_drag['usd_cny_spot']}) "
+                            f"与 rates_fx_chain.{spot_ref[0]} ({spot_ref[1]}) 偏离 > 0.05"
+                        )
+                if not _is_num(fx_drag.get("cfets_cny_fixing")):
+                    errs.append("Gate 4 失败：rates_bonds_core.unhedged_usd_fx_drag.cfets_cny_fixing 须为有限数值")
+                elif _is_num(rates.get("cfets_cny_fixing")) and abs(float(fx_drag["cfets_cny_fixing"]) - float(rates["cfets_cny_fixing"])) > 0.001:
+                    errs.append(
+                        f"Gate G6 失败：rates_bonds_core.unhedged_usd_fx_drag.cfets_cny_fixing ({fx_drag['cfets_cny_fixing']}) "
+                        f"≠ rates_fx_chain.cfets_cny_fixing ({rates['cfets_cny_fixing']})"
+                    )
+                if not isinstance(fx_drag.get("real_rmb_drag_range"), str) or not fx_drag["real_rmb_drag_range"].strip():
+                    errs.append("Gate 4 失败：rates_bonds_core.unhedged_usd_fx_drag 缺少非空 real_rmb_drag_range")
+            ds = rb.get("duration_stance")
+            if not (isinstance(ds, dict) and ds) and not (isinstance(ds, str) and ds.strip()):
+                errs.append("Gate 4 失败：market_state.json.rates_bonds_core.duration_stance 须为非空对象或字符串")
+            key_etfs = rb.get("key_etfs")
+            if not isinstance(key_etfs, list) or not key_etfs:
+                errs.append("Gate 4 失败：market_state.json.rates_bonds_core.key_etfs 须为非空数组")
+            else:
+                for ki, ke in enumerate(key_etfs):
+                    if not isinstance(ke, dict) or not isinstance(ke.get("kline_id"), str) or not ke["kline_id"].strip():
+                        errs.append(f"Gate 4 失败：rates_bonds_core.key_etfs[{ki}] 缺少非空 kline_id")
+                    elif kline_catalog_ids is not None and ke["kline_id"].strip() not in kline_catalog_ids:
+                        errs.append(
+                            f"Gate 4 失败：rates_bonds_core.key_etfs[{ki}].kline_id ({ke['kline_id'].strip()!r}) "
+                            f"不存在于 state/klines/manifest.json catalog 中"
+                        )
+            _scan_hygiene(rb, "market_state.json.rates_bonds_core")
+
+    # 2. non_us_global_satellite
+    if "non_us_global_satellite" not in state:
+        if require_presence:
+            errs.append("Gate 4 失败：market_state.json 缺少 non_us_global_satellite 对象")
+    else:
+        sat = state.get("non_us_global_satellite")
+        if not isinstance(sat, dict):
+            errs.append("Gate 4 失败：market_state.json.non_us_global_satellite 须为对象")
+        else:
+            sat_mkts = sat.get("markets")
+            if not isinstance(sat_mkts, list) or not sat_mkts:
+                errs.append("Gate 4 失败：market_state.json.non_us_global_satellite.markets 须为非空数组")
+            else:
+                seen_sat_ids: list[str] = []
+                for mi, sm in enumerate(sat_mkts):
+                    if not isinstance(sm, dict):
+                        errs.append(f"Gate 4 失败：non_us_global_satellite.markets[{mi}] 须为对象")
+                        continue
+                    mid = str(sm.get("id", "")).strip()
+                    if not mid:
+                        errs.append(f"Gate 4 失败：non_us_global_satellite.markets[{mi}] 缺少非空 id")
+                    else:
+                        if mid in seen_sat_ids:
+                            errs.append(f"Gate 4 失败：non_us_global_satellite.markets 存在重复 id ({mid!r})")
+                        seen_sat_ids.append(mid)
+                    if sm.get("lamp") not in _COCKPIT_ALLOWED_LAMPS:
+                        errs.append(
+                            f"Gate 4 失败：non_us_global_satellite.markets[{mi}]({mid}).lamp 非法枚举 ({sm.get('lamp')!r})"
+                        )
+                    for req_s in ("name", "kline_id", "access_grade", "warning"):
+                        if not isinstance(sm.get(req_s), str) or not sm[req_s].strip():
+                            errs.append(f"Gate 4 失败：non_us_global_satellite.markets[{mi}]({mid}) 缺少非空 {req_s}")
+                    sm_kid = sm.get("kline_id")
+                    if (
+                        kline_catalog_ids is not None
+                        and isinstance(sm_kid, str)
+                        and sm_kid.strip()
+                        and sm_kid.strip() not in kline_catalog_ids
+                    ):
+                        errs.append(
+                            f"Gate 4 失败：non_us_global_satellite.markets[{mi}]({mid}).kline_id ({sm_kid.strip()!r}) "
+                            f"不存在于 state/klines/manifest.json catalog 中"
+                        )
+                    bms = sm.get("benchmarks")
+                    if not isinstance(bms, list) or not bms:
+                        errs.append(f"Gate 4 失败：non_us_global_satellite.markets[{mi}]({mid}) 缺少非空 benchmarks")
+                    else:
+                        for bi, bm in enumerate(bms):
+                            if (
+                                not isinstance(bm, dict)
+                                or not isinstance(bm.get("name"), str) or not bm["name"].strip()
+                                or not _is_num(bm.get("value"))
+                                or not _is_num(bm.get("change_pct"))
+                            ):
+                                errs.append(
+                                    f"Gate 4 失败：non_us_global_satellite.markets[{mi}]({mid}).benchmarks[{bi}] 须含有效 name/value/change_pct"
+                                )
+                    for vk in ("onshore_vehicles", "offshore_vehicles"):
+                        vv = sm.get(vk)
+                        if not ((isinstance(vv, list) and vv) or (isinstance(vv, str) and vv.strip())):
+                            errs.append(f"Gate 4 失败：non_us_global_satellite.markets[{mi}]({mid}) 缺少非空 {vk}")
+                req_sat_order = ["jp", "eu", "tw_kr", "in"]
+                missing_sat = [sid for sid in req_sat_order if sid not in seen_sat_ids]
+                if missing_sat:
+                    errs.append(f"Gate 4 失败：non_us_global_satellite.markets 缺少必填市场: {missing_sat}")
+                elif [sid for sid in seen_sat_ids if sid in req_sat_order] != req_sat_order:
+                    errs.append(
+                        f"Gate 4 失败：non_us_global_satellite.markets 排序错误 ({seen_sat_ids}，须按 {req_sat_order})"
+                    )
+            _scan_hygiene(sat, "market_state.json.non_us_global_satellite")
+
+    return errs
+
+
 def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[str]]:
     """Shared single-source workspace state, RSI playbook/metrics, ledger, INDEX link & _latest sync check."""
     errs: list[str] = []
@@ -2582,6 +2879,7 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
                 errs.extend(_check_state_schedule(st))
                 errs.extend(_check_data_caveats(st, require_presence=require_full_ssot))
                 errs.extend(_check_market_state_math(st))
+                errs.extend(_check_extended_cockpit_markets(st, require_presence=require_full_ssot))
         except json.JSONDecodeError as exc:
             errs.append(f"Gate 4 失败：market_state.json JSON 语法错误: {exc}")
 

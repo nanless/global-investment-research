@@ -1059,6 +1059,90 @@ class EquityWorkflowTests(unittest.TestCase):
         )
         self.assertTrue(any("fetch_kline_data.py" in e for e in errs_leak), errs_leak)
 
+    def test_gate_c2_catches_gold_buy_in_market_state_rates_and_nonus(self):
+        self.advance("2026-11-29_1800")
+        self.gold.update(tier_code="Tier 0", new_buy_allowed=False, tier1_passed=1)
+        self.state["markets"]["gold_mirror_readonly"].update(
+            tier_code="Tier 0", new_buy_allowed=False, gates_passed="1/4",
+        )
+        self._install_clean_ssot_dbs()
+
+        # Baseline with schema-valid, guarded wording in top-level rates_bonds_core & non_us_global_satellite passes cleanly
+        self.state["rates_bonds_core"] = {
+            "as_of": "2026-11-29 18:00",
+            "lamp": "yellow",
+            "lamp_label": "黄灯分化 · 短债筑盾",
+            "headline": "短中久期利率债稳守，黄金红灯停期暂不新买黄金。",
+            "cn_rates": {
+                "cgb2y_pct": 1.21,
+                "cgb10y_pct": 1.60,
+                "cgb30y_pct": 2.06,
+                "gc001_pct": 1.41,
+                "dr001_pct": 1.28,
+            },
+            "us_rates": {
+                "us2y_pct": 4.61,
+                "us10y_pct": 4.80,
+                "us30y_pct": 5.24,
+                "dfii10_pct": 2.60,
+                "sofr_pct": 3.94,
+            },
+            "cn_us_10y_spread_bp": -320,
+            "unhedged_usd_fx_drag": {
+                "usd_cny_spot": 6.66,
+                "cfets_cny_fixing": 6.90,
+                "real_rmb_drag_range": "-1.0% 至 -2.5%",
+                "summary": "未锁汇美元短债须计入汇兑波动。",
+            },
+            "duration_stance": {"summary": "短端筑盾、长端控久期。"},
+            "key_etfs": [
+                {"id": "etf_511360", "code": "511360", "name": "海富通短融ETF", "kline_id": "etf_511360"},
+            ],
+        }
+        self.state["non_us_global_satellite"] = {
+            "as_of": "2026-11-29 18:00",
+            "headline": "日欧台韩印非美严控溢价，严禁新买黄金 518880。",
+            "allocation_guardrail": "非美卫星严控溢价与单区仓位。",
+            "markets": [
+                {
+                    "id": mid,
+                    "name": mname,
+                    "lamp": "yellow",
+                    "lamp_label": "黄灯观察",
+                    "kline_id": kid,
+                    "access_grade": "A 级 · 平价观察",
+                    "benchmarks": [{"name": bname, "code": bcode, "value": bval, "change_pct": 0.5}],
+                    "onshore_vehicles": [{"code": "513800", "name": "境内替代标的"}],
+                    "offshore_vehicles": [{"code": "VXUS", "name": "离岸分散标的"}],
+                    "warning": "黄金红灯停期暂不新买黄金，严控溢价与汇率波动。",
+                }
+                for mid, mname, kid, bname, bcode, bval in (
+                    ("jp", "日本股市", "idx_N225", "日经225", "N225", 58700.0),
+                    ("eu", "欧洲股市", "idx_GDAXI", "德国DAX", "GDAXI", 25200.0),
+                    ("tw_kr", "中国台湾与韩国股市", "idx_TWII", "台湾加权指数", "TWII", 39300.0),
+                    ("in", "印度股市", "idx_NSEI", "印度Nifty50", "NSEI", 25700.0),
+                )
+            ],
+        }
+        self.save()
+        res_ok = self.lint("--precheck", "--strict")
+        self.assertEqual(res_ok.returncode, 0, res_ok.stdout + res_ok.stderr)
+
+        # (a) Forbidden Gold buy instruction inside rates_bonds_core must be caught by Gate C2
+        self.state["rates_bonds_core"]["headline"] = "建议今日立即买入黄金 ETF 518880 对冲美债波动。"
+        self.save()
+        res_rates = self.lint("--precheck", "--strict")
+        self.assertEqual(res_rates.returncode, 1, res_rates.stdout)
+        self.assertIn("Gate C2", res_rates.stdout)
+
+        # Restore rates_bonds_core; (b) forbidden Gold buy instruction inside non_us_global_satellite must also be caught
+        self.state["rates_bonds_core"]["headline"] = "短中久期利率债稳守，黄金红灯停期暂不新买黄金。"
+        self.state["non_us_global_satellite"]["markets"][0]["warning"] = "可逢低配置 518850 黄金分散非美汇率波动。"
+        self.save()
+        res_nonus = self.lint("--precheck", "--strict")
+        self.assertEqual(res_nonus.returncode, 1, res_nonus.stdout)
+        self.assertIn("Gate C2", res_nonus.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

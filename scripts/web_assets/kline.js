@@ -6,6 +6,7 @@
   "use strict";
 
   const COLOR_STORAGE_KEY = "gir_kline_color";
+  const CRYPTO_ASSET_RE = /^crypto_/i;
   const GOLD_ASSET_RE =
     /(?:^cmd_(?:XAU|GC|AU0|Au9999|AuTD)$|^(?:etf|stk)_(?:518660|518880|518850|159934|159937|518800|517520|159562|02840(?:\.HK)?|03081(?:\.HK)?|09840(?:\.HK)?|01929(?:\.HK)?|06181(?:\.HK)?|02899(?:\.HK)?|601899|600547|600489|GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ|SGOL|BAR|SGLN|NEM|FCX)$|黄金|金矿|沪金|现货金|期金|Au99|Au\(T\+D\))/i;
 
@@ -24,6 +25,10 @@
 
   function isFiniteNum(v) {
     return typeof v === "number" && Number.isFinite(v);
+  }
+
+  function isCryptoReadOnly(id) {
+    return CRYPTO_ASSET_RE.test(String(id || "").trim());
   }
 
   function isGoldAsset(idOrCode, name) {
@@ -454,7 +459,7 @@
     if (!isFiniteNum(v)) return "—";
     const abs = Math.abs(v);
     let dp = 2;
-    if (unit === "%" || unit === "pct") dp = 3;
+    if (unit === "%" || unit === "pct") dp = abs < 3 ? 4 : 3;
     else if (abs < 2) dp = 4;
     else if (abs < 20) dp = 3;
     else if (abs >= 10000) dp = 1;
@@ -587,19 +592,30 @@
       }
     }
     let volSub = "无量能序列（利率/汇率/现货类）";
-    if (ind.hasVol && isFiniteNum(bars[i].v) && isFiniteNum(ind.mavol5[i]) && ind.mavol5[i] > 0) {
-      const vr = bars[i].v / ind.mavol5[i];
-      const vrLbl = vr >= 1.35 ? "明显放量" : vr <= 0.72 ? "缩量观望" : "量能平稳";
-      volSub = "较 5 日均量 " + vr.toFixed(2) + "x（" + vrLbl + "）";
+    if (ind.hasVol) {
+      if (!isFiniteNum(bars[i].v) || bars[i].v <= 0) {
+        volSub = "最新交易日量能待官收同步";
+      } else if (isFiniteNum(ind.mavol5[i]) && ind.mavol5[i] > 0) {
+        const vr = bars[i].v / ind.mavol5[i];
+        const vrLbl = vr >= 1.35 ? "明显放量" : vr <= 0.72 ? "缩量观望" : "量能平稳";
+        volSub = "较 5 日均量 " + vr.toFixed(2) + "x（" + vrLbl + "）";
+      }
     }
 
     // 4. Risk / Safe Anchor Hint (STRICTLY objective — zero active buy verbs!)
+    let riskLabel = "风控与位置提示";
     let riskVal = "节奏温和 · 严守纪律";
     let riskSub = "结合大盘红绿灯与仓位红线";
     let riskTone = "neutral";
-    const goldLocked = !!opts.isGoldLockedEffective;
-    const anchor = opts.safeAnchor;
-    if (goldLocked) {
+    const cryptoReadOnly = isCryptoReadOnly(opts && opts.symbolId);
+    const goldLocked = !!(opts && opts.isGoldLockedEffective);
+    const anchor = opts && opts.safeAnchor;
+    if (cryptoReadOnly) {
+      riskLabel = "合规与定位";
+      riskVal = "仅作流动风向（只读）";
+      riskSub = "境内严禁虚拟货币交易";
+      riskTone = "warn";
+    } else if (goldLocked) {
       riskVal = "黄金红灯观察期";
       riskSub = "仅供趋势跟踪与旧仓参考 · 暂不新买";
       riskTone = "warn";
@@ -642,7 +658,9 @@
       }
     }
 
-    const disclaimer = goldLocked
+    const disclaimer = cryptoReadOnly
+      ? "⛔ 依据《银发〔2026〕42号》，中国大陆境内严禁虚拟货币交易；本图仅作全球美元流动性只读风向参考，不构成任何投资或交易建议。"
+      : goldLocked
       ? "⚠️ 当前黄金处于风控红灯观察期，本图仅供趋势跟踪与旧仓参考，不构成新买建议。"
       : "💡 技术指标仅反映历史价量与短期强弱，大方向以大盘红绿灯水温与基本面参考锚为准。";
 
@@ -651,10 +669,11 @@
         { label: "趋势状态", val: trendVal, sub: trendSub, tone: trendTone },
         { label: "强弱与位置", val: strVal, sub: strSub, tone: strTone },
         { label: "量价与动能", val: momVal, sub: volSub, tone: momTone },
-        { label: "风控与位置提示", val: riskVal, sub: riskSub, tone: riskTone },
+        { label: riskLabel, val: riskVal, sub: riskSub, tone: riskTone },
       ],
       disclaimer: disclaimer,
       goldLocked: goldLocked,
+      cryptoReadOnly: cryptoReadOnly,
     };
   }
 
@@ -853,6 +872,7 @@
         return;
       }
       const diag = buildDiagnosis(state.bars, state.ind, {
+        symbolId: (state.meta && state.meta.id) || state.symbolId,
         safeAnchor: state.safeAnchor,
         isGoldLockedEffective: isGoldLockedEffective(),
       });
@@ -871,11 +891,17 @@
           );
         })
         .join("");
+      const diagTagTxt = diag.cryptoReadOnly
+        ? "合规只读 · 境内禁交易"
+        : diag.goldLocked
+        ? "风控红灯观察"
+        : "客观价量指标";
+      const isWarnNote = !!(diag.goldLocked || diag.cryptoReadOnly);
       diagEl.innerHTML =
         '<div class="kline-diag-head"><span>小白 10 秒看懂技术面</span>' +
-        '<span class="kline-diag-tag">' + (diag.goldLocked ? "风控红灯观察" : "客观价量指标") + "</span></div>" +
+        '<span class="kline-diag-tag">' + diagTagTxt + "</span></div>" +
         '<div class="kline-diag-grid">' + pillsHtml + "</div>" +
-        '<div class="kline-diag-note' + (diag.goldLocked ? " kline-diag-note-warn" : "") + '">' +
+        '<div class="kline-diag-note' + (isWarnNote ? " kline-diag-note-warn" : "") + '">' +
         escHtml(diag.disclaimer) + "</div>";
     }
 
@@ -905,7 +931,7 @@
         "<span>低 <strong>" + fmtPrice(b.l, unit) + "</strong></span>",
         '<span>收 <strong class="' + chgCls + '">' + fmtPrice(b.c, unit) + " (" + chgStr + ")</strong></span>",
       ];
-      if (state.ind && state.ind.hasVol && isFiniteNum(b.v)) {
+      if (state.ind && state.ind.hasVol && isFiniteNum(b.v) && b.v > 0) {
         parts.push("<span>量 <strong>" + fmtVol(b.v, mkt) + "</strong></span>");
       }
 
@@ -1006,7 +1032,7 @@
       const mkt = (state.series && state.series.market) || (state.meta && state.meta.market) || "";
 
       const padL = 10;
-      const padR = w < 440 ? 54 : 64;
+      const padR = w < 440 ? 60 : 68;
       const padT = 14;
       const xAxisH = 22;
       const subGap = 14;
@@ -1208,7 +1234,8 @@
       for (let i = startIdx; i <= endIdx; i++) {
         const b = state.bars[i];
         const cx = Math.floor(xFor(i)) + 0.5;
-        const isUp = b.c >= b.o;
+        const isFlat = b.o === b.h && b.h === b.l && b.l === b.c;
+        const isUp = isFlat ? (i > 0 ? b.c >= state.bars[i - 1].c : true) : b.c >= b.o;
         const col = isUp ? pal.up : pal.down;
         const yH = yMain(b.h);
         const yL = yMain(b.l);
@@ -1291,10 +1318,12 @@
         };
         for (let i = startIdx; i <= endIdx; i++) {
           const b = state.bars[i];
-          if (!isFiniteNum(b.v)) continue;
+          if (!isFiniteNum(b.v) || b.v <= 0) continue;
           const cx = xFor(i);
           const vy = yVol(b.v);
-          ctx.fillStyle = b.c >= b.o ? pal.upFade : pal.downFade;
+          const isFlat = b.o === b.h && b.h === b.l && b.l === b.c;
+          const isUp = isFlat ? (i > 0 ? b.c >= state.bars[i - 1].c : true) : b.c >= b.o;
+          ctx.fillStyle = isUp ? pal.upFade : pal.downFade;
           ctx.fillRect(cx - barW / 2, vy, barW, Math.max(1, subBot - vy));
         }
         drawLineSeries(ctx, state.ind.mavol5, startIdx, endIdx, xFor, yVol, pal.ma5, 1.1);
@@ -1304,7 +1333,8 @@
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
         ctx.fillText(fmtVol(vMax, mkt), padL + plotW + 6, subTop + 2);
-        subLabel = "VOL(5,10) " + fmtVol(state.bars[endIdx].v, mkt);
+        const lastVol = state.bars[endIdx].v;
+        subLabel = isFiniteNum(lastVol) && lastVol > 0 ? "VOL(5,10) " + fmtVol(lastVol, mkt) : "VOL(5,10) 待官收同步";
       } else if (sub === "MACD") {
         let mAbs = 0.001;
         for (let i = startIdx; i <= endIdx; i++) {
@@ -1336,17 +1366,27 @@
         }
         drawLineSeries(ctx, state.ind.macd.dif, startIdx, endIdx, xFor, yM, pal.ma10, 1.2);
         drawLineSeries(ctx, state.ind.macd.dea, startIdx, endIdx, xFor, yM, pal.ma20, 1.2);
+        const mAxisDp = mAbs < 0.05 ? 4 : mAbs < 0.5 ? 3 : 2;
         ctx.fillStyle = pal.axisText;
         ctx.font = '10px -apple-system, "PingFang SC", sans-serif';
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(fmtNum(mAbs, 2), padL + plotW + 6, subTop + 2);
+        ctx.fillText(fmtNum(mAbs, mAxisDp), padL + plotW + 6, subTop + 2);
         ctx.textBaseline = "bottom";
-        ctx.fillText(fmtNum(-mAbs, 2), padL + plotW + 6, subBot - 2);
+        ctx.fillText(fmtNum(-mAbs, mAxisDp), padL + plotW + 6, subBot - 2);
+        const mDifEnd = state.ind.macd.dif[endIdx];
+        const mDeaEnd = state.ind.macd.dea[endIdx];
+        const mBarEnd = state.ind.macd.hist[endIdx];
+        const mReadAbs = Math.max(
+          isFiniteNum(mDifEnd) ? Math.abs(mDifEnd) : 0,
+          isFiniteNum(mDeaEnd) ? Math.abs(mDeaEnd) : 0,
+          isFiniteNum(mBarEnd) ? Math.abs(mBarEnd) : 0
+        );
+        const mdp = mReadAbs < 0.05 ? 4 : mReadAbs < 0.5 ? 3 : 2;
         subLabel =
-          "MACD(12,26,9) DIF:" + fmtNum(state.ind.macd.dif[endIdx], 2) +
-          " DEA:" + fmtNum(state.ind.macd.dea[endIdx], 2) +
-          " BAR:" + fmtNum(state.ind.macd.hist[endIdx], 2);
+          "MACD(12,26,9) DIF:" + fmtNum(mDifEnd, mdp) +
+          " DEA:" + fmtNum(mDeaEnd, mdp) +
+          " BAR:" + fmtNum(mBarEnd, mdp);
       } else if (sub === "RSI") {
         const yR = function (v) {
           return subTop + ((100 - v) / 100) * subH;
@@ -1920,6 +1960,36 @@
     const headStar = document.getElementById("kline-term-star");
     const groupBtns = Array.from(rootEl.querySelectorAll("[data-chart-group]"));
     const metaBridge = readMetaBridge();
+    const bridgeGroups =
+      metaBridge && metaBridge._groups && typeof metaBridge._groups === "object"
+        ? metaBridge._groups
+        : {};
+    const FALLBACK_NON_US_IDS = [
+      "idx_N225", "idx_TOPIX", "idx_TPX", "idx_DAX", "idx_GDAXI", "idx_CAC40", "idx_FCHI",
+      "idx_FTSE", "idx_STOXX50E", "idx_SX5E", "idx_NIFTY50", "idx_NIFTY", "idx_NSEI", "idx_KS11", "idx_TWII",
+      "idx_AXJO", "idx_STI", "etf_513800", "etf_513520", "etf_513880", "etf_513030", "etf_513080",
+      "etf_520580", "etf_520830", "etf_164824", "etf_VWRA", "etf_EIMI", "etf_VXUS", "etf_EWJ",
+    ];
+    const FALLBACK_BONDS_REITS_IDS = [
+      "rate_CN10Y", "rate_CN30Y", "rate_CN2Y", "rate_US10Y", "rate_US2Y", "rate_US30Y", "rate_DFII10",
+      "rate_JP10Y", "rate_DE10Y", "idx_CREIT", "idx_932047", "idx_932006", "idx_sh000832",
+      "etf_511360", "etf_511260", "etf_511090", "etf_511130", "etf_511520", "etf_511580",
+      "etf_511180", "etf_511380", "etf_551500", "etf_511110", "etf_511880", "etf_511990",
+      "etf_TLT", "etf_IEF", "etf_SHY", "etf_SGOV", "etf_BND", "etf_VTIP", "etf_IB01", "etf_VNQ",
+    ];
+    const nonUsSet = new Set(
+      Array.isArray(bridgeGroups.non_us_global) && bridgeGroups.non_us_global.length > 0
+        ? bridgeGroups.non_us_global
+        : FALLBACK_NON_US_IDS
+    );
+    const bondsReitsSet = new Set(
+      Array.isArray(bridgeGroups.bonds_reits) && bridgeGroups.bonds_reits.length > 0
+        ? bridgeGroups.bonds_reits
+        : FALLBACK_BONDS_REITS_IDS
+    );
+    const availGroups = new Set(
+      groupBtns.map(function (b) { return b.getAttribute("data-chart-group") || ""; }).filter(Boolean)
+    );
 
     let catalog = [];
     let activeGroup = "a_index";
@@ -1948,6 +2018,17 @@
       if (grp === "watchlist") {
         return watchSet.has(item.id) || (item.dossier_key && watchSet.has(item.dossier_key)) || (item.code && (watchSet.has("stk_" + item.code) || watchSet.has("etf_" + item.code)));
       }
+      if (grp === "non_us_global") {
+        return item.group === "global_index" || item.group === "non_us_global" || nonUsSet.has(item.id);
+      }
+      if (grp === "bonds_reits") {
+        return (
+          item.group === "rates_reits" ||
+          item.group === "bonds_reits" ||
+          bondsReitsSet.has(item.id) ||
+          String(item.id || "").startsWith("rate_")
+        );
+      }
       if (grp === "gold_macro") return item.group === "gold_metal" || item.group === "macro_cmd";
       if (grp === "etfs") return String(item.id || "").startsWith("etf_") || String(item.group || "").indexOf("etf") !== -1;
       if (grp === "stocks") return String(item.id || "").startsWith("stk_") || String(item.group || "").indexOf("stock") !== -1;
@@ -1957,9 +2038,14 @@
     function selectSymbol(symId, updateHash) {
       activeSym = symId;
       const item = catalog.find(function (c) { return c.id === symId; }) || null;
-      const bridge = metaBridge[symId] || (item && item.dossier_key ? metaBridge[item.dossier_key] : null) || {};
+      const isCrypto = isCryptoReadOnly((item && item.id) || symId);
+      const bridge =
+        (symId && symId !== "_groups" && metaBridge[symId]) ||
+        (item && item.dossier_key && item.dossier_key !== "_groups" ? metaBridge[item.dossier_key] : null) ||
+        {};
       if (headTitle) {
-        headTitle.textContent = item ? item.name + " (" + item.code + ")" : symId;
+        const baseTitle = item ? item.name + " (" + item.code + ")" : symId;
+        headTitle.textContent = isCrypto ? baseTitle + "（只读·禁交易）" : baseTitle;
       }
       if (headSub) {
         const chg = item && isFiniteNum(item.change_pct)
@@ -1970,11 +2056,15 @@
           ? [price, chg, item.latest_date ? "截止 " + item.latest_date : "", item.provider || ""].filter(Boolean).join(" · ")
           : "交互 K 线与技术指标";
       }
-      if (headStar && window.GIRWatchlist) {
-        const isStarred = getWatchSet().has(symId);
-        headStar.textContent = isStarred ? "★ 已自选" : "☆ 加自选";
-        headStar.classList.toggle("active", isStarred);
-        headStar.setAttribute("data-star-kline", symId);
+      if (headStar) {
+        headStar.hidden = isCrypto;
+        headStar.disabled = isCrypto;
+        if (!isCrypto && window.GIRWatchlist) {
+          const isStarred = getWatchSet().has(symId);
+          headStar.textContent = isStarred ? "★ 已自选" : "☆ 加自选";
+          headStar.classList.toggle("active", isStarred);
+          headStar.setAttribute("data-star-kline", symId);
+        }
       }
       if (!chartInst) {
         chartInst = mount(mountEl, {
@@ -2039,11 +2129,21 @@
       listEl.innerHTML = cap
         .map(function (item) {
           const isAct = item.id === activeSym;
-          const isStar = watchSet.has(item.id) || (item.dossier_key && watchSet.has(item.dossier_key));
+          const isCrypto = isCryptoReadOnly(item.id);
+          const isStar = !isCrypto && (watchSet.has(item.id) || (item.dossier_key && watchSet.has(item.dossier_key)));
           const chg = isFiniteNum(item.change_pct) ? item.change_pct : null;
           const chgCls = chg == null ? "" : chg >= 0 ? "chg-up" : "chg-dn";
           const chgTxt = chg == null ? "—" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
           const pTxt = isFiniteNum(item.latest_close) ? fmtPrice(item.latest_close, item.unit) : "待核";
+          const starBtnHtml = isCrypto
+            ? ""
+            : '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" ' +
+              'data-watch-kind="' + (String(item.id).startsWith("etf_") ? "etf" : String(item.id).startsWith("stk_") ? "stock" : "index") + '" ' +
+              'data-watch-id="' + escHtml(item.dossier_key || item.code || item.id) + '" ' +
+              'data-watch-kline="' + escHtml(item.id) + '" ' +
+              'data-watch-name="' + escHtml(item.name) + '" ' +
+              'data-watch-code="' + escHtml(item.code) + '" ' +
+              'aria-label="切换自选">' + (isStar ? "★" : "☆") + "</button>";
           return (
             '<div class="kline-sym-row' + (isAct ? " active" : "") + '" data-sym-id="' + escHtml(item.id) + '" role="button" tabindex="0">' +
             '<div class="kline-sym-main">' +
@@ -2054,13 +2154,7 @@
             '<div class="kline-sym-price">' + escHtml(pTxt) + "</div>" +
             '<div class="kline-sym-chg ' + chgCls + '">' + escHtml(chgTxt) + "</div>" +
             "</div>" +
-            '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" ' +
-            'data-watch-kind="' + (String(item.id).startsWith("etf_") ? "etf" : String(item.id).startsWith("stk_") ? "stock" : "index") + '" ' +
-            'data-watch-id="' + escHtml(item.dossier_key || item.code || item.id) + '" ' +
-            'data-watch-kline="' + escHtml(item.id) + '" ' +
-            'data-watch-name="' + escHtml(item.name) + '" ' +
-            'data-watch-code="' + escHtml(item.code) + '" ' +
-            'aria-label="切换自选">' + (isStar ? "★" : "☆") + "</button>" +
+            starBtnHtml +
             "</div>"
           );
         })
@@ -2070,26 +2164,62 @@
     function applyTerminalHash() {
       const raw = (window.location.hash || "").replace(/^#/, "").trim();
       if (!raw) return;
+      let hadSym = false;
+      let requestedGroup = "";
+      function safeDec(s) {
+        try { return decodeURIComponent(s); } catch (_) { return s; }
+      }
       raw.split("&").forEach(function (pair) {
         const eq = pair.indexOf("=");
         if (eq <= 0) return;
-        const k = decodeURIComponent(pair.slice(0, eq));
-        const v = decodeURIComponent(pair.slice(eq + 1));
+        const k = safeDec(pair.slice(0, eq));
+        const v = safeDec(pair.slice(eq + 1));
         if (k === "sym" && v) {
           const found = catalog.find(function (c) { return c.id === v || c.code === v || c.dossier_key === v; });
           if (found) {
+            hadSym = true;
             activeSym = found.id;
-            if (found.group === "gold_metal" || found.group === "macro_cmd") activeGroup = "gold_macro";
-            else if (String(found.id).startsWith("etf_")) activeGroup = "etfs";
-            else if (String(found.id).startsWith("stk_")) activeGroup = "stocks";
-            else if (found.group) activeGroup = found.group;
+            const fid = String(found.id || "");
+            const isNonUs =
+              found.group === "global_index" ||
+              found.group === "non_us_global" ||
+              (!fid.startsWith("etf_") && nonUsSet.has(fid));
+            const isBondsReits =
+              found.group === "rates_reits" ||
+              found.group === "bonds_reits" ||
+              fid.startsWith("rate_") ||
+              (!fid.startsWith("etf_") && found.group !== "a_index" && bondsReitsSet.has(fid));
+            if (isNonUs) {
+              activeGroup = availGroups.size === 0 || availGroups.has("non_us_global") ? "non_us_global" : (found.group || "all");
+            } else if (isBondsReits) {
+              activeGroup =
+                availGroups.size === 0 || availGroups.has("bonds_reits")
+                  ? "bonds_reits"
+                  : (found.group === "macro_cmd" ? "gold_macro" : (found.group || "all"));
+            } else if (found.group === "gold_metal" || found.group === "macro_cmd") {
+              activeGroup = "gold_macro";
+            } else if (fid.startsWith("etf_")) {
+              activeGroup = "etfs";
+            } else if (fid.startsWith("stk_")) {
+              activeGroup = "stocks";
+            } else if (found.group) {
+              activeGroup = found.group;
+            }
           }
+        } else if (k === "group" && v) {
+          requestedGroup = v;
         } else if (k === "q" && v) {
           searchQ = v;
           if (searchInput) searchInput.value = v;
           if (clearBtn) clearBtn.hidden = false;
         }
       });
+      if (!hadSym && requestedGroup && (availGroups.size === 0 || availGroups.has(requestedGroup))) {
+        activeGroup = requestedGroup;
+        const watchSet = getWatchSet();
+        const firstInGrp = catalog.find(function (c) { return groupMatches(c, activeGroup, watchSet); });
+        if (firstInGrp) activeSym = firstInGrp.id;
+      }
     }
 
     groupBtns.forEach(function (btn) {
@@ -2140,7 +2270,7 @@
 
     if (headStar) {
       headStar.addEventListener("click", function () {
-        if (!window.GIRWatchlist) return;
+        if (!window.GIRWatchlist || isCryptoReadOnly(activeSym)) return;
         const item = catalog.find(function (c) { return c.id === activeSym; });
         if (!item) return;
         const kind = String(item.id).startsWith("etf_") ? "etf" : String(item.id).startsWith("stk_") ? "stock" : "index";
@@ -2157,9 +2287,14 @@
     window.addEventListener("gir:watchlist-change", function () {
       renderSidebar();
       if (headStar) {
-        const isStarred = getWatchSet().has(activeSym);
-        headStar.textContent = isStarred ? "★ 已自选" : "☆ 加自选";
-        headStar.classList.toggle("active", isStarred);
+        const isCrypto = isCryptoReadOnly(activeSym);
+        headStar.hidden = isCrypto;
+        headStar.disabled = isCrypto;
+        if (!isCrypto) {
+          const isStarred = getWatchSet().has(activeSym);
+          headStar.textContent = isStarred ? "★ 已自选" : "☆ 加自选";
+          headStar.classList.toggle("active", isStarred);
+        }
       }
     });
 
@@ -2272,6 +2407,7 @@
     loadManifest: loadManifest,
     loadSeries: loadSeries,
     isGoldAsset: isGoldAsset,
+    isCryptoReadOnly: isCryptoReadOnly,
     getColorConvention: getColorConvention,
     setColorConvention: setColorConvention,
     initChartsTerminal: initChartsTerminal,

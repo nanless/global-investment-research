@@ -90,7 +90,7 @@ ETF_ALL_21_KEYS = frozenset({
     "otc_feeder",
     "gold_locked",
 })
-ETF_OPTIONAL_KEYS = frozenset({"updated_at"})
+ETF_OPTIONAL_KEYS = frozenset({"updated_at", "asset_class", "region"})
 ETF_ALLOWED_KEYS = ETF_ALL_21_KEYS | ETF_OPTIONAL_KEYS
 ETF_ALLOWED_MARKETS = frozenset({"a-share", "hk-stock", "us-stock", "global", "multi-asset"})
 ETF_ALLOWED_CHANNELS = frozenset({
@@ -103,6 +103,24 @@ ETF_ALLOWED_CHANNELS = frozenset({
     "爱尔兰UCITS",
 })
 ETF_ALLOWED_PREMIUM_STATUSES = frozenset({"normal", "watch", "high_risk"})
+ETF_ALLOWED_ASSET_CLASSES = frozenset({
+    "equity",
+    "fixed_income",
+    "gold",
+    "commodity",
+    "cash_mmf",
+    "convertible_bond",
+    "reits",
+})
+ETF_ALLOWED_REGIONS = frozenset({
+    "cn",
+    "hk",
+    "us",
+    "jp",
+    "eu",
+    "apac_em",
+    "global",
+})
 MIN_ETF_COUNT = 140
 MAX_ETF_DELTA = 10
 
@@ -354,7 +372,8 @@ def _walk_json_strings(
     path: str = "",
     *,
     skip_keys: frozenset[str] = frozenset({
-        "schema_version", "id", "edition_id", "as_of_date", "updated_at", "category", "status_tone",
+        "schema_version", "id", "edition_id", "as_of_date", "updated_at",
+        "category", "status_tone", "asset_class", "region",
     }),
 ) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
@@ -768,7 +787,10 @@ def _merge_etf_universe(
         if top_upd is not None:
             if not isinstance(top_upd, dict):
                 raise ValueError("etf_universe.top_level_updates must be an object.")
-            forbidden_top = {"etfs", "total_etfs", "counts_by_market", "counts_by_channel"}
+            forbidden_top = {
+                "etfs", "total_etfs", "counts_by_market", "counts_by_channel",
+                "counts_by_asset_class", "counts_by_region",
+            }
             overlap = forbidden_top & set(top_upd.keys())
             if overlap:
                 raise ValueError(f"Cannot override auto-managed etf_universe keys via top_level_updates: {sorted(overlap)}")
@@ -891,17 +913,27 @@ def _merge_etf_universe(
     # Recompute exact summary counters preserving existing key order
     mkt_counter: Counter[str] = Counter()
     ch_counter: Counter[str] = Counter()
+    ac_counter: Counter[str] = Counter()
+    reg_counter: Counter[str] = Counter()
     for item in etfs:
         if isinstance(item, dict):
             mv = str(item.get("market", "")).strip()
             cv = str(item.get("channel", "")).strip()
+            av = str(item.get("asset_class", "")).strip() if item.get("asset_class") is not None else ""
+            rv = str(item.get("region", "")).strip() if item.get("region") is not None else ""
             if mv:
                 mkt_counter[mv] += 1
             if cv:
                 ch_counter[cv] += 1
+            if av:
+                ac_counter[av] += 1
+            if rv:
+                reg_counter[rv] += 1
 
     orig_mkt_order = list((orig.get("counts_by_market") or {}).keys())
     orig_ch_order = list((orig.get("counts_by_channel") or {}).keys())
+    orig_ac_order = list((orig.get("counts_by_asset_class") or {}).keys())
+    orig_reg_order = list((orig.get("counts_by_region") or {}).keys())
     eu["total_etfs"] = len(etfs)
     eu["counts_by_market"] = {
         k: mkt_counter[k] for k in dict.fromkeys([*orig_mkt_order, *mkt_counter.keys()]) if mkt_counter.get(k, 0) > 0
@@ -909,6 +941,14 @@ def _merge_etf_universe(
     eu["counts_by_channel"] = {
         k: ch_counter[k] for k in dict.fromkeys([*orig_ch_order, *ch_counter.keys()]) if ch_counter.get(k, 0) > 0
     }
+    if ac_counter or "counts_by_asset_class" in orig:
+        eu["counts_by_asset_class"] = {
+            k: ac_counter[k] for k in dict.fromkeys([*orig_ac_order, *ac_counter.keys()]) if ac_counter.get(k, 0) > 0
+        }
+    if reg_counter or "counts_by_region" in orig:
+        eu["counts_by_region"] = {
+            k: reg_counter[k] for k in dict.fromkeys([*orig_reg_order, *reg_counter.keys()]) if reg_counter.get(k, 0) > 0
+        }
     return eu, stats
 
 
@@ -1129,6 +1169,12 @@ def _validate_merged_equity_dbs(
             for req_s in ("name", "beginner_one_liner", "today_alert"):
                 if not isinstance(ch.get(req_s), str) or not ch[req_s].strip():
                     errs.append(f"multi_asset_channels.json: channel {cid} missing non-empty {req_s}.")
+            if cid == "qdii_mrf" and isinstance(ch.get("name"), str) and ch["name"].strip():
+                qdii_name = ch["name"].strip()
+                if (expected_pool >= 100 or qdii_name != "渠道 qdii_mrf") and not qdii_name.startswith("QDII"):
+                    errs.append(
+                        f"multi_asset_channels.json: channel 'qdii_mrf' name must start with 'QDII' (got {qdii_name!r})."
+                    )
             if ch.get("status_tone") not in ALLOWED_STATUS_TONES:
                 errs.append(f"multi_asset_channels.json: channel {cid} invalid status_tone {ch.get('status_tone')!r}.")
             kms = ch.get("key_metrics")
@@ -1216,6 +1262,9 @@ def _validate_merged_equity_dbs(
             errs.append(f"etf_universe.json: total_etfs ({eu.get('total_etfs')}) != len(etfs) ({len(etfs)}).")
         seen_etf_codes: set[str] = set()
         etf_fee_map: dict[str, float] = {}
+        ac_counter: Counter[str] = Counter()
+        reg_counter: Counter[str] = Counter()
+        require_ortho_etf = expected_pool >= 140
         for idx, item in enumerate(etfs):
             if not isinstance(item, dict):
                 errs.append(f"etf_universe.json: etfs[{idx}] must be an object.")
@@ -1251,6 +1300,24 @@ def _validate_merged_equity_dbs(
             ch = str(item.get("channel", "")).strip()
             if ch not in ETF_ALLOWED_CHANNELS:
                 errs.append(f"etf_universe.json: etfs[{idx}]({code}) invalid channel {ch!r}.")
+            ac_raw = item.get("asset_class")
+            if "asset_class" in item and ac_raw is not None:
+                ac_v = ac_raw.strip() if isinstance(ac_raw, str) else ""
+                if ac_v not in ETF_ALLOWED_ASSET_CLASSES:
+                    errs.append(f"etf_universe.json: etfs[{idx}]({code}) invalid asset_class {ac_raw!r}.")
+                else:
+                    ac_counter[ac_v] += 1
+            elif require_ortho_etf:
+                errs.append(f"etf_universe.json: etfs[{idx}]({code}) missing required asset_class.")
+            reg_raw = item.get("region")
+            if "region" in item and reg_raw is not None:
+                reg_v = reg_raw.strip() if isinstance(reg_raw, str) else ""
+                if reg_v not in ETF_ALLOWED_REGIONS:
+                    errs.append(f"etf_universe.json: etfs[{idx}]({code}) invalid region {reg_raw!r}.")
+                else:
+                    reg_counter[reg_v] += 1
+            elif require_ortho_etf:
+                errs.append(f"etf_universe.json: etfs[{idx}]({code}) missing required region.")
             if "updated_at" in item and item["updated_at"] is not None:
                 try:
                     _validate_date(item["updated_at"], f"etfs[{idx}]({code}).updated_at")
@@ -1284,13 +1351,41 @@ def _validate_merged_equity_dbs(
                     )
             if gold_tier0_active:
                 name = str(item.get("name", "")).strip()
-                is_gold = item.get("gold_locked") is True or norm in GOLD_ETF_CODES or bool(GOLD_ETF_NAME_RE.search(name))
+                has_ac = "asset_class" in item and item.get("asset_class") is not None
+                ac_str = str(item.get("asset_class", "")).strip() if has_ac else ""
+                is_gold = (
+                    item.get("gold_locked") is True
+                    or ac_str == "gold"
+                    or norm in GOLD_ETF_CODES
+                    or bool(GOLD_ETF_NAME_RE.search(name))
+                )
                 if is_gold:
                     role = str(item.get("action_role", "")).strip()
                     if not role or GOLD_ETF_FORBIDDEN_ROLE_RE.search(role):
                         errs.append(
                             f"Gold Tier-0 互斥冲突 (etf_universe:{code})：黄金/金矿 ETF 严禁标为底座/买入/推荐/定投/配置 -> {role!r}"
                         )
+                if ac_str == "gold" and item.get("gold_locked") is not True:
+                    errs.append(
+                        f"Gold Tier-0 互斥冲突 (etf_universe:{code})：asset_class='gold' 须配 gold_locked=true"
+                    )
+                elif item.get("gold_locked") is True and has_ac and ac_str != "gold":
+                    errs.append(
+                        f"Gold Tier-0 互斥冲突 (etf_universe:{code})：gold_locked=true 须配 asset_class='gold'（当前为 {ac_str!r}）"
+                    )
+
+        if require_ortho_etf or "counts_by_asset_class" in eu or ac_counter:
+            cbac = eu.get("counts_by_asset_class")
+            if not isinstance(cbac, dict) or cbac != dict(ac_counter):
+                errs.append(
+                    f"etf_universe.json: counts_by_asset_class ({cbac}) != computed ({dict(ac_counter)})."
+                )
+        if require_ortho_etf or "counts_by_region" in eu or reg_counter:
+            cbr = eu.get("counts_by_region")
+            if not isinstance(cbr, dict) or cbr != dict(reg_counter):
+                errs.append(
+                    f"etf_universe.json: counts_by_region ({cbr}) != computed ({dict(reg_counter)})."
+                )
 
         # Cross-DB ETF Fee Consistency: multi_asset_channels.json x etf_universe.json
         if isinstance(channels, list) and etf_fee_map:

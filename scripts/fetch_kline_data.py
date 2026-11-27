@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 """Zero-dependency production daily K-line (OHLCV) fetcher for Global Investment Research.
 
-Fetches historical daily OHLCV bars for ~454+ instruments across:
-  - Core macro & index benchmarks (`core.json`): A/HK/US indices, gold/metals,
-    energy, FX, US Treasury yields, and crypto
-  - All 174 ETFs across 6 trading channels (`etfs_onshore.json`,
+Fetches historical daily OHLCV bars for ~480+ instruments across:
+  - Core macro & index benchmarks (`core.json`): A/HK/US/Global non-US indices,
+    gold & precious metals, macro commodities & FX, CN/US sovereign yields,
+    CSI REITs indices, and crypto
+  - All 181 ETFs across 6 trading channels (`etfs_onshore.json`,
     `etfs_crossborder.json`, `etfs_offshore.json`)
   - All 231 institutional deep-dossier stocks (`stocks_a.json`, `stocks_hk.json`,
     `stocks_us.json`)
@@ -96,6 +97,22 @@ FT_UCITS_XID_MAP: dict[str, str] = {
     "EQQQ": "86266974",
     "IUIT": "93233034",
 }
+
+FT_INDEX_XID_MAP: dict[str, str] = {
+    "DAX": "596850",
+    "CAC": "585994",
+    "SX5E": "567938",
+    "FTSE": "572009",
+    "NIFTY": "569360",
+    "HSCAHPI": "8035571",
+}
+
+EASTMONEY_CGB_URL = (
+    "https://datacenter-web.eastmoney.com/api/data/v1/get"
+    "?reportName=RPTA_WEB_TREASURYYIELD"
+    "&columns=SOLAR_DATE,EMM00588704,EMM00166462,EMM00166466,EMM00166469,EMM01276014"
+    "&pageNumber=1&pageSize=250&sortColumns=SOLAR_DATE&sortTypes=-1"
+)
 
 JUSTETF_ISIN_MAP: dict[str, str] = {
     "IB01": "IE00BGSF1X88",
@@ -192,11 +209,12 @@ def build_core_specs() -> list[InstrumentSpec]:
         InstrumentSpec("idx_sh000922", "000922", "中证红利", "a_index", "A股", "CNY", "点", "core", "cn_index", "sh000922"),
         InstrumentSpec("idx_bj899050", "899050", "北证50", "a_index", "A股", "CNY", "点", "core", "bj_sina", "bj899050"),
         InstrumentSpec("idx_sh000832", "000832", "中证转债", "a_index", "A股", "CNY", "点", "core", "cn_index", "sh000832"),
-        # --- HK Indices (3 + 1 optional) ---
+        # --- HK Indices (5) ---
         InstrumentSpec("idx_hkHSI", "HSI", "恒生指数", "hk_index", "港股", "HKD", "点", "core", "hk_index", "hkHSI"),
         InstrumentSpec("idx_hkHSTECH", "HSTECH", "恒生科技", "hk_index", "港股", "HKD", "点", "core", "hk_index", "hkHSTECH"),
         InstrumentSpec("idx_hkHSCEI", "HSCEI", "恒生国企", "hk_index", "港股", "HKD", "点", "core", "hk_index", "hkHSCEI"),
-        InstrumentSpec("idx_hkHSCI", "HSCI", "恒生综合", "hk_index", "港股", "HKD", "点", "core", "hk_index", "hkHSCI", optional_min_bars=10),
+        InstrumentSpec("idx_HSCI", "HSCI", "恒生综合指数", "hk_index", "港股", "HKD", "点", "core", "cnbc_harmony", ".HSCI"),
+        InstrumentSpec("idx_HSAHP", "HSAHP", "恒生AH股溢价指数", "hk_index", "港股", "pts", "点", "core", "cnbc_harmony", ".HSCAHPI", "HSCAHPI", force_no_volume=True),
         # --- US Indices (8) ---
         InstrumentSpec("idx_SPX", "SPX", "标普500", "us_index", "美股", "USD", "点", "core", "us_index", "us.INX", ".inx"),
         InstrumentSpec("idx_IXIC", "IXIC", "纳斯达克综合", "us_index", "美股", "USD", "点", "core", "us_index", "us.IXIC", ".ixic"),
@@ -206,7 +224,17 @@ def build_core_specs() -> list[InstrumentSpec]:
         InstrumentSpec("idx_SPXEW", "RSP", "标普500等权·RSP", "us_index", "美股", "USD", "点", "core", "us_index", "usRSP.AM", "rsp"),
         InstrumentSpec("idx_SOX", "SOX", "费城半导体", "us_index", "美股", "USD", "点", "core", "us_sina_only", ".sox"),
         InstrumentSpec("idx_VIX", "VIX", "VIX恐慌指数", "us_index", "美股", "USD", "点", "core", "cboe_vix", "VIX", force_no_volume=True),
-        # --- Gold & Metals (11 canonical + Ag(T+D)) ---
+        # --- Non-US Global Equity Indices (9) ---
+        InstrumentSpec("idx_N225", "N225", "日经225", "global_index", "非美全球", "JPY", "点", "core", "cnbc_harmony", ".N225"),
+        InstrumentSpec("idx_TOPIX", "TOPIX", "日本东证TOPIX", "global_index", "非美全球", "JPY", "点", "core", "cnbc_harmony", ".TOPX"),
+        InstrumentSpec("idx_GDAXI", "GDAXI", "德国DAX", "global_index", "非美全球", "EUR", "点", "core", "cnbc_harmony", ".GDAXI", "DAX"),
+        InstrumentSpec("idx_FCHI", "FCHI", "法国CAC40", "global_index", "非美全球", "EUR", "点", "core", "cnbc_harmony", ".FCHI", "CAC"),
+        InstrumentSpec("idx_STOXX50E", "STOXX50E", "欧洲斯托克50", "global_index", "非美全球", "EUR", "点", "core", "cnbc_harmony", ".STOXX50E", "SX5E"),
+        InstrumentSpec("idx_FTSE", "FTSE", "英国富时100", "global_index", "非美全球", "GBP", "点", "core", "cnbc_harmony", ".FTSE", "FTSE"),
+        InstrumentSpec("idx_NSEI", "NSEI", "印度Nifty50", "global_index", "非美全球", "INR", "点", "core", "cnbc_harmony", ".NSEI", "NIFTY"),
+        InstrumentSpec("idx_TWII", "TWII", "中国台湾加权", "global_index", "非美全球", "TWD", "点", "core", "cnbc_harmony", ".TWII"),
+        InstrumentSpec("idx_KS11", "KS11", "韩国KOSPI", "global_index", "非美全球", "KRW", "点", "core", "cnbc_harmony", ".KS11"),
+        # --- Gold & Precious Metals (10 pure precious metals) ---
         InstrumentSpec("cmd_XAU", "XAU", "伦敦现货黄金", "gold_metal", "黄金与贵金属", "USD", "美元/盎司", "core", "sina_global_futures", "XAU"),
         InstrumentSpec("cmd_GC", "GC", "COMEX黄金主力", "gold_metal", "黄金与贵金属", "USD", "美元/盎司", "core", "sina_global_futures", "GC"),
         InstrumentSpec("cmd_AU0", "AU0", "沪金主力连续", "gold_metal", "黄金与贵金属", "CNY", "元/克", "core", "sina_inner_futures", "AU0"),
@@ -215,11 +243,11 @@ def build_core_specs() -> list[InstrumentSpec]:
         InstrumentSpec("cmd_XAG", "XAG", "伦敦现货白银", "gold_metal", "黄金与贵金属", "USD", "美元/盎司", "core", "sina_global_futures", "XAG"),
         InstrumentSpec("cmd_SI", "SI", "COMEX白银", "gold_metal", "黄金与贵金属", "USD", "美元/盎司", "core", "sina_global_futures", "SI"),
         InstrumentSpec("cmd_AG0", "AG0", "沪银主力连续", "gold_metal", "黄金与贵金属", "CNY", "元/千克", "core", "sina_inner_futures", "AG0"),
-        InstrumentSpec("cmd_HG", "HG", "COMEX铜", "gold_metal", "黄金与贵金属", "USD", "美元/磅", "core", "sina_global_futures", "HG"),
-        InstrumentSpec("cmd_CU0", "CU0", "沪铜主力连续", "gold_metal", "黄金与贵金属", "CNY", "元/吨", "core", "sina_inner_futures", "CU0"),
         InstrumentSpec("cmd_XPT", "XPT", "现货铂金", "gold_metal", "黄金与贵金属", "USD", "美元/盎司", "core", "sina_global_futures", "XPT"),
         InstrumentSpec("cmd_AgTD", "Ag(T+D)", "上金所Ag(T+D)", "gold_metal", "黄金与贵金属", "CNY", "元/千克", "core", "sge_daily", "Ag(T+D)", force_no_volume=True),
-        # --- Energy, FX, Rates & Crypto (14) ---
+        # --- Industrial Metals, Energy, FX & Crypto (15) ---
+        InstrumentSpec("cmd_HG", "HG", "COMEX铜", "macro_cmd", "宏观商品与汇率", "USD", "美元/磅", "core", "sina_global_futures", "HG"),
+        InstrumentSpec("cmd_CU0", "CU0", "沪铜主力连续", "macro_cmd", "宏观商品与汇率", "CNY", "元/吨", "core", "sina_inner_futures", "CU0"),
         InstrumentSpec("cmd_OIL", "OIL", "布伦特原油", "macro_cmd", "宏观商品与汇率", "USD", "美元/桶", "core", "sina_global_futures", "OIL"),
         InstrumentSpec("cmd_CL", "CL", "WTI原油", "macro_cmd", "宏观商品与汇率", "USD", "美元/桶", "core", "sina_global_futures", "CL"),
         InstrumentSpec("cmd_SC0", "SC0", "上海原油主力", "macro_cmd", "宏观商品与汇率", "CNY", "元/桶", "core", "sina_inner_futures", "SC0"),
@@ -228,12 +256,21 @@ def build_core_specs() -> list[InstrumentSpec]:
         InstrumentSpec("fx_USDCNH", "USDCNH", "离岸人民币", "macro_cmd", "宏观商品与汇率", "CNH", "汇率", "core", "sina_fx", "fx_susdcnh", force_no_volume=True, decimals_override=4),
         InstrumentSpec("fx_USDCNY", "USDCNY", "在岸人民币", "macro_cmd", "宏观商品与汇率", "CNY", "汇率", "core", "sina_fx", "fx_susdcny", force_no_volume=True, decimals_override=4),
         InstrumentSpec("fx_USDJPY", "USDJPY", "美元兑日元", "macro_cmd", "宏观商品与汇率", "JPY", "汇率", "core", "sina_fx", "fx_susdjpy", force_no_volume=True, decimals_override=4),
-        InstrumentSpec("rate_US10Y", "US10Y", "美债10Y收益率", "macro_cmd", "宏观商品与汇率", "%", "%", "core", "treasury_nominal", "10 Yr", force_no_volume=True, decimals_override=2),
-        InstrumentSpec("rate_US2Y", "US2Y", "美债2Y收益率", "macro_cmd", "宏观商品与汇率", "%", "%", "core", "treasury_nominal", "2 Yr", force_no_volume=True, decimals_override=2),
-        InstrumentSpec("rate_US30Y", "US30Y", "美债30Y收益率", "macro_cmd", "宏观商品与汇率", "%", "%", "core", "treasury_nominal", "30 Yr", force_no_volume=True, decimals_override=2),
-        InstrumentSpec("rate_DFII10", "DFII10", "10Y TIPS实际利率", "macro_cmd", "宏观商品与汇率", "%", "%", "core", "treasury_real", "10 YR", force_no_volume=True, decimals_override=2),
+        InstrumentSpec("fx_EURUSD", "EURUSD", "欧元/美元", "macro_cmd", "宏观商品与汇率", "USD", "汇率", "core", "sina_fx", "fx_seurusd", force_no_volume=True, decimals_override=4),
+        InstrumentSpec("fx_GBPUSD", "GBPUSD", "英镑/美元", "macro_cmd", "宏观商品与汇率", "USD", "汇率", "core", "sina_fx", "fx_sgbpusd", force_no_volume=True, decimals_override=4),
+        InstrumentSpec("fx_USDHKD", "USDHKD", "美元/港元", "macro_cmd", "宏观商品与汇率", "HKD", "汇率", "core", "sina_fx", "fx_susdhkd", force_no_volume=True, decimals_override=4),
         InstrumentSpec("crypto_BTC", "BTC-USD", "比特币", "macro_cmd", "宏观商品与汇率", "USD", "美元", "core", "coinbase_crypto", "BTC-USD"),
         InstrumentSpec("crypto_ETH", "ETH-USD", "以太坊", "macro_cmd", "宏观商品与汇率", "USD", "美元", "core", "coinbase_crypto", "ETH-USD"),
+        # --- Sovereign Yield Curves & CSI REITs Indices (9) ---
+        InstrumentSpec("rate_US10Y", "US10Y", "美债10Y收益率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_nominal", "10 Yr", force_no_volume=True, decimals_override=2),
+        InstrumentSpec("rate_US2Y", "US2Y", "美债2Y收益率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_nominal", "2 Yr", force_no_volume=True, decimals_override=2),
+        InstrumentSpec("rate_US30Y", "US30Y", "美债30Y收益率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_nominal", "30 Yr", force_no_volume=True, decimals_override=2),
+        InstrumentSpec("rate_DFII10", "DFII10", "10Y TIPS实际利率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_real", "10 YR", force_no_volume=True, decimals_override=2),
+        InstrumentSpec("rate_CN2Y", "CN2Y", "中国2年期国债收益率", "rates_reits", "债券与利率", "%", "%", "core", "eastmoney_cgb", "EMM00588704", force_no_volume=True, decimals_override=4),
+        InstrumentSpec("rate_CN10Y", "CN10Y", "中国10年期国债收益率", "rates_reits", "债券与利率", "%", "%", "core", "eastmoney_cgb", "EMM00166466", force_no_volume=True, decimals_override=4),
+        InstrumentSpec("rate_CN30Y", "CN30Y", "中国30年期国债收益率", "rates_reits", "债券与利率", "%", "%", "core", "eastmoney_cgb", "EMM00166469", force_no_volume=True, decimals_override=4),
+        InstrumentSpec("idx_932047", "932047", "中证REITs全收益", "rates_reits", "债券与利率", "CNY", "点", "core", "csindex_perf", "932047"),
+        InstrumentSpec("idx_932006", "932006", "中证REITs收盘", "rates_reits", "债券与利率", "CNY", "点", "core", "csindex_perf", "932006"),
     ]
     return specs
 
@@ -499,14 +536,20 @@ def _round_volume(val: float) -> int | float:
 
 
 def normalize_date_mmddyyyy(raw: str) -> str | None:
-    """Convert MM/DD/YYYY (or YYYY-MM-DD) to ISO YYYY-MM-DD."""
+    """Convert MM/DD/YYYY, YYYY-MM-DD[T| HH:MM:SS], or YYYYMMDD[HHMMSS] to ISO YYYY-MM-DD."""
     s = raw.strip().strip('"').strip("'")
     if not s:
         return None
     if DATE_ISO_RE.match(s):
         return s
-    if "T" in s and DATE_ISO_RE.match(s[:10]):
+    if len(s) >= 10 and s[10:11] in ("T", " ") and DATE_ISO_RE.match(s[:10]):
         return s[:10]
+    if len(s) in (8, 14) and s.isdigit():
+        try:
+            dt = datetime(int(s[:4]), int(s[4:6]), int(s[6:8]))
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            return None
     parts = s.split("/")
     if len(parts) == 3:
         m, d, y = parts
@@ -935,6 +978,176 @@ def parse_justetf_performance(raw_text: str) -> list[list[Any]]:
     return out
 
 
+def parse_cnbc_harmony(raw_text: str) -> list[list[Any]]:
+    """Parse CNBC harmony 1Y.json response payload['barData']['priceBars'].
+
+    Each bar has tradeTime 'YYYYMMDD000000' and open/high/low/close/volume.
+    """
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        return []
+    bar_data = payload.get("barData")
+    if not isinstance(bar_data, dict):
+        return []
+    price_bars = bar_data.get("priceBars") or []
+    if not isinstance(price_bars, list):
+        return []
+    out: list[list[Any]] = []
+    for bar in price_bars:
+        if not isinstance(bar, dict):
+            continue
+        date_iso = normalize_date_mmddyyyy(str(bar.get("tradeTime") or ""))
+        if not date_iso:
+            continue
+        out.append([
+            date_iso,
+            bar.get("open"),
+            bar.get("high"),
+            bar.get("low"),
+            bar.get("close"),
+            bar.get("volume", 0),
+        ])
+    return out
+
+
+def parse_cnbc_rest_quote(raw_text: str) -> dict[str, list[Any]]:
+    """Parse CNBC batch restQuote JSON into {symbol: [date_iso, o, h, l, c, vol]}.
+
+    Strictly enforces open > 0, high > 0, low > 0, last > 0, and high >= low
+    to guard against pre-open / uninitialized OHLC=0 quotes.
+    """
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        return {}
+    fqr = payload.get("FormattedQuoteResult")
+    if not isinstance(fqr, dict):
+        return {}
+    quotes = fqr.get("FormattedQuote")
+    if isinstance(quotes, dict):
+        quotes = [quotes]
+    if not isinstance(quotes, list):
+        return {}
+    out: dict[str, list[Any]] = {}
+    for q in quotes:
+        if not isinstance(q, dict):
+            continue
+        sym = str(q.get("symbol") or "").strip()
+        if not sym:
+            continue
+        date_iso = normalize_date_mmddyyyy(str(q.get("last_time") or ""))
+        if not date_iso:
+            continue
+        o = _to_float(q.get("open"))
+        h = _to_float(q.get("high"))
+        l = _to_float(q.get("low"))
+        c = _to_float(q.get("last"))
+        if o is None or h is None or l is None or c is None:
+            continue
+        if o <= 0 or h <= 0 or l <= 0 or c <= 0 or h < l:
+            continue
+        v = _to_float(q.get("volume"))
+        if v is None or v < 0:
+            v = 0.0
+        out[sym] = [date_iso, o, h, l, c, v]
+    return out
+
+
+def merge_cnbc_t0_quote(
+    hist_bars: list[list[Any]],
+    quote_bar: list[Any] | None,
+) -> list[list[Any]]:
+    """Append CNBC restQuote T-0 bar ONLY when OHLC > 0, high >= low, and last_date > last_hist_date."""
+    if not hist_bars or not quote_bar or len(quote_bar) < 5:
+        return list(hist_bars)
+    q_date = normalize_date_mmddyyyy(str(quote_bar[0]))
+    if not q_date:
+        return list(hist_bars)
+    o = _to_float(quote_bar[1])
+    h = _to_float(quote_bar[2])
+    l = _to_float(quote_bar[3])
+    c = _to_float(quote_bar[4])
+    if o is None or h is None or l is None or c is None:
+        return list(hist_bars)
+    if o <= 0 or h <= 0 or l <= 0 or c <= 0 or h < l:
+        return list(hist_bars)
+    hist_dates = [
+        d for d in (normalize_date_mmddyyyy(str(b[0])) for b in hist_bars if isinstance(b, (list, tuple)) and b)
+        if d
+    ]
+    if not hist_dates:
+        return list(hist_bars)
+    last_hist_date = max(hist_dates)
+    if q_date <= last_hist_date:
+        return list(hist_bars)
+    v = _to_float(quote_bar[5]) if len(quote_bar) > 5 else 0.0
+    if v is None or v < 0:
+        v = 0.0
+    return list(hist_bars) + [[q_date, o, h, l, c, v]]
+
+
+def parse_eastmoney_cgb(raw_text: str, column_name: str) -> list[list[Any]]:
+    """Parse Eastmoney RPTA_WEB_TREASURYYIELD JSON for a specific CGB yield column.
+
+    Skips rows where the target column is null/invalid and synthesizes [date, y, y, y, y, 0].
+    """
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        return []
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return []
+    rows = result.get("data") or []
+    if not isinstance(rows, list):
+        return []
+    out: list[list[Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        date_iso = normalize_date_mmddyyyy(str(row.get("SOLAR_DATE") or ""))
+        if not date_iso:
+            continue
+        y = _to_float(row.get(column_name))
+        if y is None or y <= 0:
+            continue
+        out.append([date_iso, y, y, y, y, 0])
+    return out
+
+
+def parse_csindex_perf(raw_text: str) -> list[list[Any]]:
+    """Parse CSIndex index-perf JSON response into OHLCV bars.
+
+    Supports both full OHLCV indices (e.g. 932047) and close-only indices (e.g. 932006)
+    where open/high/low are null -> synthesized as [date, close, close, close, close, vol].
+    """
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        return []
+    rows = payload.get("data") or []
+    if not isinstance(rows, list):
+        return []
+    out: list[list[Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        date_iso = normalize_date_mmddyyyy(str(row.get("tradeDate") or ""))
+        if not date_iso:
+            continue
+        c = _to_float(row.get("close"))
+        if c is None or c <= 0:
+            continue
+        o = _to_float(row.get("open"))
+        h = _to_float(row.get("high"))
+        l = _to_float(row.get("low"))
+        o = o if (o is not None and o > 0) else c
+        h = h if (h is not None and h > 0) else c
+        l = l if (l is not None and l > 0) else c
+        vol = _to_float(row.get("tradingVol"))
+        if vol is None or vol < 0:
+            vol = 0.0
+        out.append([date_iso, o, h, l, c, vol])
+    return out
+
+
 # ---------------------------------------------------------------------------
 # HTTP Client with Per-Host Semaphores & Jittered Retries
 # ---------------------------------------------------------------------------
@@ -955,6 +1168,9 @@ class RateLimitedHttpClient:
         self._semaphores: dict[str, threading.Semaphore] = {
             "tencent": threading.Semaphore(8),
             "sina": threading.Semaphore(4),
+            "cnbc": threading.Semaphore(4),
+            "eastmoney": threading.Semaphore(2),
+            "csindex": threading.Semaphore(1),
             "ft": threading.Semaphore(1),
             "justetf": threading.Semaphore(1),
             "treasury": threading.Semaphore(2),
@@ -970,6 +1186,12 @@ class RateLimitedHttpClient:
             return "tencent"
         if "sina.com.cn" in host:
             return "sina"
+        if "cnbc.com" in host:
+            return "cnbc"
+        if "eastmoney.com" in host:
+            return "eastmoney"
+        if "csindex.com.cn" in host:
+            return "csindex"
         if "ft.com" in host:
             return "ft"
         if "justetf.com" in host:
@@ -1262,16 +1484,26 @@ class KlineFetcher:
         self.bars_limit = bars_limit
         self.ref_year = ref_year or datetime.now(CST).year
         self._ft_cache: dict[str, list[list[Any]]] | None = None
+        self._ft_index_cache: dict[str, list[list[Any]]] | None = None
+        self._cnbc_quote_cache: dict[str, list[Any]] = {}
+        self._eastmoney_cgb_cache: str | None = None
         self._treasury_nom_cache: list[str] | None = None
         self._treasury_real_cache: list[str] | None = None
         self._batch_lock = threading.Lock()
+        self._ft_index_lock = threading.Lock()
+        self._cgb_lock = threading.Lock()
 
     # --- Batch pre-fetchers ---
 
-    def _fetch_ft_elements(self, base_codes: list[str]) -> dict[str, list[list[Any]]]:
+    def _fetch_ft_elements(
+        self,
+        base_codes: list[str],
+        xid_map: dict[str, str] | None = None,
+    ) -> dict[str, list[list[Any]]]:
+        mapping = xid_map if xid_map is not None else FT_UCITS_XID_MAP
         elements = []
         for bc in base_codes:
-            xid = FT_UCITS_XID_MAP.get(bc)
+            xid = mapping.get(bc)
             if xid:
                 elements.append({"Label": bc, "Type": "price", "Symbol": xid})
         if not elements:
@@ -1302,14 +1534,14 @@ class KlineFetcher:
     def prefetch_ft_ucits(self, base_codes: list[str]) -> dict[str, list[list[Any]]]:
         """Batch POST to FT chartapi/series, then individually refetch any length-mismatched tickers."""
         try:
-            parsed = self._fetch_ft_elements(base_codes)
+            parsed = self._fetch_ft_elements(base_codes, xid_map=FT_UCITS_XID_MAP)
         except Exception:
             parsed = {}
         # Any ticker omitted due to multi-element date-length mismatch gets a 1-element exact-date fetch
         for bc in base_codes:
             if bc not in parsed and bc in FT_UCITS_XID_MAP:
                 try:
-                    single = self._fetch_ft_elements([bc])
+                    single = self._fetch_ft_elements([bc], xid_map=FT_UCITS_XID_MAP)
                     if bc in single and single[bc]:
                         parsed[bc] = single[bc]
                 except Exception:
@@ -1317,6 +1549,66 @@ class KlineFetcher:
         with self._batch_lock:
             self._ft_cache = parsed
         return parsed
+
+    def _get_ft_index_fallback(self) -> dict[str, list[list[Any]]]:
+        """Lazily batch POST FT chartapi/series for CNBC index fallback XIDs."""
+        with self._ft_index_lock:
+            if self._ft_index_cache is not None:
+                return self._ft_index_cache
+            keys = list(FT_INDEX_XID_MAP.keys())
+            try:
+                parsed = self._fetch_ft_elements(keys, xid_map=FT_INDEX_XID_MAP)
+            except Exception:
+                parsed = {}
+            for k in keys:
+                if k not in parsed:
+                    try:
+                        single = self._fetch_ft_elements([k], xid_map=FT_INDEX_XID_MAP)
+                        if k in single and single[k]:
+                            parsed[k] = single[k]
+                    except Exception:
+                        pass
+            self._ft_index_cache = parsed
+            return parsed
+
+    def prefetch_cnbc_quotes(self, symbols: list[str]) -> dict[str, list[Any]]:
+        """Optional single batch restQuote request for T-0 live CNBC index bar append."""
+        uniq = list(dict.fromkeys(s for s in symbols if s))
+        if not uniq:
+            return {}
+        joined = "|".join(uniq)
+        url = (
+            "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol"
+            f"?symbols={urllib.parse.quote(joined, safe='')}"
+            "&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1"
+        )
+        try:
+            raw = self.http.request_text(url, headers={"Accept": "application/json"})
+            parsed = parse_cnbc_rest_quote(raw)
+        except Exception:
+            parsed = {}
+        with self._batch_lock:
+            self._cnbc_quote_cache = parsed
+        return parsed
+
+    def _get_eastmoney_cgb_raw(self) -> str:
+        """Fetch Eastmoney RPTA_WEB_TREASURYYIELD once and cache for all CGB tenors."""
+        with self._cgb_lock:
+            if self._eastmoney_cgb_cache is not None:
+                return self._eastmoney_cgb_cache
+            raw = self.http.request_text(
+                EASTMONEY_CGB_URL,
+                headers={"Referer": "https://data.eastmoney.com/", "Accept": "application/json"},
+            )
+            self._eastmoney_cgb_cache = raw
+            return raw
+
+    def prefetch_eastmoney_cgb(self) -> str:
+        """Batch pre-fetch China Government Bond yield curve table in a single request."""
+        try:
+            return self._get_eastmoney_cgb_raw()
+        except Exception:
+            return ""
 
     def _get_treasury_csvs(self, curve_type: str) -> list[str]:
         with self._batch_lock:
@@ -1685,6 +1977,60 @@ class KlineFetcher:
             except Exception as exc:
                 errors.append(f"coinbase_candles:{type(exc).__name__}")
 
+        elif kind == "cnbc_harmony":
+            url = f"https://ts-api.cnbc.com/harmony/app/charts/1Y.json?symbol={urllib.parse.quote(spec.provider_symbol)}"
+            try:
+                raw = self.http.request_text(url, headers={"Accept": "application/json"})
+                hist_bars = parse_cnbc_harmony(raw)
+                if hist_bars:
+                    with self._batch_lock:
+                        q_bar = self._cnbc_quote_cache.get(spec.provider_symbol)
+                    merged = merge_cnbc_t0_quote(hist_bars, q_bar)
+                    bars = _clean(merged)
+                    if bars:
+                        return bars, "cnbc_harmony", None
+                errors.append("cnbc_harmony:empty")
+            except Exception as exc:
+                errors.append(f"cnbc_harmony:{type(exc).__name__}")
+            if spec.fallback_symbol and spec.fallback_symbol in FT_INDEX_XID_MAP:
+                ft_map = self._get_ft_index_fallback()
+                if spec.fallback_symbol in ft_map:
+                    bars = _clean(ft_map[spec.fallback_symbol])
+                    if bars:
+                        return bars, "ft_chartapi", None
+                errors.append("ft_chartapi:empty")
+
+        elif kind == "eastmoney_cgb":
+            try:
+                raw = self._get_eastmoney_cgb_raw()
+                bars = _clean(parse_eastmoney_cgb(raw, spec.provider_symbol))
+                if bars:
+                    return bars, "eastmoney_cgb", None
+                errors.append("eastmoney_cgb:empty")
+            except Exception as exc:
+                errors.append(f"eastmoney_cgb:{type(exc).__name__}")
+
+        elif kind == "csindex_perf":
+            end_dt = datetime.now(CST).date()
+            start_dt = end_dt - timedelta(days=max(260, int(self.bars_limit * 1.65)))
+            url = (
+                "https://www.csindex.com.cn/csindex-home/perf/index-perf"
+                f"?indexCode={urllib.parse.quote(spec.provider_symbol)}"
+                f"&startDate={start_dt.strftime('%Y%m%d')}"
+                f"&endDate={end_dt.strftime('%Y%m%d')}"
+            )
+            try:
+                raw = self.http.request_text(
+                    url,
+                    headers={"Referer": "https://www.csindex.com.cn/", "Accept": "application/json"},
+                )
+                bars = _clean(parse_csindex_perf(raw))
+                if bars:
+                    return bars, "csindex_perf", None
+                errors.append("csindex_perf:empty")
+            except Exception as exc:
+                errors.append(f"csindex_perf:{type(exc).__name__}")
+
         else:
             errors.append(f"unknown_kind:{kind}")
 
@@ -1752,6 +2098,15 @@ def run_fetch(
     ucits_bases = [s.provider_symbol for s in specs if s.kind == "ucits_ft"]
     if ucits_bases:
         fetcher.prefetch_ft_ucits(ucits_bases)
+
+    # Optional single batch restQuote pre-fetch for CNBC global & HK index T-0 live bars
+    cnbc_syms = [s.provider_symbol for s in specs if s.kind == "cnbc_harmony"]
+    if cnbc_syms:
+        fetcher.prefetch_cnbc_quotes(cnbc_syms)
+
+    # Batch pre-fetch Eastmoney China Government Bond yield table in a single GET
+    if any(s.kind == "eastmoney_cgb" for s in specs):
+        fetcher.prefetch_eastmoney_cgb()
 
     # Parallel fetch across all specs in scope
     fetched_results: dict[str, tuple[list[list[Any]], str | None, str | None]] = {}

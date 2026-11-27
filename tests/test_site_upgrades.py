@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+import html
 import json
 import re
 import sys
@@ -375,6 +377,485 @@ class TestGateS7AndBundling(unittest.TestCase):
             self.assertGreaterEqual(summary["html_files"], 10)
             rc = lint_site.main([str(out_dir), "--strict"])
             self.assertEqual(rc, 0)
+
+
+class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
+    def _load_live_ssots(self) -> tuple[dict, dict, dict, dict, dict | None]:
+        gold_snap = json.loads((ROOT / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
+        eq_state = json.loads((ROOT / "equity" / "state" / "market_state.json").read_text(encoding="utf-8"))
+        ch_data = json.loads((ROOT / "equity" / "state" / "multi_asset_channels.json").read_text(encoding="utf-8"))
+        etf_data = json.loads((ROOT / "equity" / "state" / "etf_universe.json").read_text(encoding="utf-8"))
+        mf_path = ROOT / "equity" / "state" / "klines" / "manifest.json"
+        kline_manifest = json.loads(mf_path.read_text(encoding="utf-8")) if mf_path.is_file() else None
+        return gold_snap, eq_state, ch_data, etf_data, kline_manifest
+
+    def test_live_etf_universe_orthogonal_asset_class_and_region_ssot(self):
+        etf_data = json.loads((ROOT / "equity" / "state" / "etf_universe.json").read_text(encoding="utf-8"))
+        etfs = etf_data.get("etfs")
+        self.assertIsInstance(etfs, list)
+        self.assertGreaterEqual(len(etfs), 181)
+        self.assertEqual(len(etfs), etf_data.get("total_etfs"))
+
+        ac_counter: Counter[str] = Counter()
+        rg_counter: Counter[str] = Counter()
+        for item in etfs:
+            code = item.get("code")
+            ac = str(item.get("asset_class", "")).strip()
+            rg = str(item.get("region", "")).strip()
+            self.assertIn(ac, lint_site.ETF_ALLOWED_ASSET_CLASSES, f"Invalid asset_class on ETF {code}: {ac!r}")
+            self.assertIn(rg, lint_site.ETF_ALLOWED_REGIONS, f"Invalid region on ETF {code}: {rg!r}")
+            ac_counter[ac] += 1
+            rg_counter[rg] += 1
+            if etf_data.get("gold_tier0_locked") is True and ac == "gold":
+                self.assertTrue(item.get("gold_locked"), f"Gold-class ETF {code} missing gold_locked=True")
+
+        self.assertEqual(etf_data.get("counts_by_asset_class"), dict(ac_counter))
+        self.assertEqual(etf_data.get("counts_by_region"), dict(rg_counter))
+
+    def test_six_market_cockpit_hk_role_btc_guard_qdii_ctas_and_six_tab_kline(self):
+        gold_snap, eq_state, ch_data, etf_data, kline_manifest = self._load_live_ssots()
+        stock_counts = {
+            "a-share": int(eq_state["markets"]["a_share"]["stock_pool_count"]),
+            "hk-stock": int(eq_state["markets"]["hk_stock"]["stock_pool_count"]),
+            "us-stock": int(eq_state["markets"]["us_stock"]["stock_pool_count"]),
+        }
+        cockpit = build_site.build_cockpit_page(
+            gold_snap,
+            eq_state,
+            {},
+            stock_counts,
+            channels_data=ch_data,
+            etf_data=etf_data,
+            kline_manifest=kline_manifest,
+        )
+        doc = lint_site.parse_html_file("index.html", Path("index.html"), f"<!doctype html><html><body>{cockpit}</body></html>")
+
+        # 1. All 6 cockpit cards
+        for req_card in ("card-a-share", "card-hk-stock", "card-us-stock", "card-rates", "card-gold", "card-nonus"):
+            self.assertIn(req_card, doc.ids, f"Missing 6-market cockpit card #{req_card}")
+
+        # 1b. #card-nonus renders real live benchmark values (zero empty .m-sub-val, zero "境内 — · 离岸 —")
+        nonus_elem = lint_site._inspect_element_by_id(cockpit, "card-nonus")
+        self.assertIsNotNone(nonus_elem)
+        self.assertEqual(
+            nonus_elem.empty_m_sub_val_count,
+            0,
+            "#card-nonus must NOT render any empty <span class=\"m-sub-val\"></span> tile",
+        )
+        self.assertNotIn("境内 — · 离岸 —", nonus_elem.inner_text)
+        self.assertGreaterEqual(len(nonus_elem.m_sub_val_texts), 4)
+        self.assertTrue(
+            all(bool(v) and any(ch.isdigit() for ch in v) for v in nonus_elem.m_sub_val_texts),
+            f"#card-nonus .m-sub-val tiles must render live numeric benchmarks, got {nonus_elem.m_sub_val_texts!r}",
+        )
+
+        # 1c. #card-rates Tile #4 jumps to fx_USDCNH (not idx_932047)
+        m_rates_art = re.search(
+            r'<article\b[^>]*id="card-rates"[^>]*>.*?</article>',
+            cockpit,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(m_rates_art)
+        rates_tiles = [
+            btn_html
+            for btn_html in re.findall(r"<button\b[^>]*>.*?</button>", m_rates_art.group(0), flags=re.DOTALL)
+            if (m_cls := re.match(r'<button\b[^>]*\bclass="([^"]+)"', btn_html))
+            and "m-sub-tile" in m_cls.group(1).split()
+        ]
+        self.assertGreaterEqual(len(rates_tiles), 4)
+        self.assertIn('data-kline-jump="fx_USDCNH"', rates_tiles[3])
+        self.assertNotIn('data-kline-jump="idx_932047"', rates_tiles[3])
+
+        # 1d. ETF Showcase Card #5 links to etfs.html#asset_class=fixed_income_plus
+        etf_card_tags = [
+            tag
+            for tag in re.findall(r"<a\b[^>]*>", cockpit)
+            if (m_cls := re.search(r'\bclass="([^"]+)"', tag))
+            and "home-etf-card" in m_cls.group(1).split()
+        ]
+        self.assertGreaterEqual(len(etf_card_tags), 5)
+        m_card5_href = re.search(r'\bhref="([^"]+)"', etf_card_tags[4])
+        self.assertIsNotNone(m_card5_href)
+        self.assertEqual(
+            html.unescape(m_card5_href.group(1)),
+            "etfs.html#asset_class=fixed_income_plus",
+        )
+
+        # 2. HK offshore discount-leg role
+        self.assertIn("中国离岸折价腿", doc.visible_text)
+
+        # 3. BTC read-only compliance guard
+        if "BTC" in doc.visible_text or "比特币" in doc.visible_text:
+            self.assertTrue(
+                "境内禁交易" in doc.visible_text or "仅作流动风向" in doc.visible_text,
+                "BTC/比特币 mentioned on cockpit without required onshore read-only compliance guard",
+            )
+
+        # 4. Prominent QDII jump/hero/card CTAs
+        a_hrefs = {lk.value for lk in doc.links if lk.tag == "a"}
+        self.assertTrue(
+            "channels/qdii_mrf.html#sec-qdii-compare" in a_hrefs or "etfs.html#preset=qdii" in a_hrefs,
+            f"Missing prominent QDII CTA link in cockpit (found QDII links: {[h for h in a_hrefs if 'qdii' in h]})",
+        )
+        self.assertIn("channels/qdii_mrf.html", a_hrefs)
+
+        # 5. 6-tab K-line deck
+        self.assertIn("日欧台韩印非美", doc.visible_text)
+        self.assertIn("中美债市与REITs", doc.visible_text)
+        self.assertEqual(len(re.findall(r'data-deck-tab="[^"]+"', cockpit)), 6)
+
+        # 6. Graceful fallback when minimal fixture lacks rates_bonds_core & non_us_global_satellite
+        min_gold = {"new_buy_allowed": False, "tier_code": "Tier 0", "as_of_short": "2026-11-27 07:30"}
+        min_eq = {
+            "as_of_cst": "2026-11-27T07:30:00+08:00",
+            "markets": {"a_share": {"benchmark_sse": 3910.0, "benchmark_csi300": 4570.0}},
+        }
+        min_cockpit = build_site.build_cockpit_page(
+            min_gold, min_eq, {}, {"a-share": 76}, kline_manifest=None, kline_core=None,
+        )
+        min_doc = lint_site.parse_html_file(
+            "index.html", Path("index.html"), f"<!doctype html><html><body>{min_cockpit}</body></html>"
+        )
+        for req_card in ("card-a-share", "card-hk-stock", "card-us-stock", "card-rates", "card-gold", "card-nonus"):
+            self.assertIn(req_card, min_doc.ids, f"Minimal fallback missing cockpit card #{req_card}")
+        self.assertIn("中国离岸折价腿", min_doc.visible_text)
+        self.assertIn("日欧台韩印非美", min_doc.visible_text)
+        self.assertIn("中美债市与REITs", min_doc.visible_text)
+        self.assertEqual(len(re.findall(r'data-deck-tab="[^"]+"', min_cockpit)), 6)
+        self.assertNotIn("NaN", min_doc.visible_text)
+
+    def test_layer3_channel_role_groups_preserve_all_12_cards_and_qdii_name(self):
+        gold_snap, eq_state, ch_data, etf_data, kline_manifest = self._load_live_ssots()
+        ch08 = next((c for c in ch_data["channels"] if c.get("id") == "qdii_mrf"), None)
+        self.assertIsNotNone(ch08)
+        self.assertTrue(
+            str(ch08.get("name", "")).startswith("QDII"),
+            f"Channel 08 (qdii_mrf) name must start with 'QDII', got {ch08.get('name')!r}",
+        )
+
+        cockpit = build_site.build_cockpit_page(
+            gold_snap,
+            eq_state,
+            {},
+            {"a-share": 76, "hk-stock": 75, "us-stock": 80},
+            channels_data=ch_data,
+            etf_data=etf_data,
+            kline_manifest=kline_manifest,
+        )
+        self.assertIn("ch-role-group", cockpit)
+        doc = lint_site.parse_html_file("index.html", Path("index.html"), f"<!doctype html><html><body>{cockpit}</body></html>")
+        for cid in lint_site.REQUIRED_MULTI_ASSET_CHANNELS:
+            self.assertIn(f"ch-{cid}", doc.ids, f"Missing Layer 3 channel card #ch-{cid} inside .ch-role-group")
+
+        # Channel 08 (qdii_mrf) must NOT be misclassified as HNW 300万 on index.html, channels.html, or channels/qdii_mrf.html
+        qdii_home = lint_site._inspect_element_by_id(cockpit, "ch-qdii_mrf")
+        self.assertIsNotNone(qdii_home)
+        self.assertNotIn("ch-hnw", qdii_home.classes)
+        self.assertNotIn("300万门槛", qdii_home.inner_text)
+
+        channels_html = build_site.build_channels_page(ch_data, etf_data=etf_data, eq_state=eq_state)
+        qdii_ch_page = lint_site._inspect_element_by_id(channels_html, "ch-qdii_mrf")
+        self.assertIsNotNone(qdii_ch_page)
+        self.assertNotIn("ch-hnw", qdii_ch_page.classes)
+        self.assertNotIn("300万门槛", qdii_ch_page.inner_text)
+
+        qdii_detail = build_site.build_channel_detail_page(ch08, ch_data["channels"], ch_data, etf_data=etf_data)
+        self.assertNotIn("300万门槛", qdii_detail)
+        self.assertNotIn("300万合格投资者专享", qdii_detail)
+
+        # Sanity-check private_funds_trust STILL carries HNW classification
+        pft_home = lint_site._inspect_element_by_id(cockpit, "ch-private_funds_trust")
+        self.assertIsNotNone(pft_home)
+        self.assertIn("ch-hnw", pft_home.classes)
+        self.assertIn("300万门槛", pft_home.inner_text)
+
+    def test_etfs_orthogonal_filters_and_charts_expanded_groups(self):
+        gold_snap, eq_state, ch_data, etf_data, kline_manifest = self._load_live_ssots()
+        etfs_html = build_site.build_etfs_page(
+            etf_data, channel_count=len(ch_data["channels"]), channels_data=ch_data,
+        )
+        self.assertIn('data-etf-preset="qdii"', etfs_html)
+
+        # Top .stat-tile cards on etfs.html use orthogonal data-etf-stat-ortho
+        stat_tile_tags = [
+            tag
+            for tag in re.findall(r"<div\b[^>]*>", etfs_html)
+            if (m_cls := re.search(r'\bclass="([^"]+)"', tag))
+            and "stat-tile" in m_cls.group(1).split()
+        ]
+        self.assertGreaterEqual(len(stat_tile_tags), 5)
+        self.assertTrue(
+            all("data-etf-stat-ortho=" in tag for tag in stat_tile_tags),
+            f"All top .stat-tile cards on etfs.html must use data-etf-stat-ortho: {stat_tile_tags}",
+        )
+
+        # Row 1: Orthogonal asset_class filter pills (all 7 canonical values + fixed_income_plus composite pill)
+        ac_vals = set(re.findall(r'data-etf-asset-class="([^"]+)"', etfs_html))
+        self.assertTrue(
+            lint_site.ETF_ALLOWED_ASSET_CLASSES.issubset(ac_vals),
+            f"etfs.html missing asset_class filters: {sorted(lint_site.ETF_ALLOWED_ASSET_CLASSES - ac_vals)}",
+        )
+        self.assertIn("fixed_income_plus", ac_vals)
+
+        # kline.js enforces crypto read-only onshore compliance guard
+        kline_js = (ROOT / "scripts" / "web_assets" / "kline.js").read_text(encoding="utf-8")
+        self.assertTrue(
+            "CRYPTO_ASSET_RE" in kline_js or "crypto_" in kline_js,
+            "kline.js missing CRYPTO_ASSET_RE / crypto_ identifier for read-only crypto guard",
+        )
+        self.assertIn("境内严禁虚拟货币交易", kline_js)
+
+        # Row 2: Orthogonal region filter pills (all 7 canonical values)
+        rg_vals = set(re.findall(r'data-etf-region="([^"]+)"', etfs_html))
+        self.assertTrue(
+            lint_site.ETF_ALLOWED_REGIONS.issubset(rg_vals),
+            f"etfs.html missing region filters: {sorted(lint_site.ETF_ALLOWED_REGIONS - rg_vals)}",
+        )
+
+        # Row 3: Trading channel filter pills (all 6 channels)
+        ch_vals = set(re.findall(r'data-etf-channel="([^"]+)"', etfs_html))
+        for req_ch in ("境内场内", "境内非QDII港股通", "境内QDII", "离岸港交所", "离岸美股", "爱尔兰UCITS"):
+            self.assertIn(req_ch, ch_vals, f"etfs.html missing channel filter {req_ch!r}")
+
+        # charts.html renders non_us_global & bonds_reits group filters
+        multi_idx = build_site._resolve_multi_index_groups(gold_snap, eq_state, kline_manifest)
+        charts_html = build_site.build_charts_page(gold_snap, eq_state, multi_idx, [], etf_data, kline_manifest)
+        self.assertIn('data-chart-group="non_us_global"', charts_html)
+        self.assertIn('data-chart-group="bonds_reits"', charts_html)
+
+    def test_gate_s6_and_s7_catch_six_market_btc_qdii_ortho_and_benchmark_regressions(self):
+        # 1. Gate S6 catches missing 6-market cards, missing HK role, unguarded BTC, missing QDII link & bad ETF orthogonal fields
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bad_etfs = [
+                {
+                    "code": f"51{i:04d}",
+                    "name": f"测试宽基ETF{i}",
+                    "market": "a-share",
+                    "channel": "境内场内",
+                    "asset_class": "equity" if i > 0 else "crypto_bad",
+                    "region": "cn" if i > 1 else "mars_bad",
+                    "action_role": "核心观察",
+                    "gold_locked": False,
+                }
+                for i in range(140)
+            ]
+            # Add an ETF whose asset_class == "gold" without gold_locked=True -> must trigger Tier 0 mutex error
+            bad_etfs[2].update(code="599999", name="特殊贵金属载体", asset_class="gold", action_role="逢低配置", gold_locked=False)
+            eu_path = root / "etf_universe.json"
+            eu_path.write_text(
+                json.dumps(
+                    {
+                        "total_etfs": len(bad_etfs),
+                        "counts_by_asset_class": {"equity": 138},
+                        "counts_by_region": {"cn": 139},
+                        "etfs": bad_etfs,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            ma_path = root / "multi_asset_channels.json"
+            ma_path.write_text(
+                json.dumps(
+                    {
+                        "channels": [
+                            {
+                                "id": cid,
+                                "name": "场内外跨境基金" if cid == "qdii_mrf" else f"渠道 {cid}",
+                                "products": [{"code": "P01", "name": "示例"}],
+                                "rules_and_redlines": ["风控红线"],
+                            }
+                            for cid in lint_site.REQUIRED_MULTI_ASSET_CHANNELS
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            bad_index = (
+                "<!doctype html><html><body><h1>驾驶舱</h1>"
+                '<div id="card-a-share">A股</div><div id="card-hk-stock">港股</div>'
+                "<p>比特币 BTC 报 $61,428</p>"
+                "</body></html>"
+            )
+            etf_rows = "".join("<tr><td>x</td></tr>" for _ in bad_etfs)
+            bad_etfs_html = (
+                "<!doctype html><html><body><h1>ETF雷达</h1>"
+                f'<table><tbody id="etf-tbody">{etf_rows}</tbody></table>'
+                f'<script id="etf-data" type="application/json">{json.dumps(bad_etfs, ensure_ascii=False)}</script>'
+                "</body></html>"
+            )
+            parsed = {
+                "index.html": lint_site.parse_html_file("index.html", Path("index.html"), bad_index),
+                "etfs.html": lint_site.parse_html_file("etfs.html", Path("etfs.html"), bad_etfs_html),
+            }
+            errors, warnings = [], []
+            with patch.multiple(lint_site, ETF_UNIVERSE_PATH=eu_path, MULTI_ASSET_CHANNELS_PATH=ma_path):
+                lint_site.run_gate_s6(
+                    parsed,
+                    {"tier_code": "Tier 0", "new_buy_allowed": False},
+                    {"markets": {"a_share": {}, "hk_stock": {}, "us_stock": {}}},
+                    errors,
+                    warnings,
+                    already_checked_json_gold=True,
+                )
+            joined = "\n".join(errors)
+            self.assertIn("#card-nonus", joined)
+            self.assertIn("#card-rates", joined)
+            self.assertIn("中国离岸折价腿", joined)
+            self.assertIn("境内禁交易", joined)
+            self.assertIn("qdii_mrf.html#sec-qdii-compare", joined)
+            self.assertIn("must start with 'QDII'", joined)
+            self.assertIn("invalid/missing asset_class 'crypto_bad'", joined)
+            self.assertIn("invalid/missing region 'mars_bad'", joined)
+            self.assertIn("counts_by_asset_class", joined)
+            self.assertIn("Gold Tier 0 mutex violation on ETF 599999", joined)
+
+        # 2. Gate S7 full-site check (len(catalog) >= 100) catches missing 6-tab labels, charts groups & new benchmarks
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "assets" / "klines").mkdir(parents=True)
+            idx_html = (
+                '<html><body><nav><a href="charts.html">K线</a></nav>'
+                "<h1>驾驶舱</h1><div>上证指数 沪深300 创业板指 科创50</div></body></html>"
+            )
+            ch_html = '<html><body><h1>K线终端</h1><button data-chart-group="a_index">A</button></body></html>'
+            (root / "index.html").write_text(idx_html, encoding="utf-8")
+            (root / "charts.html").write_text(ch_html, encoding="utf-8")
+            shard_obj = {
+                "shard": "core",
+                "series": {
+                    "idx_sh000001": {
+                        "id": "idx_sh000001",
+                        "bars": [["2026-11-26", 3880.0, 3910.0, 3870.0, 3900.0, 100.0]],
+                    }
+                },
+            }
+            (root / "assets" / "klines" / "core.json").write_text(json.dumps(shard_obj), encoding="utf-8")
+            catalog = [{"id": "idx_sh000001", "name": "上证指数", "group": "a_index", "shard": "core", "priority": 1}]
+            catalog.extend(
+                {"id": f"stk_{i:06d}", "name": f"样本{i}", "group": "stocks", "shard": "core"}
+                for i in range(105)
+            )
+            manifest = {"schema_version": "1.0", "shards": {"core": "core.json"}, "catalog": catalog}
+            (root / "assets" / "klines" / "manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+            )
+            docs = {
+                "index.html": lint_site.parse_html_file("index.html", root / "index.html", idx_html),
+                "charts.html": lint_site.parse_html_file("charts.html", root / "charts.html", ch_html),
+            }
+            s7_errs, s7_warns = [], []
+            lint_site.run_gate_s7(root, docs, s7_errs, s7_warns)
+            s7_joined = "\n".join(s7_errs)
+            for expected_tok in (
+                "日欧台韩印非美",
+                "中美债市与REITs",
+                'data-chart-group="non_us_global"',
+                'data-chart-group="bonds_reits"',
+                *lint_site.S7_REQUIRED_GLOBAL_BENCHMARKS,
+            ):
+                self.assertIn(expected_tok, s7_joined, f"Gate S7 failed to catch missing {expected_tok!r}")
+
+    def test_gate_s6_and_s7_catch_round1_nonus_qdii_hnw_and_kline_crypto_regressions(self):
+        # 1. Gate S6 catches #card-nonus empty .m-sub-val & "境内 — · 离岸 —",
+        #    plus #ch-qdii_mrf HNW misclassification on index.html, channels.html & channels/qdii_mrf.html
+        bad_index = (
+            "<!doctype html><html><body><h1>驾驶舱</h1>"
+            '<article class="m-card m-nonus" id="card-nonus">'
+            '<button class="m-sub-tile"><span class="m-sub-val"></span>'
+            '<span class="m-sub-meta">境内 — · 离岸 —</span></button></article>'
+            '<article class="ch-overview-card ch-hnw" id="ch-qdii_mrf">'
+            '<span class="ch-hnw-badge">300万门槛</span></article>'
+            "</body></html>"
+        )
+        bad_channels = (
+            "<!doctype html><html><body><h1>多元渠道</h1>"
+            '<article class="ch-overview-card ch-hnw" id="ch-qdii_mrf">'
+            '<span class="ch-hnw-badge">300万门槛</span></article>'
+            "</body></html>"
+        )
+        bad_qdii_detail = (
+            "<!doctype html><html><body><h1>QDII 跨境基金</h1>"
+            '<span class="ch-hnw-badge">300万合格投资者专享</span>'
+            "</body></html>"
+        )
+        parsed = {
+            "index.html": lint_site.parse_html_file("index.html", Path("index.html"), bad_index),
+            "channels.html": lint_site.parse_html_file("channels.html", Path("channels.html"), bad_channels),
+            "channels/qdii_mrf.html": lint_site.parse_html_file(
+                "channels/qdii_mrf.html", Path("channels/qdii_mrf.html"), bad_qdii_detail
+            ),
+        }
+        s6_errs, s6_warns = [], []
+        lint_site.run_gate_s6(parsed, {}, {}, s6_errs, s6_warns, already_checked_json_gold=True)
+        s6_joined = "\n".join(s6_errs)
+        self.assertIn("境内 — · 离岸 —", s6_joined)
+        self.assertIn('empty <span class="m-sub-val"></span>', s6_joined)
+        self.assertTrue(any("index.html" in e and "#ch-qdii_mrf" in e for e in s6_errs), s6_errs)
+        self.assertTrue(any("channels.html" in e and "#ch-qdii_mrf" in e for e in s6_errs), s6_errs)
+        self.assertTrue(
+            any("channels/qdii_mrf.html" in e and "300万合格投资者专享" in e for e in s6_errs),
+            s6_errs,
+        )
+
+        # 2. Gate S7 catches assets/kline.js missing crypto read-only compliance guard, and passes when present
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "assets" / "klines").mkdir(parents=True)
+            idx_html = (
+                '<html><body><nav><a href="charts.html">K线</a></nav>'
+                "<h1>驾驶舱</h1><div>上证指数 沪深300 创业板指 科创50 日欧台韩印非美 中美债市与REITs</div></body></html>"
+            )
+            ch_html = (
+                '<html><body><h1>K线终端</h1>'
+                '<button data-chart-group="non_us_global">非美</button>'
+                '<button data-chart-group="bonds_reits">债</button></body></html>'
+            )
+            (root / "index.html").write_text(idx_html, encoding="utf-8")
+            (root / "charts.html").write_text(ch_html, encoding="utf-8")
+            (root / "assets" / "kline.js").write_text("/* missing crypto guard */\n", encoding="utf-8")
+            shard_obj = {
+                "shard": "core",
+                "series": {
+                    "idx_sh000001": {
+                        "id": "idx_sh000001",
+                        "bars": [["2026-11-26", 3880.0, 3910.0, 3870.0, 3900.0, 100.0]],
+                    }
+                },
+            }
+            (root / "assets" / "klines" / "core.json").write_text(json.dumps(shard_obj), encoding="utf-8")
+            catalog = [{"id": "idx_sh000001", "name": "上证指数", "group": "a_index", "shard": "core", "priority": 1}]
+            catalog.extend(
+                {"id": sym_id, "name": sym_id, "group": "global_index", "shard": "core"}
+                for sym_id in lint_site.S7_REQUIRED_GLOBAL_BENCHMARKS
+            )
+            catalog.extend(
+                {"id": f"stk_{i:06d}", "name": f"样本{i}", "group": "stocks", "shard": "core"}
+                for i in range(90)
+            )
+            manifest = {"schema_version": "1.0", "shards": {"core": "core.json"}, "catalog": catalog}
+            (root / "assets" / "klines" / "manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+            )
+            docs = {
+                "index.html": lint_site.parse_html_file("index.html", root / "index.html", idx_html),
+                "charts.html": lint_site.parse_html_file("charts.html", root / "charts.html", ch_html),
+            }
+            bad_errs, bad_warns = [], []
+            lint_site.run_gate_s7(root, docs, bad_errs, bad_warns)
+            self.assertTrue(any("assets/kline.js" in e and "境内严禁虚拟货币交易" in e for e in bad_errs), bad_errs)
+
+            # Adding CRYPTO_ASSET_RE + 境内严禁虚拟货币交易 clears Gate S7 cleanly
+            (root / "assets" / "kline.js").write_text(
+                'const CRYPTO_ASSET_RE = /^crypto_/i; const MSG = "境内严禁虚拟货币交易";\n',
+                encoding="utf-8",
+            )
+            ok_errs, ok_warns = [], []
+            lint_site.run_gate_s7(root, docs, ok_errs, ok_warns)
+            self.assertEqual(ok_errs, [])
+            self.assertEqual(ok_warns, [])
 
 
 if __name__ == "__main__":

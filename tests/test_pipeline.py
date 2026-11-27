@@ -1,5 +1,6 @@
 from contextlib import redirect_stderr
 from datetime import date, datetime, timedelta, timezone
+import html
 from io import StringIO
 import json
 from pathlib import Path
@@ -959,8 +960,12 @@ class OperationalRegressionTest(unittest.TestCase):
             detail_html = build_site.build_channel_detail_page(ch, ch_data["channels"], ch_data, etf_data=etf_data)
             self.assertIn("table-wrap", detail_html)
             self.assertIn("核心制度、税费与避坑红线", detail_html)
+            if ch["id"] == "qdii_mrf":
+                self.assertNotIn("300万合格投资者专享", detail_html)
         self.assertIn('id="sec-etf-radar"', cockpit_html)
-        self.assertIn('etfs.html#market=a-share', cockpit_html)
+        self.assertIn("etfs.html#asset_class=equity&region=cn", html.unescape(cockpit_html))
+        self.assertIn("etfs.html#asset_class=fixed_income_plus", html.unescape(cockpit_html))
+        self.assertNotIn("&amp;amp;", cockpit_html)
         for forbidden in ("PDF ↗", "Word ↗", "latest-reports", "离线下载中心"):
             self.assertNotIn(forbidden, cockpit_html)
 
@@ -1635,6 +1640,54 @@ class OperationalRegressionTest(unittest.TestCase):
         ):
             self.assertIsNotNone(regex.search("严避停申968118"))
             self.assertIsNone(regex.search("推荐买入968118"))
+
+    def test_etf_orthogonal_enum_parity_across_validators(self):
+        repo = Path(__file__).resolve().parent.parent
+        equity_dir = str(repo / "equity")
+        if equity_dir not in sys.path:
+            sys.path.insert(0, equity_dir)
+        import lint_equity
+
+        expected_ac = {"equity", "fixed_income", "gold", "commodity", "cash_mmf", "convertible_bond", "reits"}
+        expected_rg = {"cn", "hk", "us", "jp", "eu", "apac_em", "global"}
+
+        psd_ac = set(
+            getattr(patch_state_dbs, "ETF_ALLOWED_ASSET_CLASSES", None)
+            or patch_state_dbs._ETF_ALLOWED_ASSET_CLASSES
+        )
+        eq_ac = set(
+            getattr(lint_equity, "ETF_ALLOWED_ASSET_CLASSES", None)
+            or lint_equity._ETF_ALLOWED_ASSET_CLASSES
+        )
+        site_ac = set(
+            getattr(lint_site, "ETF_ALLOWED_ASSET_CLASSES", None)
+            or lint_site._ETF_ALLOWED_ASSET_CLASSES
+        )
+
+        psd_rg = set(
+            getattr(patch_state_dbs, "ETF_ALLOWED_REGIONS", None)
+            or patch_state_dbs._ETF_ALLOWED_REGIONS
+        )
+        eq_rg = set(
+            getattr(lint_equity, "ETF_ALLOWED_REGIONS", None)
+            or lint_equity._ETF_ALLOWED_REGIONS
+        )
+        site_rg = set(
+            getattr(lint_site, "ETF_ALLOWED_REGIONS", None)
+            or lint_site._ETF_ALLOWED_REGIONS
+        )
+
+        self.assertEqual(psd_ac, expected_ac)
+        self.assertEqual(eq_ac, expected_ac)
+        self.assertEqual(site_ac, expected_ac)
+        self.assertEqual(psd_ac, eq_ac)
+        self.assertEqual(eq_ac, site_ac)
+
+        self.assertEqual(psd_rg, expected_rg)
+        self.assertEqual(eq_rg, expected_rg)
+        self.assertEqual(site_rg, expected_rg)
+        self.assertEqual(psd_rg, eq_rg)
+        self.assertEqual(eq_rg, site_rg)
 
     def test_edition_run_midnight_slot_and_complete_superseded_cli(self):
         repo = Path(__file__).resolve().parent.parent

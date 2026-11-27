@@ -2551,6 +2551,16 @@
       c.style.display = ok ? "" : "none";
       if (ok) shown++;
     });
+    document.querySelectorAll(".ch-role-group").forEach(function (grp) {
+      const grpCards = grp.querySelectorAll(".ch-overview-card, .channel-card");
+      let visCnt = 0;
+      grpCards.forEach(function (card) {
+        if (card.style.display !== "none") visCnt++;
+      });
+      grp.style.display = visCnt === 0 ? "none" : "";
+      const cntEl = grp.querySelector(".ch-role-count");
+      if (cntEl) cntEl.textContent = visCnt + " 大渠道";
+    });
     if (chCount) {
       if (shown === 0) {
         chCount.textContent = "未找到匹配渠道（0 / " + chCards.length + "）";
@@ -2654,6 +2664,54 @@
      14. Shared ETF 7-Dim Modal + Interactive Global ETF Radar (etfs.html & channels/*.html)
      ------------------------------------------------------------------------ */
   const PREM_LABELS = { normal: "折溢价常规", watch: "买前核参考净值", high_risk: "高溢价/高危预警" };
+  const ETF_ASSET_CLASS_LABELS = {
+    equity: "股票权益",
+    fixed_income: "利率信用债",
+    cash_mmf: "现金货币盾",
+    gold: "黄金(红灯)",
+    commodity: "非金商品",
+    convertible_bond: "可转债",
+    reits: "REITs",
+    fixed_income_plus: "固收/现金/转债/REITs",
+    gold_commodity: "黄金与商品",
+  };
+  const ETF_COMPOSITE_ASSET_CLASSES = {
+    fixed_income_plus: ["fixed_income", "cash_mmf", "convertible_bond", "reits"],
+    gold_commodity: ["gold", "commodity"],
+  };
+  const ETF_REGION_LABELS = {
+    cn: "中国境内",
+    hk: "中国香港",
+    us: "美国",
+    jp: "日本",
+    eu: "欧洲",
+    apac_em: "亚太新兴",
+    global: "全球",
+    non_us: "非美海外",
+  };
+  const VALID_ETF_ASSET_CLASSES = [
+    "all",
+    "equity",
+    "fixed_income",
+    "cash_mmf",
+    "gold",
+    "commodity",
+    "convertible_bond",
+    "reits",
+    "fixed_income_plus",
+    "gold_commodity",
+  ];
+  const VALID_ETF_REGIONS = ["all", "cn", "hk", "us", "jp", "eu", "apac_em", "global", "non_us"];
+  const VALID_ETF_PRESETS = ["all", "qdii", "low-fee", "base", "cash-shield", "high-risk", "hide-gold", "watchlist"];
+
+  function buildEtfOrthoTag(it) {
+    if (!it) return "";
+    const parts = [];
+    if (it.asset_class) parts.push(ETF_ASSET_CLASS_LABELS[it.asset_class] || it.asset_class);
+    if (it.region) parts.push(ETF_REGION_LABELS[it.region] || it.region);
+    if (parts.length === 0) return "";
+    return '<span class="etf-ortho-tag">' + escHtml(parts.join(" · ")) + "</span>";
+  }
 
   function cleanEtfDisplayText(txt) {
     return String(txt || "").replace(/[（(]红灯锁[）)]\s*$/, "").trim();
@@ -2700,9 +2758,11 @@
           "跟踪指数：" + it.tracking_index + " ｜ 规模：" + it.aum + " ｜ 年费率：" + it.fee_total_pct;
       }
       if (etfModalBadges) {
+        const modalOrtho = buildEtfOrthoTag(it);
         etfModalBadges.innerHTML =
           '<span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span>" +
           '<span class="etf-chan-tag">' + escHtml(it.channel) + "</span>" +
+          modalOrtho +
           '<span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + "</span>" +
           '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
           '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="etf" ' +
@@ -2829,6 +2889,8 @@
     const etfState = {
       q: "",
       market: "all",
+      assetClass: "all",
+      region: "all",
       channel: "all",
       preset: "all",
       sortKey: "default",
@@ -2841,8 +2903,11 @@
     const etfCount = document.getElementById("etf-count");
     const etfTbody = document.getElementById("etf-tbody");
     const etfCardsEl = document.getElementById("etf-cards");
+    const etfStatOrthoTiles = Array.from(document.querySelectorAll("[data-etf-stat-ortho]"));
     const etfStatTiles = Array.from(document.querySelectorAll("[data-etf-stat-market]"));
     const etfMktBtns = Array.from(document.querySelectorAll("[data-etf-market]"));
+    const etfAssetClassBtns = Array.from(document.querySelectorAll("[data-etf-asset-class]"));
+    const etfRegionBtns = Array.from(document.querySelectorAll("[data-etf-region]"));
     const etfChanBtns = Array.from(document.querySelectorAll("[data-etf-channel]"));
     const etfPresetBtns = Array.from(document.querySelectorAll("[data-etf-preset]"));
     const etfSortThs = Array.from(document.querySelectorAll("table.etf-table th.sortable"));
@@ -2857,8 +2922,9 @@
 
     function matchesEtfPreset(it, p) {
       if (!p || p === "all") return true;
+      if (p === "qdii") return it.channel === "境内QDII";
       if (p === "low-fee") return isFiniteNum(it.fee_num) && it.fee_num <= 0.20;
-      if (p === "cash-shield") return String(it.action_role || "").indexOf("现金盾") !== -1;
+      if (p === "cash-shield") return String(it.action_role || "").indexOf("现金盾") !== -1 || it.asset_class === "cash_mmf";
       if (p === "base") return !it.gold_locked && String(it.action_role || "").indexOf("底座") !== -1;
       if (p === "high-risk") return it.premium_status === "high_risk" || String(it.action_role || "").indexOf("高危") !== -1;
       if (p === "hide-gold") return !it.gold_locked;
@@ -2888,6 +2954,8 @@
       if (!history.replaceState) return;
       const params = [];
       if (etfState.market !== "all") params.push("market=" + encodeURIComponent(etfState.market));
+      if (etfState.assetClass !== "all") params.push("asset_class=" + encodeURIComponent(etfState.assetClass));
+      if (etfState.region !== "all") params.push("region=" + encodeURIComponent(etfState.region));
       if (etfState.channel !== "all") params.push("channel=" + encodeURIComponent(etfState.channel));
       if (etfState.preset !== "all") params.push("preset=" + encodeURIComponent(etfState.preset));
       if (etfState.q.trim()) params.push("q=" + encodeURIComponent(etfState.q.trim()));
@@ -2903,6 +2971,8 @@
       window.clearTimeout(etfTimer);
       etfState.q = "";
       etfState.market = "all";
+      etfState.assetClass = "all";
+      etfState.region = "all";
       etfState.channel = "all";
       etfState.preset = "all";
       etfState.sortKey = "default";
@@ -2917,12 +2987,47 @@
       etfMktBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-etf-market") || "all") === etfState.market);
       });
+      const activeCompositeAc = ETF_COMPOSITE_ASSET_CLASSES[etfState.assetClass] || null;
+      const hasCompositeAcBtn = !!(
+        activeCompositeAc &&
+        etfAssetClassBtns.some(function (x) {
+          return x.getAttribute("data-etf-asset-class") === etfState.assetClass;
+        })
+      );
+      etfAssetClassBtns.forEach(function (b) {
+        const val = b.getAttribute("data-etf-asset-class") || "all";
+        const isAct =
+          val === etfState.assetClass ||
+          (!!activeCompositeAc && !hasCompositeAcBtn && activeCompositeAc.indexOf(val) !== -1);
+        b.classList.toggle("active", isAct);
+      });
+      etfRegionBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-etf-region") || "all") === etfState.region);
+      });
+      etfStatOrthoTiles.forEach(function (t) {
+        const so = t.getAttribute("data-etf-stat-ortho") || "all";
+        let isAct = false;
+        if (so === "all") {
+          isAct =
+            etfState.market === "all" &&
+            etfState.assetClass === "all" &&
+            etfState.region === "all" &&
+            etfState.channel === "all" &&
+            etfState.preset === "all";
+        } else if (so === "qdii") {
+          isAct = etfState.channel === "境内QDII";
+        } else {
+          isAct = etfState.assetClass === so;
+        }
+        t.classList.toggle("active", isAct);
+        t.setAttribute("aria-pressed", isAct ? "true" : "false");
+      });
       etfStatTiles.forEach(function (t) {
         const sm = t.getAttribute("data-etf-stat-market") || "all";
         const isAct =
           (sm === etfState.market ||
             (sm === "us-global" && (etfState.market === "us-global" || etfState.market === "us-stock" || etfState.market === "global"))) &&
-          (sm !== "all" || etfState.preset === "all");
+          (sm !== "all" || (etfState.preset === "all" && etfState.assetClass === "all" && etfState.region === "all" && etfState.channel === "all"));
         t.classList.toggle("active", isAct);
         t.setAttribute("aria-pressed", isAct ? "true" : "false");
       });
@@ -2930,7 +3035,16 @@
         b.classList.toggle("active", (b.getAttribute("data-etf-channel") || "all") === etfState.channel);
       });
       etfPresetBtns.forEach(function (b) {
-        b.classList.toggle("active", (b.getAttribute("data-etf-preset") || "all") === etfState.preset);
+        const p = b.getAttribute("data-etf-preset") || "all";
+        let isAct = false;
+        if (p === "qdii") {
+          isAct = etfState.channel === "境内QDII";
+        } else if (p === "all") {
+          isAct = etfState.preset === "all" && etfState.channel !== "境内QDII";
+        } else {
+          isAct = etfState.preset === p;
+        }
+        b.classList.toggle("active", isAct);
       });
       if (etfClear) {
         etfClear.hidden = !etfState.q;
@@ -2944,12 +3058,28 @@
         } else if (etfState.market !== "all" && it.market !== etfState.market) {
           return false;
         }
+        if (etfState.assetClass !== "all") {
+          if (activeCompositeAc) {
+            if (activeCompositeAc.indexOf(it.asset_class) === -1) return false;
+          } else if (it.asset_class !== etfState.assetClass) {
+            return false;
+          }
+        }
+        if (etfState.region !== "all") {
+          if (etfState.region === "non_us") {
+            if (["jp", "eu", "apac_em", "global"].indexOf(it.region) === -1) return false;
+          } else if (it.region !== etfState.region) {
+            return false;
+          }
+        }
         if (etfState.channel !== "all" && it.channel !== etfState.channel) return false;
         if (!matchesEtfPreset(it, etfState.preset)) return false;
         if (tokens.length > 0) {
+          const acTxt = it.asset_class ? (ETF_ASSET_CLASS_LABELS[it.asset_class] || it.asset_class) : "";
+          const rgTxt = it.region ? (ETF_REGION_LABELS[it.region] || it.region) : "";
           const hay = (
             it.code + " " + it.name + " " + it.market_label + " " + it.channel + " " +
-            it.category + " " + it.tracking_index + " " + it.top_holdings + " " +
+            it.category + " " + acTxt + " " + rgTxt + " " + it.tracking_index + " " + it.top_holdings + " " +
             it.thesis_deep + " " + it.action_role + " " + (it.otc_feeder || "")
           ).toLowerCase();
           if (!tokens.every(function (tk) { return hay.indexOf(tk) !== -1; })) return false;
@@ -2976,7 +3106,7 @@
       }
       const etfQdiiPanel = document.getElementById("etf-qdii-panel");
       if (etfQdiiPanel) {
-        etfQdiiPanel.classList.toggle("qdii-panel-highlight", etfState.channel === "境内QDII");
+        etfQdiiPanel.classList.toggle("qdii-panel-highlight", etfState.channel === "境内QDII" || etfState.preset === "qdii");
       }
 
       if (etfTbody) {
@@ -2984,7 +3114,7 @@
           etfTbody.innerHTML =
             '<tr><td colspan="7"><div class="empty-state">' +
             '<div class="empty-title">未找到匹配的 ETF</div>' +
-            '<div class="empty-sub">尝试清空搜索词或切换市场与通道</div>' +
+            '<div class="empty-sub">尝试清空搜索词或切换资产大类、区域与通道</div>' +
             '<button type="button" class="btn btn-sm" data-action="etf-reset-all">清空所有筛选条件</button>' +
             "</div></td></tr>";
         } else {
@@ -2993,6 +3123,7 @@
             const dispCat = cleanEtfDisplayText(it.category);
             const kSym = "etf_" + it.code;
             const isStar = WatchlistStore.has(it.code) || WatchlistStore.has(kSym);
+            const orthoTag = buildEtfOrthoTag(it);
             const starBtn =
               '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="etf" ' +
               'data-watch-id="' + escHtml(it.code) + '" data-watch-kline="' + escHtml(kSym) + '" ' +
@@ -3001,7 +3132,7 @@
             return (
               "<tr>" +
               '<td><div>' + starBtn + ' <strong>' + escHtml(dispName) + '</strong></div><div><span class="code-tag">' + escHtml(it.code) + '</span> <span class="etf-chan-tag">' + escHtml(dispCat) + "</span></div></td>" +
-              '<td><div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + '</span></div><div><span class="etf-chan-tag">' + escHtml(it.channel) + "</span></div></td>" +
+              '<td><div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + '</span></div><div><span class="etf-chan-tag">' + escHtml(it.channel) + "</span>" + (orthoTag ? " " + orthoTag : "") + "</div></td>" +
               "<td><div>" + escHtml(it.tracking_index) + '</div><div class="sec-sub">' + escHtml(it.yield_or_pe) + "</div></td>" +
               '<td class="col-num"><strong>' + escHtml(it.fee_total_pct) + "</strong></td>" +
               "<td><div><strong>" + escHtml(it.aum) + '</strong></div><div class="sec-sub">' + escHtml(it.liquidity) + "</div></td>" +
@@ -3018,7 +3149,7 @@
           etfCardsEl.innerHTML =
             '<div class="panel-card empty-state">' +
             '<div class="empty-title">未找到匹配的 ETF</div>' +
-            '<div class="empty-sub">尝试清空搜索词或切换市场与通道</div>' +
+            '<div class="empty-sub">尝试清空搜索词或切换资产大类、区域与通道</div>' +
             '<button type="button" class="btn btn-sm" data-action="etf-reset-all">清空所有筛选条件</button>' +
             "</div>";
         } else {
@@ -3026,6 +3157,7 @@
             const dispName = cleanEtfDisplayText(it.name);
             const kSym = "etf_" + it.code;
             const isStar = WatchlistStore.has(it.code) || WatchlistStore.has(kSym);
+            const orthoTag = buildEtfOrthoTag(it);
             const starBtn =
               '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="etf" ' +
               'data-watch-id="' + escHtml(it.code) + '" data-watch-kline="' + escHtml(kSym) + '" ' +
@@ -3037,7 +3169,7 @@
               '<div>' + starBtn + ' <span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(dispName) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
               '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
               "</div>" +
-              '<div class="etf-card-meta"><span><strong>通道：</strong>' + escHtml(it.channel) + "</span><span><strong>费率：</strong>" + escHtml(it.fee_total_pct) + "</span><span><strong>规模：</strong>" + escHtml(it.aum) + "</span></div>" +
+              '<div class="etf-card-meta"><span><strong>通道：</strong>' + escHtml(it.channel) + "</span><span><strong>费率：</strong>" + escHtml(it.fee_total_pct) + "</span><span><strong>规模：</strong>" + escHtml(it.aum) + "</span>" + orthoTag + "</div>" +
               '<div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + '</span> <span class="sec-sub">' + escHtml(it.yield_or_pe) + "</span></div>" +
               '<div class="sc-summary">' + escHtml(it.thesis_deep) + "</div>" +
               '<div style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">ETF 7 维拆解</button><button type="button" class="kline-quick-btn" data-etf-code="' + escHtml(it.code) + '" data-open-tab="kline">📈 K线</button></div>' +
@@ -3071,10 +3203,47 @@
     if (etfReset) {
       etfReset.addEventListener("click", resetAllEtfs);
     }
+    etfStatOrthoTiles.forEach(function (tile) {
+      function handleOrthoStatSelect() {
+        const so = tile.getAttribute("data-etf-stat-ortho") || "all";
+        etfState.market = "all";
+        if (so === "all") {
+          etfState.assetClass = "all";
+          etfState.region = "all";
+          etfState.channel = "all";
+          etfState.preset = "all";
+        } else if (so === "qdii") {
+          const alreadyOnlyQdii =
+            etfState.channel === "境内QDII" &&
+            etfState.assetClass === "all" &&
+            etfState.region === "all";
+          etfState.channel = alreadyOnlyQdii ? "all" : "境内QDII";
+          etfState.assetClass = "all";
+          etfState.region = "all";
+          if (etfState.preset === "qdii") etfState.preset = "all";
+        } else {
+          const alreadySame = etfState.assetClass === so && etfState.channel === "all";
+          etfState.assetClass = alreadySame ? "all" : so;
+          etfState.channel = "all";
+          etfState.region = "all";
+          if (etfState.preset === "qdii") etfState.preset = "all";
+        }
+        renderEtfs(true);
+      }
+      tile.addEventListener("click", handleOrthoStatSelect);
+      tile.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleOrthoStatSelect();
+        }
+      });
+    });
     etfStatTiles.forEach(function (tile) {
       function handleStatSelect() {
         const sm = tile.getAttribute("data-etf-stat-market") || "all";
         etfState.market = sm !== "all" && etfState.market === sm ? "all" : sm;
+        etfState.assetClass = "all";
+        etfState.region = "all";
         if (sm === "all") {
           etfState.channel = "all";
           etfState.preset = "all";
@@ -3092,19 +3261,46 @@
     etfMktBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         etfState.market = b.getAttribute("data-etf-market") || "all";
+        etfState.assetClass = "all";
+        etfState.region = "all";
+        renderEtfs(true);
+      });
+    });
+    etfAssetClassBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        const ac = b.getAttribute("data-etf-asset-class") || "all";
+        etfState.assetClass = etfState.assetClass === ac && ac !== "all" ? "all" : ac;
+        etfState.market = "all";
+        renderEtfs(true);
+      });
+    });
+    etfRegionBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        const rg = b.getAttribute("data-etf-region") || "all";
+        etfState.region = etfState.region === rg && rg !== "all" ? "all" : rg;
+        etfState.market = "all";
         renderEtfs(true);
       });
     });
     etfChanBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         etfState.channel = b.getAttribute("data-etf-channel") || "all";
+        if (etfState.preset === "qdii") etfState.preset = "all";
         renderEtfs(true);
       });
     });
     etfPresetBtns.forEach(function (b) {
       b.addEventListener("click", function () {
         const p = b.getAttribute("data-etf-preset") || "all";
-        etfState.preset = etfState.preset === p && p !== "all" ? "all" : p;
+        if (p === "qdii") {
+          etfState.channel = etfState.channel === "境内QDII" ? "all" : "境内QDII";
+          if (etfState.preset === "qdii") etfState.preset = "all";
+        } else if (p === "all") {
+          etfState.preset = "all";
+          if (etfState.channel === "境内QDII") etfState.channel = "all";
+        } else {
+          etfState.preset = etfState.preset === p ? "all" : p;
+        }
         renderEtfs(true);
       });
     });
@@ -3132,6 +3328,8 @@
     function applyEtfHash() {
       etfState.q = "";
       etfState.market = "all";
+      etfState.assetClass = "all";
+      etfState.region = "all";
       etfState.channel = "all";
       etfState.preset = "all";
       const raw = (window.location.hash || "").replace(/^#/, "").trim();
@@ -3146,10 +3344,18 @@
         const v = safeDecode(pair.slice(eq + 1));
         if (k === "market" && ["all", "a-share", "hk-stock", "us-stock", "global", "us-global", "multi-asset"].indexOf(v) !== -1) {
           etfState.market = v;
+        } else if (k === "asset_class" && VALID_ETF_ASSET_CLASSES.indexOf(v) !== -1) {
+          etfState.assetClass = v;
+        } else if (k === "region" && VALID_ETF_REGIONS.indexOf(v) !== -1) {
+          etfState.region = v;
         } else if (k === "channel" && v) {
           etfState.channel = v;
-        } else if (k === "preset" && ["all", "low-fee", "base", "cash-shield", "high-risk", "hide-gold", "watchlist"].indexOf(v) !== -1) {
-          etfState.preset = v;
+        } else if (k === "preset" && VALID_ETF_PRESETS.indexOf(v) !== -1) {
+          if (v === "qdii") {
+            etfState.channel = "境内QDII";
+          } else {
+            etfState.preset = v;
+          }
         } else if (k === "q") {
           etfState.q = v;
         }

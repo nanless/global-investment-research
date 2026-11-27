@@ -101,7 +101,7 @@
         {"id": "idx_hkHSI", "code": "HSI", "name": "恒生指数", "value": 22416.44, "change_pct": 0.85},
         {"id": "idx_hkHSTECH", "code": "HSTECH", "name": "恒生科技", "value": 3528.59, "change_pct": 3.25},
         {"id": "idx_hkHSCEI", "code": "HSCEI", "name": "恒生国企", "value": 7557.51, "change_pct": 0.86},
-        {"id": "idx_hkHSCI", "code": "HSCI", "name": "恒生综合", "value": 3204.49, "change_pct": 1.13}
+        {"id": "idx_HSCI", "code": "HSCI", "name": "恒生综合", "value": 3204.49, "change_pct": 1.13}
       ]
     },
     "us_stock": {
@@ -421,6 +421,147 @@
     {"date_cst": "2027-06-09", "type": "partial_holiday", "markets_affected": ["a_share", "hk_stock"], "mode": "mode_2_watch_brief", "note": "中国内地与香港端午节全天休市"},
     {"date_cst": "2027-06-18", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2027-06-18_1800", "2027-06-19_0730"], "gold_event_id": "us_juneteenth_2027", "mode": "mode_2_watch_brief", "note": "美国六月节补休全天休市"}
   ],
+  "rates_bonds_core": {
+    "as_of": "2026-11-27 12:28",
+    "lamp": "yellow",
+    "lamp_label": "黄灯控久期",
+    "headline": "中美 10 年期国债利差倒挂 -326bp；中债短端筑盾，美债长端承压，未锁汇美元短债须计入汇兑损耗",
+    "cn_rates": {
+      "cgb2y_pct": 1.214,
+      "cgb10y_pct": 1.594,
+      "cgb10y_official_curve_pct": 1.5912,
+      "cgb10y_official_curve_date": "2026-11-26",
+      "cgb30y_pct": 2.066,
+      "cgb30y_official_curve_pct": 2.0662,
+      "cgb30y_official_curve_date": "2026-11-26",
+      "gc001_pct": 1.41,
+      "dr001_pct": 1.279,
+      "policy_rate_7d_omo_pct": 1.25,
+      "bond_etf_market_aum_trillion_rmb": 1.05,
+      "bond_etf_count": 53,
+      "note": "11/27 午盘中债 2Y 报 1.214%、10Y 报 1.594%（11/26 中债官曲 1.5912%）、30Y 报 2.066%（11/26 官曲 2.0662%）；GC001 1.410%、DR001 1.279%、7 天政策利率 1.25%；境内全市场债券 ETF 规模达 1.05 万亿元（共 53 只）。"
+    },
+    "us_rates": {
+      "us2y_pct": 4.61,
+      "us10y_pct": 4.85,
+      "us10y_asia_live_pct": 4.91,
+      "us30y_pct": 5.24,
+      "dfii10_pct": 2.73,
+      "sofr_pct": 3.94,
+      "note": "11/25 美债官收 2Y 4.61%、10Y 4.85%（11/27 亚盘反跳至 4.91%）、30Y 5.24%、10Y 抗通胀实际利率 2.73%、隔夜担保融资利率 SOFR 3.94%；美债长端持续承压于高实际利率与财政发债。"
+    },
+    "cn_us_10y_spread_bp": -326,
+    "unhedged_usd_fx_drag": {
+      "usd_cny_spot": 6.6647,
+      "cfets_cny_fixing": 6.7075,
+      "real_rmb_drag_range": "-1.0% 至 -2.7%",
+      "summary": "在岸即期汇率 6.6647（11/27 外汇交易中心中间价 6.7075）下，人民币走强叠加汇兑损耗，使未锁汇美元短债折算人民币后实际收益被拖累约 -1.0% 至 -2.7%，切忌把美元票息直接当成人民币无风险收益。"
+    },
+    "duration_stance": {
+      "cn_short_cash": "优先筑盾（短融 511360、国债逆回购 GC001，低波动防回撤）",
+      "cn_intermediate_long": "中性波段（10 年国债 511260 逢回调观察，30 年国债 511090 严控仓位防股市吸金引发的长久期回撤）",
+      "us_short_tbill": "离岸美元池主力防弹衣（0–3 月美债 SGOV / 爱尔兰 0–1 年美债 IB01，仅适配已有美元资金，不建议换汇追息）",
+      "us_long_treasury": "红灯谨慎（20+ 年美债 TLT 在 10Y 亚盘逼近 4.91% 阶段波动剧烈，严防过早抄底重仓）",
+      "summary": "债市坚持「短端筑盾、长端控久期、跨币种先算汇损」：境内以短融与中短国债护本，离岸存量美元以超短美债吃息，美长债与未锁汇套息均保持克制。"
+    },
+    "key_etfs": [
+      {"id": "rate_CN10Y", "code": "CN10Y", "name": "中国10年期国债收益率", "role": "境内无风险利率核心锚", "kline_id": "rate_CN10Y"},
+      {"id": "rate_CN30Y", "code": "CN30Y", "name": "中国30年期国债收益率", "role": "境内超长久期风向标", "kline_id": "rate_CN30Y"},
+      {"id": "rate_US10Y", "code": "US10Y", "name": "美国10年期国债收益率", "role": "全球资产定价核心锚", "kline_id": "rate_US10Y"},
+      {"id": "etf_511360", "code": "511360", "name": "海富通短融ETF", "role": "境内场内现金与短债压舱石", "kline_id": "etf_511360"},
+      {"id": "etf_511260", "code": "511260", "name": "国泰十年国债ETF", "role": "境内中长久期利率债波段工具", "kline_id": "etf_511260"},
+      {"id": "etf_511090", "code": "511090", "name": "鹏扬30年国债ETF", "role": "境内超长久期利率债高弹性对冲", "kline_id": "etf_511090"},
+      {"id": "etf_SGOV", "code": "SGOV", "name": "iShares 0-3月美债ETF", "role": "离岸美元超短债吃息主力", "kline_id": "etf_SGOV"},
+      {"id": "etf_IB01", "code": "IB01", "name": "iShares 0-1年美债 UCITS（爱尔兰）", "role": "免美国遗产税与源头预扣美元短债盾", "kline_id": "etf_IB01"},
+      {"id": "etf_TLT", "code": "TLT", "name": "iShares 20+年美债ETF", "role": "离岸超长美债高波动观察标尺", "kline_id": "etf_TLT"},
+      {"id": "idx_932047", "code": "932047", "name": "中证REITs全收益指数（932047）", "role": "境内公募REITs实体租金全收益参照", "kline_id": "idx_932047"}
+    ]
+  },
+  "non_us_global_satellite": {
+    "as_of": "2026-11-27 12:28",
+    "headline": "非美海外卫星四极雷达：日股与欧股境内可平价直达，台韩侧重离岸半导体晴雨表，印度场内严避高费退市雷",
+    "allocation_guardrail": "非美海外仅作全球分散卫星仓（单区不重仓）；境内跨境工具买前必核盘中参考净值（IOPV），场内溢价超过 2% 严禁追高。",
+    "markets": [
+      {
+        "id": "jp",
+        "name": "日本股市",
+        "lamp": "yellow",
+        "lamp_label": "⚖️ 黄灯观察",
+        "kline_id": "idx_N225",
+        "benchmarks": [
+          {"name": "日经225", "code": "N225", "value": 58711.06, "change_pct": 2.11, "as_of": "2026-11-27"},
+          {"name": "东证TOPIX", "code": "TOPIX", "value": 3815.36, "change_pct": 1.73, "as_of": "2026-11-27"}
+        ],
+        "access_grade": "A 级 · 境内平价",
+        "onshore_vehicles": [
+          {"code": "513800", "name": "南方日本东证指数ETF", "fee_note": "管理托管 0.25%/年（穿透总费率约 0.34%）", "note": "中日互通平价低费首选"}
+        ],
+        "offshore_vehicles": [
+          {"code": "VXUS", "name": "Vanguard 全球除美国股票ETF", "note": "离岸账户低费分散覆盖日本及非美发达市场"}
+        ],
+        "warning": "警惕华夏野村日经 225（513520）场内溢价偏高风险，且美元兑日元逼近 160 敏感关口（159.22），谨防汇率干预导致日股与汇价双杀，买前必核盘中参考净值（IOPV）。"
+      },
+      {
+        "id": "eu",
+        "name": "欧洲股市",
+        "lamp": "yellow",
+        "lamp_label": "⚖️ 黄灯观察",
+        "kline_id": "idx_GDAXI",
+        "benchmarks": [
+          {"name": "德国DAX", "code": "GDAXI", "value": 25215.52, "change_pct": 2.08, "as_of": "2026-11-26 官收"},
+          {"name": "欧洲斯托克50", "code": "STOXX50E", "value": 6014.74, "change_pct": 2.04, "as_of": "2026-11-26 官收"},
+          {"name": "法国CAC40", "code": "FCHI", "value": 8108.74, "change_pct": 1.61, "as_of": "2026-11-26 官收"},
+          {"name": "富时100", "code": "FTSE", "value": 10609.30, "change_pct": 1.75, "as_of": "2026-11-26 官收"}
+        ],
+        "access_grade": "A- 级 · 直投低费",
+        "onshore_vehicles": [
+          {"code": "159561", "name": "嘉实德国DAX ETF", "fee_note": "综合费率 0.60%/年（较华安 513030 每年省 0.40%）", "note": "境内直投德国核心指数低费首选"}
+        ],
+        "offshore_vehicles": [
+          {"code": "VGK", "name": "Vanguard 富时欧洲股票ETF", "note": "离岸一键覆盖全欧发达市场"}
+        ],
+        "warning": "境内尚无泛欧宽基 ETF，只能借德法单国标的替代；场内溢价超过 2% 绝不追买，下单前务必核对盘中参考净值（IOPV）。"
+      },
+      {
+        "id": "tw_kr",
+        "name": "中国台湾与韩国股市",
+        "lamp": "yellow",
+        "lamp_label": "⚖️ 黄灯观察",
+        "kline_id": "idx_TWII",
+        "benchmarks": [
+          {"name": "台湾加权指数", "code": "TWII", "value": 39308.08, "change_pct": 0.40, "as_of": "2026-11-27"},
+          {"name": "韩国KOSPI", "code": "KS11", "value": 4915.68, "change_pct": 4.34, "as_of": "2026-11-27"}
+        ],
+        "access_grade": "B 级 · 离岸AI链",
+        "onshore_vehicles": [
+          {"code": "159687", "name": "南方亚太精选ETF", "fee_note": "表观 0.25%/年（深新互通穿透总费率 0.85%+）", "note": "间接覆盖亚太龙头，非纯台韩宽基"}
+        ],
+        "offshore_vehicles": [
+          {"code": "IEMG", "name": "iShares 核心MSCI新兴市场ETF", "note": "离岸低费覆盖中国台湾与韩国芯片权重（含韩国）"}
+        ],
+        "warning": "境内暂无纯中国台湾或纯韩国宽基 ETF；中韩半导体（513310）场内溢价常超 10% 且底层约 50% 为 A 股半导体成分，切忌误作纯韩国或台韩工具追高。"
+      },
+      {
+        "id": "in",
+        "name": "印度股市",
+        "lamp": "red",
+        "lamp_label": "🛡️ 红灯避雷",
+        "kline_id": "idx_NSEI",
+        "benchmarks": [
+          {"name": "印度Nifty50", "code": "NSEI", "value": 25695.05, "change_pct": -0.73, "as_of": "2026-11-27"}
+        ],
+        "access_grade": "C 级 · 防LOF退市",
+        "onshore_vehicles": [
+          {"code": "006105", "name": "宏利印度股票（场外）", "fee_note": "场外按净值申购无二级市场溢价", "note": "境内场外替代工具"},
+          {"code": "520580", "name": "招商新兴亚洲ETF", "fee_note": "沪新互通间接配置含印度权重", "note": "境内场内间接分散参考"}
+        ],
+        "offshore_vehicles": [
+          {"code": "IEMG", "name": "iShares 核心MSCI新兴市场ETF", "note": "离岸低费分散覆盖印度及新兴市场"}
+        ],
+        "warning": "严禁场内追买工银印度基金上市开放式基金（164824）：综合费率高达 1.40%/年且面临最晚 2027 年底 LOF 强制退市触发溢价瞬间蒸发的高危风险！"
+      }
+    ]
+  },
   "data_caveats": [
     {
       "id": "a_share_1127_midday_eod_pending",
