@@ -1258,6 +1258,21 @@ class TestFullSiteRedesignBugFixesAndIA(unittest.TestCase):
         self.assertIn(".watch-drawer", app_css)
 
         self.assertIn("formatCount: formatCount", app_js)
+        self.assertIn("goToIndex: goToIndex", app_js)
+        self.assertIn(".lamp-defend", app_css)
+        self.assertIn(".ah-mcards", app_css)
+        self.assertIn("align-items: stretch;", app_css)
+        # Ensure .ah-mcards mobile display:flex appears AFTER base .ah-mcards display:none
+        base_ah_pos = app_css.find(".ah-mcards {\n  display: none;")
+        mob_ah_pos = app_css.rfind(".ah-mcards {\n    display: flex;")
+        self.assertGreater(base_ah_pos, 0)
+        self.assertGreater(mob_ah_pos, base_ah_pos)
+        # Ensure equity/pdf_common classify_callout treats 极简方案 as calm guard, not danger
+        import equity.pdf_common as pdf_common
+        cls = pdf_common.classify_callout(
+            ["极简“低费 ETF + 门控黄金”默认方案", "下单前务必避坑高溢价场内产品。"]
+        )
+        self.assertNotIn("callout-danger", cls)
 
 
 if __name__ == "__main__":

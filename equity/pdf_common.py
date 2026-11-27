@@ -255,10 +255,18 @@ def parse_alignments(sep_cells: list[str]) -> list[str]:
 
 
 def classify_callout(raw_lines: list[str]) -> str:
+    non_empty = [x.strip() for x in raw_lines if x.strip()]
+    first_line = non_empty[0] if non_empty else ""
     joined = " ".join(raw_lines)
+    danger_kws = ("头号雷区", "头号避雷", "避雷", "避坑", "下单前", "🛑", "高危")
+    guard_title_kws = ("极简", "默认方案", "默认核心")
     if any(k in joined for k in ("一句话", "本章核心结论")):
         cls = "callout callout-verdict"
-    elif any(k in joined for k in ("头号雷区", "头号避雷", "避雷", "避坑", "下单前", "🛑", "高危")):
+    elif any(k in first_line for k in danger_kws):
+        cls = "callout callout-danger"
+    elif any(k in first_line for k in guard_title_kws) or any(k in joined for k in guard_title_kws):
+        cls = "callout callout-guard"
+    elif any(k in joined for k in danger_kws):
         cls = "callout callout-danger"
     elif any(
         k in joined
@@ -271,7 +279,6 @@ def classify_callout(raw_lines: list[str]) -> str:
         cls = "callout callout-guard"
     else:
         cls = "callout"
-    non_empty = [x for x in raw_lines if x.strip()]
     if len(non_empty) >= 6 and "下单前" not in joined:
         cls += " callout-flow"
     return cls

@@ -124,9 +124,9 @@
   function getThemePalette(colorConv) {
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
     const red = isDark ? "#f87171" : "#c81e1e";
-    const green = isDark ? "#2dd4bf" : "#0d7a5f";
+    const green = isDark ? "#34d399" : "#0d7a5f";
     const redFade = isDark ? "rgba(248,113,113,0.42)" : "rgba(200,30,30,0.38)";
-    const greenFade = isDark ? "rgba(45,212,191,0.42)" : "rgba(13,122,95,0.38)";
+    const greenFade = isDark ? "rgba(52,211,153,0.42)" : "rgba(13,122,95,0.38)";
     const up = colorConv === "us" ? green : red;
     const down = colorConv === "us" ? red : green;
     const upFade = colorConv === "us" ? greenFade : redFade;
@@ -134,7 +134,7 @@
 
     return {
       isDark: isDark,
-      bg: isDark ? "#161c26" : "#fffefb",
+      bg: isDark ? "#151a23" : "#ffffff",
       grid: isDark ? "#253042" : "#ebe5d9",
       axisLine: isDark ? "#334155" : "#d9d1c2",
       axisText: isDark ? "#9aa5b4" : "#645f57",
@@ -176,17 +176,27 @@
       .then(function (data) {
         if (!data || typeof data !== "object" || !Array.isArray(data.catalog)) return null;
         const byId = new Map();
+        const byIdLower = new Map();
         const byCode = new Map();
         const byDossier = new Map();
+        const byDossierLower = new Map();
         data.catalog.forEach(function (item) {
           if (!item || typeof item !== "object" || !item.id) return;
-          byId.set(String(item.id), item);
+          const idStr = String(item.id);
+          byId.set(idStr, item);
+          byIdLower.set(idStr.toLowerCase(), item);
           if (item.code) byCode.set(String(item.code).toUpperCase(), item);
-          if (item.dossier_key) byDossier.set(String(item.dossier_key), item);
+          if (item.dossier_key) {
+            const dk = String(item.dossier_key);
+            byDossier.set(dk, item);
+            byDossierLower.set(dk.toLowerCase(), item);
+          }
         });
         data._byId = byId;
+        data._byIdLower = byIdLower;
         data._byCode = byCode;
         data._byDossier = byDossier;
+        data._byDossierLower = byDossierLower;
         return data;
       })
       .catch(function () {
@@ -200,20 +210,27 @@
     if (!manifest || !symbolId) return null;
     const raw = String(symbolId).trim();
     if (!raw) return null;
-    if (manifest._byId.has(raw)) return manifest._byId.get(raw);
-    if (manifest._byDossier.has(raw)) return manifest._byDossier.get(raw);
+    if (manifest._byId && manifest._byId.has(raw)) return manifest._byId.get(raw);
+    const low = raw.toLowerCase();
+    if (manifest._byIdLower && manifest._byIdLower.has(low)) return manifest._byIdLower.get(low);
+    if (manifest._byDossier && manifest._byDossier.has(raw)) return manifest._byDossier.get(raw);
+    if (manifest._byDossierLower && manifest._byDossierLower.has(low)) return manifest._byDossierLower.get(low);
     const up = raw.toUpperCase();
-    if (manifest._byCode.has(up)) return manifest._byCode.get(up);
-    if (manifest._byId.has("stk_" + raw)) return manifest._byId.get("stk_" + raw);
-    if (manifest._byId.has("stk_" + up)) return manifest._byId.get("stk_" + up);
-    if (manifest._byId.has("etf_" + raw)) return manifest._byId.get("etf_" + raw);
-    if (manifest._byId.has("etf_" + up)) return manifest._byId.get("etf_" + up);
+    if (manifest._byCode && manifest._byCode.has(up)) return manifest._byCode.get(up);
+    if (manifest._byId && manifest._byId.has("stk_" + raw)) return manifest._byId.get("stk_" + raw);
+    if (manifest._byId && manifest._byId.has("stk_" + up)) return manifest._byId.get("stk_" + up);
+    if (manifest._byIdLower && manifest._byIdLower.has("stk_" + low)) return manifest._byIdLower.get("stk_" + low);
+    if (manifest._byId && manifest._byId.has("etf_" + raw)) return manifest._byId.get("etf_" + raw);
+    if (manifest._byId && manifest._byId.has("etf_" + up)) return manifest._byId.get("etf_" + up);
+    if (manifest._byIdLower && manifest._byIdLower.has("etf_" + low)) return manifest._byIdLower.get("etf_" + low);
     // Strip prefix like "a-share:600036" -> "600036"
     const colonIdx = raw.indexOf(":");
     if (colonIdx > 0) {
       const bare = raw.slice(colonIdx + 1).trim();
-      if (manifest._byId.has("stk_" + bare)) return manifest._byId.get("stk_" + bare);
-      if (manifest._byCode.has(bare.toUpperCase())) return manifest._byCode.get(bare.toUpperCase());
+      const bareLow = bare.toLowerCase();
+      if (manifest._byId && manifest._byId.has("stk_" + bare)) return manifest._byId.get("stk_" + bare);
+      if (manifest._byIdLower && manifest._byIdLower.has("stk_" + bareLow)) return manifest._byIdLower.get("stk_" + bareLow);
+      if (manifest._byCode && manifest._byCode.has(bare.toUpperCase())) return manifest._byCode.get(bare.toUpperCase());
     }
     return null;
   }
@@ -521,7 +538,7 @@
     if (unit === "%" || unit === "pct") dp = abs < 3 ? 4 : 3;
     else if (abs < 2) dp = 4;
     else if (abs < 20) dp = 3;
-    else if (abs >= 10000) dp = 1;
+    else if (abs > 100000) dp = 1;
     return v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
   }
 
@@ -1171,6 +1188,12 @@
         return mainTop + ((pMax - val) / (pMax - pMin)) * mainH;
       };
 
+      // Pre-compute Last Price Reference Y so overlapping Y-axis tick labels are culled cleanly
+      const lastC = state.bars[endIdx].c;
+      const lastPrev = endIdx > 0 ? state.bars[endIdx - 1].c : state.bars[endIdx].o;
+      const lastCol = lastC >= lastPrev ? pal.up : pal.down;
+      const yLast = Math.floor(yMain(lastC)) + 0.5;
+
       // Gridlines & Y-Axis Labels (Main Pane)
       ctx.font = '10.5px -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif';
       ctx.textAlign = "left";
@@ -1186,8 +1209,10 @@
         ctx.moveTo(padL, y);
         ctx.lineTo(padL + plotW, y);
         ctx.stroke();
-        ctx.fillStyle = pal.axisText;
-        ctx.fillText(fmtPrice(v, unit), padL + plotW + 6, y);
+        if (Math.abs(y - yLast) >= 14) {
+          ctx.fillStyle = pal.axisText;
+          ctx.fillText(fmtPrice(v, unit), padL + plotW + 6, y);
+        }
       }
 
       // Vertical Gridlines & X-Axis Dates
@@ -1328,10 +1353,6 @@
       }
 
       // Last Price Dashed Reference Line + Right Pill
-      const lastC = state.bars[endIdx].c;
-      const lastPrev = endIdx > 0 ? state.bars[endIdx - 1].c : state.bars[endIdx].o;
-      const lastCol = lastC >= lastPrev ? pal.up : pal.down;
-      const yLast = Math.floor(yMain(lastC)) + 0.5;
       ctx.save();
       ctx.strokeStyle = lastCol;
       ctx.lineWidth = 1;
@@ -1343,7 +1364,7 @@
       ctx.setLineDash([]);
       ctx.fillStyle = lastCol;
       ctx.fillRect(padL + plotW + 2, yLast - 8, padR - 4, 16);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = pal.isDark ? "#0f131a" : "#ffffff";
       ctx.font = '600 10px -apple-system, "SF Pro Display", sans-serif';
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
@@ -1686,6 +1707,19 @@
       if (emptyEl) emptyEl.hidden = true;
     }
 
+    function updateFootNote() {
+      if (!footEl || !state.bars.length) return;
+      const rawProv = (state.series && state.series.provider) || (state.meta && state.meta.provider) || "";
+      const prov = fmtProviderLabel(rawProv) || "多源官库";
+      const lastDt = state.bars[state.bars.length - 1].t;
+      const hint = window.innerWidth <= 640
+        ? "滑动平移 · 双指缩放 · 点按或长按查价"
+        : opts.mode === "compact"
+        ? "拖拽平移 · Ctrl/⌘+滚轮或点击＋/−缩放 · 手机端长按查价"
+        : "拖拽平移 · 滚轮/双指缩放 · 点击或长按查看逐日价量";
+      footEl.textContent = "数据截止 " + lastDt + " · 共 " + state.bars.length + " 交易日（来源：" + prov + "）｜" + hint;
+    }
+
     function load(symbolId, extraMeta) {
       state.symbolId = String(symbolId || "").trim();
       if (extraMeta) {
@@ -1722,15 +1756,7 @@
           state.sub = "MACD";
         }
         hideEmpty();
-        if (footEl) {
-          const rawProv = (res.series && res.series.provider) || (res.meta && res.meta.provider) || "";
-          const prov = fmtProviderLabel(rawProv) || "多源官库";
-          const lastDt = res.bars[res.bars.length - 1].t;
-          const hint = opts.mode === "compact"
-            ? "拖拽平移 · Ctrl/⌘+滚轮或点击＋/−缩放 · 手机端长按查价"
-            : "拖拽平移 · 滚轮/双指缩放 · 点击或长按查看逐日价量";
-          footEl.textContent = "数据截止 " + lastDt + " · 共 " + res.bars.length + " 交易日（来源：" + prov + "）｜" + hint;
-        }
+        updateFootNote();
         renderDiagnosisBlock();
         applyTimeframe(state.timeframe > 0 ? state.timeframe : 66);
         if (typeof opts.onSymbolChange === "function") {
@@ -1794,7 +1820,7 @@
       dragStartX = e.clientX;
       dragOrigStart = state.viewStart;
     });
-    window.addEventListener("mousemove", function (e) {
+    function onWinMouseMove(e) {
       if (state.destroyed || !dragging || !state.layout) return;
       const dx = e.clientX - dragStartX;
       const shift = Math.round(-dx / state.layout.step);
@@ -1803,10 +1829,12 @@
         state.viewStart = next;
         drawAll();
       }
-    });
-    window.addEventListener("mouseup", function () {
+    }
+    function onWinMouseUp() {
       dragging = false;
-    });
+    }
+    window.addEventListener("mousemove", onWinMouseMove);
+    window.addEventListener("mouseup", onWinMouseUp);
 
     baseCanvas.addEventListener("mousemove", function (e) {
       if (dragging || !state.layout) return;
@@ -1838,13 +1866,30 @@
       { passive: false }
     );
 
-    // Mobile Touch: pan-y preserved; horizontal drag pans; pinch zooms; tap/hold scrubs top readout
-    let touchMode = ""; // "pan" | "scrub" | "pinch"
+    // Mobile Touch: vertical scroll preserved; horizontal drag pans; pinch zooms; tap/hold scrubs & unlocks cleanly
+    let touchMode = "none"; // "none" | "pan" | "scroll" | "scrub" | "pinch"
     let touchStartX = 0;
     let touchStartY = 0;
     let touchOrigStart = 0;
     let pinchStartDist = 0;
     let holdTimer = 0;
+
+    function unlockHover() {
+      if (!state.hoverLocked) return;
+      state.hoverLocked = false;
+      state.hoverIdx = -1;
+      state.hoverY = -1;
+      drawOverlay();
+      updateReadout(state.bars.length - 1);
+    }
+
+    function onDocOutsideTap(e) {
+      if (state.destroyed || !state.hoverLocked) return;
+      if (baseCanvas.contains(e.target)) return;
+      unlockHover();
+    }
+    document.addEventListener("touchstart", onDocOutsideTap, { passive: true });
+    document.addEventListener("mousedown", onDocOutsideTap);
 
     baseCanvas.addEventListener(
       "touchstart",
@@ -1859,7 +1904,7 @@
           return;
         }
         if (e.touches.length === 1) {
-          touchMode = "";
+          touchMode = "none";
           const t = e.touches[0];
           touchStartX = t.clientX;
           touchStartY = t.clientY;
@@ -1883,6 +1928,7 @@
       function (e) {
         if (!state.layout) return;
         if (touchMode === "pinch" && e.touches.length === 2) {
+          e.preventDefault();
           const dx = e.touches[0].clientX - e.touches[1].clientX;
           const dy = e.touches[0].clientY - e.touches[1].clientY;
           const dist = Math.hypot(dx, dy) || 1;
@@ -1896,17 +1942,19 @@
           const t = e.touches[0];
           const dx = t.clientX - touchStartX;
           const dy = t.clientY - touchStartY;
-          if (!touchMode && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+          if (touchMode === "none" && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
             window.clearTimeout(holdTimer);
             touchMode = Math.abs(dx) > Math.abs(dy) ? "pan" : "scroll";
           }
           if (touchMode === "scrub") {
+            e.preventDefault();
             const rect = baseCanvas.getBoundingClientRect();
             state.hoverIdx = idxFromClientX(t.clientX);
             state.hoverY = t.clientY - rect.top;
             drawOverlay();
             updateReadout(state.hoverIdx);
           } else if (touchMode === "pan") {
+            e.preventDefault();
             const shift = Math.round(-dx / state.layout.step);
             const next = Math.max(0, Math.min(state.bars.length - state.viewCount, touchOrigStart + shift));
             if (next !== state.viewStart) {
@@ -1916,21 +1964,37 @@
           }
         }
       },
-      { passive: true }
+      { passive: false }
     );
 
     baseCanvas.addEventListener("touchend", function (e) {
       window.clearTimeout(holdTimer);
-      if (touchMode === "" && e.changedTouches && e.changedTouches.length === 1 && state.layout) {
+      if (touchMode === "none" && e.changedTouches && e.changedTouches.length === 1 && state.layout) {
         const t = e.changedTouches[0];
         const rect = baseCanvas.getBoundingClientRect();
-        state.hoverLocked = true;
-        state.hoverIdx = idxFromClientX(t.clientX);
-        state.hoverY = t.clientY - rect.top;
-        drawOverlay();
-        updateReadout(state.hoverIdx);
+        const tappedIdx = idxFromClientX(t.clientX);
+        if (state.hoverLocked && tappedIdx === state.hoverIdx) {
+          unlockHover();
+        } else {
+          state.hoverLocked = true;
+          state.hoverIdx = tappedIdx;
+          state.hoverY = t.clientY - rect.top;
+          drawOverlay();
+          updateReadout(state.hoverIdx);
+        }
       }
-      touchMode = "";
+      touchMode = "none";
+    });
+
+    baseCanvas.addEventListener("touchcancel", function () {
+      window.clearTimeout(holdTimer);
+      touchMode = "none";
+      if (!state.hoverLocked) {
+        state.hoverIdx = -1;
+        state.hoverY = -1;
+      }
+      drawOverlay();
+      updateReadout(state.hoverIdx >= 0 ? state.hoverIdx : state.bars.length - 1);
     });
 
     // ResizeObserver for instant reflow (including inside modals)
@@ -1941,7 +2005,10 @@
         if (state.destroyed) return;
         window.cancelAnimationFrame(resizeRaf);
         resizeRaf = window.requestAnimationFrame(function () {
-          if (!state.destroyed && stageEl.offsetWidth > 0) drawAll();
+          if (!state.destroyed && stageEl.offsetWidth > 0) {
+            updateFootNote();
+            drawAll();
+          }
         });
       });
       ro.observe(stageEl);
@@ -1974,6 +2041,12 @@
         state.destroyed = true;
         activeInstances.delete(instance);
         if (ro) ro.disconnect();
+        window.cancelAnimationFrame(resizeRaf);
+        window.clearTimeout(holdTimer);
+        window.removeEventListener("mousemove", onWinMouseMove);
+        window.removeEventListener("mouseup", onWinMouseUp);
+        document.removeEventListener("touchstart", onDocOutsideTap);
+        document.removeEventListener("mousedown", onDocOutsideTap);
         window.removeEventListener("gir:kline-color", onColorChange);
         if (containerEl._girKlineInst === instance) {
           delete containerEl._girKlineInst;
@@ -2055,11 +2128,38 @@
       groupBtns.map(function (b) { return b.getAttribute("data-chart-group") || ""; }).filter(Boolean)
     );
 
+    const stagePanel = document.getElementById("kline-terminal-stage");
+    const sidebarPanel = document.getElementById("kline-terminal-sidebar");
+    const mobileSwitchBtn = document.getElementById("kline-mobile-switch");
+    const quickChips = Array.from(document.querySelectorAll(".kline-quick-chip"));
+    const prefersReducedMotion =
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let loadedManifest = null;
     let catalog = [];
     let activeGroup = "a_index";
     let searchQ = "";
     let activeSym = "idx_sh000001";
     let chartInst = null;
+    let listExpanded = false;
+
+    function getChipSymId(chip) {
+      if (!chip) return "";
+      return (
+        chip.getAttribute("data-sym-id") ||
+        chip.getAttribute("data-quick-sym") ||
+        chip.getAttribute("data-sym") ||
+        chip.getAttribute("data-kline-sym") ||
+        chip.getAttribute("data-symbol") ||
+        ""
+      );
+    }
+
+    function scrollStageOnMobile() {
+      if (window.innerWidth <= 960 && stagePanel && stagePanel.scrollIntoView) {
+        stagePanel.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+      }
+    }
 
     function getWatchSet() {
       if (window.GIRWatchlist && typeof window.GIRWatchlist.getAll === "function") {
@@ -2134,7 +2234,7 @@
       if (!chartInst) {
         chartInst = mount(mountEl, {
           symbolId: symId,
-          height: window.innerWidth >= 960 ? 500 : 380,
+          height: window.innerWidth >= 960 ? 440 : 340,
           mode: "full",
           anchorLow: bridge.anchor_low,
           anchorHigh: bridge.anchor_high,
@@ -2150,6 +2250,11 @@
       if (listEl) {
         listEl.querySelectorAll(".kline-sym-row").forEach(function (r) {
           r.classList.toggle("active", r.getAttribute("data-sym-id") === symId);
+        });
+      }
+      if (quickChips.length > 0) {
+        quickChips.forEach(function (c) {
+          c.classList.toggle("active", getChipSymId(c) === symId);
         });
       }
       if (updateHash && history.replaceState) {
@@ -2190,8 +2295,9 @@
           "</div>";
         return;
       }
-      const cap = filtered.slice(0, 120);
-      listEl.innerHTML = cap
+      const showAllRows = listExpanded || filtered.length <= 120;
+      const cap = showAllRows ? filtered : filtered.slice(0, 120);
+      let rowsHtml = cap
         .map(function (item) {
           const isAct = item.id === activeSym;
           const isCrypto = isCryptoReadOnly(item.id);
@@ -2224,6 +2330,13 @@
           );
         })
         .join("");
+      if (!showAllRows) {
+        rowsHtml +=
+          '<button type="button" id="kline-list-more" class="kline-list-more">展开其余 ' +
+          (filtered.length - 120) +
+          " 项标的 ▾</button>";
+      }
+      listEl.innerHTML = rowsHtml;
     }
 
     function applyTerminalHash() {
@@ -2240,7 +2353,16 @@
         const k = safeDec(pair.slice(0, eq));
         const v = safeDec(pair.slice(eq + 1));
         if (k === "sym" && v) {
-          const found = catalog.find(function (c) { return c.id === v || c.code === v || c.dossier_key === v; });
+          const vLow = v.toLowerCase();
+          const found =
+            resolveCatalogItem(loadedManifest, v) ||
+            catalog.find(function (c) {
+              return (
+                String(c.id || "").toLowerCase() === vLow ||
+                String(c.code || "").toLowerCase() === vLow ||
+                String(c.dossier_key || "").toLowerCase() === vLow
+              );
+            });
           if (found) {
             hadSym = true;
             activeSym = found.id;
@@ -2287,10 +2409,36 @@
       }
     }
 
+    if (mobileSwitchBtn) {
+      mobileSwitchBtn.addEventListener("click", function () {
+        const targetEl = sidebarPanel || searchInput;
+        if (targetEl && targetEl.scrollIntoView) {
+          targetEl.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+        }
+        if (searchInput) {
+          try {
+            searchInput.focus({ preventScroll: true });
+          } catch (_) {
+            searchInput.focus();
+          }
+        }
+      });
+    }
+
+    quickChips.forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        const rawSym = getChipSymId(chip);
+        if (!rawSym) return;
+        const resolved = resolveCatalogItem(loadedManifest, rawSym);
+        selectSymbol(resolved ? resolved.id : rawSym, true);
+      });
+    });
+
     groupBtns.forEach(function (btn) {
       btn.addEventListener("click", function () {
         activeGroup = btn.getAttribute("data-chart-group") || "a_index";
         searchQ = "";
+        listExpanded = false;
         if (searchInput) searchInput.value = "";
         if (clearBtn) clearBtn.hidden = true;
         renderSidebar();
@@ -2300,6 +2448,7 @@
     if (searchInput) {
       searchInput.addEventListener("input", function () {
         searchQ = searchInput.value;
+        listExpanded = false;
         if (clearBtn) clearBtn.hidden = !searchQ;
         renderSidebar();
       });
@@ -2307,6 +2456,7 @@
     if (clearBtn) {
       clearBtn.addEventListener("click", function () {
         searchQ = "";
+        listExpanded = false;
         if (searchInput) {
           searchInput.value = "";
           searchInput.focus();
@@ -2319,8 +2469,16 @@
     if (listEl) {
       listEl.addEventListener("click", function (e) {
         if (e.target.closest("[data-watch-toggle]")) return;
+        if (e.target.closest("#kline-list-more")) {
+          listExpanded = true;
+          renderSidebar();
+          return;
+        }
         const row = e.target.closest(".kline-sym-row[data-sym-id]");
-        if (row) selectSymbol(row.getAttribute("data-sym-id"), true);
+        if (row) {
+          selectSymbol(row.getAttribute("data-sym-id"), true);
+          scrollStageOnMobile();
+        }
       });
       listEl.addEventListener("keydown", function (e) {
         if (e.key === "Enter" || e.key === " ") {
@@ -2328,6 +2486,7 @@
           if (row) {
             e.preventDefault();
             selectSymbol(row.getAttribute("data-sym-id"), true);
+            scrollStageOnMobile();
           }
         }
       });
@@ -2364,6 +2523,7 @@
     });
 
     loadManifest().then(function (manifest) {
+      loadedManifest = manifest;
       if (manifest && Array.isArray(manifest.catalog) && manifest.catalog.length > 0) {
         catalog = manifest.catalog.map(function (c, idx) {
           return Object.assign({ _order: idx }, c);
@@ -2534,6 +2694,8 @@
     mount: mount,
     loadManifest: loadManifest,
     loadSeries: loadSeries,
+    resolveCatalogItem: resolveCatalogItem,
+    fmtPrice: fmtPrice,
     isGoldAsset: isGoldAsset,
     isCryptoReadOnly: isCryptoReadOnly,
     fmtProviderLabel: fmtProviderLabel,

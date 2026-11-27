@@ -78,21 +78,48 @@
   }
 
   /* ------------------------------------------------------------------------
-     2. Auto-Scroll Active Mobile Nav Pill & Active Channel Switcher Pill
+     2. Auto-Scroll Active Mobile Nav Pill, Subnav Pill & Sticky Scroll Offset
      ------------------------------------------------------------------------ */
+  function getStickyOffset() {
+    const hdr = document.querySelector(".site-header");
+    const hdrH = (hdr && hdr.offsetHeight) || 60;
+    const subnav = document.querySelector(".subnav-bar");
+    const subH =
+      subnav && window.getComputedStyle && window.getComputedStyle(subnav).position === "sticky"
+        ? subnav.offsetHeight || 0
+        : 0;
+    return hdrH + subH + 12;
+  }
+
   function centerActiveScrollPill(containerSel, pillSel) {
     const container = document.querySelector(containerSel);
     if (!container) return;
     const activePill = container.querySelector(pillSel);
     if (activePill && container.scrollWidth > container.clientWidth + 2) {
-      try {
-        activePill.scrollIntoView({ inline: "center", block: "nearest", behavior: "auto" });
-      } catch (_) {
-        activePill.scrollIntoView(false);
-      }
+      const targetLeft = Math.max(0, activePill.offsetLeft - (container.clientWidth - activePill.offsetWidth) / 2);
+      container.scrollLeft = targetLeft;
     }
   }
+  /* Keep sticky table thead flush beneath .toolbar-sticky on wide desktop */
+  const stickyToolbarEl = document.querySelector(".toolbar-sticky");
+  if (stickyToolbarEl) {
+    const syncStickyThTop = function () {
+      const hdr = document.querySelector(".site-header");
+      const hdrH = (hdr && hdr.offsetHeight) || 61;
+      const tbH = stickyToolbarEl.offsetHeight || 96;
+      document.documentElement.style.setProperty("--sticky-th-top", hdrH + tbH + 2 + "px");
+    };
+    syncStickyThTop();
+    if (typeof ResizeObserver === "function") {
+      try {
+        new ResizeObserver(syncStickyThTop).observe(stickyToolbarEl);
+      } catch (_) {}
+    }
+    window.addEventListener("resize", syncStickyThTop, { passive: true });
+  }
+
   centerActiveScrollPill(".main-nav", ".nav-pill.active");
+  centerActiveScrollPill(".subnav-inner", ".subnav-link.active");
   centerActiveScrollPill(".ch-switcher", ".ch-switch-pill.active");
 
   /* ------------------------------------------------------------------------
@@ -151,17 +178,20 @@
     }
   } catch (_) {}
 
+  const decBtn = document.getElementById("font-dec");
+  const incBtn = document.getElementById("font-inc");
+
   function applyScale(val) {
     readScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.round(val * 100) / 100));
     root.style.setProperty("--read-scale", String(readScale));
+    if (decBtn) decBtn.disabled = readScale <= MIN_SCALE + 0.001;
+    if (incBtn) incBtn.disabled = readScale >= MAX_SCALE - 0.001;
     try {
       localStorage.setItem("gir_read_scale", String(readScale));
     } catch (_) {}
   }
   applyScale(readScale);
 
-  const decBtn = document.getElementById("font-dec");
-  const incBtn = document.getElementById("font-inc");
   if (decBtn) decBtn.addEventListener("click", function () { applyScale(readScale - 0.06); });
   if (incBtn) incBtn.addEventListener("click", function () { applyScale(readScale + 0.06); });
 
@@ -222,7 +252,8 @@
     const targetEl = targetId ? document.getElementById(targetId) : null;
     if (!targetEl || targetEl.classList.contains("tab-panel")) return;
     e.preventDefault();
-    targetEl.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+    const anchorTop = window.scrollY + targetEl.getBoundingClientRect().top - getStickyOffset();
+    window.scrollTo({ top: Math.max(0, anchorTop), behavior: prefersReducedMotion ? "auto" : "smooth" });
     if (history.replaceState) {
       try {
         history.replaceState(null, "", "#" + encodeURIComponent(targetId));
@@ -291,7 +322,7 @@
     function syncToc() {
       tocRaf = 0;
       if (headings.length === 0) return;
-      const offset = 118;
+      const offset = getStickyOffset() + 16;
       let current = headings[0];
       for (let i = 0; i < headings.length; i++) {
         if (headings[i].el.getBoundingClientRect().top <= offset) {
@@ -370,8 +401,16 @@
   const cmdList = document.getElementById("cmd-list");
   const cmdDataEl = document.getElementById("cmd-nav-data");
   let cmdItems = [];
+  let cmdKlineItems = [];
+  let cmdKlineLoaded = false;
+  let cmdKlineLoading = false;
   let cmdFiltered = [];
   let cmdIndex = 0;
+  let lastKeyNavTs = 0;
+
+  if (cmdList && !cmdList.getAttribute("role")) {
+    cmdList.setAttribute("role", "listbox");
+  }
 
   if (cmdDataEl) {
     try {
@@ -401,6 +440,97 @@
     });
   }
 
+  function ensureCmdKlineItems() {
+    if (cmdKlineLoaded || cmdKlineLoading) return;
+    cmdKlineLoading = true;
+    const basePrefix = document.body.getAttribute("data-base-prefix") || "";
+    const loader =
+      window.GIRKline && typeof window.GIRKline.loadManifest === "function"
+        ? window.GIRKline.loadManifest(basePrefix)
+        : fetch(basePrefix + "assets/klines/manifest.json", { cache: "default" })
+            .then(function (resp) { return resp.ok ? resp.json() : null; })
+            .catch(function () { return null; });
+    Promise.resolve(loader).then(function (manifest) {
+      cmdKlineLoading = false;
+      cmdKlineLoaded = true;
+      if (!manifest || !Array.isArray(manifest.catalog)) return;
+      cmdKlineItems = manifest.catalog
+        .filter(function (c) { return c && c.id && c.name; })
+        .map(function (c) {
+          const idStr = String(c.id);
+          const codeStr = String(c.code || "");
+          const nameStr = String(c.name || "");
+          const isEtf = idStr.startsWith("etf_");
+          const isStk = idStr.startsWith("stk_");
+          const kindLbl = isEtf ? "ETF K线" : isStk ? "个股 K线" : "指数/宏观 K线";
+          const chgStr = isFiniteNum(c.change_pct)
+            ? (c.change_pct >= 0 ? "+" : "") + c.change_pct.toFixed(2) + "%"
+            : "";
+          return {
+            title: "📈 " + nameStr + (codeStr ? " (" + codeStr + ")" : ""),
+            meta: [kindLbl, c.market || "", chgStr].filter(Boolean).join(" · "),
+            href: basePrefix + "charts.html#sym=" + encodeURIComponent(idStr),
+            keywords: [idStr, codeStr, nameStr, c.market || "", c.group || "", c.dossier_key || ""].join(" "),
+            _idStr: idStr,
+            _code: codeStr,
+            _name: nameStr,
+            _codeLow: codeStr.toLowerCase(),
+            _nameLow: nameStr.toLowerCase(),
+            _hayLow: [idStr, codeStr, nameStr, c.market || "", c.group || "", c.dossier_key || ""].join(" ").toLowerCase(),
+            _priority: isFiniteNum(c.priority) ? c.priority : 9999,
+            _isEtf: isEtf,
+            _isStk: isStk,
+          };
+        });
+      if (cmdPalette && cmdPalette.classList.contains("open") && cmdInput && cmdInput.value.trim()) {
+        renderCmdList(cmdInput.value);
+      }
+    });
+  }
+
+  function matchCmdSymbols(rawQ, tokens, basePrefix) {
+    if (tokens.length === 0 || cmdKlineItems.length === 0) return [];
+    const rawLow = rawQ.toLowerCase();
+    const scored = [];
+    for (let i = 0; i < cmdKlineItems.length; i++) {
+      const it = cmdKlineItems[i];
+      if (!tokens.every(function (tk) { return it._hayLow.indexOf(tk) !== -1; })) continue;
+      let rank = 3;
+      if (it._codeLow === rawLow || it._nameLow === rawLow) rank = 0;
+      else if (it._codeLow.startsWith(rawLow) || it._nameLow.startsWith(rawLow)) rank = 1;
+      else if (it._nameLow.indexOf(rawLow) !== -1) rank = 2;
+      scored.push({ item: it, rank: rank });
+    }
+    scored.sort(function (a, b) {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      if (a.item._priority !== b.item._priority) return a.item._priority - b.item._priority;
+      return a.item._name.length - b.item._name.length;
+    });
+    const out = [];
+    const top = scored.slice(0, 6);
+    for (let i = 0; i < top.length && out.length < 6; i++) {
+      const it = top[i].item;
+      out.push({
+        title: it.title,
+        meta: it.meta,
+        href: it.href,
+        keywords: it.keywords,
+      });
+      if (i === 0 && top.length <= 4 && out.length < 6 && (it._isStk || it._isEtf)) {
+        const qTerm = it._code || it._name;
+        out.push({
+          title: it._isEtf
+            ? "📋 " + it._name + " (" + it._code + ") · ETF 7 维拆解"
+            : "📋 " + it._name + " (" + it._code + ") · 7 维档案",
+          meta: it._isEtf ? "直达 ETF 雷达" : "直达 231 股池",
+          href: basePrefix + (it._isEtf ? "etfs.html#q=" : "screener.html#q=") + encodeURIComponent(qTerm),
+          keywords: "",
+        });
+      }
+    }
+    return out;
+  }
+
   function renderCmdList(query) {
     if (!cmdList) return;
     const rawQ = String(query || "").trim();
@@ -411,6 +541,7 @@
       return tokens.every(function (tk) { return hay.indexOf(tk) !== -1; });
     });
     const basePrefix = document.body.getAttribute("data-base-prefix") || "";
+    const symbolMatches = matchCmdSymbols(rawQ, tokens, basePrefix);
     const jumpActions = rawQ.length >= 2
       ? [
           {
@@ -439,7 +570,7 @@
           },
         ]
       : [];
-    cmdFiltered = staticMatches.concat(jumpActions);
+    cmdFiltered = staticMatches.concat(symbolMatches, jumpActions);
     cmdIndex = 0;
 
     if (cmdFiltered.length === 0) {
@@ -450,7 +581,7 @@
     cmdList.innerHTML = cmdFiltered
       .map(function (it, idx) {
         return (
-          '<a class="cmd-item' + (idx === 0 ? " active" : "") + '" data-cmd-idx="' + idx + '" href="' + escHtml(it.href) + '">' +
+          '<a class="cmd-item' + (idx === 0 ? " active" : "") + '" role="option" aria-selected="' + (idx === 0 ? "true" : "false") + '" data-cmd-idx="' + idx + '" href="' + escHtml(it.href) + '">' +
           '<span class="cmd-item-title">' + escHtml(it.title) + "</span>" +
           (it.meta ? '<span class="cmd-item-meta">' + escHtml(it.meta) + "</span>" : "") +
           "</a>"
@@ -459,13 +590,14 @@
       .join("");
   }
 
-  function syncCmdActive() {
+  function syncCmdActive(fromMouse) {
     if (!cmdList) return;
     const els = cmdList.querySelectorAll(".cmd-item");
     els.forEach(function (el, idx) {
       const isAct = idx === cmdIndex;
       el.classList.toggle("active", isAct);
-      if (isAct && el.scrollIntoView) {
+      el.setAttribute("aria-selected", isAct ? "true" : "false");
+      if (isAct && !fromMouse && el.scrollIntoView) {
         el.scrollIntoView({ block: "nearest" });
       }
     });
@@ -473,6 +605,7 @@
 
   function openCmdPalette() {
     if (!cmdPalette) return;
+    ensureCmdKlineItems();
     if (cmdInput) cmdInput.value = "";
     renderCmdList("");
     showDialog(cmdPalette, cmdInput);
@@ -502,14 +635,16 @@
       if (e.key === "ArrowDown") {
         if (cmdFiltered.length > 0) {
           e.preventDefault();
+          lastKeyNavTs = Date.now();
           cmdIndex = (cmdIndex + 1) % cmdFiltered.length;
-          syncCmdActive();
+          syncCmdActive(false);
         }
       } else if (e.key === "ArrowUp") {
         if (cmdFiltered.length > 0) {
           e.preventDefault();
+          lastKeyNavTs = Date.now();
           cmdIndex = (cmdIndex - 1 + cmdFiltered.length) % cmdFiltered.length;
-          syncCmdActive();
+          syncCmdActive(false);
         }
       } else if (e.key === "Enter") {
         const chosen = cmdFiltered[cmdIndex];
@@ -523,12 +658,13 @@
   }
   if (cmdList) {
     cmdList.addEventListener("mousemove", function (e) {
+      if (Date.now() - lastKeyNavTs < 350) return;
       const item = e.target.closest(".cmd-item");
       if (!item) return;
       const idx = parseInt(item.getAttribute("data-cmd-idx") || "-1", 10);
       if (!isNaN(idx) && idx >= 0 && idx !== cmdIndex) {
         cmdIndex = idx;
-        syncCmdActive();
+        syncCmdActive(true);
       }
     });
     cmdList.addEventListener("click", function (e) {
@@ -888,15 +1024,40 @@
   let activeTermOpenY = 0;
   let activeTermOpenAt = 0;
 
-  function closeTermPopover() {
+  function closeTermPopover(restoreFocus) {
+    const prevTrigger = activeTermTrigger;
     if (activeTermPop && activeTermPop.parentNode) {
       activeTermPop.parentNode.removeChild(activeTermPop);
     }
-    if (activeTermTrigger) {
-      activeTermTrigger.setAttribute("aria-expanded", "false");
+    if (prevTrigger) {
+      prevTrigger.setAttribute("aria-expanded", "false");
     }
     activeTermPop = null;
     activeTermTrigger = null;
+    if (restoreFocus && prevTrigger && prevTrigger.isConnected && typeof prevTrigger.focus === "function") {
+      prevTrigger.focus();
+    }
+  }
+
+  function positionTermPopover(pop, trigger) {
+    const rect = trigger.getBoundingClientRect();
+    const popW = pop.offsetWidth || 320;
+    const popH = pop.offsetHeight || 180;
+    const margin = 12;
+    const hdr = document.querySelector(".site-header");
+    const headerH = (hdr && hdr.offsetHeight) || 60;
+    const topSafe = headerH + 8;
+    const bottomSafe = window.innerWidth <= 768 ? 68 : 12;
+    let left = rect.left + rect.width / 2 - popW / 2;
+    left = Math.max(margin, Math.min(window.innerWidth - popW - margin, left));
+    let top = rect.bottom + 8;
+    if (top + popH > window.innerHeight - bottomSafe && rect.top - popH - 8 >= topSafe) {
+      top = rect.top - popH - 8;
+    } else {
+      top = Math.max(topSafe, Math.min(window.innerHeight - popH - bottomSafe, top));
+    }
+    pop.style.left = Math.round(left) + "px";
+    pop.style.top = Math.round(top) + "px";
   }
 
   function openTermPopover(trigger) {
@@ -904,10 +1065,10 @@
     const entry = GLOSSARY_DICT[key];
     if (!entry) return;
     if (activeTermTrigger === trigger && activeTermPop) {
-      closeTermPopover();
+      closeTermPopover(true);
       return;
     }
-    closeTermPopover();
+    closeTermPopover(false);
 
     const basePrefix = document.body.getAttribute("data-base-prefix") || "";
     const pop = document.createElement("div");
@@ -924,24 +1085,13 @@
       '<div class="term-pop-foot"><a href="' + escHtml(basePrefix + "guide.html#term-" + key) + '">在《新手 3 分钟指南》查看全部术语 →</a></div>';
 
     document.body.appendChild(pop);
-    const rect = trigger.getBoundingClientRect();
-    const popW = pop.offsetWidth || 320;
-    const popH = pop.offsetHeight || 180;
-    const margin = 12;
-    let left = rect.left + rect.width / 2 - popW / 2;
-    left = Math.max(margin, Math.min(window.innerWidth - popW - margin, left));
-    let top = rect.bottom + 8;
-    if (top + popH > window.innerHeight - margin && rect.top - popH - 8 >= margin) {
-      top = rect.top - popH - 8;
-    } else {
-      top = Math.max(margin, Math.min(window.innerHeight - popH - margin, top));
-    }
-    pop.style.left = Math.round(left) + "px";
-    pop.style.top = Math.round(top) + "px";
+    positionTermPopover(pop, trigger);
 
     const closeBtn = pop.querySelector(".term-pop-close");
     if (closeBtn) {
-      closeBtn.addEventListener("click", closeTermPopover);
+      closeBtn.addEventListener("click", function () {
+        closeTermPopover(true);
+      });
     }
     trigger.setAttribute("aria-expanded", "true");
     activeTermPop = pop;
@@ -959,18 +1109,26 @@
       return;
     }
     if (activeTermPop && !activeTermPop.contains(e.target)) {
-      closeTermPopover();
+      closeTermPopover(false);
     }
   });
-  window.addEventListener("resize", closeTermPopover, { passive: true });
-  window.addEventListener("scroll", function () {
-    if (!activeTermPop) return;
-    if (Date.now() - activeTermOpenAt < 250) return;
-    const curY = window.scrollY || window.pageYOffset || 0;
-    if (Math.abs(curY - activeTermOpenY) > 40) {
-      closeTermPopover();
-    }
-  }, { passive: true });
+  window.addEventListener("resize", function () { closeTermPopover(false); }, { passive: true });
+  document.addEventListener(
+    "scroll",
+    function (e) {
+      if (!activeTermPop) return;
+      if (Date.now() - activeTermOpenAt < 250) return;
+      if (e.target === document || e.target === document.documentElement || e.target === document.body) {
+        const curY = window.scrollY || window.pageYOffset || 0;
+        if (Math.abs(curY - activeTermOpenY) > 40) {
+          closeTermPopover(false);
+        }
+      } else if (!activeTermPop.contains(e.target)) {
+        closeTermPopover(false);
+      }
+    },
+    { capture: true, passive: true }
+  );
 
   /* Global Keyboard Dispatcher (Cmd/Ctrl+K, Chart Shortcuts, Modal Escape/Tab/Arrows) */
   function closeAllModalsAndDrawers() {
@@ -1022,6 +1180,12 @@
       }
     }
 
+    if (e.key === "Escape" && activeTermPop) {
+      e.preventDefault();
+      closeTermPopover(true);
+      return;
+    }
+
     const dialog = document.querySelector('[aria-modal="true"].open');
     if (dialog) {
       if (e.key === "Escape") {
@@ -1059,12 +1223,6 @@
       return;
     }
 
-    if (e.key === "Escape" && activeTermPop) {
-      e.preventDefault();
-      closeTermPopover();
-      return;
-    }
-
     if (e.key === "Escape") {
       const openNavGrp = navGroups.find(function (g) {
         const m = g.querySelector(".nav-dropdown");
@@ -1095,10 +1253,9 @@
         if (searchBox.id === "guide-term-search") {
           const panel = searchBox.closest(".filter-panel") || searchBox;
           const rect = panel.getBoundingClientRect();
-          const header = document.querySelector(".site-header");
-          const headerH = header ? header.offsetHeight : 64;
-          if (rect.top < headerH + 6 || rect.bottom > window.innerHeight - 140) {
-            const top = window.scrollY + rect.top - headerH - 12;
+          const stickyOff = getStickyOffset();
+          if (rect.top < stickyOff || rect.bottom > window.innerHeight - 140) {
+            const top = window.scrollY + rect.top - stickyOff;
             window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
           }
         }
@@ -1208,6 +1365,74 @@
     });
   });
 
+  let watchManifestData = null;
+  let watchManifestPromise = null;
+
+  function lookupWatchQuote(w) {
+    if (!watchManifestData || !w) return null;
+    const candidates = [
+      w.klineId,
+      w.id,
+      w.code,
+      w.kind === "etf" && w.code ? "etf_" + w.code : "",
+      w.kind === "stock" && w.code ? "stk_" + w.code : "",
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+      const cand = String(candidates[i] || "").trim();
+      if (!cand) continue;
+      if (window.GIRKline && typeof window.GIRKline.resolveCatalogItem === "function") {
+        const hit = window.GIRKline.resolveCatalogItem(watchManifestData, cand);
+        if (hit) return hit;
+      } else if (watchManifestData._byId && watchManifestData._byId.has(cand)) {
+        return watchManifestData._byId.get(cand);
+      } else if (watchManifestData._byCode && watchManifestData._byCode.has(cand.toUpperCase())) {
+        return watchManifestData._byCode.get(cand.toUpperCase());
+      }
+    }
+    return null;
+  }
+
+  function fmtWatchQuotePrice(item) {
+    if (!item || !isFiniteNum(item.latest_close)) return "";
+    if (window.GIRKline && typeof window.GIRKline.fmtPrice === "function") {
+      return window.GIRKline.fmtPrice(item.latest_close, item.unit);
+    }
+    const abs = Math.abs(item.latest_close);
+    const dp = abs < 2 ? 4 : abs < 20 ? 3 : abs > 100000 ? 1 : 2;
+    return item.latest_close.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  }
+
+  function ensureWatchManifest() {
+    if (watchManifestData || watchManifestPromise) return;
+    const bp = document.body.getAttribute("data-base-prefix") || "";
+    const loader =
+      window.GIRKline && typeof window.GIRKline.loadManifest === "function"
+        ? window.GIRKline.loadManifest(bp)
+        : fetch(bp + "assets/klines/manifest.json", { cache: "default" })
+            .then(function (resp) { return resp.ok ? resp.json() : null; })
+            .then(function (data) {
+              if (!data || !Array.isArray(data.catalog)) return null;
+              const byId = new Map();
+              const byCode = new Map();
+              data.catalog.forEach(function (it) {
+                if (it && it.id) byId.set(String(it.id), it);
+                if (it && it.code) byCode.set(String(it.code).toUpperCase(), it);
+              });
+              data._byId = byId;
+              data._byCode = byCode;
+              return data;
+            })
+            .catch(function () { return null; });
+    watchManifestPromise = Promise.resolve(loader).then(function (manifest) {
+      if (!manifest) return;
+      watchManifestData = manifest;
+      renderHomeWatchlistBar();
+      if (watchDrawer && !watchDrawer.hidden) {
+        renderWatchDrawerBody();
+      }
+    });
+  }
+
   function renderHomeWatchlistBar() {
     const bar = document.getElementById("home-watchlist-bar");
     const listWrap = document.getElementById("home-watchlist-items");
@@ -1218,6 +1443,7 @@
       bar.hidden = true;
       return;
     }
+    ensureWatchManifest();
     let idxMap = {};
     const idxEl = document.getElementById("home-watch-index");
     if (idxEl) {
@@ -1228,13 +1454,20 @@
     }
     bar.hidden = false;
     if (cntEl) cntEl.textContent = String(items.length);
-    listWrap.innerHTML = items
+    let pillsHtml = items
       .slice(0, 12)
       .map(function (w) {
         const meta = idxMap[w.id] || idxMap[w.code] || null;
-        const name = (meta && meta.name) || w.name || w.code || w.id;
-        const code = (meta && meta.code) || w.code || "";
-        const price = (meta && meta.price) || "";
+        const quote = lookupWatchQuote(w);
+        const name = (meta && meta.name) || (quote && quote.name) || w.name || w.code || w.id;
+        const code = (meta && meta.code) || (quote && quote.code) || w.code || "";
+        const livePrice = fmtWatchQuotePrice(quote);
+        const price = livePrice || (meta && meta.price) || "";
+        const chgHtml =
+          quote && isFiniteNum(quote.change_pct)
+            ? ' <span class="watch-pill-chg ' + (quote.change_pct >= 0 ? "chg-up" : "chg-dn") + '">' +
+              (quote.change_pct >= 0 ? "+" : "") + quote.change_pct.toFixed(2) + "%</span>"
+            : "";
         const role = (meta && meta.role) || "";
         const kHref = "charts.html#sym=" + encodeURIComponent(w.klineId || w.id);
         const detailHref = w.kind === "etf"
@@ -1248,6 +1481,7 @@
           "<strong>" + escHtml(name) + "</strong>" +
           (code ? ' <span class="code-tag">' + escHtml(code) + "</span>" : "") +
           (price ? ' <span class="watch-pill-meta">' + escHtml(price) + "</span>" : "") +
+          chgHtml +
           (role ? ' <span class="watch-pill-role">' + escHtml(role) + "</span>" : "") +
           "</a>" +
           '<a class="kline-quick-btn" href="' + escHtml(kHref) + '" title="查看交互 K 线">📈</a>' +
@@ -1258,6 +1492,13 @@
         );
       })
       .join("");
+    if (items.length > 12) {
+      pillsHtml +=
+        '<button type="button" class="watch-pill watch-pill-more" data-action="open-watch-drawer">+' +
+        (items.length - 12) +
+        " 查看全部</button>";
+    }
+    listWrap.innerHTML = pillsHtml;
   }
 
   function syncHeaderWatchCount() {
@@ -1295,11 +1536,25 @@
         "</div>";
       return;
     }
+    ensureWatchManifest();
 
     const rowsHtml = items
       .map(function (w) {
-        const name = w.name || w.code || w.id;
-        const code = w.code || "";
+        const quote = lookupWatchQuote(w);
+        const name = (quote && quote.name) || w.name || w.code || w.id;
+        const code = (quote && quote.code) || w.code || "";
+        const livePrice = fmtWatchQuotePrice(quote);
+        const chgHtml =
+          quote && isFiniteNum(quote.change_pct)
+            ? '<span class="watch-drawer-chg ' + (quote.change_pct >= 0 ? "chg-up" : "chg-dn") + '" style="font-weight:700;">' +
+              (quote.change_pct >= 0 ? "+" : "") + quote.change_pct.toFixed(2) + "%</span>"
+            : "";
+        const quoteLineHtml = livePrice || chgHtml
+          ? '<span class="watch-drawer-quote" style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-variant-numeric:tabular-nums;">' +
+            (livePrice ? '<strong>' + escHtml(livePrice) + "</strong>" : "") +
+            chgHtml +
+            "</span>"
+          : "";
         const kHref = basePrefix + "charts.html#sym=" + encodeURIComponent(w.klineId || w.id);
         const isEtf = w.kind === "etf";
         const isStock = w.kind === "stock";
@@ -1317,6 +1572,7 @@
           '<span class="etf-chan-tag">' + escHtml(kindLbl) + "</span>" +
           "<strong>" + escHtml(name) + "</strong>" +
           (code ? '<span class="code-tag">' + escHtml(code) + "</span>" : "") +
+          quoteLineHtml +
           "</div>" +
           '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;">' +
           '<a class="kline-quick-btn" href="' + escHtml(kHref) + '">📈 K线</a>' +
@@ -1348,7 +1604,7 @@
   function openWatchDrawer() {
     if (!watchDrawer) return;
     closeAllNavDropdowns(null);
-    closeTermPopover();
+    closeTermPopover(false);
     renderWatchDrawerBody();
     watchDrawer.hidden = false;
     void watchDrawer.offsetWidth;
@@ -1369,12 +1625,22 @@
       else closeWatchDrawer();
     });
   }
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-action='open-watch-drawer']")) {
+      e.preventDefault();
+      openWatchDrawer();
+    }
+  });
   if (watchDrawer) {
     document.querySelectorAll("[data-action='close-watch-drawer']").forEach(function (b) {
       b.addEventListener("click", closeWatchDrawer);
     });
     watchDrawer.addEventListener("click", function (e) {
       if (e.target === watchDrawer || e.target.classList.contains("watch-drawer-backdrop")) {
+        closeWatchDrawer();
+        return;
+      }
+      if (e.target.closest("a[href]")) {
         closeWatchDrawer();
         return;
       }
@@ -1517,11 +1783,23 @@
       const target = scrollTargetEl || (tbodyEl && tbodyEl.closest(".screener-table-wrap, .etf-table-wrap")) || barEl;
       if (!target) return;
       const rect = target.getBoundingClientRect();
-      const hdr = document.querySelector(".site-header");
-      const hdrH = hdr ? hdr.offsetHeight : 64;
-      if (rect.top < hdrH) {
-        const top = window.scrollY + rect.top - hdrH - 12;
+      const offset = getStickyOffset();
+      if (rect.top < offset) {
+        const top = window.scrollY + rect.top - offset;
         window.scrollTo({ top: Math.max(0, top), behavior: prefersReducedMotion ? "auto" : "smooth" });
+      }
+    }
+
+    function goToIndex(idx) {
+      if (!isFiniteNum(idx) || idx < 0 || st.total <= 0) return;
+      if (!barEl || st.showAll || st.total <= pageSize) return;
+      const totalPages = Math.max(1, Math.ceil(st.total / pageSize));
+      const targetPage = Math.max(1, Math.min(totalPages, Math.floor(idx / pageSize) + 1));
+      if (targetPage !== st.page) {
+        st.page = targetPage;
+        const b = applyClasses(st.total);
+        renderBar(st.total);
+        if (onPageChange) onPageChange(b, st.total, st.showAll);
       }
     }
 
@@ -1580,6 +1858,7 @@
         st.showAll = false;
       },
       getBounds: getBounds,
+      goToIndex: goToIndex,
       formatCount: formatCount,
       apply: function (total) {
         applyClasses(total);
@@ -1681,23 +1960,60 @@
     function formatValuationChips(st) {
       let parts = [];
       if (Array.isArray(st.val_chips) && st.val_chips.length > 0) {
-        parts = st.val_chips.map(function (p) { return String(p || "").trim(); }).filter(Boolean).slice(0, 4);
+        parts = st.val_chips
+          .map(function (p) { return String(p || "").trim(); })
+          .filter(function (p) {
+            if (!p || p === "—" || p === "-") return false;
+            if (/^(?:股息|分红|AH|A\s*折\s*H)/i.test(p)) return false;
+            if (/^[+\-−]?\d+(?:\.\d+)?%$/.test(p)) return false;
+            return true;
+          })
+          .slice(0, 2);
       } else {
         const raw = String(st.valuation || "").trim();
         if (raw) {
-          parts = raw
-            .split(/\s*[·｜|;；]\s*/)
-            .map(function (p) { return p.trim(); })
-            .filter(Boolean)
-            .slice(0, 4);
+          if (raw.indexOf("/") !== -1) {
+            const segs = raw.split(/\s*\/\s*/).map(function (s) { return s.trim(); });
+            const peRaw = segs[0] || "";
+            const pbRaw = st.market === "a-share" && segs.length >= 2 ? segs[1] || "" : "";
+            if (peRaw && peRaw !== "—" && peRaw !== "-") {
+              const hasLabel = /(?:PE|PB|PS|EV|P\/B|P\/S|P\/FFO|FFO|市盈|市净|亏损|负值|不适用|N\/A)/i.test(peRaw);
+              parts.push(hasLabel ? peRaw : "PE " + peRaw);
+            }
+            if (pbRaw && pbRaw !== "—" && pbRaw !== "-" && !/%/.test(pbRaw) && !/AH/i.test(pbRaw)) {
+              const hasPbLabel = /(?:PB|P\/B|PEV|市净|估值)/i.test(pbRaw);
+              parts.push(hasPbLabel ? pbRaw : "PB " + pbRaw);
+            }
+            if (st.market !== "a-share") {
+              for (let i = 1; i < segs.length; i++) {
+                const seg = segs[i];
+                if (!seg || seg === "—" || seg === "-") continue;
+                if (/%/.test(seg) || /(?:股息|分红|AH|A\s*折\s*H)/i.test(seg)) continue;
+                parts.push(seg);
+              }
+            }
+          } else {
+            const segs = raw
+              .split(/\s*[·｜|;；]\s*/)
+              .map(function (p) { return p.trim(); })
+              .filter(function (p) {
+                if (!p || p === "—" || p === "-") return false;
+                if (/(?:股息|分红|AH\s*(?:溢价|折价|倒挂)?|A\s*折\s*H)/i.test(p)) return false;
+                if (/^[+\-−]?\d+(?:\.\d+)?%$/.test(p)) return false;
+                return true;
+              });
+            segs.forEach(function (seg, idx) {
+              if (idx === 0 && /^[~≈<>≤≥]?\s*\d+(?:\.\d+)?(?:\s*[–—\-~]\s*\d+(?:\.\d+)?)?\s*x\+?$/i.test(seg)) {
+                parts.push("PE " + seg);
+              } else {
+                parts.push(seg);
+              }
+            });
+          }
         }
       }
       if (parts.length === 0) return "";
-      return (
-        '<div class="val-chips">' +
-        parts.map(function (p) { return '<span class="val-chip">' + escHtml(p) + "</span>"; }).join("") +
-        "</div>"
-      );
+      return '<div class="val-chips"><span class="val-chip">' + escHtml(parts.slice(0, 2).join(" · ")) + "</span></div>";
     }
 
     function formatDivAhCell(st) {
@@ -2302,7 +2618,10 @@
       const nextIdx = idx + delta;
       if (nextIdx < 0 || nextIdx >= navList.length) return;
       const nextSt = navList[nextIdx];
-      openStockDossier(nextSt.market + ":" + nextSt.code, currentDossierTab, true);
+      const nextKey = nextSt.market + ":" + nextSt.code;
+      const listIdx = currentFilteredStocks.findIndex(function (s) { return s.market + ":" + s.code === nextKey; });
+      scrPager.goToIndex(listIdx >= 0 ? listIdx : nextIdx);
+      openStockDossier(nextKey, currentDossierTab, true);
     }
 
     function openStockDossier(key, initialTab, keepOpen) {
@@ -2317,9 +2636,14 @@
       const isStar = WatchlistStore.has(dKey) || WatchlistStore.has(klineSym);
       if (dossierTitle) dossierTitle.textContent = st.name + " (" + st.code + ")";
       if (dossierSub) {
+        const bn = String(d.baseline_note || "").trim();
+        const hasPriceInBaseline =
+          !!bn &&
+          /(?:参考价|日终收|收盘|官收|现价|收报|股价|\d+(?:\.\d+)?\s*(?:元|港元|美元|HK\$|\$|RMB))/.test(bn);
         dossierSub.textContent =
-          (d.baseline_note ? d.baseline_note + " ｜ " : "") +
-          "赛道：" + st.sector + " ｜ 现价：" + st.price;
+          (bn ? bn + " ｜ " : "") +
+          "赛道：" + st.sector +
+          (hasPriceInBaseline ? "" : " ｜ 现价：" + st.price);
       }
       if (dossierBadges) {
         const isCore = d.depth_tier === "core_deep";
@@ -2365,7 +2689,7 @@
           if (!activeDossierChart) {
             activeDossierChart = window.GIRKline.mount(mountEl, {
               symbolId: klineSym,
-              height: 360,
+              height: 310,
               mode: "modal",
               anchorLow: st.anchor_low,
               anchorHigh: st.anchor_high,
@@ -2402,8 +2726,10 @@
         dossierFootDate.textContent = bmPrefix + "7 维档案刷新日：" + (d.updated_at || fallbackDate);
       }
       syncStockStepButtons();
+      if (dossierBadges) dossierBadges.scrollLeft = 0;
       if (!keepOpen || !dossierModal.classList.contains("open")) {
-        showDialog(dossierModal);
+        const closeBtn = dossierModal.querySelector("[data-action='close-dossier']");
+        showDialog(dossierModal, closeBtn);
       }
     }
 
@@ -2450,10 +2776,12 @@
 
     /* 10B. 27-Pair A/H After-Tax Dividend & Arbitrage Matrix View on screener.html */
     const scrViewBtns = Array.from(document.querySelectorAll("[data-scr-view]"));
+    const scrSubnavLinks = Array.from(document.querySelectorAll('.subnav-bar a[href*="screener.html"]'));
     const scrPoolPane = document.getElementById("scr-view-pool");
     const scrAhPane = document.getElementById("scr-view-ah");
     const ahDataEl = document.getElementById("ah-matrix-data");
     const ahTbody = document.getElementById("ah-matrix-tbody");
+    const ahCardsEl = document.getElementById("ah-matrix-cards");
     const ahCountEl = document.getElementById("ah-matrix-count");
     const ahFilterBtns = Array.from(document.querySelectorAll("[data-ah-filter]"));
     let ahRowsAll = [];
@@ -2469,7 +2797,7 @@
     }
 
     function renderAhMatrix() {
-      if (!ahTbody || ahRowsAll.length === 0) return;
+      if ((!ahTbody && !ahCardsEl) || ahRowsAll.length === 0) return;
       ahFilterBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-ah-filter") || "all") === ahFilter);
       });
@@ -2491,46 +2819,115 @@
       if (ahCountEl) {
         ahCountEl.textContent = "显示 " + rows.length + " / " + ahRowsAll.length + " 对 A/H 孪生股";
       }
-      ahTbody.innerHTML = rows
-        .map(function (r) {
-          const prem = isFiniteNum(r.ah_premium_pct) ? r.ah_premium_pct : null;
-          const premCls = prem != null && prem < 0 ? "ah-pill ah-disc" : "ah-pill ah-prem";
-          const premTxt = prem != null ? (prem >= 0 ? "+" : "") + prem.toFixed(1) + "%" : "—";
-          const barPct = prem != null ? Math.min(100, Math.round((Math.abs(prem) / 120) * 100)) : 0;
-          const barHtml =
-            prem == null
-              ? "—"
-              : prem < 0
-              ? '<div class="ah-bi-track"><div class="ah-bi-left"><span class="ah-bi-fill ah-bi-disc" style="width:' + barPct + '%;"></span></div><div class="ah-bi-right"></div></div>'
-              : '<div class="ah-bi-track"><div class="ah-bi-left"></div><div class="ah-bi-right"><span class="ah-bi-fill ah-bi-prem" style="width:' + barPct + '%;"></span></div></div>';
-          const aDiv = isFiniteNum(r.a_div_pct) ? r.a_div_pct.toFixed(2) + "%" : "—";
-          const hDivNet = isFiniteNum(r.h_connect_after_tax_div) ? r.h_connect_after_tax_div.toFixed(2) + "%" : "—";
-          const taxTag = r.h_tax_rate_pct ? "（扣" + r.h_tax_rate_pct + "%税）" : "";
-          const spreadTxt = isFiniteNum(r.net_div_spread)
-            ? (r.net_div_spread > 0 ? "港通高 +" + r.net_div_spread.toFixed(2) + "pp" : "A股高 +" + Math.abs(r.net_div_spread).toFixed(2) + "pp")
-            : "无股息差对比";
-          const btns = [];
-          if (r.a_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.a_key) + '">A 7维</button>');
-          if (r.h_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.h_key) + '">H 7维</button>');
-          if (r.a_code) btns.push('<button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(r.a_key || r.h_key || "") + '" data-open-tab="kline">📈 K线</button>');
-          return (
-            "<tr>" +
-            '<td><strong>' + escHtml(r.name) + '</strong><div class="sec-sub">' + escHtml(r.a_code) + " / " + escHtml(r.h_code) + "</div></td>" +
-            '<td><div>A: ' + escHtml(r.a_price || "—") + '</div><div class="sec-sub">H: ' + escHtml(r.h_price || "—") + "</div></td>" +
-            '<td><span class="' + premCls + '">' + escHtml(premTxt) + "</span>" + barHtml + "</td>" +
-            '<td><div>A 持有>1年免税: <strong>' + escHtml(aDiv) + '</strong></div><div class="sec-sub">H 港股通税后: <strong>' + escHtml(hDivNet) + "</strong>" + escHtml(taxTag) + "</div></td>" +
-            '<td><div><span class="ah-verdict-pill ah-v-' + escHtml(r.verdict_tone || "neutral") + '">' + escHtml(r.verdict_label || "均衡") + '</span></div><div class="sec-sub">' + escHtml(spreadTxt) + "</div></td>" +
-            '<td><div style="display:flex;gap:5px;flex-wrap:wrap;">' + btns.join("") + "</div></td>" +
-            "</tr>"
-          );
-        })
-        .join("");
+      const prepared = rows.map(function (r) {
+        const prem = isFiniteNum(r.ah_premium_pct) ? r.ah_premium_pct : null;
+        const premCls = prem != null && prem < 0 ? "ah-pill ah-disc" : "ah-pill ah-prem";
+        const premTxt = prem != null ? (prem >= 0 ? "+" : "") + prem.toFixed(1) + "%" : "—";
+        const barPct = prem != null ? Math.min(100, Math.round((Math.abs(prem) / 120) * 100)) : 0;
+        const barHtml =
+          prem == null
+            ? "—"
+            : prem < 0
+            ? '<div class="ah-bi-track"><div class="ah-bi-left"><span class="ah-bi-fill ah-bi-disc" style="width:' + barPct + '%;"></span></div><div class="ah-bi-right"></div></div>'
+            : '<div class="ah-bi-track"><div class="ah-bi-left"></div><div class="ah-bi-right"><span class="ah-bi-fill ah-bi-prem" style="width:' + barPct + '%;"></span></div></div>';
+        const aDiv = isFiniteNum(r.a_div_pct) ? r.a_div_pct.toFixed(2) + "%" : "—";
+        const hDivNet = isFiniteNum(r.h_connect_after_tax_div) ? r.h_connect_after_tax_div.toFixed(2) + "%" : "—";
+        const taxTag = r.h_tax_rate_pct ? "（扣" + r.h_tax_rate_pct + "%税）" : "";
+        const spreadTxt = isFiniteNum(r.net_div_spread)
+          ? (r.net_div_spread > 0 ? "港通高 +" + r.net_div_spread.toFixed(2) + "pp" : "A股高 +" + Math.abs(r.net_div_spread).toFixed(2) + "pp")
+          : "无股息差对比";
+        const btns = [];
+        if (r.a_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.a_key) + '">A 7维</button>');
+        if (r.h_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.h_key) + '">H 7维</button>');
+        if (r.a_key) {
+          btns.push('<button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(r.a_key) + '" data-open-tab="kline">📈 A股K线</button>');
+        } else if (r.a_code) {
+          btns.push('<a class="kline-quick-btn" href="charts.html#sym=' + encodeURIComponent("stk_" + r.a_code) + '">📈 A股K线</a>');
+        }
+        if (r.h_key) {
+          btns.push('<button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(r.h_key) + '" data-open-tab="kline">📈 H股K线</button>');
+        }
+        return {
+          r: r,
+          premCls: premCls,
+          premTxt: premTxt,
+          barHtml: barHtml,
+          aDiv: aDiv,
+          hDivNet: hDivNet,
+          taxTag: taxTag,
+          spreadTxt: spreadTxt,
+          btnsHtml: btns.join(""),
+        };
+      });
+
+      if (ahTbody) {
+        if (prepared.length === 0) {
+          ahTbody.innerHTML =
+            '<tr><td colspan="6"><div class="empty-state">' +
+            '<div class="empty-title">当前筛选条件下暂无匹配 A/H 孪生股</div>' +
+            '<div class="empty-sub">点击「全部」查看完整 A/H 比价矩阵</div>' +
+            "</div></td></tr>";
+        } else {
+          ahTbody.innerHTML = prepared
+            .map(function (x) {
+              const r = x.r;
+              return (
+                "<tr>" +
+                '<td><strong>' + escHtml(r.name) + '</strong><div class="sec-sub">' + escHtml(r.a_code) + " / " + escHtml(r.h_code) + "</div></td>" +
+                '<td><div>A: ' + escHtml(r.a_price || "—") + '</div><div class="sec-sub">H: ' + escHtml(r.h_price || "—") + "</div></td>" +
+                '<td><span class="' + x.premCls + '">' + escHtml(x.premTxt) + "</span>" + x.barHtml + "</td>" +
+                '<td><div>A 持有>1年免税: <strong>' + escHtml(x.aDiv) + '</strong></div><div class="sec-sub">H 港股通税后: <strong>' + escHtml(x.hDivNet) + "</strong>" + escHtml(x.taxTag) + "</div></td>" +
+                '<td><div><span class="ah-verdict-pill ah-v-' + escHtml(r.verdict_tone || "neutral") + '">' + escHtml(r.verdict_label || "均衡") + '</span></div><div class="sec-sub">' + escHtml(x.spreadTxt) + "</div></td>" +
+                '<td><div style="display:flex;gap:5px;flex-wrap:wrap;">' + x.btnsHtml + "</div></td>" +
+                "</tr>"
+              );
+            })
+            .join("");
+        }
+      }
+
+      if (ahCardsEl) {
+        if (prepared.length === 0) {
+          ahCardsEl.innerHTML =
+            '<div class="panel-card empty-state">' +
+            '<div class="empty-title">当前筛选条件下暂无匹配 A/H 孪生股</div>' +
+            '<div class="empty-sub">点击「全部」查看完整 A/H 比价矩阵</div>' +
+            "</div>";
+        } else {
+          ahCardsEl.innerHTML = prepared
+            .map(function (x) {
+              const r = x.r;
+              return (
+                '<article class="ah-mcard">' +
+                '<div class="ah-mcard-head">' +
+                '<div><strong>' + escHtml(r.name) + '</strong><div class="sec-sub">' + escHtml(r.a_code) + " / " + escHtml(r.h_code) + "</div></div>" +
+                '<div style="text-align:right;"><span class="' + x.premCls + '">AH ' + escHtml(x.premTxt) + "</span>" + x.barHtml + "</div>" +
+                "</div>" +
+                '<div class="ah-mcard-grid">' +
+                '<div><div>A 股参考：<strong>' + escHtml(r.a_price || "—") + '</strong></div><div>H 股参考：<strong>' + escHtml(r.h_price || "—") + "</strong></div></div>" +
+                '<div><div>A 免税息：<strong>' + escHtml(x.aDiv) + '</strong></div><div>H 港通税后：<strong>' + escHtml(x.hDivNet) + "</strong>" + escHtml(x.taxTag) + "</div></div>" +
+                "</div>" +
+                '<div class="ah-mcard-actions">' +
+                '<div><span class="ah-verdict-pill ah-v-' + escHtml(r.verdict_tone || "neutral") + '">' + escHtml(r.verdict_label || "均衡") + '</span> <span class="sec-sub">' + escHtml(x.spreadTxt) + "</span></div>" +
+                '<div style="display:flex;gap:5px;flex-wrap:wrap;">' + x.btnsHtml + "</div>" +
+                "</div>" +
+                "</article>"
+              );
+            })
+            .join("");
+        }
+      }
     }
 
     function setScreenerView(viewName, syncHash) {
       const isAh = viewName === "ah-matrix";
       scrViewBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-scr-view") || "pool") === (isAh ? "ah-matrix" : "pool"));
+      });
+      scrSubnavLinks.forEach(function (a) {
+        const href = a.getAttribute("href") || "";
+        const isAhLink = href.indexOf("view=ah-matrix") !== -1;
+        a.classList.toggle("active", isAh ? isAhLink : !isAhLink);
       });
       if (scrPoolPane) scrPoolPane.hidden = isAh;
       if (scrAhPane) scrAhPane.hidden = !isAh;
@@ -2541,6 +2938,16 @@
         } catch (_) {}
       }
     }
+
+    scrSubnavLinks.forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        const href = a.getAttribute("href") || "";
+        const targetIsAh = href.indexOf("view=ah-matrix") !== -1;
+        e.preventDefault();
+        setScreenerView(targetIsAh ? "ah-matrix" : "pool", true);
+      });
+    });
 
     scrViewBtns.forEach(function (b) {
       b.addEventListener("click", function () {
@@ -2562,14 +2969,15 @@
         renderAhMatrix();
       });
     });
-    if (ahTbody) {
-      ahTbody.addEventListener("click", function (e) {
+    [ahTbody, ahCardsEl].forEach(function (el) {
+      if (!el) return;
+      el.addEventListener("click", function (e) {
         const dBtn = e.target.closest("[data-dossier-key]");
         if (dBtn) {
           openStockDossier(dBtn.getAttribute("data-dossier-key"), dBtn.getAttribute("data-open-tab") || "dossier");
         }
       });
-    }
+    });
 
     window.addEventListener("gir:watchlist-change", function () {
       if (state.preset === "watchlist") renderScreener(false, true);
@@ -2608,9 +3016,7 @@
       window.requestAnimationFrame(function () {
         const tabBar = document.querySelector(".tab-bar");
         if (!tabBar) return;
-        const header = document.querySelector(".site-header");
-        const headerH = header ? header.offsetHeight : 64;
-        const top = window.scrollY + tabBar.getBoundingClientRect().top - headerH - 12;
+        const top = window.scrollY + tabBar.getBoundingClientRect().top - getStickyOffset();
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
       });
     }
@@ -3020,9 +3426,16 @@
   const chBucketBtns = Array.from(document.querySelectorAll("[data-ch-bucket]"));
   const chCatBtns = Array.from(document.querySelectorAll("[data-ch-cat]"));
   const chCount = document.getElementById("ch-count");
+  let homeChActiveBar = document.getElementById("home-ch-active-bar");
   let chResetBtn = document.getElementById("ch-reset-empty");
   let chBucket = "all";
   let chCat = "all";
+  const HOME_BUCKET_LABELS = {
+    liquid: "💧 第一笔：活钱应急池（0–6 个月）",
+    stable: "🛡️ 第二笔：稳钱压舱池（1–3 年）",
+    growth: "🌱 第三笔：长钱复利池（3–5 年+）",
+    protection: "🏥 第四笔：保障与超长锁息（10 年+）",
+  };
 
   function applyChFilter() {
     if (chCards.length === 0) return;
@@ -3034,6 +3447,9 @@
     chCatBtns.forEach(function (b) {
       const val = b.getAttribute("data-ch-cat") || "all";
       b.classList.toggle("active", chBucket === "all" && val === chCat);
+    });
+    document.querySelectorAll("[data-jump-bucket]").forEach(function (b) {
+      b.classList.toggle("active", chBucket !== "all" && b.getAttribute("data-jump-bucket") === chBucket);
     });
     chCards.forEach(function (c) {
       const okBucket = chBucket === "all" || c.getAttribute("data-channel-bucket") === chBucket;
@@ -3052,6 +3468,37 @@
       const cntEl = grp.querySelector(".ch-role-count");
       if (cntEl) cntEl.textContent = visCnt + " 大渠道";
     });
+    if (chBucketBtns.length === 0) {
+      if (!homeChActiveBar) {
+        const secHead = document.getElementById("sec-multi-channels");
+        if (secHead && secHead.parentNode) {
+          homeChActiveBar = document.createElement("div");
+          homeChActiveBar.id = "home-ch-active-bar";
+          homeChActiveBar.className = "home-ch-active-bar";
+          homeChActiveBar.hidden = true;
+          secHead.insertAdjacentElement("afterend", homeChActiveBar);
+        }
+      }
+      if (homeChActiveBar) {
+        if (chBucket !== "all" || chCat !== "all") {
+          const activeLabel = HOME_BUCKET_LABELS[chBucket] || (chBucket !== "all" ? chBucket : chCat);
+          homeChActiveBar.hidden = false;
+          homeChActiveBar.style.display = "";
+          homeChActiveBar.innerHTML =
+            '<span class="home-ch-active-label">当前筛选：<strong>' +
+            escHtml(activeLabel) +
+            "</strong>（显示 " +
+            shown +
+            " / " +
+            chCards.length +
+            ' 大渠道）</span><button type="button" class="home-ch-reset-btn" data-action="home-ch-reset">显示全部 12 大渠道 ✕</button>';
+        } else {
+          homeChActiveBar.hidden = true;
+          homeChActiveBar.style.display = "none";
+          homeChActiveBar.innerHTML = "";
+        }
+      }
+    }
     if (chCount) {
       if (shown === 0) {
         chCount.textContent = "未找到匹配渠道（0 / " + chCards.length + "）";
@@ -3103,6 +3550,13 @@
         applyChFilter();
       });
     });
+    document.addEventListener("click", function (e) {
+      if (e.target.closest("[data-action='home-ch-reset']")) {
+        chBucket = "all";
+        chCat = "all";
+        applyChFilter();
+      }
+    });
     applyChFilter();
   }
 
@@ -3115,7 +3569,8 @@
       applyChFilter();
       const targetSec = document.getElementById("sec-multi-channels");
       if (targetSec) {
-        targetSec.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+        const top = window.scrollY + targetSec.getBoundingClientRect().top - getStickyOffset();
+        window.scrollTo({ top: Math.max(0, top), behavior: prefersReducedMotion ? "auto" : "smooth" });
       }
     });
   });
@@ -3217,7 +3672,7 @@
     return "role-watch";
   }
 
-  function createEtfModalController(etfList, getNavList) {
+  function createEtfModalController(etfList, getNavList, onStep) {
     const etfModal = document.getElementById("etf-modal");
     const etfModalTitle = document.getElementById("etf-modal-title");
     const etfModalSub = document.getElementById("etf-modal-sub");
@@ -3266,6 +3721,7 @@
       if (idx < 0) return;
       const nextIdx = idx + delta;
       if (nextIdx < 0 || nextIdx >= navList.length) return;
+      if (typeof onStep === "function") onStep(nextIdx, navList[nextIdx]);
       openEtfModal(navList[nextIdx].code, currentEtfTab, true);
     }
 
@@ -3336,7 +3792,7 @@
           if (!activeEtfChart) {
             activeEtfChart = window.GIRKline.mount(mountEl, {
               symbolId: klineSym,
-              height: 360,
+              height: 310,
               mode: "modal",
               goldLocked: !!it.gold_locked,
             });
@@ -3367,8 +3823,10 @@
       etfModal._girStep = stepEtf;
       etfModal._girClose = function () { destroyEtfChart(); hideDialog(etfModal); };
       syncEtfStepButtons();
+      if (etfModalBadges) etfModalBadges.scrollLeft = 0;
       if (!keepOpen || !etfModal.classList.contains("open")) {
-        showDialog(etfModal);
+        const closeBtn = etfModal.querySelector("[data-action='close-etf']");
+        showDialog(etfModal, closeBtn);
       }
     }
 
@@ -3432,7 +3890,12 @@
     }
 
     let currentFilteredEtfs = allEtfs.slice();
-    const openEtfModal = createEtfModalController(allEtfs, function () { return currentFilteredEtfs; });
+    let etfPager = null;
+    const openEtfModal = createEtfModalController(
+      allEtfs,
+      function () { return currentFilteredEtfs; },
+      function (nextIdx) { if (etfPager) etfPager.goToIndex(nextIdx); }
+    );
     const etfState = {
       q: "",
       market: "all",
@@ -3450,7 +3913,7 @@
     const etfCount = document.getElementById("etf-count");
     const etfTbody = document.getElementById("etf-tbody");
     const etfCardsEl = document.getElementById("etf-cards");
-    const etfPager = createPaginator({
+    etfPager = createPaginator({
       barId: "etf-pg-bar",
       tbodyEl: etfTbody,
       cardsEl: etfCardsEl,
@@ -3730,9 +4193,10 @@
             return (
               '<div class="etf-card etf-mcard' + pgCls + '">' +
               '<div class="etf-card-top">' +
-              '<div>' + starBtn + ' <span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(dispName) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
+              '<div class="etf-card-head-row">' + starBtn + ' <span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span></div>" +
               '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
               "</div>" +
+              '<div class="etf-card-title-row"><strong>' + escHtml(dispName) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
               '<div class="etf-card-meta"><span><strong>通道：</strong>' + escHtml(it.channel) + "</span><span><strong>费率：</strong>" + escHtml(it.fee_total_pct) + "</span><span><strong>规模：</strong>" + escHtml(it.aum) + "</span>" + orthoTag + "</div>" +
               '<div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + '</span> <span class="sec-sub">' + escHtml(it.yield_or_pe) + "</span></div>" +
               '<div class="sc-summary">' + escHtml(it.thesis_deep) + "</div>" +
@@ -3977,18 +4441,36 @@
     const gEmptyReset = document.getElementById("guide-empty-reset");
     const gCount = document.getElementById("guide-term-count");
     const gEmpty = document.getElementById("guide-term-empty");
+    const gMoreBtn = document.getElementById("guide-term-more-btn");
     const gCatBtns = Array.from(document.querySelectorAll("[data-guide-cat]"));
     const gState = { cat: "all", q: "" };
+    let gMoreExpanded = !gMoreBtn;
     let gTimer = 0;
+
+    gCards.forEach(function (card) {
+      if (card.classList.contains("guide-term-hidden")) {
+        card.dataset.guideInitFold = "1";
+      }
+    });
+
+    function revealAllGuideCards() {
+      gMoreExpanded = true;
+      gCards.forEach(function (card) {
+        card.classList.remove("guide-term-hidden");
+      });
+      if (gMoreBtn) {
+        gMoreBtn.hidden = true;
+        gMoreBtn.style.display = "none";
+      }
+    }
 
     function ensureGuideSearchVisible() {
       if (!gSearch) return;
       const panel = gSearch.closest(".filter-panel") || gSearch;
       const rect = panel.getBoundingClientRect();
-      const header = document.querySelector(".site-header");
-      const headerH = header ? header.offsetHeight : 64;
-      if (rect.top < headerH + 6 || rect.bottom > window.innerHeight - 140) {
-        const top = window.scrollY + rect.top - headerH - 12;
+      const stickyOff = getStickyOffset();
+      if (rect.top < stickyOff || rect.bottom > window.innerHeight - 140) {
+        const top = window.scrollY + rect.top - stickyOff;
         window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
       }
     }
@@ -4002,16 +4484,31 @@
         gClear.style.display = gState.q ? "" : "none";
       }
       const tokens = gState.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const isFiltered = gState.cat !== "all" || tokens.length > 0;
       let shown = 0;
+      let hasFolded = false;
       gCards.forEach(function (card) {
         const cat = card.getAttribute("data-guide-term-cat") || "";
         const hay = (card.getAttribute("data-guide-term-search") || card.textContent || "").toLowerCase();
         const okCat = gState.cat === "all" || cat === gState.cat;
         const okQ = tokens.length === 0 || tokens.every(function (tk) { return hay.indexOf(tk) !== -1; });
         const ok = okCat && okQ;
-        card.style.display = ok ? "" : "none";
+        const folded = !isFiltered && !gMoreExpanded && card.dataset.guideInitFold === "1";
+        card.classList.toggle("guide-term-hidden", folded);
+        card.style.display = ok && !folded ? "" : "none";
+        if (folded) hasFolded = true;
         if (ok) shown++;
       });
+      if (gMoreBtn) {
+        const hideMore = gMoreExpanded || isFiltered || !hasFolded;
+        gMoreBtn.hidden = hideMore;
+        gMoreBtn.style.display = hideMore ? "none" : "";
+        const wrap = gMoreBtn.closest(".guide-term-more-wrap");
+        if (wrap) {
+          wrap.hidden = hideMore;
+          wrap.style.display = hideMore ? "none" : "";
+        }
+      }
       if (gCount) {
         gCount.textContent = "共收录 " + shown + " / " + gCards.length + " 条高频白话词条";
       }
@@ -4032,6 +4529,12 @@
       applyGuideFilter(true);
     }
 
+    if (gMoreBtn) {
+      gMoreBtn.addEventListener("click", function () {
+        revealAllGuideCards();
+        applyGuideFilter(false);
+      });
+    }
     if (gSearch) {
       gSearch.addEventListener("input", function () {
         gState.q = gSearch.value;
@@ -4061,6 +4564,10 @@
     });
     function applyGuideHash() {
       const raw = (window.location.hash || "").replace(/^#/, "").trim();
+      if (/^term-/i.test(raw)) {
+        revealAllGuideCards();
+        return false;
+      }
       if (!raw || raw.indexOf("=") === -1) return false;
       let matched = false;
       raw.split("&").forEach(function (pair) {
@@ -4085,6 +4592,9 @@
     window.addEventListener("hashchange", function () {
       if (applyGuideHash()) {
         applyGuideFilter(true);
+      } else if (/^#term-/i.test(window.location.hash || "")) {
+        revealAllGuideCards();
+        applyGuideFilter(false);
       }
     });
   }
@@ -4148,9 +4658,11 @@
       if (sumPct !== 100) stabPct += 100 - sumPct;
 
       const liqAmt = Math.round((total * liqPct) / 100);
-      const stabAmt = Math.round((total * stabPct) / 100);
       const eqAmt = Math.round((total * eqPct) / 100);
       const multiAmt = Math.round((total * multiPct) / 100);
+      const stabAmt = goldAllowed
+        ? Math.round((total * stabPct) / 100)
+        : total - (liqAmt + eqAmt + multiAmt);
       const goldAmt = goldAllowed ? total - liqAmt - stabAmt - eqAmt - multiAmt : 0;
       const singleStockCap = Math.round(total * 0.08);
       const cashPlusStable = liqAmt + stabAmt;
@@ -4270,13 +4782,48 @@
     if (amountInput) {
       amountInput.addEventListener("input", function () {
         const v = parseFloat(amountInput.value);
-        if (isFiniteNum(v) && v >= 0.1 && v <= 100000) {
+        if (isFiniteNum(v) && v >= 0.1 && v <= 10000) {
           curWan = v;
           renderWallet();
         }
       });
+      amountInput.addEventListener("blur", function () {
+        const raw = parseFloat(amountInput.value);
+        const clamped = isFiniteNum(raw) ? Math.max(0.1, Math.min(10000, Math.round(raw * 100) / 100)) : curWan;
+        curWan = Math.max(0.1, Math.min(10000, clamped));
+        amountInput.value = String(curWan);
+        renderWallet();
+      });
     }
     if (copyBtn) {
+      const origCopyLabel = copyBtn.textContent || "复制试算方案";
+      let copyResetTimer = 0;
+      function showCopyFeedback(ok) {
+        window.clearTimeout(copyResetTimer);
+        copyBtn.textContent = ok ? "已复制 ✓" : "复制失败，请手动选中";
+        copyResetTimer = window.setTimeout(function () {
+          copyBtn.textContent = origCopyLabel;
+        }, 1800);
+      }
+      function fallbackCopyText(text) {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "fixed";
+          ta.style.top = "-9999px";
+          ta.style.left = "-9999px";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, text.length);
+          const ok = !!(document.execCommand && document.execCommand("copy"));
+          document.body.removeChild(ta);
+          showCopyFeedback(ok);
+        } catch (_) {
+          showCopyFeedback(false);
+        }
+      }
       copyBtn.addEventListener("click", function () {
         const p = computeWalletPlan();
         const summary =
@@ -4288,10 +4835,12 @@
           "5. 黄金新仓: " + (p.goldAllowed ? fmtRmb(p.goldAmt) : "0 元（红灯观察期不新买）") + "\n" +
           "单股上限(8%): " + fmtRmb(p.singleStockCap);
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(summary).then(function () {
-            copyBtn.textContent = "已复制 ✓";
-            window.setTimeout(function () { copyBtn.textContent = "复制试算方案"; }, 1800);
-          }).catch(function () {});
+          navigator.clipboard.writeText(summary).then(
+            function () { showCopyFeedback(true); },
+            function () { fallbackCopyText(summary); }
+          );
+        } else {
+          fallbackCopyText(summary);
         }
       });
     }
@@ -4372,6 +4921,7 @@
     const isMajorCheckbox = !!(onlyMajorEl && onlyMajorEl.tagName === "INPUT" && onlyMajorEl.type === "checkbox");
     const isSameTierBtn = !!(tierBtn && onlyMajorEl && tierBtn === onlyMajorEl);
     const toggle30dBtn = document.getElementById("pcal-toggle-30d");
+    const moreBtn = document.getElementById("pcal-more-btn");
     const items = Array.from(sec.querySelectorAll(".pcal-event-item"));
     const emptyEl = document.getElementById("pcal-empty");
     const countEl = document.getElementById("pcal-count-status");
@@ -4384,6 +4934,7 @@
           (tierBtn && (tierBtn.classList.contains("active") || tierBtn.getAttribute("aria-pressed") === "true"))
         );
     let show30d = !toggle30dBtn || toggle30dBtn.getAttribute("data-expanded") === "1";
+    let pcalMoreExpanded = false;
 
     function matchesRegion(itemReg, filterReg) {
       if (filterReg === "all") return true;
@@ -4418,7 +4969,10 @@
         (onlyMajorEl && onlyMajorEl.getAttribute("data-pcal-tier")) ||
         "P0";
       const targetTierLow = String(targetTier).trim().toLowerCase();
+      const isDefaultView = activeRegion === "all" && !onlyTopTier && !show30d;
       let shown = 0;
+      let totalVisBeforeFold = 0;
+      let foldedCount = 0;
       let hidden30d = 0;
 
       items.forEach(function (el) {
@@ -4437,11 +4991,37 @@
           hidden30d++;
         }
         const vis = okBase && (show30d || horizon !== "30d");
-        el.hidden = !vis;
-        el.style.display = vis ? "" : "none";
-        if (vis) shown++;
+        let isFolded = false;
+        if (vis) {
+          totalVisBeforeFold++;
+          if (moreBtn && isDefaultView && !pcalMoreExpanded && totalVisBeforeFold > 5) {
+            isFolded = true;
+            foldedCount++;
+          }
+        }
+        el.classList.toggle("pcal-fold-hidden", isFolded);
+        const finalVis = vis && !isFolded;
+        el.hidden = !finalVis;
+        el.style.display = finalVis ? "" : "none";
+        if (finalVis) shown++;
       });
 
+      if (moreBtn) {
+        const hideMore = !isDefaultView || totalVisBeforeFold <= 5;
+        const moreWrap = moreBtn.closest(".pcal-more-wrap");
+        moreBtn.hidden = hideMore;
+        moreBtn.style.display = hideMore ? "none" : "";
+        if (moreWrap) {
+          moreWrap.hidden = hideMore;
+          moreWrap.style.display = hideMore ? "none" : "";
+        }
+        if (!hideMore) {
+          moreBtn.setAttribute("aria-expanded", pcalMoreExpanded ? "true" : "false");
+          moreBtn.textContent = pcalMoreExpanded
+            ? "收起部分日程 ▴"
+            : "展开其余 " + foldedCount + " 项近期日程 ▾";
+        }
+      }
       if (toggle30dBtn) {
         const hideToggle = !show30d && hidden30d === 0;
         toggle30dBtn.hidden = hideToggle;
@@ -4468,6 +5048,13 @@
             : "当前筛选条件下暂无匹配日程，试试切换地区或取消「只看重磅」。";
         }
       }
+    }
+
+    if (moreBtn) {
+      moreBtn.addEventListener("click", function () {
+        pcalMoreExpanded = !pcalMoreExpanded;
+        applyFilter();
+      });
     }
 
     regionBtns.forEach(function (btn) {
