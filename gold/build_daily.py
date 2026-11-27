@@ -457,22 +457,33 @@ def _fmt_axis_val(val: float, span: float, prefix: str = "", suffix: str = "") -
 
 
 def _svg_label_pill(
-    tx: float, ty: float, txt: str, font_size: float, anchor: str = "middle",
+    tx: float,
+    ty: float,
+    txt: str,
+    font_size: float,
+    anchor: str = "middle",
+    *,
+    fill: str = "#ffffff",
+    fill_opacity: float = 0.94,
+    stroke: str = "",
+    stroke_opacity: float = 0.35,
+    rx_radius: float = 3.0,
 ) -> tuple[str, tuple[float, float, float, float]]:
-    """Build a crisp semi-opaque white rounded pill rect behind an SVG label (no stroke-halo OCR doubling)."""
+    """Build a crisp opaque/semi-opaque rounded pill rect behind an SVG label (no stroke-halo OCR doubling)."""
     plain = EMOJI_STRIP_RE.sub("", str(txt)).strip()
     text_w = round(max(_vis_len(plain) * font_size * 1.08, font_size * 1.6), 1)
-    pad_x = 4.0
+    pad_x = 4.5
     w = round(text_w + 2.0 * pad_x, 1)
-    h = round(font_size + 4.0, 1)
+    h = round(font_size + 4.4, 1)
     if anchor == "start":
         rx = round(tx - pad_x, 1)
     elif anchor == "end":
         rx = round(tx - text_w - pad_x, 1)
     else:
         rx = round(tx - w / 2.0, 1)
-    ry = round(ty - font_size * 0.88 - 1.5, 1)
-    rect = f'<rect x="{rx}" y="{ry}" width="{w}" height="{h}" fill="#ffffff" fill-opacity="0.88" rx="3"/>'
+    ry = round(ty - font_size * 0.88 - 1.7, 1)
+    stroke_attr = f' stroke="{stroke}" stroke-opacity="{stroke_opacity}" stroke-width="0.8"' if stroke else ""
+    rect = f'<rect x="{rx}" y="{ry}" width="{w}" height="{h}" fill="{fill}" fill-opacity="{fill_opacity:.2f}"{stroke_attr} rx="{rx_radius:g}"/>'
     return rect, (rx, ry, round(rx + w, 1), round(ry + h, 1))
 
 
@@ -660,9 +671,13 @@ def render_chart_timeline(cfg: dict) -> str:
             best_bbox = (0.0, 0.0, 0.0, 0.0)
             best_pen = float("inf")
             for cand_y in dict.fromkeys(ref_cands):
-                pill, bbox = _svg_label_pill(rx, cand_y, raw_ref_lbl, 10.6, anchor)
+                pill, bbox = _svg_label_pill(
+                    rx, cand_y, raw_ref_lbl, 10.6, anchor,
+                    fill="#ffffff", fill_opacity=0.96, stroke=col, stroke_opacity=0.35, rx_radius=3.5,
+                )
                 pen = sum(_boxes_overlap_area(bbox, ob) for ob in placed_boxes)
                 pen += 2.0 * sum(_boxes_overlap_area(bbox, db, pad_x=0.5, pad_y=0.5) for db in all_dot_boxes)
+                pen += 0.25 * _polyline_crossing_penalty(bbox, poly_segments)
                 if pen < best_pen:
                     best_pen = pen
                     best_ry = cand_y
@@ -821,7 +836,8 @@ def render_chart_switch(cfg: dict) -> str:
         dot_col = "#dc2626"
 
     n_gauges = max(len(gauges), 1)
-    sep_y = 38 + n_gauges * 44
+    gauge_stride = 54
+    sep_y = 38 + n_gauges * gauge_stride
     cards_y0 = sep_y + 36
     n_rows = max((len(checks) + 1) // 2, 1)
     vb_w = 640
@@ -829,10 +845,12 @@ def render_chart_switch(cfg: dict) -> str:
 
     gauge_svg = ""
     for gi, g in enumerate(gauges):
-        y = 40 + gi * 44
+        y = 40 + gi * gauge_stride
         pct = g["pct"]
-        lbl = svg_esc(g.get("label", ""))
-        val_txt = svg_esc(g.get("value_text", ""))
+        raw_lbl = str(g.get("label", ""))
+        raw_val_txt = str(g.get("value_text", ""))
+        lbl = svg_esc(raw_lbl)
+        val_txt = svg_esc(raw_val_txt)
         bar_col = sanitize_hex_color(g.get("color"), "#b45309")
         bx = 16
         bw = 608
@@ -843,10 +861,33 @@ def render_chart_switch(cfg: dict) -> str:
             f'<rect x="{bx}" y="{y+7}" width="{bw}" height="12" fill="#e2e8f0" rx="6"/>'
             f'<rect x="{bx}" y="{y+7}" width="{fill_w}" height="12" fill="{bar_col}" rx="6"/>'
         )
-        if g.get("threshold_pct") is not None:
-            tp = g["threshold_pct"]
-            tx = round(bx + bw * tp / 100.0, 1)
+        tp = g.get("threshold_pct")
+        tx = round(bx + bw * tp / 100.0, 1) if tp is not None else None
+        if tx is not None:
             gauge_svg += f'<line x1="{tx}" y1="{y+5}" x2="{tx}" y2="{y+21}" stroke="#0f172a" stroke-width="1.8"/>'
+
+        # Crisp non-overlapping scale & threshold micro-labels cleanly below the gauge bar
+        y_micro = y + 32
+        is_drawdown = bool(re.search(r"(?:45\.5%|回调|回撤|熊市)", raw_lbl + raw_val_txt))
+        if is_drawdown:
+            x_20 = round(bx + bw * (20.0 / 45.5), 1)
+            x_30 = tx if (tx is not None and abs(tp - (30.0 / 45.5 * 100.0)) <= 6.0) else round(bx + bw * (30.0 / 45.5), 1)
+            gauge_svg += (
+                f'<line x1="{x_20}" y1="{y+7}" x2="{x_20}" y2="{y+19}" stroke="#94a3b8" stroke-width="1.0" stroke-dasharray="2,2"/>'
+                f'<text x="{bx}" y="{y_micro}" text-anchor="start" font-size="8.8" fill="#64748b">0%</text>'
+                f'<text x="{x_20}" y="{y_micro}" text-anchor="middle" font-size="8.8" fill="#64748b">-20%</text>'
+                f'<text x="{x_30}" y="{y_micro}" text-anchor="middle" font-size="8.8" fill="#0f172a" font-weight="700">-30%</text>'
+                f'<text x="{bx+bw}" y="{y_micro}" text-anchor="end" font-size="8.8" fill="#64748b">-45.5%</text>'
+            )
+        else:
+            gauge_svg += (
+                f'<text x="{bx}" y="{y_micro}" text-anchor="start" font-size="8.8" fill="#64748b">0%</text>'
+                f'<text x="{bx+bw}" y="{y_micro}" text-anchor="end" font-size="8.8" fill="#64748b">100%</text>'
+            )
+            if tx is not None:
+                th_lbl = svg_esc(str(g.get("threshold_label") or f"参考线 {tp:g}%"))
+                th_x = round(max(bx + 54.0, min(bx + bw - 60.0, tx)), 1)
+                gauge_svg += f'<text x="{th_x}" y="{y_micro}" text-anchor="middle" font-size="8.8" fill="#0f172a" font-weight="700">{th_lbl}</text>'
 
     card_svg = ""
     for idx, ch in enumerate(checks):
@@ -1271,9 +1312,9 @@ def parse_markdown_to_html(
             elif break_layer3 and ("第三部分" in vol_txt or "附录" in vol_txt):
                 should_break = True
             if should_break:
-                html_out.append(f'<div class="volume-break"></div><h1 class="vol-header">{md_inline(vol_txt)}</h1>')
+                html_out.append(f'<div class="volume-break"></div><h2 class="vol-header">{md_inline(vol_txt)}</h2>')
             else:
-                html_out.append(f'<h1 class="vol-header">{md_inline(vol_txt)}</h1>')
+                html_out.append(f'<h2 class="vol-header">{md_inline(vol_txt)}</h2>')
             continue
 
         if line.startswith("## "):
@@ -1389,7 +1430,7 @@ def build_cover_html(title: str, meta: dict, accent: str = "#b45309") -> str:
     return f'''
     <div class="cover-banner" style="border-bottom:4px solid {safe_accent};">
       <div class="cover-tag">{tag}</div>
-      <div class="cover-title">{md_inline(title)}</div>
+      <h1 class="cover-title">{md_inline(title)}</h1>
       {meta_html}
       {kpi_html}
     </div>

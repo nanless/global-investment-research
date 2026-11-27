@@ -7,7 +7,7 @@
 <!-- GOLD_EDITION_REVIEW {
   "edition_id": "2026-11-27_0730",
   "as_of_short": "2026-11-27 07:55",
-  "note": "完成 2026-11-27 07:30 一体化早报（07:55 BJT 截点，美国感恩节后黑五半日市前瞻）四重独立红队交叉核验：直连 Cboe VIX_History.csv（07:34 BJT = 18:34 EST > 11:30 EST 节日门槛）确认末行止于 2026-11-25（28.29），正式记录 2026-11-26 为 no_row_confirmed 并拒采 Yahoo 盘外零星 26.80；其余三关严格沿用 11/25 官数（DFII10 2.73% 差 1bp、2Y-FF +73bp、NY 收 $3,588.78 未过 $3,678.15，今晚黑五门槛滚降至 $3,589.85），维持 Tier 0 红灯停（1/4 关、new_buy_allowed=false）与主报告 0/5 锁；锁定 11/26 ICE 布油 1 月官结 $96.57 (+2.07%，拦截次月 2 月合约 $91.58-$91.75 换月贴水误判，金油比更新 37.16）、LSE IGLN.L 官收 $69.2375 (+3.34%/两日 +0.09%，纠偏 11/24 旧价 $69.18)、02:30 国内夜盘官收与同分钟溢价（au2702 766.00/+1.92、Au(T+D) 764.00/-0.08、Au99.99 765.00/+0.92、cu2701 89,270/+0.56%）、03:00 在岸人民币 6.6609 及 07:30 东京 11 月通胀（总体 2.8%/不含生鲜 2.9%/剔生鲜能源 2.3%）。",
+  "note": "完成 2026-11-27 07:30 一体化早报（07:55 BJT 截点，美国感恩节后黑五半日市前瞻）四重独立红队交叉核验：直连 Cboe VIX_History.csv（07:34 BJT = 18:34 EST > 11:30 EST 节日门槛）确认末行止于 2026-11-25（28.29），正式记录 2026-11-26 为 no_row_confirmed 并拒采 Yahoo 盘外零星 26.80；其余三关严格沿用 11/25 官数（DFII10 2.73% 差 1bp、2Y-FF +73bp、NY 收 $3,588.78 未过 $3,678.15，今晚黑五门槛滚降至 $3,589.85），维持 Tier 0 红灯停（1/4 关、new_buy_allowed=false）与主报告 0/5 锁；锁定 11/26 ICE 布油 1 月官结 $96.57 (+2.07%，拦截次月 2 月合约 $91.58-$91.75 换月贴水误判，金油比更新 37.16）、LSE IGLN.L 官收 $69.2375 (+3.34%/两日 +0.09%，纠偏 11/24 旧价 $69.18)、LME 3M 铜同口径 17:00 收 $11,872 (+1.90%)、02:30 金银夜盘官收与同分钟溢价（au2702 766.00/+1.92、Au(T+D) 764.00/-0.08、Au99.99 765.00/+0.92）与 01:00 有色夜盘官收（cu2701 89,270/+0.56%）、03:00 在岸人民币 6.6609 及 07:30 东京 11 月通胀（总体 2.8%/不含生鲜 2.9%/日央行版核心剔生鲜与能源 2.5%，仅较前值 2.6% 微降 0.1pp；欧美口径剔全部食品与能源为 2.3%）。",
   "sources": {
     "real_yield": [
       "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"
@@ -45,7 +45,7 @@
 - **新增细节校准 #34–#35（累计 35 项，对核心买金结论影响 0 / 35）**：
   - **#34**：直连 Cboe `VIX_History.csv` 确认 `2026-11-26` 无常规日线行（`no_row_confirmed`，`checked_at = 2026-11-27 07:34`），拦截 Yahoo Finance 盘外杂讯 `26.80` 并维持 `vix_live = null`。
   - **#35**：校准伦交所 `IGLN.L` 11/26 官收为 **`$69.2375`（`$69.24`）**（纠偏第 8A 路滞后 11/24 `$69.18`），并按 11/26 布油 1 月官结 `$96.57` 将 `gold_brent_ratio` 由 `37.93` 更新为 **`37.16`**。
-- **一手链接与剩余日盘顺延**：[Cboe VIX_History.csv](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv) · [Cboe US Options Hours](https://www.cboe.com/about/hours/us-options/) · [SGE 每日行情](https://www.sge.com.cn/sjzx/mrhqsj) · [SHFE](https://www.shfe.com.cn/) · [Japan Statistics Bureau Tokyo CPI](https://www.stat.go.jp/english/data/cpi/index.html) · [BoE Financial Stability Report](https://www.bankofengland.co.uk/financial-stability-report)。仅余 11/25 FRED OAS/SOFR/TGA（感恩节顺延至美东周五）、山东黄金 11/26 业绩会正式文字纪要及今日 09:00 国内银行金条/金店最新牌价待 `2026-11-27_1800` 晚报封账。
+- **一手链接与剩余日盘顺延**：[Cboe VIX_History.csv](https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv) · [Cboe US Options Hours](https://www.cboe.com/about/hours/us-options/) · [SGE 每日行情](https://www.sge.com.cn/sjzx/mrhqsj) · [SHFE](https://www.shfe.com.cn/) · [Japan Statistics Bureau Tokyo CPI](https://www.stat.go.jp/english/data/cpi/index.html) · [BoE Financial Stability Report](https://www.bankofengland.co.uk/financial-stability-report/2026/november-2026)。仅余 11/25 FRED OAS/SOFR/TGA（感恩节顺延至美东周五）、山东黄金 11/26 业绩会正式文字纪要及今日 09:00 国内银行金条/金店最新牌价待 `2026-11-27_1800` 晚报封账。
 
 ---
 

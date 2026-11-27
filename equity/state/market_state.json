@@ -3,8 +3,14 @@
   "as_of_cst": "2026-11-27T07:55:00+08:00",
   "edition_id": "2026-11-27_0730",
   "period_slug": "2026_11",
-  "schedule_cst": ["07:30", "18:00"],
-  "edition_slugs_cst": ["07:30", "18:00"],
+  "schedule_cst": [
+    "07:30",
+    "18:00"
+  ],
+  "edition_slugs_cst": [
+    "07:30",
+    "18:00"
+  ],
   "alert_level": "L1",
   "alert_label": "关键节点临近 · 沙特炼厂遇袭推布油至 96.57 美元，沪深 14 只跨境基今停牌至 10:30，美团财报撞老铺除净",
   "rsi_enabled": true,
@@ -31,7 +37,7 @@
       "pboc_total_net_100m": -455,
       "pboc_op_date": "2026-11-26",
       "pe_ttm": 13.24,
-      "pe_fwd": 12.30,
+      "pe_fwd": 12.3,
       "cgb10y_pct": 1.5865,
       "erp_ttm_pct": 5.97,
       "erp_fwd_pct": 6.54,
@@ -54,23 +60,25 @@
       "hsi_ma200_gap_pct": -5.48,
       "hstech_200d": 3917,
       "hstech_ma200_gap_pct": -12.76,
-      "hsi_52w_high": 28056.10,
+      "hsi_52w_high": 28056.1,
       "hsi_night_live": 22117,
-      "hsi_adr_implied": 22226.88,
+      "hsi_adr_implied": null,
       "turnover_hkd_b": 212.46,
       "short_sell_ratio_pct": 19.23,
       "southbound_daily_hkd_b": -21.351,
       "southbound_mtd_hkd_b": 6.787,
       "southbound_ytd_hkd_b": 415.05,
-      "hsahp_index": 138.40,
-      "pe_ttm": 10.30,
-      "pe_fwd": 9.70,
+      "hsahp_index": 138.4,
+      "pe_ttm": 10.3,
+      "pe_fwd": 9.7,
       "erp_usd_anchor_ttm_pct": 4.86,
       "erp_cny_anchor_ttm_pct": 8.12,
       "erp_usd_anchor_fwd_pct": 5.46,
       "erp_cny_anchor_fwd_pct": 8.72,
       "stock_pool_count": 75,
-      "delisted_blocked_tickers": ["00011.HK"],
+      "delisted_blocked_tickers": [
+        "00011.HK"
+      ],
       "latest_daily": "daily/2026-11-27_0730_hk_stock.md",
       "flagship_last_updated": "2026-11-25"
     },
@@ -89,7 +97,7 @@
       "sp500_200d": 7348,
       "sp500_high": 7819,
       "us10y_pct": 4.85,
-      "us10y_fomo_below": 4.70,
+      "us10y_fomo_below": 4.7,
       "pe_ttm": 24.24,
       "pe_fwd": 17.26,
       "erp_ttm_pct": -0.72,
@@ -109,11 +117,11 @@
       "spot_ny_close_usd": 3588.78,
       "spot_live_usd": 3567.32,
       "spot_change_pct": 0.96,
-      "comex_front_settle_usd": 3534.70,
-      "comex_gcz26_settle_usd": 3537.90,
+      "comex_front_settle_usd": 3534.7,
+      "comex_gcz26_settle_usd": 3537.9,
       "sge_au9999_day_rmb": 765.82,
       "sge_autd_day_rmb": 765.78,
-      "sge_autd_night_rmb": 764.00,
+      "sge_autd_night_rmb": 764.0,
       "sge_same_ts_premium_rmb": 0.86,
       "dfii10_pct": 2.73
     }
@@ -127,9 +135,9 @@
       "cgb10y_pct": 1.5865,
       "cn_us_10y_spread_bp": -326,
       "dxy": 103.76,
-      "usd_cny_1630": 6.6600,
+      "usd_cny_1630": 6.66,
       "usd_cny_night": 6.6609,
-      "usd_cnh": 6.6640,
+      "usd_cnh": 6.664,
       "cfets_cny_fixing": 6.7096,
       "cfets_fixing_date": "2026-11-26",
       "pboc_fx_rrr_pct": 6.0,
@@ -139,59 +147,257 @@
       "hibor_3m_pct": 3.436,
       "sofr_pct": 3.94,
       "sofr_hibor1m_carry_bp": 100.5,
-      "hkma_agg_bal_hkd_100m": 541.87,
+      "hkma_agg_bal_hkd_100m": 540.83,
       "hkd_cny_mid": 0.85582,
       "usd_jpy": 159.25
     },
     "ah_premium_radar": {
-      "hsahp_index": 138.40,
+      "hsahp_index": 138.4,
       "as_of_date": "2026-11-26",
       "pe_physics_locks": [
-        {"name": "中芯国际", "a_pe_ttm": 116.8, "h_pe_ttm": 39.4, "ah_premium_pct": 196.7, "preferred_channel": "offshore_hk"},
-        {"name": "中国神华", "a_pe_ttm": 19.0, "h_pe_ttm": 12.7, "ah_premium_pct": 50.0, "preferred_channel": "offshore_hk"},
-        {"name": "紫金矿业", "a_pe_ttm": 8.8, "h_pe_ttm": 7.4, "ah_premium_pct": 19.5, "preferred_channel": "neutral"},
-        {"name": "美的集团", "a_pe_ttm": 15.2, "h_pe_ttm": 14.1, "ah_premium_pct": 7.5, "preferred_channel": "neutral"},
-        {"name": "中际旭创", "a_pe_ttm": 19.0, "h_pe_ttm": 19.5, "ah_premium_pct": -2.4, "preferred_channel": "onshore_a_inverted"},
-        {"name": "招商银行", "a_pe_ttm": 7.3, "h_pe_ttm": 7.7, "ah_premium_pct": -5.2, "preferred_channel": "onshore_a_inverted"},
-        {"name": "药明康德", "a_pe_ttm": 17.8, "h_pe_ttm": 19.5, "ah_premium_pct": -8.7, "preferred_channel": "onshore_a_inverted"},
-        {"name": "宁德时代", "a_pe_ttm": 10.8, "h_pe_ttm": 13.4, "ah_premium_pct": -19.7, "preferred_channel": "onshore_a_inverted"}
+        {
+          "name": "中芯国际",
+          "a_pe_ttm": 116.8,
+          "h_pe_ttm": 39.4,
+          "ah_premium_pct": 196.7,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中国神华",
+          "a_pe_ttm": 19.0,
+          "h_pe_ttm": 12.7,
+          "ah_premium_pct": 49.8,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "紫金矿业",
+          "a_pe_ttm": 8.8,
+          "h_pe_ttm": 7.4,
+          "ah_premium_pct": 19.5,
+          "preferred_channel": "neutral"
+        },
+        {
+          "name": "美的集团",
+          "a_pe_ttm": 15.2,
+          "h_pe_ttm": 14.1,
+          "ah_premium_pct": 7.5,
+          "preferred_channel": "neutral"
+        },
+        {
+          "name": "中际旭创",
+          "a_pe_ttm": 19.0,
+          "h_pe_ttm": 19.5,
+          "ah_premium_pct": -2.4,
+          "preferred_channel": "onshore_a_inverted"
+        },
+        {
+          "name": "招商银行",
+          "a_pe_ttm": 7.3,
+          "h_pe_ttm": 7.7,
+          "ah_premium_pct": -5.0,
+          "preferred_channel": "onshore_a_inverted"
+        },
+        {
+          "name": "药明康德",
+          "a_pe_ttm": 17.8,
+          "h_pe_ttm": 19.5,
+          "ah_premium_pct": -8.7,
+          "preferred_channel": "onshore_a_inverted"
+        },
+        {
+          "name": "宁德时代",
+          "a_pe_ttm": 10.8,
+          "h_pe_ttm": 13.4,
+          "ah_premium_pct": -19.7,
+          "preferred_channel": "onshore_a_inverted"
+        }
       ],
       "benchmarks": [
-        {"name": "华虹半导体", "a": "688347", "h": "01347.HK", "ah_premium_pct": 219.2, "preferred_channel": "offshore_hk"},
-        {"name": "中芯国际", "a": "688981", "h": "00981.HK", "ah_premium_pct": 196.7, "preferred_channel": "offshore_hk"},
-        {"name": "中国人寿", "a": "601628", "h": "02628.HK", "ah_premium_pct": 92.8, "preferred_channel": "offshore_hk"},
-        {"name": "三花智控", "a": "002050", "h": "02050.HK", "ah_premium_pct": 86.5, "preferred_channel": "offshore_hk"},
-        {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.2, "preferred_channel": "offshore_hk_check_withholding"},
-        {"name": "中国移动", "a": "600941", "h": "00941.HK", "ah_premium_pct": 62.6, "preferred_channel": "offshore_hk_check_withholding"},
-        {"name": "中广核电力", "a": "003816", "h": "01816.HK", "ah_premium_pct": 61.8, "preferred_channel": "offshore_hk"},
-        {"name": "中信证券", "a": "600030", "h": "06030.HK", "ah_premium_pct": 57.0, "preferred_channel": "offshore_hk"},
-        {"name": "比亚迪", "a": "002594", "h": "01211.HK", "ah_premium_pct": 51.2, "preferred_channel": "offshore_hk"},
-        {"name": "中国石油", "a": "601857", "h": "00857.HK", "ah_premium_pct": 51.0, "preferred_channel": "offshore_hk"},
-        {"name": "中国铝业", "a": "601600", "h": "02600.HK", "ah_premium_pct": 51.0, "preferred_channel": "offshore_hk"},
-        {"name": "中国神华", "a": "601088", "h": "01088.HK", "ah_premium_pct": 50.0, "preferred_channel": "offshore_hk"},
-        {"name": "工商银行", "a": "601398", "h": "01398.HK", "ah_premium_pct": 37.6, "preferred_channel": "offshore_hk"},
-        {"name": "洛阳钼业", "a": "603993", "h": "03993.HK", "ah_premium_pct": 34.0, "preferred_channel": "offshore_hk"},
-        {"name": "顺丰控股", "a": "002352", "h": "06936.HK", "ah_premium_pct": 30.4, "preferred_channel": "offshore_hk"},
-        {"name": "中国平安", "a": "601318", "h": "02318.HK", "ah_premium_pct": 28.5, "preferred_channel": "offshore_hk"},
-        {"name": "恒瑞医药", "a": "600276", "h": "01276.HK", "ah_premium_pct": 27.1, "preferred_channel": "offshore_hk"},
-        {"name": "福耀玻璃", "a": "600660", "h": "03606.HK", "ah_premium_pct": 23.6, "preferred_channel": "offshore_hk"},
-        {"name": "紫金矿业", "a": "601899", "h": "02899.HK", "ah_premium_pct": 19.5, "preferred_channel": "neutral"},
-        {"name": "立讯精密", "a": "002475", "h": "02475.HK", "ah_premium_pct": 16.6, "preferred_channel": "offshore_hk"},
-        {"name": "美的集团", "a": "000333", "h": "00300.HK", "ah_premium_pct": 7.5, "preferred_channel": "neutral"},
-        {"name": "中际旭创", "a": "300308", "h": "03308.HK", "ah_premium_pct": -2.4, "preferred_channel": "onshore_a_inverted"},
-        {"name": "招商银行", "a": "600036", "h": "03968.HK", "ah_premium_pct": -5.2, "preferred_channel": "onshore_a_inverted"},
-        {"name": "药明康德", "a": "603259", "h": "02359.HK", "ah_premium_pct": -8.7, "preferred_channel": "onshore_a_inverted"},
-        {"name": "宁德时代", "a": "300750", "h": "03750.HK", "ah_premium_pct": -19.7, "preferred_channel": "onshore_a_inverted"}
+        {
+          "name": "华虹半导体",
+          "a": "688347",
+          "h": "01347.HK",
+          "ah_premium_pct": 219.2,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中芯国际",
+          "a": "688981",
+          "h": "00981.HK",
+          "ah_premium_pct": 196.7,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中国人寿",
+          "a": "601628",
+          "h": "02628.HK",
+          "ah_premium_pct": 92.8,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "三花智控",
+          "a": "002050",
+          "h": "02050.HK",
+          "ah_premium_pct": 86.5,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中国海油",
+          "a": "600938",
+          "h": "00883.HK",
+          "ah_premium_pct": 69.2,
+          "preferred_channel": "offshore_hk_check_withholding"
+        },
+        {
+          "name": "中国移动",
+          "a": "600941",
+          "h": "00941.HK",
+          "ah_premium_pct": 62.6,
+          "preferred_channel": "offshore_hk_check_withholding"
+        },
+        {
+          "name": "中广核电力",
+          "a": "003816",
+          "h": "01816.HK",
+          "ah_premium_pct": 61.8,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中信证券",
+          "a": "600030",
+          "h": "06030.HK",
+          "ah_premium_pct": 57.0,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "比亚迪",
+          "a": "002594",
+          "h": "01211.HK",
+          "ah_premium_pct": 51.2,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中国石油",
+          "a": "601857",
+          "h": "00857.HK",
+          "ah_premium_pct": 51.0,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中国铝业",
+          "a": "601600",
+          "h": "02600.HK",
+          "ah_premium_pct": 51.0,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中国神华",
+          "a": "601088",
+          "h": "01088.HK",
+          "ah_premium_pct": 49.8,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "工商银行",
+          "a": "601398",
+          "h": "01398.HK",
+          "ah_premium_pct": 37.6,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "洛阳钼业",
+          "a": "603993",
+          "h": "03993.HK",
+          "ah_premium_pct": 34.0,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "顺丰控股",
+          "a": "002352",
+          "h": "06936.HK",
+          "ah_premium_pct": 30.4,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "中国平安",
+          "a": "601318",
+          "h": "02318.HK",
+          "ah_premium_pct": 28.5,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "恒瑞医药",
+          "a": "600276",
+          "h": "01276.HK",
+          "ah_premium_pct": 27.1,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "福耀玻璃",
+          "a": "600660",
+          "h": "03606.HK",
+          "ah_premium_pct": 23.6,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "紫金矿业",
+          "a": "601899",
+          "h": "02899.HK",
+          "ah_premium_pct": 19.5,
+          "preferred_channel": "neutral"
+        },
+        {
+          "name": "立讯精密",
+          "a": "002475",
+          "h": "02475.HK",
+          "ah_premium_pct": 16.6,
+          "preferred_channel": "offshore_hk"
+        },
+        {
+          "name": "美的集团",
+          "a": "000333",
+          "h": "00300.HK",
+          "ah_premium_pct": 7.5,
+          "preferred_channel": "neutral"
+        },
+        {
+          "name": "中际旭创",
+          "a": "300308",
+          "h": "03308.HK",
+          "ah_premium_pct": -2.4,
+          "preferred_channel": "onshore_a_inverted"
+        },
+        {
+          "name": "招商银行",
+          "a": "600036",
+          "h": "03968.HK",
+          "ah_premium_pct": -5.0,
+          "preferred_channel": "onshore_a_inverted"
+        },
+        {
+          "name": "药明康德",
+          "a": "603259",
+          "h": "02359.HK",
+          "ah_premium_pct": -8.7,
+          "preferred_channel": "onshore_a_inverted"
+        },
+        {
+          "name": "宁德时代",
+          "a": "300750",
+          "h": "03750.HK",
+          "ah_premium_pct": -19.7,
+          "preferred_channel": "onshore_a_inverted"
+        }
       ]
     },
     "commodity_mirror": {
       "brent_usd": 96.57,
       "brent_contract": "BRNF27",
       "brent_chg_pct": 2.07,
-      "brent_live_usd": 95.80,
-      "brent_live_chg_pct": -0.80,
+      "brent_live_usd": 95.8,
+      "brent_live_chg_pct": -0.8,
       "wti_usd": 83.68,
-      "wti_live_usd": 84.60,
+      "wti_live_usd": 84.6,
       "comex_copper_usd_lb": 5.3325,
       "comex_copper_chg_pct": -0.56,
       "shfe_copper_day_rmb": 89300,
@@ -217,9 +423,27 @@
     "household_composite_weights": {
       "formula_note": "基准按 45% 境内池(A股35%+转债9%+债现48%+存量金8%) + 20% 港股离岸池(港股35%+债现55%+存量金10%) + 35% 美股离岸池(美股28%+短债62%+存量金10%) 加权取整",
       "accounts": {
-        "a_share": {"weight_pct": 45, "equity_total_pct": 35, "convertible_bond_pct": 9, "bonds_and_cash_pct": 48, "gold_existing_hold_pct": 8},
-        "hk_stock": {"weight_pct": 20, "equity_total_pct": 35, "convertible_bond_pct": 0, "bonds_and_cash_pct": 55, "gold_existing_hold_pct": 10},
-        "us_stock": {"weight_pct": 35, "equity_total_pct": 28, "convertible_bond_pct": 0, "bonds_and_cash_pct": 62, "gold_existing_hold_pct": 10}
+        "a_share": {
+          "weight_pct": 45,
+          "equity_total_pct": 35,
+          "convertible_bond_pct": 9,
+          "bonds_and_cash_pct": 48,
+          "gold_existing_hold_pct": 8
+        },
+        "hk_stock": {
+          "weight_pct": 20,
+          "equity_total_pct": 35,
+          "convertible_bond_pct": 0,
+          "bonds_and_cash_pct": 55,
+          "gold_existing_hold_pct": 10
+        },
+        "us_stock": {
+          "weight_pct": 35,
+          "equity_total_pct": 28,
+          "convertible_bond_pct": 0,
+          "bonds_and_cash_pct": 62,
+          "gold_existing_hold_pct": 10
+        }
       },
       "equity_total_pct": 33,
       "convertible_bond_pct": 4,
@@ -229,7 +453,7 @@
     },
     "ai_tech_factor_cap": {
       "combined_household_cap_pct": 20,
-      "supply_chain_stress": "HBM/DRAM通胀延至2027（英央行11/26金融稳定报告与欧央行纪要双双点名逾4万亿美元债务融资AI基建脆弱性、CoreWeave 5年CDS 1,314bp、ORCL 5年CDS 356bp、NVDA收$149.30/-3.91%季息上调至$0.25）"
+      "supply_chain_stress": "HBM/DRAM通胀延至2027（英央行11/26金融稳定报告与欧央行纪要双双点名逾4万亿美元债务融资AI基建脆弱性、CoreWeave 5年CDS 1,314bp、ORCL 5年CDS 356bp、NVDA收$149.30/-3.91%季息上调至$0.25但暂停东南亚渠道部分AI服务器发运且遭标普AA评级列入负面信用观察）"
     },
     "crisis_correlation_brake": {
       "vix_close": 28.29,
@@ -255,23 +479,43 @@
       "capital_market_floor": "green_huijin_730b_etf_margin_80pct_1pct_relend_1125_margin_21504b",
       "anti_involution_property": "yellow_828_tier1_plus02_2ndhand_plus114",
       "tech_trade": "green_bigfund3_mofcom_notice59_wuxi_1260h_removed",
-      "next_anchors": ["2026-11-27 09:20 央行5,715亿逆回购到期+09:30 10月工企利润+沪深14只跨境基停牌至10:30+美的10派5登记", "2026-11-28 商务部59号公告暂缓生效", "2026-11-30 降保80%撞MSCI剔22A股+11月PMI+美的除息参考94.03", "2026-12-01 海波转债123080到期119.44元净兑付(12/02摘牌)", "2026-12 中央经济工作会议+4742亿解禁", "2027-01-10 中美休战大限"]
+      "next_anchors": [
+        "2026-11-27 09:20 央行5,715亿逆回购到期+09:30 10月工企利润+沪深14只跨境基停牌至10:30+美的10派5登记",
+        "2026-11-28 商务部59号公告暂缓生效",
+        "2026-11-30 降保80%撞MSCI剔22A股+11月PMI+美的除息(按昨收暂算参考94.03，最终以今日收盘价减0.4847为准)",
+        "2026-12-01 海波转债123080到期119.44元净兑付(12/02摘牌)",
+        "2026-12 中央经济工作会议+4742亿解禁",
+        "2027-01-10 中美休战大限"
+      ]
     },
     "hk_stock": {
       "mainland_connect_policy": "green_10_measures_800b_bond_ah_wave_1126_southbound_minus213b_etf_rotation",
       "hkex_microstructure": "green_cmu_dap_launch_usm_lot_reform_hsbc_350k_buyback_catl_a_only_buyback",
-      "peg_us_rate_valve": "red_78375_54187_100m_hibor_on_384_1m_294_3m_344",
+      "peg_us_rate_valve": "red_78375_54083_100m_hibor_on_384_1m_294_3m_344",
       "cross_border_geopolitics": "red_ustr_125pct_hk301_part851_1207_bis_apex_fedreg",
       "dividend_tax_cut_enacted": false,
-      "next_anchors": ["2026-11-27 11月期指结算+美团Q3盘后财报(19:00电话会)+老铺除净21.05港元(参考价245.75)", "2026-11-30 MSCI剔15港股及金沙", "2026-12-04 恒生系列合并季检(恒指+恒科30扩50)", "2026-12-07 美Part851截止", "2026-12-10 联储/HKMA联汇考"]
+      "next_anchors": [
+        "2026-11-27 11月期指结算+美团Q3盘后财报(19:00电话会)+老铺除净21.05港元(参考价245.75)+神华H股38.10折价配售67.26亿港元+新股03707.HK招股",
+        "2026-11-30 MSCI剔15港股及金沙",
+        "2026-12-04 恒生系列合并季检(恒指+恒科30扩50)",
+        "2026-12-07 美Part851截止",
+        "2026-12-10 联储/HKMA联汇考"
+      ]
     },
     "us_stock": {
       "political_fiscal": "orange_divided_congress_56_44_259_173",
       "tariff_toolbox": "red_scotus_ieepa_to_301_16_and_232",
       "fed_independence_qra": "red_warsh_hawk_boe_fsr_4t_ai_debt_oat_btp_invert_43bp_218b_settle_net58b_onrrp300m",
-      "tech_antitrust_ai_power": "yellow_bis_7_entities_nvda_div_100_1201_hearings_1204_10q",
+      "tech_antitrust_ai_power": "yellow_bis_7_entities_nvda_div_100_sp_creditwatch_neg_1201_hearings_1204_10q",
       "sector_regulation": "yellow_cms_round3_settled_1123_abbv_win_unh_crush_rule",
-      "next_anchors": ["2026-11-27 晚黑五半日市（28日02:00股/03:00债/06:00盘后收）", "2026-11-28 13:00 美联储缄默期开始", "2026-11-29 第42届OPEC+线上会议", "2026-11-30 2180亿美债交割(净抽水580亿+)+MSCI剔MSTR", "2026-12-01/04 NVDA听证+10-Q/12-02黑石BCRED赎回", "2026-12-10 03:00 沃什联储议息 / 12-12 停摆大限"]
+      "next_anchors": [
+        "2026-11-27 晚黑五半日市（28日02:00股/03:00债/06:00盘后收）",
+        "2026-11-28 13:00 美联储缄默期开始",
+        "2026-11-29 第42届OPEC+线上会议",
+        "2026-11-30 2180亿美债交割(净抽水580亿+)+MSCI剔MSTR",
+        "2026-12-01/04 NVDA听证+10-Q/12-02黑石BCRED赎回",
+        "2026-12-10 03:00 沃什联储议息 / 12-12 停摆大限"
+      ]
     }
   },
   "pending_backfills": [
@@ -287,32 +531,300 @@
     }
   ],
   "calendar_overrides": [
-    {"date_cst": "2026-11-26", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2026-11-26_1800", "2026-11-27_0730"], "gold_event_id": "us_thanksgiving_2026", "source_url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34", "mode": "mode_2_watch_brief", "note": "美国感恩节全天休市（11/26 07:30 仍正常发布美股 11/25 隔夜主刊；11/26 18:00 与 11/27 07:30 切换为美股休市守望刊，A 股/港股正常）"},
-    {"date_cst": "2026-11-27", "type": "half_day", "markets_affected": ["us_stock"], "affected_sessions": ["2026-11-27_1800", "2026-11-28_0730"], "gold_event_id": "us_black_friday_2026", "source_url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34", "session_closes_cst": {"us_equities_regular": "2026-11-28T02:00:00+08:00", "us_bonds_sifma_recommendation": "2026-11-28T03:00:00+08:00", "nasdaq_equities_extended": "2026-11-28T06:00:00+08:00"}, "mode": "mode_2_watch_brief", "note": "美国黑五半日市（北京 11/28 02:00 美股常规收盘、03:00 SIFMA 债市建议早收、06:00 纳斯达克盘后终盘；A/港正常，港股盯美团 Q3 财报与老铺除净）"},
-    {"date_cst": "2026-11-30", "type": "rebalance_and_policy", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "三市撞车：A 股降保 80% + MSCI 剔 22 A股/15 港股/MSTR + 财政部 2,180 亿美债集中交割（净抽水 580 亿+）"},
-    {"date_cst": "2026-12-01", "type": "monthly_rollover", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "rollover_2026_11_to_2026_12", "note": "三市跨月滚存（2026_11 -> 2026_12）"},
-    {"date_cst": "2026-12-04", "type": "hk_major_rebalance", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "恒生系列合并季检尾盘调仓（恒指权重 + 恒科 30→50 超 125 亿美元流，16:06 不可撤单）+ NVDA 10-Q 延期死线"},
-    {"date_cst": "2026-12-07", "type": "policy_deadline", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "美国财政部 31 CFR Part 851 对外投资规则意见截止日 + 恒科 50 只正式生效"},
-    {"date_cst": "2026-12-18", "type": "quad_witching_boj", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "日本央行议息 + 美股四巫日衍生品大交割（12/19 05:00 CST）"},
-    {"date_cst": "2026-12-24", "type": "half_day", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "christmas_eve_2026", "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股半日市（12:00 结束持续交易，适用证券 12:08–12:10 随机收市；下午港股通休）；美股半日（12/25 02:00 收、债 03:00）；A 股正常"},
-    {"date_cst": "2026-12-25", "type": "partial_holiday", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "christmas_day_2026", "mode": "mode_2_watch_brief", "note": "港/美圣诞全休，A 股正常（12/28 周一港股与港股通正常开市不顺延）"},
-    {"date_cst": "2026-12-31", "type": "half_day", "markets_affected": ["hk_stock"], "gold_event_id": "new_years_eve_2026", "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股半日（12:00 结束持续交易，适用证券 12:08–12:10 随机收市）；美股正常，美债建议 01/01 03:00 提前收；筹备跨年滚存"},
-    {"date_cst": "2027-01-01", "type": "full_holiday_and_rollover", "markets_affected": ["a_share", "hk_stock", "us_stock"], "gold_event_id": "global_new_year_2027", "mode": "mode_3_index_changelog_only", "note": "中美港三地新年休市 + 2026_12 -> 2027_01 滚存"},
-    {"date_cst": "2027-01-18", "type": "partial_holiday", "markets_affected": ["us_stock"], "gold_event_id": "us_mlk_day_2027", "mode": "mode_2_watch_brief", "note": "美国马丁·路德·金纪念日全天休市（A/港正常）"},
-    {"date_cst": "2027-02-05", "end_date_cst": "2027-02-14", "type": "long_holiday_start", "markets_affected": ["a_share"], "gold_event_id": "china_spring_festival_2027", "mode": "mode_2_watch_brief", "source_url": "https://www.gov.cn/zhengce/content/202611/content_7085101.htm", "note": "国务院春节放假 02/05–02/13，02/14 调休上班但逢证券市场周日；A 股按常规周末及节假日休市编排，交易所通知发布后再核"},
-    {"date_cst": "2027-02-05", "type": "half_day", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股除夕半日市（12:00 结束持续交易，适用证券 12:08–12:10 随机收市）"},
-    {"date_cst": "2027-02-08", "end_date_cst": "2027-02-09", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2026/cc_SEHK_CT_077_2026.pdf", "note": "香港证券市场农历新年休市，02/10 复市"},
-    {"date_cst": "2027-02-15", "type": "partial_holiday", "markets_affected": ["us_stock"], "gold_event_id": "us_presidents_day_cn_reopen_2027", "mode": "mode_2_watch_brief", "note": "美国总统日全天休市 + 同日 A 股春节后首个交易日复市"},
-    {"date_cst": "2027-03-14", "type": "dst_transition", "markets_affected": ["us_stock"], "mode": "timezone_shift_edt", "note": "美国进入夏令时（EDT = UTC-4，北京 +12h；03/15 起美股 21:30 开 / 04:00 收 / 08:00 盘后终盘）"},
-    {"date_cst": "2027-03-26", "type": "partial_holiday", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "us_good_friday_2027", "mode": "mode_2_watch_brief", "note": "耶稣受难日港/美全天休市，A 股正常"},
-    {"date_cst": "2027-03-29", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "note": "复活节星期一香港全天休市（A 股、美股正常开市）"},
-    {"date_cst": "2027-04-05", "type": "partial_holiday", "markets_affected": ["a_share", "hk_stock"], "gold_event_id": "cn_hk_qingming_2027", "mode": "mode_2_watch_brief", "note": "中国内地与香港清明节全天休市（美股正常开市）"},
-    {"date_cst": "2027-05-01", "end_date_cst": "2027-05-05", "type": "long_holiday_start", "markets_affected": ["a_share"], "gold_event_id": "cn_labor_day_2027", "mode": "mode_2_watch_brief", "note": "中国内地劳动节假期（05/01–05/05 休市，含 05/03 周一至 05/05 周三工作日休市，05/06 周四复市；以国务院及交易所最终通知复核）"},
-    {"date_cst": "2027-05-03", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "note": "劳动节调休/香港劳动节补假全天休市（05/01 逢周六，香港 05/03 补假以港交所 2027 正式交易日历复核；A 股同步处五一假期，美股正常开市）"},
-    {"date_cst": "2027-05-13", "type": "partial_holiday", "markets_affected": ["hk_stock"], "mode": "mode_2_watch_brief", "note": "香港佛诞日全天休市（A 股、美股正常开市）"},
-    {"date_cst": "2027-05-31", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2027-05-31_1800", "2027-06-01_0730"], "gold_event_id": "us_memorial_day_2027", "mode": "mode_2_watch_brief", "note": "美国阵亡将士纪念日（Memorial Day）全天休市（A 股、港股正常开市；美股 05/31 18:00 与 06/01 07:30 切守望刊）"},
-    {"date_cst": "2027-06-09", "type": "partial_holiday", "markets_affected": ["a_share", "hk_stock"], "mode": "mode_2_watch_brief", "note": "中国内地与香港端午节全天休市（美股正常开市；以官方及交易所 2027 正式通知复核）"},
-    {"date_cst": "2027-06-18", "type": "partial_holiday", "markets_affected": ["us_stock"], "affected_sessions": ["2027-06-18_1800", "2027-06-19_0730"], "gold_event_id": "us_juneteenth_2027", "mode": "mode_2_watch_brief", "note": "美国六月节补休（Juneteenth Observed，因 06/19 逢周六提前至周五）全天休市（A 股、港股正常开市；美股 06/18 18:00 切守望刊、周六 06/19 07:30 沿用旧稿）"}
+    {
+      "date_cst": "2026-11-26",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "us_stock"
+      ],
+      "affected_sessions": [
+        "2026-11-26_1800",
+        "2026-11-27_0730"
+      ],
+      "gold_event_id": "us_thanksgiving_2026",
+      "source_url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34",
+      "mode": "mode_2_watch_brief",
+      "note": "美国感恩节全天休市（11/26 07:30 仍正常发布美股 11/25 隔夜主刊；11/26 18:00 与 11/27 07:30 切换为美股休市守望刊，A 股/港股正常）"
+    },
+    {
+      "date_cst": "2026-11-27",
+      "type": "half_day",
+      "markets_affected": [
+        "us_stock"
+      ],
+      "affected_sessions": [
+        "2026-11-27_1800",
+        "2026-11-28_0730"
+      ],
+      "gold_event_id": "us_black_friday_2026",
+      "source_url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34",
+      "session_closes_cst": {
+        "us_equities_regular": "2026-11-28T02:00:00+08:00",
+        "us_bonds_sifma_recommendation": "2026-11-28T03:00:00+08:00",
+        "nasdaq_equities_extended": "2026-11-28T06:00:00+08:00"
+      },
+      "mode": "mode_2_watch_brief",
+      "note": "美国黑五半日市（北京 11/28 02:00 美股常规收盘、03:00 SIFMA 债市建议早收、06:00 纳斯达克盘后终盘；A/港正常，港股盯美团 Q3 财报与老铺除净）"
+    },
+    {
+      "date_cst": "2026-11-30",
+      "type": "rebalance_and_policy",
+      "markets_affected": [
+        "a_share",
+        "hk_stock",
+        "us_stock"
+      ],
+      "mode": "mode_1_high_alert",
+      "note": "三市撞车：A 股降保 80% + MSCI 剔 22 A股/15 港股/MSTR + 财政部 2,180 亿美债集中交割（净抽水 580 亿+）"
+    },
+    {
+      "date_cst": "2026-12-01",
+      "type": "monthly_rollover",
+      "markets_affected": [
+        "a_share",
+        "hk_stock",
+        "us_stock"
+      ],
+      "mode": "rollover_2026_11_to_2026_12",
+      "note": "三市跨月滚存（2026_11 -> 2026_12）"
+    },
+    {
+      "date_cst": "2026-12-04",
+      "type": "hk_major_rebalance",
+      "markets_affected": [
+        "hk_stock",
+        "us_stock"
+      ],
+      "mode": "mode_1_high_alert",
+      "note": "恒生系列合并季检尾盘调仓（恒指权重 + 恒科 30→50 超 125 亿美元流，16:06 不可撤单）+ NVDA 10-Q 延期死线"
+    },
+    {
+      "date_cst": "2026-12-07",
+      "type": "policy_deadline",
+      "markets_affected": [
+        "hk_stock",
+        "us_stock"
+      ],
+      "mode": "mode_1_high_alert",
+      "note": "美国财政部 31 CFR Part 851 对外投资规则意见截止日 + 恒科 50 只正式生效"
+    },
+    {
+      "date_cst": "2026-12-18",
+      "type": "quad_witching_boj",
+      "markets_affected": [
+        "a_share",
+        "hk_stock",
+        "us_stock"
+      ],
+      "mode": "mode_1_high_alert",
+      "note": "日本央行议息 + 美股四巫日衍生品大交割（12/19 05:00 CST）"
+    },
+    {
+      "date_cst": "2026-12-24",
+      "type": "half_day",
+      "markets_affected": [
+        "hk_stock",
+        "us_stock"
+      ],
+      "gold_event_id": "christmas_eve_2026",
+      "mode": "mode_2_watch_brief",
+      "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en",
+      "note": "港股半日市（12:00 结束持续交易，适用证券 12:08–12:10 随机收市；下午港股通休）；美股半日（12/25 02:00 收、债 03:00）；A 股正常"
+    },
+    {
+      "date_cst": "2026-12-25",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "hk_stock",
+        "us_stock"
+      ],
+      "gold_event_id": "christmas_day_2026",
+      "mode": "mode_2_watch_brief",
+      "note": "港/美圣诞全休，A 股正常（12/28 周一港股与港股通正常开市不顺延）"
+    },
+    {
+      "date_cst": "2026-12-31",
+      "type": "half_day",
+      "markets_affected": [
+        "hk_stock"
+      ],
+      "gold_event_id": "new_years_eve_2026",
+      "mode": "mode_2_watch_brief",
+      "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en",
+      "note": "港股半日（12:00 结束持续交易，适用证券 12:08–12:10 随机收市）；美股正常，美债建议 01/01 03:00 提前收；筹备跨年滚存"
+    },
+    {
+      "date_cst": "2027-01-01",
+      "type": "full_holiday_and_rollover",
+      "markets_affected": [
+        "a_share",
+        "hk_stock",
+        "us_stock"
+      ],
+      "gold_event_id": "global_new_year_2027",
+      "mode": "mode_3_index_changelog_only",
+      "note": "中美港三地新年休市 + 2026_12 -> 2027_01 滚存"
+    },
+    {
+      "date_cst": "2027-01-18",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "us_stock"
+      ],
+      "gold_event_id": "us_mlk_day_2027",
+      "mode": "mode_2_watch_brief",
+      "note": "美国马丁·路德·金纪念日全天休市（A/港正常）"
+    },
+    {
+      "date_cst": "2027-02-05",
+      "end_date_cst": "2027-02-14",
+      "type": "long_holiday_start",
+      "markets_affected": [
+        "a_share"
+      ],
+      "gold_event_id": "china_spring_festival_2027",
+      "mode": "mode_2_watch_brief",
+      "source_url": "https://www.gov.cn/zhengce/content/202611/content_7085101.htm",
+      "note": "国务院春节放假 02/05–02/13，02/14 调休上班但逢证券市场周日；A 股按常规周末及节假日休市编排，交易所通知发布后再核"
+    },
+    {
+      "date_cst": "2027-02-05",
+      "type": "half_day",
+      "markets_affected": [
+        "hk_stock"
+      ],
+      "mode": "mode_2_watch_brief",
+      "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en",
+      "note": "港股除夕半日市（12:00 结束持续交易，适用证券 12:08–12:10 随机收市）"
+    },
+    {
+      "date_cst": "2027-02-08",
+      "end_date_cst": "2027-02-09",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "hk_stock"
+      ],
+      "mode": "mode_2_watch_brief",
+      "source_url": "https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2026/cc_SEHK_CT_077_2026.pdf",
+      "note": "香港证券市场农历新年休市，02/10 复市"
+    },
+    {
+      "date_cst": "2027-02-15",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "us_stock"
+      ],
+      "gold_event_id": "us_presidents_day_cn_reopen_2027",
+      "mode": "mode_2_watch_brief",
+      "note": "美国总统日全天休市 + 同日 A 股春节后首个交易日复市"
+    },
+    {
+      "date_cst": "2027-03-14",
+      "type": "dst_transition",
+      "markets_affected": [
+        "us_stock"
+      ],
+      "mode": "timezone_shift_edt",
+      "note": "美国进入夏令时（EDT = UTC-4，北京 +12h；03/15 起美股 21:30 开 / 04:00 收 / 08:00 盘后终盘）"
+    },
+    {
+      "date_cst": "2027-03-26",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "hk_stock",
+        "us_stock"
+      ],
+      "gold_event_id": "us_good_friday_2027",
+      "mode": "mode_2_watch_brief",
+      "note": "耶稣受难日港/美全天休市，A 股正常"
+    },
+    {
+      "date_cst": "2027-03-29",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "hk_stock"
+      ],
+      "mode": "mode_2_watch_brief",
+      "note": "复活节星期一香港全天休市（A 股、美股正常开市）"
+    },
+    {
+      "date_cst": "2027-04-05",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "a_share",
+        "hk_stock"
+      ],
+      "gold_event_id": "cn_hk_qingming_2027",
+      "mode": "mode_2_watch_brief",
+      "note": "中国内地与香港清明节全天休市（美股正常开市）"
+    },
+    {
+      "date_cst": "2027-05-01",
+      "end_date_cst": "2027-05-05",
+      "type": "long_holiday_start",
+      "markets_affected": [
+        "a_share"
+      ],
+      "gold_event_id": "cn_labor_day_2027",
+      "mode": "mode_2_watch_brief",
+      "note": "中国内地劳动节假期（05/01–05/05 休市，含 05/03 周一至 05/05 周三工作日休市，05/06 周四复市；以国务院及交易所最终通知复核）"
+    },
+    {
+      "date_cst": "2027-05-03",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "hk_stock"
+      ],
+      "mode": "mode_2_watch_brief",
+      "note": "劳动节调休/香港劳动节补假全天休市（05/01 逢周六，香港 05/03 补假以港交所 2027 正式交易日历复核；A 股同步处五一假期，美股正常开市）"
+    },
+    {
+      "date_cst": "2027-05-13",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "hk_stock"
+      ],
+      "mode": "mode_2_watch_brief",
+      "note": "香港佛诞日全天休市（A 股、美股正常开市）"
+    },
+    {
+      "date_cst": "2027-05-31",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "us_stock"
+      ],
+      "affected_sessions": [
+        "2027-05-31_1800",
+        "2027-06-01_0730"
+      ],
+      "gold_event_id": "us_memorial_day_2027",
+      "mode": "mode_2_watch_brief",
+      "note": "美国阵亡将士纪念日（Memorial Day）全天休市（A 股、港股正常开市；美股 05/31 18:00 与 06/01 07:30 切守望刊）"
+    },
+    {
+      "date_cst": "2027-06-09",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "a_share",
+        "hk_stock"
+      ],
+      "mode": "mode_2_watch_brief",
+      "note": "中国内地与香港端午节全天休市（美股正常开市；以官方及交易所 2027 正式通知复核）"
+    },
+    {
+      "date_cst": "2027-06-18",
+      "type": "partial_holiday",
+      "markets_affected": [
+        "us_stock"
+      ],
+      "affected_sessions": [
+        "2027-06-18_1800",
+        "2027-06-19_0730"
+      ],
+      "gold_event_id": "us_juneteenth_2027",
+      "mode": "mode_2_watch_brief",
+      "note": "美国六月节补休（Juneteenth Observed，因 06/19 逢周六提前至周五）全天休市（A 股、港股正常开市；美股 06/18 18:00 切守望刊、周六 06/19 07:30 沿用旧稿）"
+    }
   ],
   "data_caveats": [
     {
@@ -322,7 +834,7 @@
       "severity": "info",
       "item": "A 股 11/26 两融余额终值、不动产基金指数终盘与山东黄金纪要待晚刊补齐",
       "detail": "截至 11/27 07:55，交易所尚未挂出 11/26 全市场两融余额终值（暂沿用 11/25 终值 21,504.16 亿元）；公募不动产基金全收益指数（932047）11/26 终盘（沿用 11/25 931.36）及山东黄金 11/26 业绩说明会官方文字纪要亦尚未公开挂网，均留待今日 18:00 晚刊统一核对。",
-      "impact": "沪深 14 只早盘停牌跨境基金全名单、02:30 金属夜盘终盘与日内政策节点均已齐备，不影响红灯防守（股票上限 4 成）判定。",
+      "impact": "沪深 14 只早盘停牌跨境基金全名单、01:00 有色与 23:00 黑色化工夜盘终盘与日内政策节点均已齐备，不影响红灯防守（股票上限 4 成）判定。",
       "next_review": "2026-11-27_1800"
     },
     {

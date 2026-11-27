@@ -25,17 +25,17 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 ## 2. 端到端标准发刊 SOP（对应仓库 Step 0–5）
 
 1. **Step 1｜日历冷启动与惰性基线继承**：依系统 `+08:00` 时间与 `market_calendar.json` 判定班次/休市模式与冬夏令时；依次读 `RSI_PLAYBOOK.md`、`rsi_metrics.json`（近 5 条）、`SCORECARD.md`、`CHANGELOG.md`（前 150 行）、`data_snapshot.json`、`master_snapshot.json`（仅命中 5 阈值时全读主报告）及上期日报。定时任务禁 `edit_file` 与未授权 shell 探测。
-2. **Step 2｜两阶段 10+1 调研与统一红队（单跑回退 5+1）**：并行子代理严守美股 `GLD`/`GDX` 官收白名单、禁用 `Barchart` 远月滞后价、善用 `site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与冬/夏令时核对；全部返回后启动红队复核四步灯、跨时区因果（严禁 02:30/06:00 时差混充溢价或 05:00 讲话倒推 02:30 收盘）、跨资产传导链、48 小时双向催化与统一税费口径。
+2. **Step 2｜两阶段 10+1 调研与统一红队（单跑回退 5+1）**：并行子代理严控 `≤ 12 KB` 紧凑回执，严守美股 `GLD`/`GDX` 官收白名单、禁用 `Barchart` 远月滞后价、善用 `site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与冬/夏令时核对；全部返回后启动红队复核四步灯、宏观官源盘口铁律（日本 CPI 直核 `stat.go.jp` 区分日央行版剔生鲜能源[权重 9162]与欧美版[权重 6959]；上期所夜盘严分 `02:30` 金银/`01:00` 有色/`23:00` 黑色化工；LME 严守 17:00 同盘口）、跨时区因果、跨资产传导链、48 小时双向催化与统一税费口径。
 3. **Step 3｜双快照落盘、收敛主刊写作与无损头插**：
    - 先用 `write_file` 全量更新 `data_snapshot.json`（无日期键 `cross_ratios`/`etf_cn`、纯中文 `data_caveats`、VIX 10 日表与核查台账：普通日 `provisional_close` 3 日内核销、节日 `pending` 4h 复查、`no_row_confirmed` 官告/CSV 自证，无有效窗口盘口时 `vix_live`/`vix_live_as_of` 同时留空）；
-   - 再写本刊 Markdown（小白三层结构、导语 ≤160 字且信号/噪音条数须与 `DAILY_SIGNAL_NOISE` 数组长度精确一致、正文禁塞冗余「挂账核销成绩单」表、同一核心数字复读 ≤3 次、标题/导语零后台审计腔、1 句跨资产传导链 + 48h 双向催化 + 四情景完整 100% 拆分）与 `SCORECARD.md`（仅登可证伪投资预判）；
+   - 再写本刊 Markdown（小白三层结构、导语 ≤160 字且信号/噪音条数须与 `DAILY_SIGNAL_NOISE` 数组长度精确一致、Layer 2 自然段 ≤250 字[建议 ≤220 字]、正文禁塞冗余「挂账核销成绩单」表、同一核心数字复读 ≤3 次、标题/导语零后台审计腔、1 句跨资产传导链 + 48h 双向催化 + 四情景完整 100% 拆分）与 `SCORECARD.md`（仅登可证伪投资预判）；
    - 写微型补丁 `gold/daily/_ledger_patch.json`（`GOLD_EDITION_REVIEW` JSON 必填 `edition_id`、`as_of_short`、`note`、四关 HTTPS `sources` 与 `forecast_review.status ∈ {"settled","none_due","pending_evidence"}`，严禁 `"tracked"`），运行 `python3 <REPO_ROOT>/scripts/patch_state_dbs.py --prepend-gold-ledgers` 无损头插 `CHANGELOG.md` 与 `AUDIT_LOG.md`。命中 5 阈值时同步主报告与 `master_snapshot.json`。
 4. **Step 4｜6 门禁严格验收（绝对路径裸命令，无 `cd &&`）**：
    ```bash
    python3 <REPO_ROOT>/gold/lint_readability.py --strict <REPO_ROOT>/gold/daily/<本刊文件名>.md
    ```
    须 `0 errors, 0 warnings`（同步主报告时一并传入），随后交棒权益轨 Step 4。
-5. **Step 5｜统一 RSI 盲审与单次纯网页发布**：双轨源稿全绿后由独立只读盲审按 6 维 `/30` 打分并闭环登记 `review_closure`；Tier A 自动更新 `rsi_metrics.json` 与 `RSI_PLAYBOOK.md`（≤180 行），Tier B 仅在确凿 Bug 时 ≤1 处 ≤40 行补丁并重跑全套校验，Tier C 仅提案。复跑双轨严检后按令牌运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>` 与 `edition_run.py complete <token>` 验真上线。
+5. **Step 5｜统一 RSI 盲审（5 项真核验）与单次纯网页发布**：双轨源稿全绿后由独立只读盲审按 6 维 `/30` 打分并完成 5 项真核验闭环登记 `review_closure`；通过 `scripts/patch_state_dbs.py --append-gold-rsi` 无损追加 `rsi_metrics.json`（严禁整文件重写）并更新 `RSI_PLAYBOOK.md`（≤180 行），Tier B 仅在确凿 Bug 时 ≤1 处 ≤40 行补丁并重跑全套校验，Tier C 仅提案。复跑双轨严检后按令牌运行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>` 与 `edition_run.py complete <token>` 验真上线。
 
 ---
 

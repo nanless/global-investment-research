@@ -766,28 +766,45 @@ def lint_markdown_report(
     if jargon_hits:
         warnings.append(f"未转译生僻行话 ({len(jargon_hits)} 处): {sorted(set(jargon_hits))}")
 
+    body_lines_no_meta = re.sub(
+        r"<!--\s*DAILY_META_JSON\s*\{.*?\}\s*-->",
+        lambda m: "\n" * m.group(0).count("\n"),
+        md_text,
+        flags=re.DOTALL,
+    )
+
     bold_chars = sum(len(x) for x in re.findall(r"\*\*([^*]+)\*\*", body_no_meta))
     plain_chars = max(1, len(re.sub(r"\s+", "", body_no_meta)))
     bold_pct = (bold_chars / plain_chars) * 100.0
     if bold_pct > 13.5:
-        warnings.append(f"加粗文字占比偏高: {bold_pct:.1f}% (目标 ≤12%)")
+        line_bold: list[tuple[int, int]] = []
+        for ln_no, ln in enumerate(body_lines_no_meta.splitlines(), 1):
+            bchars = sum(len(x) for x in re.findall(r"\*\*([^*]+)\*\*", ln))
+            if bchars > 0:
+                line_bold.append((bchars, ln_no))
+        line_bold.sort(key=lambda item: (-item[0], item[1]))
+        top_str = ", ".join(f"[L{ln}:{bc}字]" for bc, ln in line_bold[:3])
+        suffix = f"，最密行: {top_str}" if top_str else ""
+        warnings.append(f"加粗文字占比偏高: {bold_pct:.1f}% (目标 ≤12%){suffix}")
 
-    long_paras = 0
-    wide_tables = 0
+    long_para_items: list[tuple[int, int, str]] = []
+    wide_table_items: list[tuple[int, int]] = []
     max_cols = 6 if Path(filename).name == "SCORECARD.md" else 5
-    for ln in body_no_meta.splitlines():
+    for ln_no, ln in enumerate(body_lines_no_meta.splitlines(), 1):
         st = ln.strip()
         if st.startswith("|") and st.endswith("|"):
             cols = len(_split_md_row(st))
             if cols > max_cols:
-                wide_tables += 1
+                wide_table_items.append((ln_no, cols))
         elif st and not st.startswith(("#", "|", ">", "-", "*", "<!--", "```")) and not re.match(r"^\d+\.\s", st):
             if len(st) > 180:
-                long_paras += 1
-    if long_paras:
-        warnings.append(f"存在 {long_paras} 段超过 180 字的长段落")
-    if wide_tables:
-        warnings.append(f"存在 {wide_tables} 行表格超过 {max_cols} 列")
+                long_para_items.append((ln_no, len(st), st[:26]))
+    if long_para_items:
+        offenders = ", ".join(f'[L{ln}:{nch}字 "{snip}..."]' for ln, nch, snip in long_para_items[:5])
+        warnings.append(f"存在 {len(long_para_items)} 段超过 180 字的长段落: {offenders}")
+    if wide_table_items:
+        offenders = ", ".join(f"[L{ln}:{cols}列]" for ln, cols in wide_table_items[:5])
+        warnings.append(f"存在 {len(wide_table_items)} 行表格超过 {max_cols} 列: {offenders}")
 
     if is_flagship:
         rel_hits = _FLAGSHIP_REL_DATE_RE.findall(body_no_meta)

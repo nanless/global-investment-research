@@ -66,6 +66,82 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def cst_now() -> str:
+    return datetime.now(BEIJING).isoformat(timespec="seconds")
+
+
+def _load_phase_timestamps(raw: str | None) -> dict[str, str]:
+    if not raw:
+        return {}
+    try:
+        obj = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(obj, dict):
+        return {}
+    return {str(k): str(v) for k, v in obj.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _parse_iso_ts(raw: str) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=BEIJING)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_phase_durations(
+    timestamps: dict[str, str], final_phase: str | None = None,
+) -> dict[str, float]:
+    parsed: dict[str, datetime] = {}
+    for key, raw_ts in timestamps.items():
+        dt = _parse_iso_ts(raw_ts)
+        if dt is not None:
+            parsed[key] = dt
+    if not parsed:
+        return {}
+    durations: dict[str, float] = {}
+    for label, start_k, end_k in (
+        ("research", "begin", "gold"),
+        ("gold", "gold", "equity"),
+        ("equity", "equity", "publish"),
+        ("publish", "publish", "complete"),
+    ):
+        if start_k in parsed and end_k in parsed:
+            durations[label] = round(max(0.0, (parsed[end_k] - parsed[start_k]).total_seconds()), 1)
+    if "fail" in parsed:
+        fail_phase = final_phase if final_phase in PHASES else None
+        if fail_phase is not None and fail_phase not in durations:
+            start_k = "begin" if fail_phase == "research" else fail_phase
+            if start_k in parsed:
+                durations[fail_phase] = round(
+                    max(0.0, (parsed["fail"] - parsed[start_k]).total_seconds()), 1
+                )
+    if "begin" in parsed:
+        end_key = "complete" if "complete" in parsed else ("fail" if "fail" in parsed else None)
+        if end_key is not None:
+            durations["total"] = round(
+                max(0.0, (parsed[end_key] - parsed["begin"]).total_seconds()), 1
+            )
+    return durations
+
+
+def _record_phase_timestamp(
+    runs: sqlite3.Connection, token: str, key: str, ts: str | None = None,
+) -> dict[str, str]:
+    row = runs.execute(
+        "SELECT timestamps_json FROM phase_timestamps WHERE token = ?", (token,),
+    ).fetchone()
+    data = _load_phase_timestamps(row["timestamps_json"] if row is not None else None)
+    data[key] = ts or cst_now()
+    runs.execute(
+        "INSERT INTO phase_timestamps(token, timestamps_json) VALUES (?, ?) "
+        "ON CONFLICT(token) DO UPDATE SET timestamps_json = excluded.timestamps_json",
+        (token, json.dumps(data, ensure_ascii=False)),
+    )
+    return data
+
+
 def edition_id(value: str) -> str:
     match = EDITION_RE.fullmatch(value)
     if match is None:
@@ -142,6 +218,10 @@ def open_runs() -> sqlite3.Connection:
             token TEXT PRIMARY KEY REFERENCES runs(token),
             sha TEXT NOT NULL, repository TEXT NOT NULL, assets_json TEXT,
             deployed_sha TEXT
+        );
+        CREATE TABLE IF NOT EXISTS phase_timestamps (
+            token TEXT PRIMARY KEY REFERENCES runs(token),
+            timestamps_json TEXT NOT NULL
         );
     """)
     pub_cols = {row["name"] for row in runs.execute("PRAGMA table_info(publications)").fetchall()}
@@ -225,6 +305,7 @@ def _reap_stale_unpushed_run(
         "UPDATE runs SET status = 'failed', updated = ?, outcome = ? WHERE token = ? AND status = 'running'",
         (utc_now(), outcome, token),
     )
+    _record_phase_timestamp(runs, token, "fail")
     print(
         f"[NOTICE] Auto-reaped stale unpushed run {active['edition']} "
         f"({active['phase']}, attempt {token[:12]}, last update {active['updated']}) "
@@ -285,6 +366,7 @@ def _begin(runs: sqlite3.Connection, edition: str, source: str, *, base_sha: str
         (token, edition, PHASES[0], now, now),
     )
     runs.execute("INSERT INTO attempts VALUES (?, ?, ?)", (token, source, base_sha))
+    _record_phase_timestamp(runs, token, "begin")
     return token
 
 
@@ -437,6 +519,7 @@ def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
     if PHASES.index(phase) != PHASES.index(current["phase"]) + 1:
         raise ValueError(f"Cannot advance from {current['phase']} to {phase}.")
     runs.execute("UPDATE runs SET phase = ?, updated = ? WHERE token = ?", (phase, utc_now(), token))
+    _record_phase_timestamp(runs, token, phase)
     return phase
 
 
@@ -831,6 +914,7 @@ def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
         "UPDATE runs SET status = 'complete', updated = ?, outcome = ? WHERE token = ?",
         (utc_now(), f"{sha} {url}", token),
     )
+    _record_phase_timestamp(runs, token, "complete")
     return url
 
 
@@ -869,6 +953,7 @@ def fail(runs: sqlite3.Connection, identity: str, reason: str, *, attempt: str |
             "UPDATE runs SET status = 'failed', updated = ?, outcome = ? WHERE token = ?",
             (utc_now(), reason[:500], token),
         )
+        _record_phase_timestamp(runs, token, "fail")
         return row["edition"]
 
 
@@ -904,6 +989,7 @@ def close_superseded(runs: sqlite3.Connection, edition: str, attempt: str, reaso
             "UPDATE runs SET status = 'failed', updated = ?, outcome = ? WHERE token = ?",
             (utc_now(), f"Attempted {receipt['sha']}; main is {current}: {reason[:320]}", row["token"]),
         )
+        _record_phase_timestamp(runs, row["token"], "fail")
         return edition
 
 
@@ -994,6 +1080,7 @@ def complete_superseded(
             "UPDATE runs SET status = 'complete', updated = ?, outcome = ? WHERE token = ?",
             (utc_now(), outcome, token),
         )
+        _record_phase_timestamp(runs, token, "complete")
         return url
 
 
@@ -1001,8 +1088,12 @@ def status(runs: sqlite3.Connection) -> list[dict]:
     rows = runs.execute("""
         SELECT runs.token, edition, phase, status, started, updated, outcome, substr(runs.token, 1, 12) AS attempt,
                coalesce(attempts.source, 'legacy') AS source, publications.sha AS pushed_commit,
-               publications.deployed_sha AS deployed_commit
-          FROM runs LEFT JOIN attempts USING(token) LEFT JOIN publications USING(token)
+               publications.deployed_sha AS deployed_commit,
+               phase_timestamps.timestamps_json AS phase_timestamps_json
+          FROM runs
+          LEFT JOIN attempts USING(token)
+          LEFT JOIN publications USING(token)
+          LEFT JOIN phase_timestamps USING(token)
          ORDER BY runs.rowid DESC LIMIT 10
     """)
     git_dir = git_directory()
@@ -1010,7 +1101,12 @@ def status(runs: sqlite3.Connection) -> list[dict]:
     for row in rows:
         result = dict(row)
         token = result.pop("token")
+        ts_raw = result.pop("phase_timestamps_json", None)
+        phase_ts = _load_phase_timestamps(ts_raw)
         result["push_started"] = bool(result["pushed_commit"] or push_intent_path(git_dir, token).exists())
+        result["phase_timestamps"] = phase_ts
+        if phase_ts:
+            result["phase_durations_sec"] = _compute_phase_durations(phase_ts, result.get("phase"))
         results.append(result)
     return results
 

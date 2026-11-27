@@ -20,7 +20,7 @@
 | **2. 新手 3 分钟指南** | [guide.html](https://nanless.github.io/global-investment-research/guide.html) | 四笔钱框架、四灯四色锁仓速读、三步怎么买与 24 词高频金融术语白话速查 |
 | **3. 12 大多元渠道与独立详情页** | [channels.html](https://nanless.github.io/global-investment-research/channels.html) | 中国大陆 12 大个人合规投资渠道总览 + 12 个独立详情页 `channels/<id>.html` + 横向「全市场打新工具箱」与「双层风控警示墙」 |
 | **4. 140+ 只重点 ETF 深度雷达** | [etfs.html](https://nanless.github.io/global-investment-research/etfs.html) | 覆盖 6 大交易通道的费率、规模、实时折溢价预警、税负口径与 7 维配置拆解弹窗 |
-| **5. 231 股 7 维龙头筛选器** | [screener.html](https://nanless.github.io/global-investment-research/screener.html) | A 股 76 / 港股 75 / 美股 80 全行业龙头四色锁仓筛选与零模板化 7 维机构档案弹窗 |
+| **5. 231 股 7 维龙头筛选器** | [screener.html](https://nanless.github.io/global-investment-research/screener.html) | A 股 76 / 港股 75 / 美股 80 全行业龙头四色锁仓筛选、实时鲜度徽章覆盖层与零模板化 7 维机构档案弹窗 |
 | **6. 公开零篡改记分卡** | [scorecard.html](https://nanless.github.io/global-investment-research/scorecard.html) | 黄金与全球三市可证伪预判事后公开复盘（兑现 / 部分兑现 / 证伪），历史零篡改 |
 | **7. 历史研报与月度档案** | [archive.html](https://nanless.github.io/global-investment-research/archive.html) | 黄金全景主报告（1971–2030）、三市常青旗舰手册与全部历史早晚主刊/守望刊归档 |
 
@@ -76,10 +76,10 @@
 flowchart TD
     A["07:30 / 18:00 CST 双班次触发\nscripts/edition_run.py 锁校验与僵尸锁清理"] --> B["Step 0-1 冷启动\n双轨 RSI 经验库 · 跨市场日历 · 基线快照"]
     B --> C["Step 2A 共享 10 路并行调研\n金/A/港/美/宏观/辟谣 + 12 渠道两专线 + 140+ ETF + 焦点股 7 维"]
-    C --> D["Step 2B 1 路统一跨轨红队\n宏观对齐 · 黄金红灯锁 · AH 物理一致 · 跨库费率与税费防错"]
-    D --> E["Step 3 黄金 SSOT 优先落盘\ngold/data_snapshot.json + 日报 + 双账本补丁\ngold/lint_readability.py --strict"]
-    E --> F["Step 4 全球权益与三大深研库接力\n三市日报 + market_state.json\nscripts/patch_state_dbs.py 原子合并 ~830 KB 大库\nequity/lint_equity.py --strict"]
-    F --> G["Step 5 统一独立只读 RSI 盲审\n双轨 6 维 /30 评估 · review_closure 闭环 · 复跑双轨严检"]
+    C --> D["Step 2B 1 路统一跨轨红队\n宏观官源四铁律 · 焦点股近24h扫雷 · 黄金红灯锁 · 跨库费率与税费防错"]
+    D --> E["Step 3 黄金 SSOT 优先落盘\ngold/data_snapshot.json + 日报 + 双账本头插\ngold/lint_readability.py --strict"]
+    E --> F["Step 4 全球权益与三大深研库接力\n三市日报 + market_state.json + audit_ledger 头插\nscripts/patch_state_dbs.py 原子合并 ~830 KB 大库\nequity/lint_equity.py --strict"]
+    F --> G["Step 5 统一独立只读 RSI 盲审（5 项真核验）\n双轨 6 维 /30 · --append-*-rsi 无损追加 · 复跑双轨严检"]
     G --> H["纯网页静态门户构建与安全发布\nscripts/build_site.py + svg_geometry.py\nscripts/lint_site.py S1-S6 -> scripts/publish_site.py -> GitHub Pages"]
 ```
 
@@ -87,7 +87,7 @@ flowchart TD
 
 ## 双班次节拍与 10+1 协同流水线 · Schedule & Pipeline
 
-工作日执行每日两场 **All-4-Main（四市全主刊）+ 共享 10+1 深研红队 + 纯网页发布**；单向截点宽限严格统一为 **`[-5 分钟, +6 小时]`**（`07:25–13:30` / `17:55–次日 00:00` CST，黄金截点须早于或同分钟于权益且间隔 ≤6 小时）；`edition_run.py begin --scheduled` 会自动清理**严格较早期号**、超 **2 小时**无进展且尚未进入推送的僵尸锁；为防大文件回写撞 300 秒流式超时，权益三大扩展大 JSON（合计 ~830 KB）与黄金历史双账本（`CHANGELOG.md` / `AUDIT_LOG.md`）统一写微型补丁并由预授权 **`scripts/patch_state_dbs.py`** 原子合并或无损头插。
+工作日执行每日两场 **All-4-Main（四市全主刊）+ 共享 10+1 深研红队（含全焦点股近 24 小时公告硬扫雷与 T-0 宏观官源四铁律）+ 5 项真核验盲审 + 纯网页发布**；单向截点宽限严格统一为 **`[-5 分钟, +6 小时]`**（`07:25–13:30` / `17:55–次日 00:00` CST，黄金截点须早于或同分钟于权益且间隔 ≤6 小时）；`edition_run.py begin --scheduled` 会自动清理**严格较早期号**、超 **2 小时**无进展且尚未进入推送的僵尸锁；为防大文件回写撞 300 秒流式超时，权益三大扩展大 JSON（合计 ~830 KB）、黄金历史双账本、权益审计账本与双轨 `rsi_metrics.json` 统一经预授权 **`scripts/patch_state_dbs.py`** 增量原子写入（`--apply` / `--prepend-gold-ledgers` / `--prepend-equity-audit` / `--append-gold-rsi` / `--append-equity-rsi` / 只读 `--inspect`）。
 
 | 班次（CST） | 任务 ID | 单会话串行产出与分层刷新重点 |
 | :--- | :--- | :--- |
@@ -130,9 +130,13 @@ python3 gold/lint_readability.py --strict gold/daily/<YYYY-MM-DD_HHMM_班次_黄
 python3 equity/lint_equity.py --strict
 python3 scripts/publish_site.py --check-manuscripts
 
-# 5. 大文件原子增量补丁（防 300s 超时）与纯网页发布
+# 5. 大文件与增长型账本增量补丁（防 300s 超时）与纯网页发布
+python3 scripts/patch_state_dbs.py --inspect
 python3 scripts/patch_state_dbs.py --apply --dry-run
 python3 scripts/patch_state_dbs.py --prepend-gold-ledgers --dry-run
+python3 scripts/patch_state_dbs.py --prepend-equity-audit --dry-run
+python3 scripts/patch_state_dbs.py --append-gold-rsi --dry-run
+python3 scripts/patch_state_dbs.py --append-equity-rsi --dry-run
 python3 scripts/publish_site.py --dry-run
 python3 scripts/publish_site.py --no-push
 python3 scripts/publish_site.py --edition-token <token>
@@ -167,7 +171,7 @@ global-investment-research/
 ├── scripts/                         # 零第三方依赖纯网页门户、几何检验、大库原子补丁与发布引擎
 │   ├── build_site.py                # 静态门户构建器（首页/12 独立渠道页/ETF 雷达/231 股/新手指南/记分卡/档案）
 │   ├── svg_geometry.py              # SVG 矢量文本边界框解析与零碰撞/零越界几何校验引擎
-│   ├── patch_state_dbs.py           # 权益三大扩展大 JSON 原子合并与黄金双账本无损头插工具（防 300s 超时）
+│   ├── patch_state_dbs.py           # 三库原子合并、账本头插、双轨 RSI 无损追加与 --inspect 只读查库工具（防 300s 超时）
 │   ├── lint_site.py                 # 静态站 S1–S6 法证与安全严格门禁
 │   ├── publish_site.py / edition_run.py / install_sidecars.py
 │   └── web_assets/                  # WCAG 深浅色双端样式与零依赖交互脚本（含 24 词全站术语浮窗与 7 维/ETF 详情弹窗）

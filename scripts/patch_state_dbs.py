@@ -9,6 +9,10 @@ transactional rollback.
 Fixed safe commands (no arbitrary external path arguments accepted):
   python3 scripts/patch_state_dbs.py --apply [--dry-run] [--keep-patch] [--skip-edition-lock]
   python3 scripts/patch_state_dbs.py --prepend-gold-ledgers [--dry-run] [--keep-patch]
+  python3 scripts/patch_state_dbs.py --append-gold-rsi [--dry-run] [--keep-patch]
+  python3 scripts/patch_state_dbs.py --append-equity-rsi [--dry-run] [--keep-patch]
+  python3 scripts/patch_state_dbs.py --prepend-equity-audit [--dry-run] [--keep-patch]
+  python3 scripts/patch_state_dbs.py --inspect <target>
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import copy
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -132,8 +136,12 @@ FEE_EXCLUDE_SPAN_RE = re.compile(
 )
 DYNAMIC_SIGNED_PCT_RE = re.compile(r"(?<![0-9A-Za-z%])[+\-]\d+(?:\.\d+)?%")
 DYNAMIC_COUNT_RE = re.compile(r"\d+\s*只(?:跨境|纳指|美股|停牌)")
+DYNAMIC_USD_5DIGIT_RE = re.compile(r"\$[0-9]{2},[0-9]{3}(?!\d)")
 HISTORICAL_CTX_RE = re.compile(
     r"(?:对\d+/\d+|较|原|前日|昨日|自.{0,8}降至|由.{0,8}升至|历史|11/\d+)"
+)
+BTC_HISTORICAL_CTX_RE = re.compile(
+    r"(?:对\d+/\d+|较|原|前日|昨日|自.{0,8}降至|由.{0,8}升至|历史|均价|成本|此前)"
 )
 AH_PREMIUM_MENTION_RE = re.compile(
     r"(?:AH\s*溢价|A/H\s*溢价|A\s*股较\s*H\s*股[^，。；]{0,24}?溢价|"
@@ -141,11 +149,23 @@ AH_PREMIUM_MENTION_RE = re.compile(
     r"[^0-9+\-，。；（）]{0,14}([+\-]?\d+(?:\.\d+)?)%"
     r"(?:\s*[–\-~～至]\s*([+\-]?\d+(?:\.\d+)?)%)?"
 )
+AH_PREMIUM_TOLERANCE_PP = 0.6
+HK_4DIGIT_RE = re.compile(r"(?<![0-9])\d{4}\.HK(?![A-Za-z0-9])")
+A_SHARE_DIVIDEND_RE = re.compile(
+    r"股息率\s*(?:约|近|逾|高达|达|为|仅|在|~|超|不足|低于|高于)?\s*(\d+(?:\.\d+)?)%"
+    r"(?:\s*[–\-~～至]\s*(\d+(?:\.\d+)?)%)?"
+)
+DIVIDEND_QUALIFIER_RE = re.compile(r"(?:税后|港股通|中期|半年|特别|历史|原|旧|前)")
+A_SHARE_DIVIDEND_TOLERANCE_PP = 0.15
+QDII_RESTRICTED_NOTE_RE = re.compile(r"(?:暂停申购|限购|封盘)")
+IOPV_RE = re.compile(r"(?<![A-Za-z])IOPV(?![A-Za-z])", flags=re.IGNORECASE)
+IOPV_GLOSS_RE = re.compile(r"(?:参考净值|实时净值)")
 CHANNEL_META_KEYS = frozenset({
     "id", "order", "category", "category_label", "money_bucket",
     "high_net_worth_only", "min_amount_tier", "risk_stars", "status_tone",
     "related_etf_codes",
 })
+DOSSIER_META_KEYS = frozenset({"market", "code", "name", "depth_tier", "updated_at"})
 
 GOLD_ETF_CODES = frozenset({
     "518660", "518880", "518850", "159934", "159937", "518800",
@@ -165,7 +185,10 @@ GOLD_DOSSIER_KEYS = frozenset({
 })
 GOLD_BASE_ROLE_RE = re.compile(r"(?:当下底座|绿色底座|🟢)")
 GOLD_BASE_NEGATION_RE = re.compile(
-    r"(?:严禁|禁止|切忌|不可|不得|暂不|不|非|不是|勿)(?:列为|标为|作为|当成|视为)?[\s“‘「\x22*_]*$"
+    r"(?:严禁|禁止|切忌|不可|不得|暂不|不宜|绝不|决不|不要|不能|不|非|不是|勿)"
+    r"(?:(?:新买|买入|买进|加仓|建仓|定投|配置|补仓|补齐|购买|追买|抢权|抄底|推荐|纳入|视为|作为|当成|列为|标为)"
+    r"(?:[/／、及与和或]|且|亦|也|更)?(?:严禁|禁止|切忌|不可|不得|暂不|不宜|绝不|不|勿)?){0,4}"
+    r"(?:列为|标为|作为|当成|视为|纳入|归为|定为)?[\s“‘「\x22*_]*$"
 )
 GOLD_ACTIVE_BUY_RE = re.compile(
     r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|新买|买|定投|配置|建仓|吸纳)"
@@ -196,7 +219,7 @@ BANNED_INTERNAL_RE = re.compile(
     r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
-    r"master_snapshot\.json|data_snapshot\.json|_edition_patch\.json|_ledger_patch\.json|"
+    r"master_snapshot\.json|data_snapshot\.json|_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|"
     r"unified-edition\.prompt\.md|permissions\.json|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|sidecar\.json|"
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|Meta-RSI|Recursive\s+Self-Improvement|"
@@ -225,6 +248,9 @@ ALLOWED_EQUITY_PATCH_TOP_KEYS = frozenset({
     "note",
     "summary",
 })
+ALLOWED_MULTI_ASSET_PATCH_KEYS = frozenset({"top_level_updates", "channels_patch"})
+ALLOWED_ETF_PATCH_KEYS = frozenset({"top_level_updates", "etfs_upsert", "etfs_remove"})
+ALLOWED_DOSSIERS_PATCH_KEYS = frozenset({"top_level_updates", "dossiers_patch"})
 ALLOWED_LEDGER_PATCH_KEYS = frozenset({
     "edition_id",
     "changelog_entry_md",
@@ -232,6 +258,12 @@ ALLOWED_LEDGER_PATCH_KEYS = frozenset({
     "audit_source_index_md",
     "note",
 })
+ALLOWED_EQUITY_AUDIT_PATCH_KEYS = frozenset({
+    "edition_id",
+    "entry_md",
+    "note",
+})
+ALLOWED_RSI_FINDING_STATUSES = frozenset({"resolved", "deferred_data", "disclosed_caveat"})
 
 
 def _safe_repo_path(repo_root: Path, *parts: str) -> Path:
@@ -367,6 +399,8 @@ def _extract_dynamic_tokens(obj: object) -> set[str]:
             tokens.add(m.group(0))
         for m in DYNAMIC_COUNT_RE.finditer(sval):
             tokens.add(re.sub(r"\s+", "", m.group(0)))
+        for m in DYNAMIC_USD_5DIGIT_RE.finditer(sval):
+            tokens.add(m.group(0))
     return tokens
 
 
@@ -381,13 +415,18 @@ def _check_sibling_token_drift(
         for tok in sorted(replaced_tokens):
             if tok.endswith("%"):
                 pat = re.compile(rf"(?<![0-9A-Za-z%]){re.escape(tok)}")
+                hist_re = HISTORICAL_CTX_RE
+            elif tok.startswith("$"):
+                pat = re.compile(rf"{re.escape(tok)}(?![0-9])")
+                hist_re = BTC_HISTORICAL_CTX_RE
             else:
                 # Allow optional spaces between digits and 只
                 m_cnt = re.fullmatch(r"(\d+)(.+)", tok)
                 pat = re.compile(rf"(?<![0-9]){m_cnt.group(1)}\s*{re.escape(m_cnt.group(2))}") if m_cnt else re.compile(re.escape(tok))
+                hist_re = HISTORICAL_CTX_RE
             for m in pat.finditer(sval):
                 win = sval[max(0, m.start() - 20) : min(len(sval), m.end() + 20)]
-                if not HISTORICAL_CTX_RE.search(win):
+                if not hist_re.search(win):
                     raise ValueError(
                         f"Stale sibling token drift in {obj_label}.{field_path}: "
                         f"replaced token {tok!r} still appears without historical context -> {win!r}"
@@ -486,9 +525,12 @@ def _merge_multi_asset(
         return ma, stats
     if not isinstance(sec, dict):
         raise ValueError("patch.multi_asset_channels must be an object.")
-    unknown_sec = set(sec.keys()) - {"top_level_updates", "channels_patch"}
+    unknown_sec = set(sec.keys()) - ALLOWED_MULTI_ASSET_PATCH_KEYS
     if unknown_sec:
-        raise ValueError(f"Unknown key(s) in multi_asset_channels patch: {sorted(unknown_sec)}")
+        raise ValueError(
+            f"Unknown key(s) in multi_asset_channels patch: {sorted(unknown_sec)} "
+            f"(allowed: {sorted(ALLOWED_MULTI_ASSET_PATCH_KEYS)})"
+        )
 
     top_upd = sec.get("top_level_updates")
     if top_upd is not None:
@@ -640,9 +682,12 @@ def _merge_etf_universe(
     if sec is not None:
         if not isinstance(sec, dict):
             raise ValueError("patch.etf_universe must be an object.")
-        unknown_sec = set(sec.keys()) - {"top_level_updates", "etfs_upsert", "etfs_remove"}
+        unknown_sec = set(sec.keys()) - ALLOWED_ETF_PATCH_KEYS
         if unknown_sec:
-            raise ValueError(f"Unknown key(s) in etf_universe patch: {sorted(unknown_sec)}")
+            raise ValueError(
+                f"Unknown key(s) in etf_universe patch: {sorted(unknown_sec)} "
+                f"(allowed: {sorted(ALLOWED_ETF_PATCH_KEYS)})"
+            )
 
         top_upd = sec.get("top_level_updates")
         if top_upd is not None:
@@ -738,7 +783,10 @@ def _merge_etf_universe(
                             f"New ETF {norm_code!r} in etfs_upsert must provide all 21 standard keys; missing: {missing_keys}"
                         )
                     if extra_keys:
-                        raise ValueError(f"New ETF {norm_code!r} has unknown key(s): {extra_keys}")
+                        raise ValueError(
+                            f"New ETF {norm_code!r} has unknown key(s): {extra_keys} "
+                            f"(allowed: {sorted(ETF_ALL_21_KEYS)})"
+                        )
                     new_item = copy.deepcopy(entry)
                     new_item["code"] = norm_code
                     etfs.append(new_item)
@@ -838,9 +886,12 @@ def _merge_deep_dossiers(
     if sec is not None:
         if not isinstance(sec, dict):
             raise ValueError("patch.deep_dossiers must be an object.")
-        unknown_sec = set(sec.keys()) - {"top_level_updates", "dossiers_patch"}
+        unknown_sec = set(sec.keys()) - ALLOWED_DOSSIERS_PATCH_KEYS
         if unknown_sec:
-            raise ValueError(f"Unknown key(s) in deep_dossiers patch: {sorted(unknown_sec)}")
+            raise ValueError(
+                f"Unknown key(s) in deep_dossiers patch: {sorted(unknown_sec)} "
+                f"(allowed: {sorted(ALLOWED_DOSSIERS_PATCH_KEYS)})"
+            )
 
         top_upd = sec.get("top_level_updates")
         if top_upd is not None:
@@ -868,15 +919,29 @@ def _merge_deep_dossiers(
                 if not isinstance(upd, dict) or not upd:
                     raise ValueError(f"dossiers_patch[{stock_key!r}] must be a non-empty object.")
                 target = dossiers[stock_key]
+                orig_entry = copy.deepcopy(target)
+                old_tokens: set[str] = set()
+                new_tokens: set[str] = set()
+                touched_keys: set[str] = set()
                 for k, v in upd.items():
                     if k in ("market", "code") and v != target.get(k):
                         raise ValueError(f"Cannot mutate immutable {k!r} on dossier {stock_key!r}.")
+                    touched_keys.add(k)
+                    old_tokens |= _extract_dynamic_tokens(orig_entry.get(k))
+                    new_tokens |= _extract_dynamic_tokens(v)
                     target[k] = copy.deepcopy(v)
                 target["updated_at"] = as_of_date
+                replaced_tokens = old_tokens - new_tokens
+                untouched_strings: list[tuple[str, str]] = []
+                for sk, sv in target.items():
+                    if sk in DOSSIER_META_KEYS or sk in touched_keys:
+                        continue
+                    untouched_strings.extend(_walk_json_strings(sv, sk))
+                _check_sibling_token_drift(f"deep_dossiers[{stock_key}]", replaced_tokens, untouched_strings)
                 stats["stocks_patched"] += 1
 
             # A/H Twin Sync Guard: if baseline_note or valuation_anchor changed on one side,
-            # ensure its unpatched A/H twin does not drift >1.5pct from market_state benchmark.
+            # ensure its unpatched A/H twin does not drift >0.6pp from market_state benchmark.
             for stock_key, upd in dp.items():
                 if not isinstance(upd, dict):
                     continue
@@ -898,11 +963,11 @@ def _merge_deep_dossiers(
                         v1 = float(m_ah.group(1))
                         v2 = float(m_ah.group(2)) if m_ah.group(2) is not None else v1
                         lo, hi = min(v1, v2), max(v1, v2)
-                        if bench_pct < lo - 1.5 or bench_pct > hi + 1.5:
+                        if bench_pct < lo - AH_PREMIUM_TOLERANCE_PP or bench_pct > hi + AH_PREMIUM_TOLERANCE_PP:
                             raise ValueError(
                                 f"A/H twin sync required: patched {stock_key!r} without twin {twin_key!r}, "
                                 f"whose {field} still states {m_ah.group(0)!r} vs market_state benchmark "
-                                f"{bench_pct:+.1f}% (drift > 1.5pct)."
+                                f"{bench_pct:+.1f}% (drift > {AH_PREMIUM_TOLERANCE_PP:.1f}pp)."
                             )
 
     dd["total_stocks"] = len(dossiers)
@@ -921,6 +986,8 @@ def _validate_merged_equity_dbs(
     edition_id: str,
     gold_tier0_active: bool,
     expected_pool: int,
+    as_of_date: str | None = None,
+    market_state: dict[str, Any] | None = None,
 ) -> list[str]:
     errs: list[str] = []
 
@@ -1077,6 +1144,14 @@ def _validate_merged_equity_dbs(
                 errs.append(f"etf_universe.json: etfs[{idx}]({code}) invalid channel {ch!r}.")
             if "premium_status" in item and item["premium_status"] not in ETF_ALLOWED_PREMIUM_STATUSES:
                 errs.append(f"etf_universe.json: etfs[{idx}]({code}) invalid premium_status {item['premium_status']!r}.")
+            pstatus = str(item.get("premium_status", "")).strip()
+            pnote = str(item.get("premium_note", ""))
+            if pstatus == "high_risk" or QDII_RESTRICTED_NOTE_RE.search(pnote):
+                if "恢复申赎" in pnote and "仅恢复赎回" not in pnote:
+                    errs.append(
+                        f"etf_universe.json: etfs[{idx}]({code}).premium_note claims '恢复申赎' on a high_risk/restricted ETF "
+                        f"without clarifying '仅恢复赎回' -> {pnote[:80]!r}"
+                    )
             if gold_tier0_active:
                 name = str(item.get("name", "")).strip()
                 is_gold = item.get("gold_locked") is True or norm in GOLD_ETF_CODES or bool(GOLD_ETF_NAME_RE.search(name))
@@ -1162,12 +1237,33 @@ def _validate_merged_equity_dbs(
                 if is_gold_stock:
                     act = str(entry.get("action_etf", ""))
                     for m_base in GOLD_BASE_ROLE_RE.finditer(act):
-                        prefix = re.split(r"[。！？；，,、|]", act[: m_base.start()])[-1]
+                        prefix = re.split(r"[。！？；，,|]", act[: m_base.start()])[-1]
                         if not GOLD_BASE_NEGATION_RE.search(prefix):
                             errs.append(
                                 f"Gold Tier-0 互斥冲突 (deep_dossiers:{dkey}.action_etf)：涉金标的严禁标为绿色/当下底座 -> {act[:72]}"
                             )
                             break
+            if str(dkey).startswith("a-share:"):
+                div_intervals: list[tuple[str, float, float, str]] = []
+                for field in ("baseline_note", "valuation_anchor", "shareholder_flow"):
+                    fval = str(entry.get(field, ""))
+                    for m_div in A_SHARE_DIVIDEND_RE.finditer(fval):
+                        pre = fval[max(0, m_div.start() - 10) : m_div.start()]
+                        post = fval[m_div.end() : min(len(fval), m_div.end() + 10)]
+                        if DIVIDEND_QUALIFIER_RE.search(pre) or DIVIDEND_QUALIFIER_RE.search(post):
+                            continue
+                        v1 = float(m_div.group(1))
+                        v2 = float(m_div.group(2)) if m_div.group(2) is not None else v1
+                        div_intervals.append((field, min(v1, v2), max(v1, v2), m_div.group(0)))
+                if len(div_intervals) >= 2:
+                    max_lo = max(item[1] for item in div_intervals)
+                    min_hi = min(item[2] for item in div_intervals)
+                    if max_lo - min_hi > A_SHARE_DIVIDEND_TOLERANCE_PP + 1e-9:
+                        detail = ", ".join(f"{fld}={txt}" for fld, _, _, txt in div_intervals)
+                        errs.append(
+                            f"deep_dossiers.json[{dkey}]: intra-dossier A-share dividend yield mismatch "
+                            f"(spread {max_lo - min_hi:.2f}pp > {A_SHARE_DIVIDEND_TOLERANCE_PP:.2f}pp): {detail}"
+                        )
         for (mkt_prefix, dim), counter in sorted(tpl_counts.items()):
             for sample, cnt in counter.items():
                 if cnt > 10:
@@ -1175,7 +1271,60 @@ def _validate_merged_equity_dbs(
                         f"deep_dossiers.json ({mkt_prefix}): {cnt} stocks duplicate identical {dim} template (>10) -> {sample[:40]!r}"
                     )
 
-    # 5. Global string scan across all 3 DBs: raw markup, banned internal words, local paths, restricted codes, gold buy
+        # Global A/H Benchmark Consistency Guard (all benchmark dossiers vs market_state ±0.6pp)
+        if isinstance(market_state, dict):
+            benchmarks = (
+                market_state.get("cross_market_linkages", {})
+                .get("ah_premium_radar", {})
+                .get("benchmarks")
+            )
+            if isinstance(benchmarks, list):
+                for bench in benchmarks:
+                    if not isinstance(bench, dict):
+                        continue
+                    a_code = bench.get("a")
+                    h_code = bench.get("h")
+                    ah_pct = bench.get("ah_premium_pct")
+                    if (
+                        not isinstance(a_code, str) or not a_code.strip()
+                        or not isinstance(h_code, str) or not h_code.strip()
+                        or not isinstance(ah_pct, (int, float)) or isinstance(ah_pct, bool)
+                    ):
+                        continue
+                    bench_pct = float(ah_pct)
+                    for bkey in (f"a-share:{a_code.strip()}", f"hk-stock:{h_code.strip()}"):
+                        bentry = dossiers.get(bkey)
+                        if not isinstance(bentry, dict):
+                            continue
+                        for field in ("baseline_note", "valuation_anchor"):
+                            fval = str(bentry.get(field, ""))
+                            for m_ah in AH_PREMIUM_MENTION_RE.finditer(fval):
+                                v1 = float(m_ah.group(1))
+                                v2 = float(m_ah.group(2)) if m_ah.group(2) is not None else v1
+                                lo, hi = min(v1, v2), max(v1, v2)
+                                if bench_pct < lo - AH_PREMIUM_TOLERANCE_PP or bench_pct > hi + AH_PREMIUM_TOLERANCE_PP:
+                                    errs.append(
+                                        f"deep_dossiers.json[{bkey}].{field}: AH premium {m_ah.group(0)!r} "
+                                        f"drifts >{AH_PREMIUM_TOLERANCE_PP:.1f}pp from market_state benchmark {bench_pct:+.1f}%."
+                                    )
+
+    # 5. Global string scan across all 3 DBs: raw markup, banned internal words, local paths,
+    # restricted codes, gold buy, relative-date tense drift, 4-digit .HK, and bare IOPV
+    effective_date = as_of_date or str(ma.get("as_of_date") or eu.get("as_of_date") or dd.get("as_of_date") or "").strip()
+    rel_date_patterns: list[tuple[str, re.Pattern[str]]] = []
+    if effective_date and DATE_RE.fullmatch(effective_date):
+        try:
+            dt_cur = datetime.strptime(effective_date, "%Y-%m-%d")
+            dt_prev1 = dt_cur - timedelta(days=1)
+            dt_prev2 = dt_cur - timedelta(days=2)
+            rel_date_patterns = [
+                ("stale '明日' matching as_of_date", re.compile(rf"明日\s*[（(]?\s*0?{dt_cur.month}/0?{dt_cur.day}(?!\d)[）)]?")),
+                ("stale '今日' matching yesterday", re.compile(rf"今日\s*[（(]?\s*0?{dt_prev1.month}/0?{dt_prev1.day}(?!\d)[）)]?")),
+                ("stale '昨日' matching 2 days ago", re.compile(rf"昨日\s*[（(]?\s*0?{dt_prev2.month}/0?{dt_prev2.day}(?!\d)[）)]?")),
+            ]
+        except ValueError:
+            rel_date_patterns = []
+
     for doc_name, doc_obj in (
         ("multi_asset_channels.json", ma),
         ("etf_universe.json", eu),
@@ -1189,6 +1338,25 @@ def _validate_merged_equity_dbs(
                 errs.append(f"{jpath}: leaked internal term(s): {sorted(set(hits))}")
             if LOCAL_PATH_RE.search(sval):
                 errs.append(f"{jpath}: leaked local filesystem path.")
+            for rel_label, rel_re in rel_date_patterns:
+                m_rel = rel_re.search(sval)
+                if m_rel:
+                    errs.append(
+                        f"{jpath}: relative-date tense drift ({rel_label} on {effective_date}) -> {m_rel.group(0)!r}"
+                    )
+            m_hk4 = HK_4DIGIT_RE.search(sval)
+            if m_hk4:
+                errs.append(
+                    f"{jpath}: bare 4-digit HK ticker {m_hk4.group(0)!r} must use canonical 5-digit format (e.g. 0{m_hk4.group(0)})."
+                )
+            if doc_name == "etf_universe.json":
+                for m_iopv in IOPV_RE.finditer(sval):
+                    win = sval[max(0, m_iopv.start() - 20) : min(len(sval), m_iopv.end() + 20)]
+                    if not IOPV_GLOSS_RE.search(win):
+                        errs.append(
+                            f"{jpath}: bare 'IOPV' without '参考净值' or '实时净值' within ±20 chars -> {win!r}"
+                        )
+                        break
             if not jpath.endswith(".code"):
                 for m_rc in RESTRICTED_CODES_RE.finditer(sval):
                     win = sval[max(0, m_rc.start() - 40) : min(len(sval), m_rc.end() + 40)]
@@ -1220,7 +1388,10 @@ def apply_equity_patch(
     patch_root = _read_json_obj(patch_path, "equity/state/_edition_patch.json")
     unknown_top = set(patch_root.keys()) - ALLOWED_EQUITY_PATCH_TOP_KEYS
     if unknown_top:
-        raise ValueError(f"Unknown top-level key(s) in _edition_patch.json: {sorted(unknown_top)}")
+        raise ValueError(
+            f"Unknown top-level key(s) in _edition_patch.json: {sorted(unknown_top)} "
+            f"(allowed: {sorted(ALLOWED_EQUITY_PATCH_TOP_KEYS)})"
+        )
 
     edition_id = _validate_edition_id(patch_root.get("edition_id"))
     as_of_date = (
@@ -1297,6 +1468,8 @@ def apply_equity_patch(
         edition_id=edition_id,
         gold_tier0_active=gold_tier0_active,
         expected_pool=expected_pool,
+        as_of_date=as_of_date,
+        market_state=market_state,
     )
     if errors:
         preview = "\n  - ".join(errors[:20])
@@ -1480,7 +1653,10 @@ def prepend_gold_ledgers(
     patch = _read_json_obj(patch_path, "gold/daily/_ledger_patch.json")
     unknown = set(patch.keys()) - ALLOWED_LEDGER_PATCH_KEYS
     if unknown:
-        raise ValueError(f"Unknown key(s) in _ledger_patch.json: {sorted(unknown)}")
+        raise ValueError(
+            f"Unknown key(s) in _ledger_patch.json: {sorted(unknown)} "
+            f"(allowed: {sorted(ALLOWED_LEDGER_PATCH_KEYS)})"
+        )
 
     edition_id = _validate_edition_id(patch.get("edition_id"))
     changelog_entry = patch.get("changelog_entry_md")
@@ -1630,6 +1806,394 @@ def prepend_gold_ledgers(
     return summary
 
 
+def _edition_sort_key(edition_id: str) -> tuple[str, int, int]:
+    validated = _validate_edition_id(edition_id)
+    match = EDITION_RE.fullmatch(validated)
+    assert match is not None
+    return match.group(1), int(match.group(2)), int(match.group(3) or 1)
+
+
+def _is_http_or_https_url(value: object) -> bool:
+    if not isinstance(value, str) or not value or any(c.isspace() for c in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname or ""
+        return parsed.scheme in {"http", "https"} and bool(host)
+    except ValueError:
+        return False
+
+
+def _validate_rsi_patch_entry(entry: dict[str, Any], patch_label: str) -> tuple[str, list[dict[str, Any]]]:
+    run_id = _validate_edition_id(entry.get("run_id"))
+    current_key = _edition_sort_key(run_id)
+
+    for jpath, sval in _walk_json_strings(entry, patch_label, skip_keys=frozenset()):
+        if LOCAL_PATH_RE.search(sval):
+            raise ValueError(f"{jpath}: leaked local filesystem path.")
+
+    closure = entry.get("review_closure")
+    if not isinstance(closure, dict) or closure.get("reviewer_completed") is not True:
+        raise ValueError(f"{patch_label} requires review_closure.reviewer_completed == true.")
+    findings = closure.get("findings")
+    if not isinstance(findings, list):
+        raise ValueError(f"{patch_label} requires review_closure.findings to be a list.")
+
+    for idx, finding in enumerate(findings, start=1):
+        flabel = f"{patch_label}.review_closure.findings[{idx}]"
+        if not isinstance(finding, dict):
+            raise ValueError(f"{flabel} must be a JSON object.")
+        desc = finding.get("description")
+        if not isinstance(desc, str) or not desc.strip():
+            raise ValueError(f"{flabel} requires a non-empty 'description'.")
+        status = finding.get("status")
+        if status not in ALLOWED_RSI_FINDING_STATUSES:
+            raise ValueError(
+                f"{flabel} has invalid status {status!r} (allowed: {sorted(ALLOWED_RSI_FINDING_STATUSES)})."
+            )
+        evidence = finding.get("evidence")
+        if status == "resolved":
+            if not isinstance(evidence, str) or not evidence.strip():
+                raise ValueError(f"{flabel} requires non-empty string 'evidence' when status == 'resolved'.")
+        elif status == "deferred_data":
+            if not isinstance(evidence, dict):
+                raise ValueError(f"{flabel} requires an 'evidence' object when status == 'deferred_data'.")
+            disp = evidence.get("disposition")
+            if not isinstance(disp, str) or not disp.strip():
+                raise ValueError(f"{flabel}.evidence requires a non-empty 'disposition'.")
+            if not _is_http_or_https_url(evidence.get("source")):
+                raise ValueError(f"{flabel}.evidence requires a valid http(s) 'source' URL.")
+            due_raw = evidence.get("due_edition")
+            try:
+                due_key = _edition_sort_key(due_raw) if isinstance(due_raw, str) else None
+            except ValueError:
+                due_key = None
+            if due_key is None or due_key <= current_key:
+                raise ValueError(f"{flabel}.evidence.due_edition ({due_raw!r}) must be a valid edition later than {run_id!r}.")
+        elif status == "disclosed_caveat":
+            if not isinstance(evidence, dict):
+                raise ValueError(f"{flabel} requires an 'evidence' object when status == 'disclosed_caveat'.")
+            disp = evidence.get("disposition")
+            if not isinstance(disp, str) or not disp.strip():
+                raise ValueError(f"{flabel}.evidence requires a non-empty 'disposition'.")
+            if "source" in evidence and evidence["source"] is not None:
+                if not _is_http_or_https_url(evidence["source"]):
+                    raise ValueError(f"{flabel}.evidence.source must be a valid http(s) URL when provided.")
+            if "due_edition" in evidence and evidence["due_edition"] is not None:
+                due_raw = evidence["due_edition"]
+                try:
+                    due_key = _edition_sort_key(due_raw) if isinstance(due_raw, str) else None
+                except ValueError:
+                    due_key = None
+                if due_key is None or due_key <= current_key:
+                    raise ValueError(
+                        f"{flabel}.evidence.due_edition ({due_raw!r}) must be a valid edition later than {run_id!r}."
+                    )
+
+    return run_id, findings
+
+
+def append_rsi_metrics(
+    repo_root: Path = REPO_ROOT,
+    *,
+    track: str,
+    dry_run: bool = False,
+    keep_patch: bool = False,
+) -> dict[str, Any]:
+    if track == "gold":
+        patch_parts = ("gold", "daily", "_rsi_patch.json")
+        target_parts = ("gold", "daily", "rsi_metrics.json")
+        mode_name = "append-gold-rsi"
+    elif track == "equity":
+        patch_parts = ("equity", "state", "_rsi_patch.json")
+        target_parts = ("equity", "state", "rsi_metrics.json")
+        mode_name = "append-equity-rsi"
+    else:
+        raise ValueError(f"Unknown RSI track: {track!r} (allowed: ['equity', 'gold'])")
+
+    patch_label = "/".join(patch_parts)
+    target_label = "/".join(target_parts)
+    patch_path = _safe_repo_path(repo_root, *patch_parts)
+    target_path = _safe_repo_path(repo_root, *target_parts)
+
+    entry = _read_json_obj(patch_path, patch_label)
+    run_id, findings = _validate_rsi_patch_entry(entry, patch_label)
+
+    if not target_path.is_file():
+        raise ValueError(f"Missing required JSON file: {target_label}")
+    try:
+        target_raw = json.loads(target_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot parse {target_label}: {exc}") from exc
+
+    if isinstance(target_raw, dict):
+        runs = target_raw.get("runs")
+        if not isinstance(runs, list):
+            raise ValueError(f"{target_label} must contain a 'runs' list.")
+        target_obj: Any = copy.deepcopy(target_raw)
+        target_runs = target_obj["runs"]
+    elif isinstance(target_raw, list):
+        target_obj = copy.deepcopy(target_raw)
+        target_runs = target_obj
+    else:
+        raise ValueError(f"{target_label} root must be a JSON object with 'runs' list or a JSON list.")
+
+    for existing in target_runs:
+        if isinstance(existing, dict) and existing.get("run_id") == run_id:
+            raise ValueError(f"{target_label} already contains run_id {run_id!r}; refusing duplicate append.")
+
+    prior_runs = len(target_runs)
+    target_runs.append(copy.deepcopy(entry))
+    new_bytes = (json.dumps(target_obj, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+    summary = {
+        "mode": mode_name,
+        "dry_run": dry_run,
+        "run_id": run_id,
+        "prior_runs": prior_runs,
+        "new_runs": len(target_runs),
+        "findings_count": len(findings),
+        "patch_deleted": False,
+    }
+
+    if not dry_run:
+        _atomic_write_single(target_path, new_bytes)
+        if not keep_patch:
+            patch_path.unlink(missing_ok=True)
+            summary["patch_deleted"] = True
+
+    return summary
+
+
+def append_gold_rsi(
+    repo_root: Path = REPO_ROOT,
+    *,
+    dry_run: bool = False,
+    keep_patch: bool = False,
+) -> dict[str, Any]:
+    return append_rsi_metrics(repo_root, track="gold", dry_run=dry_run, keep_patch=keep_patch)
+
+
+def append_equity_rsi(
+    repo_root: Path = REPO_ROOT,
+    *,
+    dry_run: bool = False,
+    keep_patch: bool = False,
+) -> dict[str, Any]:
+    return append_rsi_metrics(repo_root, track="equity", dry_run=dry_run, keep_patch=keep_patch)
+
+
+def _insert_after_first_hr(text: str, block: str, *, file_label: str) -> str:
+    clean_block = block.strip()
+    if not clean_block:
+        raise ValueError(f"{file_label}: insertion block must be non-empty.")
+    lines = clean_block.splitlines()
+    ends_with_hr = bool(lines and lines[-1].strip() == "---")
+    sep = "\n\n" if ends_with_hr else "\n\n---\n\n"
+    m_hr = re.search(r"(?:^|\n)[ \t]*---[ \t]*(?:\n|$)", text)
+    if m_hr is None:
+        raise ValueError(f"{file_label}: no '---' separator found; cannot safely prepend.")
+    prefix = text[: m_hr.end()].rstrip("\n") + "\n\n"
+    suffix = text[m_hr.end() :]
+    if suffix.strip():
+        return f"{prefix}{clean_block}{sep}{suffix.lstrip(chr(10))}"
+    return f"{prefix}{clean_block}\n"
+
+
+def prepend_equity_audit(
+    repo_root: Path = REPO_ROOT,
+    *,
+    dry_run: bool = False,
+    keep_patch: bool = False,
+) -> dict[str, Any]:
+    patch_path = _safe_repo_path(repo_root, "equity", "state", "_audit_patch.json")
+    audit_path = _safe_repo_path(repo_root, "equity", "state", "audit_ledger.md")
+
+    patch = _read_json_obj(patch_path, "equity/state/_audit_patch.json")
+    unknown = set(patch.keys()) - ALLOWED_EQUITY_AUDIT_PATCH_KEYS
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in _audit_patch.json: {sorted(unknown)} "
+            f"(allowed: {sorted(ALLOWED_EQUITY_AUDIT_PATCH_KEYS)})"
+        )
+
+    edition_id = _validate_edition_id(patch.get("edition_id"))
+    entry_md = patch.get("entry_md")
+    note = patch.get("note")
+    if not isinstance(entry_md, str) or not entry_md.strip():
+        raise ValueError("_audit_patch.json requires non-empty 'entry_md'.")
+    if note is not None and not isinstance(note, str):
+        raise ValueError("_audit_patch.json 'note' must be a string or null.")
+
+    for label, sval in (("entry_md", entry_md), ("note", note or "")):
+        if LOCAL_PATH_RE.search(sval):
+            raise ValueError(f"_audit_patch.json.{label} leaks a local filesystem path.")
+
+    if not audit_path.is_file():
+        raise ValueError("Missing equity/state/audit_ledger.md.")
+
+    orig_bytes = audit_path.read_bytes()
+    orig_text = orig_bytes.decode("utf-8")
+
+    heading_ed_re = re.compile(
+        rf"^##\s+.*(?<![A-Za-z0-9_]){re.escape(edition_id)}(?![A-Za-z0-9_])",
+        re.MULTILINE,
+    )
+    if heading_ed_re.search(orig_text):
+        raise ValueError(
+            f"equity/state/audit_ledger.md already contains a '## ' heading for {edition_id}; refusing duplicate prepend."
+        )
+
+    new_text = _insert_after_first_hr(orig_text, entry_md, file_label="equity/state/audit_ledger.md")
+    new_bytes = new_text.encode("utf-8")
+
+    orig_lines = _nonblank_lines(orig_bytes)
+    new_lines = _nonblank_lines(new_bytes)
+    if not _preserves_order(orig_lines, new_lines):
+        raise ValueError("Mathematical proof failed: equity/state/audit_ledger.md lost or reordered prior nonblank lines.")
+
+    summary = {
+        "mode": "prepend-equity-audit",
+        "dry_run": dry_run,
+        "edition_id": edition_id,
+        "audit_prior_lines": len(orig_lines),
+        "audit_new_lines": len(new_lines),
+        "order_proof_verified": True,
+        "patch_deleted": False,
+    }
+
+    if not dry_run:
+        _atomic_write_single(audit_path, new_bytes)
+        if not keep_patch:
+            patch_path.unlink(missing_ok=True)
+            summary["patch_deleted"] = True
+
+    return summary
+
+
+def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str, Any]:
+    raw_target = str(target or "").strip()
+    if not raw_target:
+        raise ValueError(
+            "Empty --inspect target (allowed: channels, channel:<id>, etf:<code>, stock:<key>, stale-dossiers, ah-benchmarks)."
+        )
+
+    if raw_target == "channels":
+        ma = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "multi_asset_channels.json"), "multi_asset_channels.json")
+        channels = ma.get("channels") if isinstance(ma.get("channels"), list) else []
+        return {
+            "edition_id": ma.get("edition_id"),
+            "as_of_date": ma.get("as_of_date"),
+            "total_channels": len(channels),
+            "channels": [
+                {
+                    "id": ch.get("id"),
+                    "name": ch.get("name"),
+                    "status_tone": ch.get("status_tone"),
+                    "beginner_one_liner": ch.get("beginner_one_liner"),
+                    "today_alert": ch.get("today_alert"),
+                }
+                for ch in channels
+                if isinstance(ch, dict)
+            ],
+        }
+
+    if raw_target.startswith("channel:"):
+        cid = raw_target.split(":", 1)[1].strip()
+        ma = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "multi_asset_channels.json"), "multi_asset_channels.json")
+        channels = ma.get("channels") if isinstance(ma.get("channels"), list) else []
+        for ch in channels:
+            if isinstance(ch, dict) and ch.get("id") == cid:
+                return ch
+        raise ValueError(f"Channel not found: {cid!r} (allowed: {sorted(REQUIRED_CHANNEL_SET)})")
+
+    if raw_target.startswith("etf:"):
+        code_raw = raw_target.split(":", 1)[1].strip()
+        norm_code = _normalize_etf_code(code_raw)
+        eu = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "etf_universe.json"), "etf_universe.json")
+        etfs = eu.get("etfs") if isinstance(eu.get("etfs"), list) else []
+        for item in etfs:
+            if isinstance(item, dict) and _normalize_etf_code(item.get("code")) == norm_code:
+                return item
+        raise ValueError(f"ETF not found: {code_raw!r} (normalized: {norm_code!r})")
+
+    if raw_target.startswith("stock:"):
+        stock_key = raw_target.split(":", 1)[1].strip()
+        dd = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "deep_dossiers.json"), "deep_dossiers.json")
+        dossiers = dd.get("dossiers") if isinstance(dd.get("dossiers"), dict) else {}
+        if stock_key in dossiers and isinstance(dossiers[stock_key], dict):
+            return dossiers[stock_key]
+        raise ValueError(f"Stock dossier not found: {stock_key!r}")
+
+    if raw_target == "stale-dossiers":
+        dd = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "deep_dossiers.json"), "deep_dossiers.json")
+        dossiers = dd.get("dossiers") if isinstance(dd.get("dossiers"), dict) else {}
+        hist: Counter[str] = Counter()
+        for entry in dossiers.values():
+            if isinstance(entry, dict):
+                hist[str(entry.get("updated_at") or "unknown")] += 1
+        valid_dates = sorted(d for d in hist if DATE_RE.fullmatch(d))
+        latest_date = valid_dates[-1] if valid_dates else None
+        recent_keys = sorted(
+            k for k, v in dossiers.items()
+            if isinstance(v, dict) and latest_date is not None and v.get("updated_at") == latest_date
+        )
+        return {
+            "edition_id": dd.get("edition_id"),
+            "as_of_date": dd.get("as_of_date"),
+            "total_stocks": len(dossiers),
+            "updated_at_histogram": dict(sorted(hist.items(), reverse=True)),
+            "latest_updated_at": latest_date,
+            "recently_updated_keys": recent_keys,
+        }
+
+    if raw_target == "ah-benchmarks":
+        ms = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "market_state.json"), "market_state.json")
+        dd = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "deep_dossiers.json"), "deep_dossiers.json")
+        dossiers = dd.get("dossiers") if isinstance(dd.get("dossiers"), dict) else {}
+        radar = ms.get("cross_market_linkages", {}).get("ah_premium_radar", {})
+        benchmarks = radar.get("benchmarks") if isinstance(radar, dict) and isinstance(radar.get("benchmarks"), list) else []
+        rows: list[dict[str, Any]] = []
+        for bench in benchmarks:
+            if not isinstance(bench, dict):
+                continue
+            a_code = str(bench.get("a", "")).strip()
+            h_code = str(bench.get("h", "")).strip()
+            ak = f"a-share:{a_code}"
+            hk = f"hk-stock:{h_code}"
+            a_dos = dossiers.get(ak) if isinstance(dossiers.get(ak), dict) else None
+            h_dos = dossiers.get(hk) if isinstance(dossiers.get(hk), dict) else None
+            rows.append({
+                "name": bench.get("name"),
+                "a": a_code,
+                "h": h_code,
+                "ah_premium_pct": bench.get("ah_premium_pct"),
+                "preferred_channel": bench.get("preferred_channel"),
+                "a_dossier": {
+                    "key": ak,
+                    "updated_at": a_dos.get("updated_at") if a_dos else None,
+                    "baseline_note": a_dos.get("baseline_note") if a_dos else None,
+                },
+                "h_dossier": {
+                    "key": hk,
+                    "updated_at": h_dos.get("updated_at") if h_dos else None,
+                    "baseline_note": h_dos.get("baseline_note") if h_dos else None,
+                },
+            })
+        return {
+            "edition_id": ms.get("edition_id"),
+            "as_of_date": radar.get("as_of_date") if isinstance(radar, dict) else None,
+            "hsahp_index": radar.get("hsahp_index") if isinstance(radar, dict) else None,
+            "total_benchmarks": len(rows),
+            "benchmarks": rows,
+        }
+
+    raise ValueError(
+        f"Unknown --inspect target {raw_target!r} "
+        "(allowed: channels, channel:<id>, etf:<code>, stock:<key>, stale-dossiers, ah-benchmarks)."
+    )
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -1643,6 +2207,26 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Losslessly prepend gold/daily/_ledger_patch.json into CHANGELOG.md and AUDIT_LOG.md.",
     )
+    mode.add_argument(
+        "--append-gold-rsi",
+        action="store_true",
+        help="Validate and atomically append gold/daily/_rsi_patch.json to gold/daily/rsi_metrics.json.",
+    )
+    mode.add_argument(
+        "--append-equity-rsi",
+        action="store_true",
+        help="Validate and atomically append equity/state/_rsi_patch.json to equity/state/rsi_metrics.json.",
+    )
+    mode.add_argument(
+        "--prepend-equity-audit",
+        action="store_true",
+        help="Losslessly prepend equity/state/_audit_patch.json into equity/state/audit_ledger.md.",
+    )
+    mode.add_argument(
+        "--inspect",
+        metavar="TARGET",
+        help="Read-only JSON summary: channels, channel:<id>, etf:<code>, stock:<key>, stale-dossiers, ah-benchmarks.",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -1651,7 +2235,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--keep-patch",
         action="store_true",
-        help="Retain the temporary patch file after successful apply/prepend.",
+        help="Retain the temporary patch file after successful apply/prepend/append.",
     )
     parser.add_argument(
         "--skip-edition-lock",
@@ -1661,12 +2245,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.skip_edition_lock and not args.apply:
         parser.error("--skip-edition-lock can only be combined with --apply.")
+    if args.inspect is not None and (args.dry_run or args.keep_patch):
+        parser.error("--inspect is read-only and cannot be combined with --dry-run or --keep-patch.")
     return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
+        if args.inspect is not None:
+            result = inspect_state_dbs(REPO_ROOT, args.inspect)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         if args.apply:
             summary = apply_equity_patch(
                 REPO_ROOT,
@@ -1674,8 +2264,26 @@ def main(argv: list[str] | None = None) -> int:
                 keep_patch=args.keep_patch,
                 skip_edition_lock=args.skip_edition_lock,
             )
-        else:
+        elif args.prepend_gold_ledgers:
             summary = prepend_gold_ledgers(
+                REPO_ROOT,
+                dry_run=args.dry_run,
+                keep_patch=args.keep_patch,
+            )
+        elif args.append_gold_rsi:
+            summary = append_gold_rsi(
+                REPO_ROOT,
+                dry_run=args.dry_run,
+                keep_patch=args.keep_patch,
+            )
+        elif args.append_equity_rsi:
+            summary = append_equity_rsi(
+                REPO_ROOT,
+                dry_run=args.dry_run,
+                keep_patch=args.keep_patch,
+            )
+        else:
+            summary = prepend_equity_audit(
                 REPO_ROOT,
                 dry_run=args.dry_run,
                 keep_patch=args.keep_patch,

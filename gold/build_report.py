@@ -850,7 +850,7 @@ def build_cover_html() -> str:
     return f"""
 <div class="cover-banner" style="border-bottom:4px solid #b45309;">
   <div class="cover-tag">黄金跨世纪周期全景指南（1971–2030） ｜ 数据基线 {esc(REPORT_SHORT_DATE)}</div>
-  <div class="cover-title">黄金跨世纪周期与普通人全景配置指南（1971–2030）</div>
+  <h1 class="cover-title">黄金跨世纪周期与普通人全景配置指南（1971–2030）</h1>
   <div class="cover-meta">
     <strong>基准时点</strong>：{esc(REPORT_TIMESTAMP)} &nbsp;|&nbsp;
     <strong>阅读建议</strong>：前 5 分钟看清结论、买金通道与钱包账，后面按需深读宏观原理与专业复核数据

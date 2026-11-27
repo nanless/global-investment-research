@@ -21,7 +21,7 @@ import statistics
 import sys
 import unicodedata
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -33,6 +33,17 @@ from edition_validation import (
 
 CONVERGED_CUTOVER = ("2026-11-26", "1800", 1)
 INTERNAL_LEAK_CUTOVER = ("2026-11-26", "0730", 1)
+EDITORIAL_DEPTH_CUTOVER = ("2026-11-27", "0730", 1)
+
+_SHFE_0230_RE = re.compile(r"(?<!\d)02:30(?!\d)")
+_SHFE_NON_GOLD_METAL_RE = re.compile(r"(?:沪铜|cu\d{4}|沪铝|沪锌|沪镍|螺纹钢|纯碱)", re.IGNORECASE)
+_SHFE_EARLY_CLOSE_QUAL_RE = re.compile(r"(?<!\d)(?:01:00|23:00)(?!\d)")
+_TEN_DOT_RE = re.compile(r"[●○]{10}")
+_SCENARIO_LINE_TRIGGER_RE = re.compile(r"(?:情景|合计\s*10\s*点|(?<![0-9./])(?:[0-9]|10)\s*/\s*10(?![0-9]))")
+_SCENARIO_WEIGHT_RE = re.compile(
+    r"(?:占\s*(\d+)\s*点|[（(]\s*(?:占\s*)?([0-9]|10)\s*/\s*10(?:\s*点)?\s*[)）]|(?<![0-9./])(?:占|权重|概率)\s*([0-9]|10)\s*/\s*10(?![0-9]))"
+)
+_SCENARIO_SINGLE_RATIO_RE = re.compile(r"(?<![0-9./])([0-9]|10)\s*/\s*10(?![0-9])")
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
@@ -524,6 +535,55 @@ def validate_snapshot_file(
                 expected = snap["spot_gold_ny_close_usd"] / snap[denominator]
                 if abs(ratios[key] - expected) > tolerance:
                     errors.append(f"[Gate 5 跨资产比值偏差] {label}: {key} 应约为 {expected:.3f}")
+
+    # Gate G6: Additional deterministic snapshot math checks (when required fields are present)
+    if (
+        _valid_number(snap.get("fair_value_rmb"))
+        and _valid_number(snap.get("fair_value_usd"))
+        and _valid_number(snap.get("usd_cny_1630"))
+        and snap["usd_cny_1630"] > 0
+    ):
+        exp_fv_rmb = round(snap["fair_value_usd"] * snap["usd_cny_1630"] / 31.1034768)
+        if abs(snap["fair_value_rmb"] - exp_fv_rmb) > 0.6:
+            errors.append(
+                f"[Gate G6 快照算术错] {label}: fair_value_rmb={snap['fair_value_rmb']} "
+                f"与 round({snap['fair_value_usd']}×{snap['usd_cny_1630']}/31.1034768)={exp_fv_rmb} 偏离 > 0.6"
+            )
+    if (
+        _valid_number(snap.get("dfii10_live_pct"))
+        and _valid_number(snap.get("t10yie_fred_pct"))
+        and _valid_number(snap.get("us10y_pct"))
+    ):
+        if abs((snap["dfii10_live_pct"] + snap["t10yie_fred_pct"]) - snap["us10y_pct"]) > 0.03:
+            errors.append(
+                f"[Gate G6 利率恒等式冲突] {label}: dfii10({snap['dfii10_live_pct']}) + "
+                f"t10yie({snap['t10yie_fred_pct']}) 与 us10y({snap['us10y_pct']}) 偏离 > 0.03"
+            )
+    if (
+        _valid_number(snap.get("gdx_gld_ratio"))
+        and _valid_number(snap.get("gdx_close_usd"))
+        and _valid_number(snap.get("gld_close_usd"))
+        and snap["gld_close_usd"] > 0
+    ):
+        exp_ratio = snap["gdx_close_usd"] / snap["gld_close_usd"]
+        if abs(snap["gdx_gld_ratio"] - exp_ratio) > 0.0006:
+            errors.append(
+                f"[Gate G6 金矿比值算术错] {label}: gdx_gld_ratio={snap['gdx_gld_ratio']} "
+                f"与 {snap['gdx_close_usd']}/{snap['gld_close_usd']}={exp_ratio:.4f} 偏离 > 0.0006"
+            )
+    if (
+        _valid_number(snap.get("spot_gold_live_change_pct"))
+        and _valid_number(snap.get("spot_gold_live_usd"))
+        and _valid_number(snap.get("spot_gold_ny_close_usd"))
+        and snap["spot_gold_ny_close_usd"] > 0
+    ):
+        exp_live_chg = ((snap["spot_gold_live_usd"] / snap["spot_gold_ny_close_usd"]) - 1.0) * 100.0
+        if abs(snap["spot_gold_live_change_pct"] - exp_live_chg) > 0.06:
+            errors.append(
+                f"[Gate G6 实时涨跌幅算术错] {label}: spot_gold_live_change_pct={snap['spot_gold_live_change_pct']} "
+                f"与 ((live/ny_close)-1)*100={exp_live_chg:.2f}% 偏离 > 0.06"
+            )
+
     _check_institutional_snapshot(snap, label, errors)
     if is_daily and "data_caveats" in snap:
         _validate_data_caveats(snap.get("data_caveats"), label, errors)
@@ -1130,6 +1190,36 @@ def check_file(
                 if str(save_r) not in full_combined:
                     warnings.append(f"[Gate 5 省钱差额未对齐] 正文未检测到快照婚庆省钱差额 {save_r} 元/克")
 
+    # Gate 4B: Deterministic G2 / G3 / G6 / G7 & Layer 2 paragraph cap (>= 2026-11-27_0730 dailies)
+    if not is_master and filename_key is not None and filename_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]:
+        errors.extend(_check_wallet_anchor_grams(full_vis))
+        errors.extend(_check_shfe_night_close(md_path.name, full_vis))
+        errors.extend(_check_scenario_10pt_and_dots(md_path.name, full_vis))
+        errors.extend(_check_tense_drift(md_path.name, full_vis, filename_key[0]))
+        for kind, wtxt in all_widget_texts:
+            wlbl = f"{md_path.name}:{kind}"
+            errors.extend(_check_shfe_night_close(wlbl, wtxt))
+            errors.extend(_check_scenario_10pt_and_dots(wlbl, wtxt))
+            errors.extend(_check_tense_drift(wlbl, wtxt, filename_key[0]))
+        if layer01_end < len(raw):
+            layer2_end = _find_layer2_end(raw, layer01_end)
+            l2_start_line = raw[:layer01_end].count("\n") + 1
+            l2_vis = _strip_comments_keep_lines(raw[layer01_end:layer2_end])
+            l2_long: list[tuple[int, int, str]] = []
+            for offset, line in enumerate(l2_vis.splitlines()):
+                s = line.strip()
+                if not s or LIST_OR_BLOCK_RE.match(s):
+                    continue
+                vis_s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
+                vis_s = re.sub(r"\*\*|\*|`", "", vis_s)
+                if len(vis_s) > 260:
+                    l2_long.append((l2_start_line + offset, len(vis_s), vis_s[:26]))
+            if l2_long:
+                warnings.append(
+                    "[Gate 4 Layer 2 段落偏长] Layer 2 有超过 260 字的自然段: "
+                    + ", ".join(f'[L{ln}:{ch}字 "{snip}..."]' for ln, ch, snip in l2_long[:5])
+                )
+
     # Gate 4B: Vector SVG text bounding-box geometry & collision check (3 daily SVGs or 7 master SVGs)
     if not any("[Gate 0 图表数值结构错]" in e or "[Gate 0 JSON 语法错]" in e for e in errors):
         _check_svg_geometry(directives, is_master=is_master, master_snap=master_snap, errors=errors)
@@ -1171,6 +1261,223 @@ def _load_gold_module(mod_name: str, file_path: Path):
                 sys.modules["build_daily"] = prev
     _SVG_GEOM_CACHE[mod_name] = mod
     return mod
+
+
+def _find_layer2_end(raw_md: str, layer01_end: int) -> int:
+    """Locate character offset where Layer 2 ends and Layer 3 begins."""
+    tail = raw_md[layer01_end:]
+    patterns = [
+        r"^#\s*第三部分",
+        r'<!--\s*DAILY_LAYER_BADGE\s*\{[^}]*"tone"\s*:\s*"pro"',
+    ]
+    earliest = len(raw_md)
+    for pat in patterns:
+        m = re.search(pat, tail, re.MULTILINE | re.DOTALL)
+        if m and (layer01_end + m.start()) < earliest:
+            earliest = layer01_end + m.start()
+    return earliest
+
+
+def _check_wallet_anchor_grams(text: str) -> list[str]:
+    """Verify 100k wallet anchor price (以/按/锚定 {anchor} 元/克) matches 持约 {g} 克 within ±0.12g."""
+    errs: list[str] = []
+    m_sec = re.search(
+        r"(?:^|\n)#{2,3}\s*[^\n]*(?:10\s*万元|钱包账)[^\n]*\n(.*?)(?=\n#{1,2}\s|\Z)",
+        text,
+        flags=re.DOTALL,
+    )
+    scope = m_sec.group(0) if m_sec else text
+    m_anc = re.search(r"(?:以|按|锚定)[^。\n]{0,24}?(\d{3,4}(?:\.\d+)?)\s*元/克", scope)
+    if not m_anc:
+        return errs
+    anchor = float(m_anc.group(1))
+    if anchor <= 0:
+        return errs
+    for line_no, ln in enumerate(scope.splitlines(), 1):
+        if "持约" not in ln:
+            continue
+        for m_g in re.finditer(r"持约\s*(\d+(?:\.\d+)?)\s*克", ln):
+            grams = float(m_g.group(1))
+            if grams >= 50.0:
+                exp_g = 100000.0 / anchor
+                if abs(exp_g - grams) > 0.12:
+                    errs.append(
+                        f"[Gate G6 钱包克重算术错] 10 万元按 {anchor:g} 元/克 应持约 {exp_g:.2f} 克，"
+                        f"但文中写持约 {grams:g} 克（偏差 {abs(exp_g - grams):.2f} > 0.12 克）"
+                    )
+            elif 5.0 <= grams < 50.0:
+                exp_g = 10000.0 / anchor
+                if abs(exp_g - grams) > 0.12:
+                    errs.append(
+                        f"[Gate G6 钱包克重算术错] 1 万元按 {anchor:g} 元/克 应持约 {exp_g:.2f} 克，"
+                        f"但文中写持约 {grams:g} 克（偏差 {abs(exp_g - grams):.2f} > 0.12 克）"
+                    )
+    return errs
+
+
+def _check_shfe_night_close(label: str, text: str) -> list[str]:
+    """Gate G2: Reject 02:30 attached to SHFE base-metal/ferrous night closes without 01:00/23:00 qualifier."""
+    errs: list[str] = []
+    for line_no, ln in enumerate(text.splitlines(), 1):
+        if not _SHFE_0230_RE.search(ln) or not _SHFE_NON_GOLD_METAL_RE.search(ln):
+            continue
+        flagged = False
+        for m_time in _SHFE_0230_RE.finditer(ln):
+            for m_metal in _SHFE_NON_GOLD_METAL_RE.finditer(ln):
+                if m_time.end() <= m_metal.start():
+                    between = ln[m_time.end() : m_metal.start()]
+                elif m_metal.end() <= m_time.start():
+                    between = ln[m_metal.end() : m_time.start()]
+                else:
+                    between = ""
+                same_clause = not bool(re.search(r"[。！？；]", between))
+                within_45 = len(between) <= 45
+                if (same_clause or within_45) and not _SHFE_EARLY_CLOSE_QUAL_RE.search(between):
+                    metal_local = ln[max(0, m_metal.start() - 14) : min(len(ln), m_metal.end() + 14)]
+                    if _SHFE_EARLY_CLOSE_QUAL_RE.search(metal_local) and m_metal.end() <= m_time.start():
+                        continue
+                    errs.append(
+                        f"[Gate G2 夜盘收盘时段混淆] {label} (L{line_no}) 将 02:30 误关联至非金银标的 "
+                        f"({m_metal.group(0)}，有色夜盘 01:00 / 黑色 23:00 收盘)"
+                    )
+                    flagged = True
+                    break
+            if flagged:
+                break
+    return errs
+
+
+def _check_scenario_10pt_and_dots(label: str, text: str) -> list[str]:
+    """Gate G3: Check 10-point scenario weight sums and [●○]{10} dot-bar parity."""
+    errs: list[str] = []
+    for line_no, ln in enumerate(text.splitlines(), 1):
+        has_bar = bool(_TEN_DOT_RE.search(ln))
+        if not has_bar and not _SCENARIO_LINE_TRIGGER_RE.search(ln):
+            continue
+        weights: list[tuple[int, int, int]] = []
+        for m in _SCENARIO_WEIGHT_RE.finditer(ln):
+            raw_num = next(g for g in m.groups() if g is not None)
+            weights.append((m.start(), m.end(), int(raw_num)))
+        if len(weights) >= 2:
+            total = sum(w for _, _, w in weights)
+            if total != 10:
+                errs.append(
+                    f"[Gate G3 情景权重未满 10 点] {label} (L{line_no}) 情景权重之和={total} ≠ 10 ({[w for _, _, w in weights]})"
+                )
+        if has_bar:
+            anchors = list(weights)
+            if not anchors:
+                for m_r in _SCENARIO_SINGLE_RATIO_RE.finditer(ln):
+                    anchors.append((m_r.start(), m_r.end(), int(m_r.group(1))))
+            for m_bar in _TEN_DOT_RE.finditer(ln):
+                filled = m_bar.group(0).count("●")
+                if not anchors:
+                    continue
+                before = [w for w in anchors if w[1] <= m_bar.start()]
+                chosen = before[-1] if before else min(anchors, key=lambda w: abs(w[0] - m_bar.end()))
+                if filled != chosen[2]:
+                    errs.append(
+                        f"[Gate G3 概率点条不一致] {label} (L{line_no}) 实心数 ({filled}) ≠ 权重 ({chosen[2]})"
+                    )
+    return errs
+
+
+def _check_tense_drift(label: str, text: str, edition_date: str) -> list[str]:
+    """Gate G7: Catch stale relative-day tense drift (明日=今日 / 今日=昨日 / 昨日=前日)."""
+    try:
+        ed = date.fromisoformat(edition_date)
+    except ValueError:
+        return []
+    prev = ed - timedelta(days=1)
+    prev2 = ed - timedelta(days=2)
+    pats = (
+        (f"明日误标今日({ed.month}/{ed.day})", re.compile(rf"明日\s*[（(]?\s*0?{ed.month}/0?{ed.day}(?!\d)")),
+        (f"今日误标昨日({prev.month}/{prev.day})", re.compile(rf"今日\s*[（(]?\s*0?{prev.month}/0?{prev.day}(?!\d)")),
+        (f"昨日误标前日({prev2.month}/{prev2.day})", re.compile(rf"昨日\s*[（(]?\s*0?{prev2.month}/0?{prev2.day}(?!\d)")),
+    )
+    errs: list[str] = []
+    for line_no, ln in enumerate(text.splitlines(), 1):
+        for desc, pat in pats:
+            m = pat.search(ln)
+            if m:
+                errs.append(f"[Gate G7 时态错位] {label} (L{line_no}) {desc} -> {m.group(0)!r}")
+    return errs
+
+
+def _parse_gold_scorecard_due_dt(cell_text: str, ref_dt: datetime) -> datetime | None:
+    plain = re.sub(r"<br\s*/?>", " ", cell_text, flags=re.IGNORECASE)
+    plain = re.sub(r"[*`]", "", plain).strip()
+    m_full = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
+    if m_full:
+        try:
+            return datetime(*(int(g) for g in m_full.groups()))
+        except ValueError:
+            return None
+    m_date = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)", plain)
+    if m_date:
+        try:
+            y, mo, d = (int(g) for g in m_date.groups())
+            return datetime(y, mo, d, 23, 59)
+        except ValueError:
+            return None
+    m_md = re.search(r"(?<!\d)(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})", plain)
+    if m_md:
+        try:
+            mo, d, hh, mm = (int(g) for g in m_md.groups())
+            yr = ref_dt.year + (1 if ref_dt.month == 12 and mo == 1 else 0)
+            return datetime(yr, mo, d, hh, mm)
+        except ValueError:
+            return None
+    return None
+
+
+def _check_gold_scorecard_past_due(sc_text: str, as_of_dt: datetime | None) -> list[str]:
+    """Gate G7: Fail if any ⏳ tracking row in gold/daily/SCORECARD.md is overdue by >= 1 hour."""
+    if as_of_dt is None:
+        m_asof = re.search(r"截至\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})", sc_text)
+        if m_asof:
+            as_of_dt = _parse_timestamp(m_asof.group(1))
+    if as_of_dt is None:
+        return []
+    ref_naive = as_of_dt.replace(tzinfo=None)
+    errs: list[str] = []
+    for ln in sc_text.splitlines():
+        st = ln.strip()
+        if not (st.startswith("|") and st.endswith("|")) or "⏳" not in st:
+            continue
+        cells = [c.strip() for c in st.strip("|").split("|")]
+        if len(cells) < 4 or all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+            continue
+        due_cell = cells[2]
+        due_dt = _parse_gold_scorecard_due_dt(due_cell, ref_naive)
+        if due_dt is not None and due_dt <= ref_naive - timedelta(hours=1):
+            summary = re.sub(r"[*`]", "", cells[1])[:36]
+            errs.append(
+                f"[Gate G7 公开记分卡逾期未结案] ⏳ 条目到期节点 {due_cell} <= 截点-1h ({ref_naive:%Y-%m-%d %H:%M}) -> {summary}"
+            )
+    return errs
+
+
+def _extract_top_ledger_block(raw_text: str, marker_prefix: str) -> tuple[tuple[str, str, int] | None, str]:
+    """Return (top_edition_key, top_block_text) for CHANGELOG.md or AUDIT_LOG.md."""
+    matches = list(re.finditer(rf"<!--\s*{marker_prefix}\s+(.+?)\s*-->", raw_text, flags=re.DOTALL))
+    if not matches:
+        return None, ""
+    first = matches[0]
+    end_pos = matches[1].start() if len(matches) > 1 else len(raw_text)
+    payload = first.group(1).strip()
+    ed_id: str | None = None
+    if payload.startswith("{"):
+        try:
+            obj = json.loads(payload)
+            if isinstance(obj, dict) and isinstance(obj.get("edition_id"), str):
+                ed_id = obj["edition_id"]
+        except json.JSONDecodeError:
+            ed_id = None
+    else:
+        ed_id = payload.split()[0] if payload else None
+    ed_key = _edition_key(ed_id)
+    return ed_key, raw_text[first.start() : end_pos]
 
 
 def _check_svg_geometry(
@@ -1488,9 +1795,19 @@ def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None
                 f"[公开记分卡内部词泄露] daily/SCORECARD.md 含禁止内部工程/RSI 词: {', '.join(sorted(set(leaked)))}"
             )
         _reconcile_gold_scorecard(sc_text, errors)
+        sc_as_of: datetime | None = None
+        if DAILY_SNAPSHOT_PATH.exists():
+            try:
+                ds = json.loads(DAILY_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+                if isinstance(ds, dict):
+                    sc_as_of = _parse_timestamp(ds.get("as_of_short"))
+            except (OSError, ValueError):
+                sc_as_of = None
+        errors.extend(_check_gold_scorecard_past_due(sc_text, sc_as_of))
 
     if CHANGELOG_PATH.exists():
-        cl_text = _strip_comments_keep_lines(CHANGELOG_PATH.read_text(encoding="utf-8"))
+        cl_raw = CHANGELOG_PATH.read_text(encoding="utf-8")
+        cl_text = _strip_comments_keep_lines(cl_raw)
         cl_leaked = SCORECARD_BANNED_RE.findall(cl_text) + _INTERNAL_FILENAME_LEAK_RE.findall(cl_text)
         if cl_leaked:
             errors.append(
@@ -1501,6 +1818,15 @@ def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None
             errors.append(
                 f"[演化日志二进制死链] daily/CHANGELOG.md 含已弃用 PDF/DOCX 残留: {', '.join(sorted(set(cl_bin))[:5])}"
             )
+        cl_top_key, cl_top_block = _extract_top_ledger_block(cl_raw, "GOLD_EDITION_CHANGELOG")
+        if cl_top_key is not None and cl_top_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]:
+            errors.extend(_check_shfe_night_close(CHANGELOG_PATH.name, cl_top_block))
+
+    if AUDIT_LOG_PATH.exists():
+        al_raw = AUDIT_LOG_PATH.read_text(encoding="utf-8")
+        al_top_key, al_top_block = _extract_top_ledger_block(al_raw, "GOLD_EDITION_REVIEW")
+        if al_top_key is not None and al_top_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]:
+            errors.extend(_check_shfe_night_close(AUDIT_LOG_PATH.name, al_top_block))
 
 
 def main():

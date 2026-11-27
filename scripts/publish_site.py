@@ -31,7 +31,20 @@ CANONICAL_STAGE_PATHS = (
     "scripts", "tests", "README.md", ".gitignore", ".github",
 )
 FORBIDDEN_STAGE_SUFFIXES = (".pdf", ".docx", ".artifacts.json")
-FORBIDDEN_STAGE_FILENAMES = ("_edition_patch.json", "_ledger_patch.json")
+FORBIDDEN_STAGE_FILENAMES = (
+    "_edition_patch.json",
+    "_ledger_patch.json",
+    "_rsi_patch.json",
+    "_audit_patch.json",
+)
+TRANSIENT_PATCH_FILES = (
+    "equity/state/_edition_patch.json",
+    "gold/daily/_ledger_patch.json",
+    "gold/daily/_rsi_patch.json",
+    "equity/state/_rsi_patch.json",
+    "equity/state/_audit_patch.json",
+)
+STALE_QUOTE_WARN_MINUTES = 45
 EXTENDED_EQUITY_STATE_FILES = (
     "equity/state/multi_asset_channels.json",
     "equity/state/etf_universe.json",
@@ -143,7 +156,70 @@ def _build_and_lint(root: Path, output: Path, env: dict[str, str]) -> None:
         print(_checked(result, script), end="")
 
 
+def _check_no_transient_patch_files(root: Path) -> None:
+    present = [rel for rel in TRANSIENT_PATCH_FILES if (root / rel).exists()]
+    if present:
+        raise RuntimeError(
+            "Transient patch file(s) exist in working tree; apply or remove them before publishing: "
+            + ", ".join(present)
+        )
+
+
+def _parse_gold_as_of(gold: dict) -> datetime | None:
+    raw = gold.get("as_of_short")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return datetime.strptime(raw.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=CST)
+    except ValueError:
+        return None
+
+
+def _parse_equity_as_of(equity: dict) -> datetime | None:
+    raw = equity.get("as_of_cst")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+        return dt.astimezone(CST) if dt.tzinfo is not None else dt.replace(tzinfo=CST)
+    except ValueError:
+        return None
+
+
+def _warn_stale_as_of(
+    gold: dict,
+    equity: dict,
+    *,
+    now: datetime | None = None,
+    max_age_minutes: int = STALE_QUOTE_WARN_MINUTES,
+) -> list[str]:
+    now_cst = (now or datetime.now(CST)).astimezone(CST)
+    threshold = timedelta(minutes=max_age_minutes)
+    warnings: list[str] = []
+
+    gold_dt = _parse_gold_as_of(gold)
+    if gold_dt is not None and (now_cst - gold_dt) > threshold:
+        age_min = int((now_cst - gold_dt).total_seconds() // 60)
+        warnings.append(
+            f"[WARN] Gold snapshot as_of_short ({gold.get('as_of_short')}) is {age_min}m old "
+            f"(>{max_age_minutes}m) at publish time."
+        )
+
+    equity_dt = _parse_equity_as_of(equity)
+    if equity_dt is not None and (now_cst - equity_dt) > threshold:
+        age_min = int((now_cst - equity_dt).total_seconds() // 60)
+        warnings.append(
+            f"[WARN] Equity market_state as_of_cst ({equity.get('as_of_cst')}) is {age_min}m old "
+            f"(>{max_age_minutes}m) at publish time."
+        )
+
+    for msg in warnings:
+        print(msg, file=sys.stderr)
+    return warnings
+
+
 def _check_manuscripts(root: Path, env: dict[str, str], expected_edition: str | None = None) -> None:
+    _check_no_transient_patch_files(root)
     gold_daily = _latest_daily(root / "gold" / "daily", GOLD_DAILY_RE)
     gold = json.loads((root / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
     if isinstance(gold, dict) and isinstance(gold.get("edition_id"), str):
@@ -156,6 +232,9 @@ def _check_manuscripts(root: Path, env: dict[str, str], expected_edition: str | 
     equity_edition = equity.get("edition_id") if isinstance(equity, dict) else None
     if not isinstance(equity_edition, str) or not equity_edition.strip():
         raise RuntimeError("equity/state/market_state.json must contain a non-empty edition_id.")
+
+    if isinstance(gold, dict) and isinstance(equity, dict):
+        _warn_stale_as_of(gold, equity)
 
     for rel in EXTENDED_EQUITY_STATE_FILES:
         state_path = root / rel
@@ -256,6 +335,7 @@ def _publication_tree(
     automated: bool = False,
     explicit_stage: list[str] | None = None,
 ) -> tuple[str, bool]:
+    _check_no_transient_patch_files(REPO_ROOT)
     scope = AUTOMATED_STAGE_PATHS if automated else CANONICAL_STAGE_PATHS
     staged = [p for p in _git(env, "diff", "--cached", "--name-only", "-z", "--no-renames").split("\0") if p]
     if explicit_stage and staged:

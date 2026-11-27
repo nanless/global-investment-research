@@ -44,18 +44,27 @@ DEFAULT_A_SECTORS = [
 ]
 
 DEFAULT_A_INDICES = [
-    ("科创50 (芯片权重)", 1.81, "#c94a4a"),
-    ("科创综指 (硬科技)", 1.16, "#dc5c4b"),
-    ("上证50 (超大盘)", 0.45, "#e67e22"),
-    ("上证指数 (大盘)", 0.27, "#f0934b"),
-    ("沪深300 (蓝筹)", 0.14, "#f0934b"),
+    ("科创50 (芯片权重)", 1.81, "#c2410c"),
+    ("科创综指 (硬科技)", 1.16, "#c2410c"),
+    ("上证50 (超大盘)", 0.45, "#c2410c"),
+    ("上证指数 (大盘)", 0.27, "#c2410c"),
+    ("沪深300 (蓝筹)", 0.14, "#c2410c"),
     ("创业板指 (成长股)", -0.05, "#0f766e"),
     ("北证50 (小微成长)", -0.22, "#0f766e"),
     ("中证1000 (小盘股)", -0.23, "#0f766e"),
     ("中证500 (中盘股)", -0.27, "#0f766e"),
     ("深证成指", -0.29, "#0f766e"),
-    ("中证红利 (000922)", -0.81, "#115e59"),
+    ("中证红利 (000922)", -0.81, "#0f766e"),
 ]
+
+_A2_COOL_COLORS = frozenset({
+    "#0f766e", "#009e73", "#115e59", "#15803d", "#16a34a",
+    "#0072b2", "#0d9488", "#047857", "#134e4a", "#064e3b",
+})
+_A2_WARM_COLORS = frozenset({
+    "#c2410c", "#d55e00", "#b91c1c", "#dc2626", "#ef4444",
+    "#9f2326", "#c94a4a", "#dc5c4b", "#e67e22", "#f0934b",
+})
 
 DEFAULT_A_FUTURES = [
     ("小盘股期货 (中证1000 · IM)", 18.0, "11/24 官结 5,730.2（年化贴水 -18.0%，减仓 2.8 万手）", "空头压力仍重但开始减仓，严禁追小盘题材", "#D55E00", "#fef2f2"),
@@ -299,9 +308,18 @@ def svg_chart_a2_split_and_futures(meta_override: dict | None = None) -> str:
     left = f'<line x1="{x0}" y1="38" x2="{x0}" y2="292" stroke="#334155" stroke-width="1.2"/>'
     for i, item in enumerate(idxs):
         name, pct, col = item[0], float(item[1]), sanitize_hex_color(item[2], "#334155")
+        if abs(pct) < 1e-9:
+            col = "#64748b"
+        elif pct > 0 and col.lower() in _A2_COOL_COLORS:
+            col = "#c2410c"
+        elif pct < 0 and col.lower() in _A2_WARM_COLORS:
+            col = "#0f766e"
         y = 44 + i * step_y
         left += f'<text x="142" y="{y+12}" text-anchor="end" font-size="9.3" fill="#1e293b" font-weight="600">{html_mod.escape(clean_svg_text(str(name)))}</text>'
-        if pct >= 0:
+        if abs(pct) < 1e-9:
+            left += f'<rect x="{x0}" y="{y+1}" width="2.0" height="13.5" fill="{col}" opacity="0.86" rx="1"/>'
+            left += f'<text x="{x0+7}" y="{y+12}" font-size="9.0" fill="{col}" font-weight="700">0.00%</text>'
+        elif pct > 0:
             w = max(round(pct * px_per_pct, 1), 2.0)
             left += f'<rect x="{x0}" y="{y+1}" width="{w}" height="13.5" fill="{col}" opacity="0.86" rx="2.5"/>'
             left += f'<text x="{x0+w+5}" y="{y+12}" font-size="9.0" fill="{col}" font-weight="700">▲+{pct:.2f}%</text>'

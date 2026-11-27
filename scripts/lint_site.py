@@ -448,6 +448,19 @@ DOSSIER_DIMENSIONS: tuple[str, ...] = (
     "bear_case",
     "action_etf",
 )
+DOSSIER_RED_AVOID_RE = re.compile(r"高危回避|坚决回避")
+DOSSIER_RED_NEG_RE = re.compile(r"(?:并非|不是|脱离|解除|不再).{0,6}(?:高危回避|坚决回避)")
+CORE_HUB_H1_PAGES: frozenset[str] = frozenset(
+    {
+        "index.html",
+        "channels.html",
+        "etfs.html",
+        "screener.html",
+        "guide.html",
+        "scorecard.html",
+        "archive.html",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +536,8 @@ class ParsedHtml:
     has_title: bool = False
     title_text: str = ""
     has_nav: bool = False
+    h1_count: int = 0
+    caveat_titles: list[str] = field(default_factory=list)
     edition_attr: str = ""
     stock_row_count: int = 0
     tbody_row_count: int = 0
@@ -654,6 +669,7 @@ class SiteHtmlParser(HTMLParser):
         self._vis_chunks: list[str] = []
         self._prose_chunks: list[str] = []
         self._cta_stack: list[tuple[str, int, set[str], list[str]]] = []
+        self._caveat_title_stack: list[tuple[str, list[str]]] = []
 
     def _on_open(self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool) -> None:
         t = tag.lower()
@@ -727,6 +743,8 @@ class SiteHtmlParser(HTMLParser):
                     self.doc.viewport_has_cover = True
         elif t == "nav":
             self.doc.has_nav = True
+        elif t == "h1" and not self._svg_stack:
+            self.doc.h1_count += 1
 
         # Gate S5 table wrapper check.
         if t == "table":
@@ -787,6 +805,9 @@ class SiteHtmlParser(HTMLParser):
 
         # Push onto ancestor stack for non-void elements.
         self._stack.append((t, classes, style_raw, elem_id))
+
+        if "caveat-title" in classes and not self._svg_stack:
+            self._caveat_title_stack.append((t, []))
 
         if t == "title":
             self.doc.has_title = True
@@ -880,6 +901,12 @@ class SiteHtmlParser(HTMLParser):
                         )
                     break
 
+        if self._caveat_title_stack and self._caveat_title_stack[-1][0] == t:
+            _, ct_chunks = self._caveat_title_stack.pop()
+            ct_text = " ".join("".join(ct_chunks).split())
+            if ct_text:
+                self.doc.caveat_titles.append(ct_text)
+
         if t in BLOCK_TEXT_TAGS and self._skip_text_depth == 0:
             self._vis_chunks.append("\n")
             if self._code_depth == 0 and not self._svg_stack:
@@ -910,6 +937,8 @@ class SiteHtmlParser(HTMLParser):
                 self._prose_chunks.append(data)
             if self._cta_stack:
                 self._cta_stack[-1][3].append(data)
+            if self._caveat_title_stack:
+                self._caveat_title_stack[-1][1].append(data)
 
     def finish(self) -> ParsedHtml:
         # Flush any unclosed SVGs so they still get inspected.
@@ -1940,6 +1969,17 @@ def _validate_screener_json(
                     )
                     bad_entries += 1
                     break
+            action_head = str(dossier.get("action_etf") or "").strip()[:60]
+            if action_head and (
+                "🔴" in action_head
+                or (DOSSIER_RED_AVOID_RE.search(action_head) and not DOSSIER_RED_NEG_RE.search(action_head))
+            ):
+                if col_val in ("g", "b"):
+                    errors.append(
+                        f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) badge contradiction — "
+                        f"card color={col_val!r} conflicts with dossier action_etf red-avoid ({action_head[:40]!r})"
+                    )
+                    bad_entries += 1
 
         if bad_entries >= 10:
             break
@@ -2384,6 +2424,33 @@ def run_gate_s6(
                             path, "ch-etf-data", doc.ch_etf_json_raw, errors,
                             check_eng=False, check_gold_tier0=True, gate_tag="S6",
                         )
+
+    # 7. Zero duplicate data_caveats titles on index.html (Gate S6 / G8).
+    if index_doc is not None and index_doc.caveat_titles:
+        seen_caveat_titles: dict[str, str] = {}
+        for raw_ct in index_doc.caveat_titles:
+            norm_ct = re.sub(r"[\W_]+", "", raw_ct.lower())
+            if not norm_ct:
+                continue
+            if norm_ct in seen_caveat_titles:
+                errors.append(
+                    f"[S6] index.html: duplicate data_caveats title rendered: {raw_ct!r}"
+                )
+            else:
+                seen_caveat_titles[norm_ct] = raw_ct
+
+    # 8. Exact h1 == 1 accessibility check on core hub pages, channel details, flagships & latest dailies (Gate S6).
+    for path, doc in sorted(parsed_htmls.items()):
+        if (
+            path in CORE_HUB_H1_PAGES
+            or path.startswith("channels/")
+            or path.startswith("reports/")
+            or path.endswith("-latest.html")
+        ):
+            if doc.h1_count != 1:
+                errors.append(
+                    f"[S6] {path}: expected exactly 1 <h1> heading for accessibility, found {doc.h1_count}"
+                )
 
 
 # ---------------------------------------------------------------------------
