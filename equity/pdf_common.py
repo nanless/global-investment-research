@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html as html_mod
 import re
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -305,6 +306,15 @@ def render_md_body(
     is_flagship: bool = False,
     enable_kanban_wrap: bool = False,
 ) -> tuple[str, str]:
+    merged_charts = dict(charts)
+    if "DAILY_VISUAL" in md_text:
+        scripts_dir = str(Path(__file__).resolve().parent.parent / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import visual_widgets
+        md_text, visual_charts = visual_widgets.extract_visual_directives(md_text)
+        merged_charts.update(visual_charts)
+    charts = merged_charts
     lines = md_text.strip().splitlines()
     title = default_title
     html_out: list[str] = []
@@ -776,7 +786,7 @@ def lint_markdown_report(
         warnings.append(f"未转译生僻行话 ({len(jargon_hits)} 处): {sorted(set(jargon_hits))}")
 
     body_lines_no_meta = re.sub(
-        r"<!--\s*DAILY_META_JSON\s*\{.*?\}\s*-->",
+        r"<!--\s*DAILY_(?:META_JSON|VISUAL)\s*\{.*?\}\s*-->",
         lambda m: "\n" * m.group(0).count("\n"),
         md_text,
         flags=re.DOTALL,

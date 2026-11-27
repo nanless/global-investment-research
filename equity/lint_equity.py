@@ -1623,6 +1623,14 @@ def _collect_rendered_svgs(targets: list[Path]) -> tuple[list[tuple[str, str]], 
                         tok_m = re.search(r"CHART_[A-Z0-9_]+", ck)
                         if tok_m and re.search(rf"<!--\s*{re.escape(tok_m.group(0))}\s*-->", p_txt):
                             svg_checks.append((f"{p.name}:{ck}", c_html))
+                if "DAILY_VISUAL" in p_txt:
+                    scripts_dir = str(BASE_DIR.parent / "scripts")
+                    if scripts_dir not in sys.path:
+                        sys.path.insert(0, scripts_dir)
+                    import visual_widgets  # type: ignore[import-not-found]
+                    _, visuals = visual_widgets.extract_visual_directives(p_txt)
+                    for idx, (_, v_html) in enumerate(visuals.items(), 1):
+                        svg_checks.append((f"{p.name}:DAILY_VISUAL#{idx}", v_html))
     except Exception as exc:
         warns.append(f"SVG 渲染预扫跳过: {exc}")
     return svg_checks, warns
@@ -1639,8 +1647,22 @@ def _check_svg_geometry_all(targets: list[Path]) -> tuple[list[str], list[str]]:
         sys.path.insert(0, scripts_dir)
     try:
         from svg_geometry import check_svg_text_geometry
+        import visual_widgets  # type: ignore[import-not-found]
     except Exception as exc:
         return [f"Gate 3B SVG 几何检失败：无法导入 scripts/svg_geometry.py ({exc})"], []
+
+    # Validate DAILY_VISUAL directive JSON schema strictly on every daily markdown target
+    for p in targets:
+        if not _detect_is_flagship(p) and p.exists():
+            p_txt = p.read_text(encoding="utf-8")
+            for idx, m_vis in enumerate(visual_widgets.DAILY_VISUAL_RE.finditer(p_txt), 1):
+                try:
+                    spec = json.loads(m_vis.group(1))
+                except json.JSONDecodeError as exc:
+                    errs.append(f"Gate 3B 视觉图 JSON 解析失败 ({p.name}#DAILY_VISUAL#{idx}): {exc}")
+                    continue
+                for v_err in visual_widgets.validate_visual_spec(spec):
+                    errs.append(f"Gate 3B 视觉图结构错 ({p.name}#DAILY_VISUAL#{idx}): {v_err}")
 
     svg_checks, warns = _collect_rendered_svgs(targets)
     for lbl, svg_html in svg_checks:
@@ -2540,6 +2562,10 @@ def _check_policy_calendar(
                     )
             if "source_url" in b and b["source_url"] is not None and not _is_strict_https_url(b["source_url"]):
                 errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).source_url 须为有效 HTTPS 链接")
+            if "home_featured" in b and b["home_featured"] is not None and type(b["home_featured"]) is not bool:
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).home_featured 须为布尔值")
+            if "time_cst" in b and b["time_cst"] is not None and (not isinstance(b["time_cst"], str) or not b["time_cst"].strip()):
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).time_cst 须为非空字符串")
 
     events = pc.get("events")
     max_end_d: date | None = None
@@ -3399,7 +3425,7 @@ def main() -> None:
                     f"{p.name}: Gate 4 失败：纯网页版严禁保留已弃用的 PDF/Word 或离线附件链接 -> {sorted(set(bin_hits))[:5]}"
                 )
         body_lines_no_meta = re.sub(
-            r"<!--\s*DAILY_META_JSON\s*\{.*?\}\s*-->",
+            r"<!--\s*DAILY_(?:META_JSON|VISUAL)\s*\{.*?\}\s*-->",
             lambda m: "\n" * m.group(0).count("\n"),
             md_text,
             flags=re.DOTALL,

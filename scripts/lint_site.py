@@ -244,7 +244,7 @@ S3_RAW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "unresolved gold daily directive (<!-- DAILY_*)",
         re.compile(
             r"<!--\s*DAILY_(?:META|VERDICT|SIGNAL_NOISE|PERSONA|GLOSSARY|"
-            r"LAYER_BADGE|TRUST_BAR|CHART_[A-Z0-9_]+)\b"
+            r"LAYER_BADGE|TRUST_BAR|VISUAL|CHART_[A-Z0-9_]+)\b"
         ),
     ),
     (
@@ -3038,6 +3038,44 @@ def run_gate_s6(
                                     break
                         if pcal_gold_hits >= 5:
                             break
+        # 10b. Verify uncapped per-market news radar (#sec-market-news) on latest daily pages
+        for m_daily_path in (
+            "daily/a-share-latest.html",
+            "daily/hk-stock-latest.html",
+            "daily/us-stock-latest.html",
+            "daily/gold-latest.html",
+        ):
+            m_doc = parsed_htmls.get(m_daily_path)
+            if m_doc is None or "sec-market-news" not in m_doc.ids:
+                continue
+            m_parser = _PolicyCalendarSectionParser("sec-market-news")
+            m_parser.feed(m_doc.raw_text)
+            m_parser.close()
+            m_snap = m_parser.result()
+            if m_snap is None:
+                continue
+            m_raw_hits = sorted(set(PCAL_RAW_TIER_RE.findall(m_snap.inner_text)))
+            if m_raw_hits:
+                errors.append(
+                    f"[S6] {m_daily_path}: #sec-market-news visible text leaked raw tier code(s): {m_raw_hits}"
+                )
+            if gold_new_buy_blocked:
+                m_gold_hits = 0
+                for raw_line in re.split(r"[\n。！？；，,]+", m_snap.inner_text):
+                    line = " ".join(raw_line.split())
+                    if not line:
+                        continue
+                    for m_g in GOLD_ACTIVE_BUY_RE.finditer(line):
+                        if not _gold_action_is_guarded(line, m_g):
+                            win = line[max(0, m_g.start() - 40) : min(len(line), m_g.end() + 40)]
+                            errors.append(
+                                f"[S6] {m_daily_path}: #sec-market-news Gold Tier 0 mutex violation: {win!r}"
+                            )
+                            m_gold_hits += 1
+                            if m_gold_hits >= 5:
+                                break
+                    if m_gold_hits >= 5:
+                        break
 
 
 S7_FORBIDDEN_RAW_RE = re.compile(

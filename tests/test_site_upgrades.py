@@ -1275,5 +1275,160 @@ class TestFullSiteRedesignBugFixesAndIA(unittest.TestCase):
         self.assertNotIn("callout-danger", cls)
 
 
+class TestVisualWidgetsAndUncappedMarketNews(unittest.TestCase):
+    def test_all_four_visual_widget_types_render_collision_free_svgs(self):
+        import visual_widgets
+        import svg_geometry
+
+        specs = [
+            {
+                "type": "waterfall",
+                "title": "现金流与利润桥拆解（亿元）",
+                "subtitle": "从核心主业到最终净利分项瀑布",
+                "unit": "亿",
+                "takeaway": "新业务扩张带来阶段性拖累，但主业现金流底盘稳健。",
+                "bars": [
+                    {"label": "核心主业", "value": 43.9, "kind": "start"},
+                    {"label": "海外投入", "value": -20.9, "kind": "sub"},
+                    {"label": "税费财务", "value": -4.5, "kind": "sub"},
+                    {"label": "归母净利", "value": 18.5, "kind": "total"},
+                ],
+                "benchmark": {"value": 22.0, "label": "市场一致预期 22.0 亿"},
+            },
+            {
+                "type": "bar_compare",
+                "title": "国内渠道单克价格横向对比（元/克）",
+                "subtitle": "越短越省钱",
+                "max_val": 1100,
+                "unit": "元/克",
+                "threshold": {"val": 850, "label": "合理参考线", "color": "#15803d"},
+                "items": [
+                    {"label": "上金所基准", "value": 784.4, "val_label": "784.4 元/克", "tag": "无溢价", "color": "#15803d", "highlight": True},
+                    {"label": "四大行金条", "value": 814.0, "val_label": "814.0 元/克", "tag": "+29.6 元", "color": "#1d4ed8"},
+                    {"label": "品牌首饰", "value": 1068.0, "val_label": "1,068 元/克", "tag": "含工费", "color": "#dc2626"},
+                ],
+            },
+            {
+                "type": "anchor_range",
+                "title": "焦点股现价 vs 安全买点锚对比（元）",
+                "subtitle": "实心点为现价，绿色带为安全买点锚",
+                "items": [
+                    {"name": "招商银行", "code": "600036", "current": 43.5, "anchor_low": 40.5, "anchor_high": 42.0, "stance": "base", "note": "底座高息"},
+                    {"name": "中微公司", "code": "688012", "current": 236.0, "anchor_low": 195.0, "anchor_high": 210.0, "stance": "lock", "note": "等待回踩"},
+                ],
+            },
+            {
+                "type": "flow_chain",
+                "title": "政策落地到仓位风控四步传导链",
+                "subtitle": "一步看懂因果路径",
+                "steps": [
+                    {"tag": "政策信号", "title": "国常会定调", "detail": "定向支持内需与设备更新", "tone": "blue"},
+                    {"tag": "成交放量", "title": "资金回流", "detail": "两市成交突破 2 万亿元", "tone": "amber"},
+                    {"tag": "基差验证", "title": "正套对冲", "detail": "升水套利非单边看空", "tone": "teal"},
+                    {"tag": "仓位纪律", "title": "红灯防守", "detail": "维持总仓位上限不变", "tone": "red"},
+                ],
+            },
+        ]
+        for spec in specs:
+            self.assertEqual(visual_widgets.validate_visual_spec(spec), [], spec["type"])
+            rendered = visual_widgets.render_visual_chart(spec)
+            self.assertIn("<svg ", rendered)
+            self.assertIn('class="chart-box visual-chart-box"', rendered)
+            issues = svg_geometry.check_svg_text_geometry(rendered, label=f"test:{spec['type']}")
+            self.assertEqual(issues, [], f"SVG geometry collision on {spec['type']}: {issues}")
+
+    def test_home_caps_featured_briefs_at_9_while_single_market_news_is_uncapped(self):
+        eq_state = json.loads((ROOT / "equity" / "state" / "market_state.json").read_text(encoding="utf-8"))
+        # Build 14 synthetic briefs all targeting a_share, with 11 marked home_featured=True
+        many_briefs = [
+            {
+                "id": f"b_ashare_{i:02d}",
+                "date_cst": "2026-11-27",
+                "time_cst": f"{8 + (i % 10):02d}:30",
+                "region": "CN",
+                "category": "policy_regulation",
+                "impact_tier": "P0" if i < 4 else "P1",
+                "home_featured": i < 11,
+                "authority": "央行与证监会联合公告",
+                "headline": f"A股重磅新闻第 {i + 1} 条测试标题",
+                "summary": f"第 {i + 1} 条重要新闻详尽摘要内容。",
+                "affected_markets": ["a_share", "hk_stock"] if i % 2 == 0 else ["a_share"],
+                "market_impact": "影响板块估值节奏；严守红灯仓位上限，暂不新买黄金。",
+                "source_url": "https://www.gov.cn/",
+            }
+            for i in range(14)
+        ]
+        synth_pcal = {
+            "edition_id": "2026-11-27_1800_r2",
+            "as_of_cst": "2026-11-27T23:55:00+08:00",
+            "horizon_days": 30,
+            "policy_briefs": many_briefs,
+            "events": [],
+        }
+
+        # Home page MUST clamp featured briefs to <= 9 and render quick-jump uncapped count (14)
+        home_html = build_site._render_policy_calendar_section(synth_pcal, eq_state, gold_blocked=True)
+        self.assertEqual(home_html.count("pcal-brief-card"), 9)
+        self.assertIn('id="pcal-brief-filters"', home_html)
+        self.assertIn("a-share-latest.html#sec-market-news", home_html)
+        self.assertIn("14 条", home_html)
+
+        # Single-market news radar MUST display ALL 14 A-share briefs with ZERO upper cap!
+        mnews_html, mnews_cnt = build_site._render_market_news_radar(
+            "a-share", synth_pcal, eq_state, gold_blocked=True
+        )
+        self.assertEqual(mnews_cnt, 14)
+        self.assertEqual(mnews_html.count("mnews-card"), 14)
+        self.assertIn('id="sec-market-news"', mnews_html)
+        self.assertIn("A股重磅新闻第 14 条测试标题", mnews_html)
+        # No raw P0/P1/P2 leaked in visible inner text
+        m_parser = lint_site._PolicyCalendarSectionParser("sec-market-news")
+        m_parser.feed(mnews_html)
+        m_parser.close()
+        m_snap = m_parser.result()
+        self.assertIsNotNone(m_snap)
+        self.assertIsNone(lint_site.PCAL_RAW_TIER_RE.search(m_snap.inner_text))
+
+        # Live repo policy_calendar.json has 6-9 featured on Home & uncapped on all 4 markets
+        live_pcal = json.loads((ROOT / "equity" / "state" / "policy_calendar.json").read_text(encoding="utf-8"))
+        live_home = build_site._render_policy_calendar_section(live_pcal, eq_state, gold_blocked=True)
+        home_card_cnt = live_home.count("pcal-brief-card")
+        self.assertTrue(6 <= home_card_cnt <= 9, f"Expected 6-9 featured home briefs, got {home_card_cnt}")
+        for mslug in ("a-share", "hk-stock", "us-stock", "gold"):
+            mh, mcnt = build_site._render_market_news_radar(mslug, live_pcal, eq_state, gold_blocked=True)
+            self.assertGreaterEqual(mcnt, 6, f"Expected >=6 uncapped briefs for {mslug}, got {mcnt}")
+            self.assertEqual(mh.count("mnews-card"), mcnt)
+
+    def test_auto_visual_cockpit_stacked_probability_ribbon_and_flow_chain(self):
+        gold_snap = json.loads((ROOT / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
+        eq_state = json.loads((ROOT / "equity" / "state" / "market_state.json").read_text(encoding="utf-8"))
+
+        # Top visual cockpit renders cleanly for both equity and gold
+        eq_cockpit = build_site._render_daily_visual_cockpit("a-share", eq_state, gold_snap, "")
+        self.assertIn("daily-visual-cockpit", eq_cockpit)
+        self.assertIn("dvc-alloc-bar", eq_cockpit)
+        self.assertIn("dvc-brake-grid", eq_cockpit)
+        gold_cockpit = build_site._render_daily_visual_cockpit("gold", eq_state, gold_snap, "")
+        self.assertIn("daily-visual-cockpit", gold_cockpit)
+        self.assertIn("买金四步红绿灯进度仪", gold_cockpit)
+
+        # Auto-upgrades <ul> 4-scenario probability block AND inline flow chain
+        sample_body = (
+            "<p><strong>跨资产传导链（一句话）</strong>：「中东油价高位 → 10年期美债逼近 5% → 美元走强 → 股票估值承压」。</p>"
+            "<ul>"
+            "<li><strong>情景一：震荡修复</strong>：●●●●○○○○○○（40%）—— 核心理由。</li>"
+            "<li><strong>情景二：缓步回踩</strong>：●●●○○○○○○○（30%）—— 次要理由。</li>"
+            "<li><strong>情景三：政策强刺激</strong>：●●○○○○○○○○（20%）—— 上行催化。</li>"
+            "<li><strong>情景四：外部冲击</strong>：●○○○○○○○○○（10%）—— 尾部风控。</li>"
+            "</ul>"
+        )
+        enhanced = build_site._enhance_daily_body_visuals(sample_body)
+        self.assertIn("prob-ribbon-card", enhanced)
+        self.assertIn("prob-seg", enhanced)
+        self.assertIn("pdot-on", enhanced)
+        self.assertIn("inline-flow-wrap", enhanced)
+        self.assertIn("ifc-node", enhanced)
+
+
 if __name__ == "__main__":
     unittest.main()

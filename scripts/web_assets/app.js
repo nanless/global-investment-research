@@ -5091,4 +5091,72 @@
     applyFilter();
   }
   initPolicyCalendar();
+
+  /* ------------------------------------------------------------------------
+     19. Home Policy Briefs Region Filter & Single-Market Uncapped News Filter
+     ------------------------------------------------------------------------ */
+  function initPolicyBriefFilters() {
+    const bar = document.getElementById("pcal-brief-filters");
+    const grid = document.getElementById("pcal-briefs-row");
+    if (!bar || !grid) return;
+    const btns = Array.from(bar.querySelectorAll("[data-pcal-brief-filter]"));
+    const cards = Array.from(grid.querySelectorAll(".pcal-brief-card"));
+    function apply(reg) {
+      btns.forEach(function (b) {
+        const act = (b.getAttribute("data-pcal-brief-filter") || "all") === reg;
+        b.classList.toggle("active", act);
+        b.setAttribute("aria-pressed", act ? "true" : "false");
+      });
+      cards.forEach(function (c) {
+        const cr = (c.getAttribute("data-pcal-brief-region") || "").toUpperCase();
+        let ok = reg === "all";
+        if (!ok && reg === "GLOBAL_EX") {
+          ok = cr !== "CN" && cr !== "HK" && cr !== "US";
+        } else if (!ok) {
+          ok = cr === reg;
+        }
+        c.hidden = !ok;
+      });
+    }
+    btns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        apply(b.getAttribute("data-pcal-brief-filter") || "all");
+      });
+    });
+  }
+  initPolicyBriefFilters();
+
+  function initMarketNewsFilters() {
+    const sec = document.getElementById("sec-market-news");
+    if (!sec) return;
+    const btns = Array.from(sec.querySelectorAll("[data-mnews-filter]"));
+    const cards = Array.from(sec.querySelectorAll(".mnews-card"));
+    const status = document.getElementById("mnews-count-status");
+    function apply(f) {
+      btns.forEach(function (b) {
+        const act = (b.getAttribute("data-mnews-filter") || "all") === f;
+        b.classList.toggle("active", act);
+        b.setAttribute("aria-pressed", act ? "true" : "false");
+      });
+      let shown = 0;
+      cards.forEach(function (c) {
+        const cat = (c.getAttribute("data-mnews-cat") || "").toLowerCase();
+        const tier = (c.getAttribute("data-mnews-tier") || "").toUpperCase();
+        const ok = f === "all" || (f === "major" ? tier === "P0" : cat === f);
+        c.hidden = !ok;
+        if (ok) shown += 1;
+      });
+      if (status) {
+        status.textContent = f === "all"
+          ? "全量收录 " + cards.length + " 条 · 无上限"
+          : "筛选显示 " + shown + " / " + cards.length + " 条";
+      }
+    }
+    btns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        apply(b.getAttribute("data-mnews-filter") || "all");
+      });
+    });
+  }
+  initMarketNewsFilters();
 })();

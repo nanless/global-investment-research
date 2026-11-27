@@ -214,6 +214,7 @@ KNOWN_DIRECTIVES = {
     "DAILY_CHART_TIMELINE",
     "DAILY_CHART_SWITCH",
     "DAILY_CHART_CROSS",
+    "DAILY_VISUAL",
 }
 
 ANY_DAILY_DIRECTIVE_RE = re.compile(r"<!--\s*(DAILY_[A-Z0-9_]+)\s*(.*?)\s*-->", re.DOTALL)
@@ -269,11 +270,13 @@ REQUIRED_KEYS = {
     "DAILY_CHART_TIMELINE": ["points"],
     "DAILY_CHART_SWITCH": ["gauges", "checks"],
     "DAILY_CHART_CROSS": ["items"],
+    "DAILY_VISUAL": ["type", "title"],
 }
 
 _STYLE_SKIP_KEYS = {
     "accent", "color", "fill", "text_color", "align", "anchor", "label_pos",
     "tone", "group", "status_color", "unit_prefix", "unit_suffix", "level",
+    "type", "stance", "unit", "kind", "id",
 }
 
 # Unicode-safe parallel score regex (catches decimal 0.0/6..6.5/6, integer 0/6..6/6, and fullwidth ／6)
@@ -759,6 +762,16 @@ def _validate_directive_schema(
             not isinstance(ri, dict) or not all(f in ri for f in ("label", "detail")) for ri in reverse_items
         ):
             errors.append("[Gate 0 反向指标项错] DAILY_CHART_CROSS.reverse_items 每项须含 label/detail")
+    elif kind == "DAILY_VISUAL":
+        scripts_path = BASE_DIR.parent / "scripts"
+        if scripts_path.is_dir() and str(scripts_path) not in sys.path:
+            sys.path.insert(0, str(scripts_path))
+        try:
+            from visual_widgets import validate_visual_spec  # type: ignore[import-not-found]
+            for v_err in validate_visual_spec(parsed):
+                errors.append(f"[Gate 0 视觉图结构错] {v_err}")
+        except Exception as exc:
+            errors.append(f"[Gate 0 视觉图引擎导入错] {exc}")
 
 
 def _strip_comments_keep_lines(s: str) -> str:
@@ -1699,7 +1712,8 @@ def _check_svg_geometry(
             ("DAILY_CHART_CROSS", "render_chart_cross"),
             ("DAILY_CHART_SWITCH", "render_chart_switch"),
         )
-        if not any(directives.get(k) for k, _ in chart_kinds):
+        has_visual = bool(directives.get("DAILY_VISUAL"))
+        if not any(directives.get(k) for k, _ in chart_kinds) and not has_visual:
             return
         try:
             bd = _load_gold_module("build_daily", BASE_DIR / "build_daily.py")
@@ -1713,6 +1727,12 @@ def _check_svg_geometry(
                     svg_items.append((lbl, getattr(bd, fn_name)(cfg)))
                 except Exception as exc:
                     errors.append(f"[Gate 4 SVG 渲染错] {lbl}: {exc}")
+        for idx, cfg in enumerate(directives.get("DAILY_VISUAL", []), 1):
+            lbl = f"DAILY_VISUAL#{idx}" if len(directives.get("DAILY_VISUAL", [])) > 1 else "DAILY_VISUAL"
+            try:
+                svg_items.append((lbl, bd.render_widget("DAILY_VISUAL", cfg)))
+            except Exception as exc:
+                errors.append(f"[Gate 4 SVG 渲染错] {lbl}: {exc}")
 
     for lbl, svg_html in svg_items:
         for issue in check_svg_text_geometry(svg_html, label=lbl):

@@ -1610,6 +1610,10 @@ def _validate_policy_calendar(
                     )
             if "source_url" in b and b["source_url"] is not None and not _is_strict_https_url(b["source_url"]):
                 errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid https source_url {b['source_url']!r}.")
+            if "home_featured" in b and b["home_featured"] is not None and type(b["home_featured"]) is not bool:
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) home_featured must be boolean.")
+            if "time_cst" in b and b["time_cst"] is not None and (not isinstance(b["time_cst"], str) or not b["time_cst"].strip()):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) time_cst must be non-empty string.")
 
     events = pc.get("events")
     max_end_date = None
@@ -3684,6 +3688,7 @@ def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str
             "policy_briefs_count": len(briefs),
             "events_count": len(events),
             "total_briefs": len(briefs),
+            "home_featured_briefs": sum(1 for b in briefs if isinstance(b, dict) and b.get("home_featured") is True),
             "total_events": len(events),
             "counts_by_tier": {k: tier_counter[k] for k in ("P0", "P1", "P2") if tier_counter.get(k, 0) > 0},
             "counts_by_region": dict(sorted(region_counter.items())),
@@ -3705,9 +3710,9 @@ def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str
                     "id": b.get("id"),
                     "date_cst": b.get("date_cst"),
                     "region": b.get("region"),
-                    "category": b.get("category"),
                     "impact_tier": b.get("impact_tier"),
-                    "authority": b.get("authority"),
+                    "home_featured": bool(b.get("home_featured", False)),
+                    "affected_markets": b.get("affected_markets"),
                     "headline": b.get("headline"),
                 }
                 for b in briefs

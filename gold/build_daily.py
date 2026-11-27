@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import sys
 from math import fsum
 from pathlib import Path
 
@@ -1104,6 +1105,7 @@ KNOWN_DIRECTIVES = {
     "DAILY_CHART_TIMELINE",
     "DAILY_CHART_SWITCH",
     "DAILY_CHART_CROSS",
+    "DAILY_VISUAL",
 }
 
 COMMENT_RE = re.compile(
@@ -1112,7 +1114,7 @@ COMMENT_RE = re.compile(
 )
 GENERIC_HTML_COMMENT_RE = re.compile(r"<!--(?!\s*CHART_[A-Z0-9_]+\s*-->).*?-->", re.DOTALL)
 
-CHART_KINDS = {"DAILY_CHART_TIMELINE", "DAILY_CHART_SWITCH", "DAILY_CHART_CROSS"}
+CHART_KINDS = {"DAILY_CHART_TIMELINE", "DAILY_CHART_SWITCH", "DAILY_CHART_CROSS", "DAILY_VISUAL"}
 
 
 def extract_directives(md_text: str) -> tuple[dict, str, dict]:
@@ -1165,6 +1167,12 @@ def render_widget(kind: str, data: dict) -> str:
         return render_chart_switch(data)
     if kind == "DAILY_CHART_CROSS":
         return render_chart_cross(data)
+    if kind == "DAILY_VISUAL":
+        scripts_dir = str(Path(__file__).resolve().parent.parent / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import visual_widgets
+        return visual_widgets.render_visual_chart(data)
     return ""
 
 

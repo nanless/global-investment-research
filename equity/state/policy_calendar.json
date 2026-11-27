@@ -7,53 +7,303 @@
     {
       "id": "cn_state_council_national_team_20261127",
       "date_cst": "2026-11-27",
+      "time_cst": "13:19",
+      "home_featured": true,
       "region": "CN",
       "category": "top_politics",
       "impact_tier": "P0",
-      "authority": "国务院常务会议 · 证监会 · 上交所 · 央行 · 中证指数",
-      "headline": "国常会首提国家队与汇金类平准引爆2万亿，晚间监管四连发落地（含大额存单降门槛至10万）",
-      "summary": "13:19国常会史上首提加力发挥国家队稳市作用与优化中央汇金类平准功能，叠10月工企利润+20.1%与央行净投放+2,225亿引爆三市破2.02万亿、科创飙+15.07%；晚间证监会、上交所、央行（新大额存单办法2027-03-21起个人门槛20万→10万并禁违规手工补息）及中证指数12/11半年度调样四连发接力落地。",
+      "authority": "国务院常务会议 · 统计局 · 央行",
+      "headline": "国常会史上首提“国家队”与汇金类平准基金，叠 10 月工企利润 +20.1% 引爆三市破 2.02 万亿",
+      "summary": "今日 13:19 国务院常务会议通稿史上首次明文提出加力发挥国家队稳市作用与优化中央汇金类平准基金功能，叠加早间 10 月规模以上工业企业利润同比大增 +20.1% 及央行净投放 +2,225 亿元，引爆三市成交 20,175.91 亿元、上证收 3,606.49（+3.73%）、科创 50 飙 +15.07%、恒科飙 +6.45%。",
       "affected_markets": [
         "a_share",
         "hk_stock",
-        "rates_bonds_core"
+        "rates_bonds_core",
+        "gold"
       ],
-      "market_impact": "夯实中期政策底并将A股推至3.0/6（沪深300收4,063站4,025第1/3日），但中金所前20机构2612净空单日暴增+18,058手且下周一降保80%撞明晟剔22股、华虹75.56亿折价定增，维持红灯防守（A股<=40%），严禁追高芯片。",
+      "market_impact": "强政策底推升 A 股至 3.0/6 且沪深 300 站上 4,025 点 200 周线第 1/3 日；维持红灯上限 <=40%，静待连续 3 日放量确认、绝不追高暴涨芯片。",
       "source_url": "https://www.gov.cn/"
     },
     {
-      "id": "hk_meituan_q3_dual_track_20261127",
+      "id": "cn_pboc_large_cd_100k_rule_20261127",
       "date_cst": "2026-11-27",
+      "time_cst": "19:30",
+      "home_featured": true,
+      "region": "CN",
+      "category": "central_bank",
+      "impact_tier": "P0",
+      "authority": "中国人民银行（人行令〔2026〕第5号）",
+      "headline": "央行颁布新《大额存单管理办法》：2027 年 3 月起个人认购起点 20 万腰斩至 10 万并禁手工补息",
+      "summary": "11/27 晚间央行发布修订版《大额存单管理办法》（2027-03-21 生效），明确将个人大额存单认购门槛由现行 20 万元降至 10 万元，同步规范合规第三方平台转让机制并重申严禁银行违规手工补息，普惠稳健存款工具扩容。",
+      "affected_markets": [
+        "a_share",
+        "rates_bonds_core"
+      ],
+      "market_impact": "中期利好居民稳健存款分层与银行负债透明化，短期降低高息揽储噪声；现行仍按 20 万起执行，死守单行 50 万存保上限且二手接盘单严禁提前支取。",
+      "source_url": "https://www.pbc.gov.cn/"
+    },
+    {
+      "id": "hk_meituan_q3_call_reversal_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "19:00",
+      "home_featured": true,
       "region": "HK",
       "category": "market_structure",
-      "impact_tier": "P1",
-      "authority": "香港交易所 · 香港金管局 · 银行公会",
-      "headline": "港股11月期指结算22,530落地，美团25.42亿利润桥拆解与19:00电话会反转拉升夜期",
-      "summary": "恒指收22,694.77（+2.11%）、恒科+6.45%、主板2,571.4亿、南向净买+45.87亿（阿里+12.67亿居首）、全日沽空17.47%，港交所11月官方最终结算价落定22,530（国指7,597 / 恒科3,567）；美团三季报经调净利18.50亿逊预期但19:00电话会释出Q4单均盈利超Q2、Keeta沙特满季盈利与2027降AI开支指引，推升恒指12月夜期翻升至22,744–22,752。",
+      "impact_tier": "P0",
+      "authority": "香港交易所公告 · 美团业绩电话会",
+      "headline": "美团三季报 25.42 亿利润桥拆解与 19:00 电话会逆转指引，推动恒指 12 月夜期翻升至 22,744–22,752",
+      "summary": "美团三季报营收 1,155.56 亿（+21.6%）胜预期，但经调净利仅 18.50 亿逊 22 亿预期约 16%（核心 AI/总部未分配开销 -20.87 亿占 25.42 亿落差 82.1%）；19:00 电话会管理层明确四季度外卖单均盈利高于二季度、Keeta 沙特 22 个月整季盈利且 2027 AI 资本开支低于 2026 年，扭转夜期情绪。",
       "affected_markets": [
         "hk_stock",
         "a_share"
       ],
-      "market_impact": "美团在恒科权重达8.95%放大下周一开盘情绪博弈，叠加1月拆息跳升至3.132%、港汇7.8282与黑五10年美债攀至4.914%，港股维持红灯2.0/6（离岸<=35% / 港股通<=25%），严禁追高芯片与倒挂宁德H股（-19.7%）。",
+      "market_impact": "美团在恒科权重达 8.95%（恒指仅 2.38%），12/04 季检仍面临权重压回 8% 的被动流出；周一严防高开兑现，待分歧充分消化后再评估。",
       "source_url": "https://www.hkexnews.hk/"
     },
     {
-      "id": "global_oil_ecb_us10y_4914_20261127",
+      "id": "us_treasury_4914_true_drain_815b_20261127",
       "date_cst": "2026-11-27",
+      "time_cst": "23:55",
+      "home_featured": true,
       "region": "US",
-      "category": "geopolitics_energy",
+      "category": "liquidity_treasury",
       "impact_tier": "P0",
-      "authority": "美国财政部 · 纽约联储 · 欧洲央行 · 英国债务管理局",
-      "headline": "布油倒跌回94.80下黑五美债反攀4.914%与实际利率2.783%，下周一美债真实净抽水815.1亿美元",
-      "summary": "23:55黑五美盘布油1月合约自日高98.06倒跌回94.80美元（-1.83%），但美债抛压未退反将10年名义美债推升至4.914%、10年实际利率扩至2.783%、2年升至4.697%；同期确认英国10年期国债官收5.195%、法债4.74%倒挂意债4.35%，并核销下周一2,180亿美债集中交割扣除联储滚续后对私部门真实净抽水高达815.1亿美元（逆回购池仅剩3亿）。",
+      "authority": "美国财政部 · 纽约联储",
+      "headline": "黑五油价倒跌下 10 年美债反攀 4.914% 与实际利率 2.783%，下周一美债私营部门真实净抽水 815.1 亿美元",
+      "summary": "23:55 黑五美盘布油倒跌下美债抛压反而升温，10 年名义美债升至 4.914%、10 年实际利率扩至 2.783%、2 年升至 4.697%；同步核销 11/25 纽约联储 SOFR 升至 3.95%（高出准备金利率 5 基点），下周一 2,180 亿美债集中交割扣除联储滚续后对私营部门真实净抽水高达 815.1 亿美元，直撞仅剩 3 亿的隔夜逆回购池。",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
         "gold",
+        "hk_stock"
+      ],
+      "market_impact": "实际利率走阔砸回现货金 62 美元并压制黑五美股高开回吐、英伟达盘中转跌；离岸美元池坚守 62% 超短美债 + 28% 防弹衣，黄金与科技新仓双锁 0%。",
+      "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"
+    },
+    {
+      "id": "eu_uk_stagflation_sovereign_inversion_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "23:30",
+      "home_featured": true,
+      "region": "EU",
+      "category": "macro_data",
+      "impact_tier": "P0",
+      "authority": "欧洲央行 · 英国债务管理局 · 德国联邦劳工局",
+      "headline": "欧洲滞胀主权倒挂：欧央行通胀预期跳升至 3.5%、德失业创 2011 年新高、英债 5.195% 与法债倒挂意债",
+      "summary": "欧洲央行调查显示消费者 1 年通胀预期由 3.1% 意外跃升至 3.5%，德国 11 月失业人数升至 302.5 万人（失业率 6.4% 创 2011 年以来新高）；英国 10 年国债官收校准 5.195%（30 年 5.62%），法国 10 年国债攀至 4.74% 反超意大利 4.35% 达 +39 基点，全球长债定价承压。",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "market_impact": "欧英滞胀将 12/17 欧央行加息概率锁在 93%–94%、英央行 80%–86%，持续抬升全球无风险利率底线；欧股卫星仅平价观察低费德股 159561（溢价 <=2%）。",
+      "source_url": "https://www.ecb.europa.eu/"
+    },
+    {
+      "id": "global_saudi_oil_reversal_opec_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "23:55",
+      "home_featured": true,
+      "region": "GLOBAL",
+      "category": "geopolitics_energy",
+      "impact_tier": "P0",
+      "authority": "产油国联盟（OPEC+）· 国际能源交易所",
+      "headline": "沙特炼厂遇袭推布油冲 98.06 后黑五倒跌回 94.80 美元，周日第 42 届产油国线上会议定盘油债方向",
+      "summary": "中东沙特炼油设施遇袭一度推升布伦特 1 月合约冲上 98.06 美元，但黑五美盘市场提前博弈周日 11/29 19:00 第 42 届产油国联盟会议配额基线分歧，布油倒跌 -1.83% 回 94.80 美元（2 月连续 90.59 美元深贴水 4.21 美元）、WTI 转跌至 83.45 美元。",
+      "affected_markets": [
+        "us_stock",
+        "gold",
+        "a_share",
+        "hk_stock",
+        "rates_bonds_core"
+      ],
+      "market_impact": "油价剧烈折返牵动全球再通胀预期与中海油/雪佛龙盈利中枢，同时揭示布油换月深贴水绝非暴跌；能源底仓稳守现仓不追单日脉冲，严防高溢价原油基金。",
+      "source_url": "https://www.opec.org/opec_web/en/"
+    },
+    {
+      "id": "jp_tokyo_cpi_usdjpy_160_five_cb_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "23:55",
+      "home_featured": true,
+      "region": "JP",
+      "category": "central_bank",
+      "impact_tier": "P0",
+      "authority": "日本总务省 · 日本央行 · 五大央行日程",
+      "headline": "东京核心通胀 2.9% 与日元逼近 159.54 干预红线，美欧英日 12 月加息概率全超 76%",
+      "summary": "今晨日本总务省公布 11 月东京不含生鲜核心通胀 2.9%（日央行版核心 2.5% 具高黏性），但高位美债息将美元兑日元钉死在 159.54（距 160 财务省干预警戒线仅差 0.46 日元），12/10–18 全球四大海外央行 10 天内密集加息概率全线高于 76%。",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock",
+        "hk_stock",
+        "gold",
+        "rates_bonds_core"
+      ],
+      "market_impact": "一旦财务省干预或日央行超预期转鹰触发日元 3 日急升 >3%，将引爆全球套息交易去杠杆冲击高估科技与黄金；日本卫星只平价看东证 513800、拒追高溢价日经 513520。",
+      "source_url": "https://www.boj.or.jp/en/"
+    },
+    {
+      "id": "us_ustr_301_nvda_hearings_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "22:30",
+      "home_featured": true,
+      "region": "US",
+      "category": "regulation_trade",
+      "impact_tier": "P1",
+      "authority": "美国贸易代表署（USTR）· 标普 · 美国国会",
+      "headline": "美国开启 14 经济体 301 关税征询（15%–35%），英伟达标普负面观察与 12/01–04 听证/季报四连考",
+      "summary": "美国贸易代表署启动 14 经济体 301 关税意见征询（税率 15%–35%，意见截止 2027-01-05）；同日英伟达因暂停东南亚四国部分服务器发运、标普 AA 评级列入负面信用观察及 CDS 升至 147 基点，直面 12/01–03 参众两院听证与 12/04 法定 10-Q 季报死线，黑五盘中由涨转跌至 146.5–149.3 美元。",
+      "affected_markets": [
+        "us_stock",
+        "a_share",
+        "hk_stock"
+      ],
+      "market_impact": "贸易与算力出口管制双压海外硬件链同时催化国产替代短线情绪；严控跨三市人工智能总仓 <=20%，美股科技新仓锁死 0%、不追暴涨国产芯片。",
+      "source_url": "https://ustr.gov/"
+    },
+    {
+      "id": "cn_qdii_halt_limit_cut_silver_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "17:00",
+      "home_featured": true,
+      "region": "CN",
+      "category": "market_structure",
+      "impact_tier": "P1",
+      "authority": "沪深交易所 · 基金公司公告",
+      "headline": "沪深 513100/501225 二度临停、159509 溢价 +45.34% 与大成限购砍半；白银 161226 换帅叠退市预警",
+      "summary": "11/27 上交所对纳指 513100（+21.10%）与芯片 501225（+33.13%）实施二次临时停牌，159509 静态溢价扩至 +45.34%、中韩 513310 涨停换手 377%；大成纳指 000834 公告 11/30 起限购砍半（App 50 元 / 支付宝 5 元）；国投瑞银白银 161226 公告董事长由傅强变更为曲刚，真实溢价仍约 +14.9% 且面临 2027 年底退市。",
+      "affected_markets": [
+        "a_share",
+        "us_stock",
         "non_us_global_satellite"
       ],
-      "market_impact": "实际利率扩张直接砸落现货金自3,685倒吐62美元至3,623（锁死买金红灯1/4关、新仓0%），并令黑五美股高开回吐、英伟达盘中转跌回落至146.5–149.3美元；维持美股28%防弹衣+62%超短美债，零新增科技与黄金。",
-      "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"
+      "market_impact": "高溢价跨境基金与退市 LOF 是普通人最易亏本金的显性陷阱；零溢价定投美股优先南方 App 021000（限 200 元），坚决拒买一切溢价 >2% 场内跨境基与 161226。",
+      "source_url": "https://www.sse.com.cn/"
+    },
+    {
+      "id": "cn_csrc_sse_csi_rebalance_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "20:00",
+      "home_featured": false,
+      "region": "CN",
+      "category": "regulation_trade",
+      "impact_tier": "P1",
+      "authority": "证监会 · 上交所 · 中证指数公司",
+      "headline": "盘后监管与指数调样联动落地：12/11 沪深 300 净增 11 只科技股、科创 50 纳长鑫、上证 50 剔华电新能",
+      "summary": "盘后证监会与上交所接力发文强化资本市场稳市与防异常波动安排，同时中证指数公司发布半年度样本调整（12 月 11 日收市生效）：沪深 300 科技权重净增 11 席、科创 50 纳入长鑫、中证 A50 纳入寒武纪、上证 50 剔除华电新能。",
+      "affected_markets": [
+        "a_share"
+      ],
+      "market_impact": "被动指数资金将在 12/11 尾盘集中换手，与 11/30 明晟剔除 22 只 A 股形成资金剪刀差；绕开调出标的尾盘被动抛压，不追买调入标的公告脉冲。",
+      "source_url": "https://www.csindex.com.cn/"
+    },
+    {
+      "id": "cn_cffex_short_surge_huahong_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "18:30",
+      "home_featured": false,
+      "region": "CN",
+      "category": "market_structure",
+      "impact_tier": "P1",
+      "authority": "中金所 · 上交所上市公司公告",
+      "headline": "中金所前 20 机构单日净空暴增 +18,058 手（IM 独现多减空增），华虹盘后抛 75.56 亿折价近四成定增",
+      "summary": "11/27 暴涨日里，中金所 2612 合约中 IH/IF/IC 翻升水呈多空双增（属期现正套与量化建对冲），唯小盘 IM 独现多减空增、净空暴增 +7,480 手（占总增空 41.4%）；同日 20% 涨停的华虹公司（688347，AH 溢价 +217.6%）盘后抛 75.56 亿元定增，发行价 128.06 元较现价深折 -39.71%、扩流通盘 +14.46%。",
+      "affected_markets": [
+        "a_share",
+        "hk_stock"
+      ],
+      "market_impact": "衍生品机构逢高锁利与芯片龙头高位折价融资同时敲响警钟；下周一严禁追买涨停小盘题材与华虹定增股，逢滞涨红利与银行回调分批观察。",
+      "source_url": "https://www.cffex.com.cn/"
+    },
+    {
+      "id": "hk_eas_cbbc_short_ratio_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "18:00",
+      "home_featured": false,
+      "region": "HK",
+      "category": "market_structure",
+      "impact_tier": "P1",
+      "authority": "香港交易所 · 银行公会 · 香港金管局",
+      "headline": "港股 11 月期指官方结算价落定 22,530，单日屠熊逾 1,580 张、沽空降至 17.47% 但 1 月拆息跳升 3.132%",
+      "summary": "港交所 11 月期指最终结算恒指 22,530 / 国指 7,597 / 恒科 3,567（12 月转仓升水 +165 点）；恒指盘中摸高 22,781 清零逾 1,580 张熊证使牛熊比翻为 54:46，全日沽空率降至 17.47% 创半月新低，但月末与新股冻资推升 1 月拆息跳至 3.132%、金管局总结余下周指向 533.11 亿。",
+      "affected_markets": [
+        "hk_stock"
+      ],
+      "market_impact": "淡仓踩踏已释放首轮动能，上方残余熊墙移至 22,800–23,000、下方牛证重货区守 21,800；严守港股离岸 <=35% / 港股通 <=25%，勿借高息孖展打新。",
+      "source_url": "https://www.hkex.com.hk/"
+    },
+    {
+      "id": "hk_southbound_shenhua_rebalance_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "17:30",
+      "home_featured": false,
+      "region": "HK",
+      "category": "market_structure",
+      "impact_tier": "P1",
+      "authority": "港交所沪深港通 · 明晟 · 恒生指数公司",
+      "headline": "南向翻净买 +45.87 亿（阿里 +12.67 亿登顶）、神华配售首日消化 58%，下周迎 11/30 与 12/04 双重调仓窗",
+      "summary": "昨日创纪录流出后，今日南向资金彻底清零宽基抛压、转净买 +45.87 亿港元（主攻阿里 +12.67 亿、神华 +11.09 亿、中芯 +5.11 亿）；神华 H 股 38.10 港元折价配售首日 7 倍量消化 58%（63.78% 沽空属套利锁利）。下周一 11/30 明晟剔除 15 港股及金沙，12/04 恒生合并季检逾 125 亿美元换手。",
+      "affected_markets": [
+        "hk_stock",
+        "a_share"
+      ],
+      "market_impact": "双重指数调仓均在 16:06 收市竞价不可撤单区放大瞬时跳价；务必 15:55 前完成交易、避开 15+1 剔除股与倒挂 -19.7% 宁德 H 股，同时隔离未证实红利税传闻。",
+      "source_url": "https://www.hsi.com.hk/"
+    },
+    {
+      "id": "us_credit_ccc_bcred_mstr_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "23:15",
+      "home_featured": false,
+      "region": "US",
+      "category": "liquidity_treasury",
+      "impact_tier": "P1",
+      "authority": "ICE 美银指数 · 明晟（MSCI）· 黑石公告",
+      "headline": "美信用暗礁凸显：CCC 利差 1,405 基点、算力 CDS 飙升，黑石 BCRED 5% 闸门与明晟剔除微策略连撞",
+      "summary": "虽然全口径高收益债利差 372 基点表面平静，但最低级 CCC 利差高达 1,405 基点（宽出 +1,033 基点），科尔韦夫 CDS 飙至 1,314 基点、甲骨文 356 基点；美东 11/30 收盘明晟剔除微策略（MSTR，被动强卖 10.7–28 亿美元，净值倍数破 1 跌至 0.94），12/02 黑石私募信贷 BCRED 迎季度 5% 赎回大考。",
+      "affected_markets": [
+        "us_stock",
+        "rates_bonds_core"
+      ],
+      "market_impact": "叠加现货比特币基金连流 7 日（11 月失血 -53.9 亿，依央行银发〔2026〕42号仅作只读观察、0% 严禁配仓），水面下信用与加密链去杠杆风险未清；坚决拉黑微策略、守 62% 超短美债。",
+      "source_url": "https://www.msci.com/"
+    },
+    {
+      "id": "gold_sge_deferred_etf_outflow_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "23:55",
+      "home_featured": false,
+      "region": "GLOBAL",
+      "category": "market_structure",
+      "impact_tier": "P0",
+      "authority": "上金所 · 上期所 · 沪深黄金基金官净 · LBMA",
+      "headline": "现货金自 3,685 倒吐 62 美元至 3,623，上金所递延费翻多付空且沪市四大黄金基金趁涨净赎回 3.25 亿",
+      "summary": "黑五美盘实际利率跳升至 2.783% 打回现货金 61.77 美元日内涨幅；国内微观同步降温——上金所 Au(T+D) 递延费由空付多翻转为多付空，夜盘高开 786.60 回吐至 778.03（同刻温和价差 +2.75 元/克），11/27 四大黄金基金官方净值全线微折价且龙头 518880 单日净赎回 -3.72 亿（沪市合计 -3.25 亿）。",
+      "affected_markets": [
+        "gold",
+        "a_share"
+      ],
+      "market_impact": "Cboe 官补 11/26 恐慌 26.80（实盘 25.38 倒挂近月）稳固第 3 关，但前两关利率闸门反紧，买金四步红绿灯死守 1/4 红灯停；严禁新买或补仓黄金及金矿/金饰股，重仓户借 778–786 元反弹带减负。",
+      "source_url": "https://www.sge.com.cn/"
+    },
+    {
+      "id": "us_black_friday_retail_inflation_20261127",
+      "date_cst": "2026-11-27",
+      "time_cst": "23:40",
+      "home_featured": false,
+      "region": "US",
+      "category": "macro_data",
+      "impact_tier": "P2",
+      "authority": "万事达消费脉搏 · Adobe Analytics",
+      "headline": "美国黑五消费初报呈“价硬量弱”：金额增 5.5%–9.2% 但近半靠涨价驱动，堵死美联储宽松空间",
+      "summary": "Adobe 测算黑五线上消费 129 亿美元（+9.2%），但万事达消费脉搏（整体同比 +5.5%）明确指出近半数名义金额增长源自商品涨价而非实际销量扩张，反映关税预期与通胀黏性正向终端零售传导。",
+      "affected_markets": [
+        "us_stock",
+        "gold",
+        "rates_bonds_core"
+      ],
+      "market_impact": "名义消费高增但实际需求承压，既挤压高估零售伪防御股毛利，又强化美联储 12/10 鹰派定力；坚守伯克希尔、雪佛龙与标普等权防弹衣，避开高估值消费零售股。",
+      "source_url": "https://www.mastercardservices.com/"
     }
   ],
   "events": [

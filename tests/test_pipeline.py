@@ -2062,6 +2062,9 @@ class OperationalRegressionTest(unittest.TestCase):
             "4-3-2-1",
             "Evening Midday-Residue Sweep",
             "5 大触发",
+            "DAILY_VISUAL",
+            "#sec-market-news",
+            "home_featured",
         ):
             self.assertIn(req, prompt_text, f"Missing required upgraded prompt token: {req!r}")
 

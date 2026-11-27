@@ -3211,6 +3211,8 @@ def render_doc_with_toc(
     doc_kind: str = "daily",
     disclosure_html: str = "",
     kline_strip_html: str = "",
+    visual_cockpit_html: str = "",
+    market_news_html: str = "",
 ) -> str:
     footer_div = f'<div class="footer-note">{esc(footer_note)}</div>' if footer_note else ""
     mobile_strip = ""
@@ -3253,9 +3255,10 @@ def render_doc_with_toc(
         f"{mobile_strip}"
         f'<article class="article-card {art_cls}">'
         f"{cover_html}"
+        f"{visual_cockpit_html}"
         f"{disclosure_html}"
         f"{kline_wrapped_html}"
-        f'<div class="article-body">{body_html}</div>'
+        f'<div class="article-body">{body_html}{market_news_html}</div>'
         f"{footer_div}"
         f"</article>"
         f"</div>"
@@ -6016,16 +6019,56 @@ def _render_policy_calendar_section(
         ),
     }
 
+    _cat_cn_map = {
+        "top_politics": "顶层政策",
+        "central_bank": "央行利率",
+        "macro_data": "宏观数据",
+        "fiscal_policy": "财政与债市",
+        "regulation_trade": "监管与贸易",
+        "geopolitics_energy": "地缘与能源",
+        "liquidity_treasury": "流动性抽水",
+        "market_structure": "微观与财报",
+        "holiday_schedule": "交易日程",
+    }
+    _tier_rank = {"P0": 0, "P1": 1, "P2": 2}
+
+    def _select_home_briefs(all_b: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not all_b:
+            return []
+        has_flag = any(isinstance(b.get("home_featured"), bool) for b in all_b)
+        if has_flag:
+            featured = [b for b in all_b if b.get("home_featured") is True]
+            if len(featured) < 6 and len(all_b) >= 6:
+                seen_ids = {id(b) for b in featured}
+                rest = sorted(
+                    [b for b in all_b if id(b) not in seen_ids],
+                    key=lambda x: _tier_rank.get(str(x.get("impact_tier") or "P1").upper(), 1),
+                )
+                featured.extend(rest[: 6 - len(featured)])
+            return featured[:9]
+        if len(all_b) > 9:
+            return sorted(
+                all_b,
+                key=lambda x: _tier_rank.get(str(x.get("impact_tier") or "P1").upper(), 1),
+            )[:9]
+        return list(all_b)
+
+    home_briefs = _select_home_briefs(raw_briefs)
+    total_all_briefs = len(raw_briefs)
     brief_cards: list[str] = []
-    for b in raw_briefs:
+    for b in home_briefs:
         reg_code, reg_lbl = _pcal_norm_region(b.get("region"))
         default_guard = _region_guard_fallbacks.get(reg_code, _region_guard_fallbacks["GLOBAL"])
         b_tier_code, tier_cls, tier_lbl = _pcal_norm_tier(
             b.get("impact_tier") or b.get("tier") or b.get("impact") or b.get("priority")
         )
+        cat_raw = str(b.get("category") or "").strip().lower()
+        cat_lbl = _cat_cn_map.get(cat_raw, "")
         auth = _pcal_pick(b, "authority", "source_authority", "source", "agency", default="官方政策追踪")
         ts = _pcal_pick(b, "timestamp_cst", "published_cst", "published_at", "date_cst", "as_of", default=as_of_disp)
-        src_disp = f"{auth} · {ts}" if (auth and ts) else (auth or ts)
+        t_hm = str(b.get("time_cst") or "").strip()
+        ts_disp = f"{ts} {t_hm}" if (t_hm and t_hm not in ts) else ts
+        src_disp = f"{auth} · {ts_disp}" if (auth and ts_disp) else (auth or ts_disp)
         headline = _pcal_pick(b, "headline", "title", default="核心政策动态跟踪")
         plain = _pcal_pick(b, "plain_takeaway", "plain_chinese", "plain_summary", "beginner_summary", "summary", default="持续跟踪官方口径与落地节奏。")
         trans = _pcal_pick(b, "cross_market_transmission", "market_transmission", "transmission", "cross_market_impact", "impact_chain")
@@ -6052,12 +6095,21 @@ def _render_policy_calendar_section(
             )
         if not guard:
             guard = default_guard
+        src_url = str(b.get("source_url") or "").strip()
+        src_link_html = (
+            f'<a class="mnews-src-link" href="{esc(src_url)}" target="_blank" rel="noopener noreferrer">官源 ↗</a>'
+            if src_url.startswith("https://")
+            else ""
+        )
+        cat_pill_html = f'<span class="mnews-cat-pill">{esc(cat_lbl)}</span>' if cat_lbl else ""
         brief_cards.append(
-            '<article class="pcal-brief-card">'
+            f'<article class="pcal-brief-card" data-pcal-brief-region="{esc(reg_code)}" data-pcal-brief-tier="{esc(b_tier_code)}">'
             '<div class="pcal-brief-meta">'
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
             f'<span class="pcal-tier-pill {tier_cls}">{_pcal_meter_html(b_tier_code)}{esc(tier_lbl)}</span>'
+            f"{cat_pill_html}"
             f'<span class="pcal-src">{esc(src_disp)}</span>'
+            f"{src_link_html}"
             "</div>"
             f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
             f'<div class="pcal-brief-row"><strong>白话看懂：</strong>{esc(plain)}</div>'
@@ -6065,6 +6117,37 @@ def _render_policy_calendar_section(
             f'<div class="pcal-brief-guard"><strong>实操边界：</strong>{esc(guard)}</div>'
             "</article>"
         )
+
+    mkt_counts = {
+        "a_share": sum(1 for b in raw_briefs if "a_share" in (b.get("affected_markets") or [])),
+        "hk_stock": sum(1 for b in raw_briefs if "hk_stock" in (b.get("affected_markets") or [])),
+        "us_stock": sum(1 for b in raw_briefs if "us_stock" in (b.get("affected_markets") or [])),
+        "gold": sum(1 for b in raw_briefs if "gold" in (b.get("affected_markets") or [])),
+    }
+    brief_filter_html = (
+        '<div class="pcal-brief-filters" id="pcal-brief-filters" role="toolbar" aria-label="按地区筛选今日核心时政">'
+        f'<button type="button" class="filter-pill active" data-pcal-brief-filter="all" aria-pressed="true">精选全部 ({len(brief_cards)})</button>'
+        '<button type="button" class="filter-pill" data-pcal-brief-filter="CN" aria-pressed="false">中国</button>'
+        '<button type="button" class="filter-pill" data-pcal-brief-filter="HK" aria-pressed="false">中国香港</button>'
+        '<button type="button" class="filter-pill" data-pcal-brief-filter="US" aria-pressed="false">美国</button>'
+        '<button type="button" class="filter-pill" data-pcal-brief-filter="GLOBAL_EX" aria-pressed="false">欧日英与地缘</button>'
+        "</div>"
+        if len(brief_cards) >= 5
+        else ""
+    )
+    market_jump_html = (
+        '<div class="pcal-market-jump-bar">'
+        f'<span class="pmj-label">📰 本期全市场共收录 <strong>{total_all_briefs}</strong> 条重要新闻（单市场无上限全量展示）：</span>'
+        '<div class="pmj-links">'
+        f'<a class="pmj-pill" href="daily/a-share-latest.html#sec-market-news">🇨🇳 A股全部 {mkt_counts["a_share"]} 条 →</a>'
+        f'<a class="pmj-pill" href="daily/hk-stock-latest.html#sec-market-news">🇭🇰 港股全部 {mkt_counts["hk_stock"]} 条 →</a>'
+        f'<a class="pmj-pill" href="daily/us-stock-latest.html#sec-market-news">🇺🇸 美股全部 {mkt_counts["us_stock"]} 条 →</a>'
+        f'<a class="pmj-pill" href="daily/gold-latest.html#sec-market-news">🥇 黄金全部 {mkt_counts["gold"]} 条 →</a>'
+        "</div>"
+        "</div>"
+        if total_all_briefs >= 4
+        else ""
+    )
 
     prepared_events: list[tuple[tuple[int, str, str], str, str]] = []
     for ev in raw_events:
@@ -6267,11 +6350,13 @@ def _render_policy_calendar_section(
         <div>
           <div class="pcal-col-head">
             <h3>今日核心时政与政策深解</h3>
-            <span class="sec-sub">{len(brief_cards)} 条重点</span>
+            <span class="sec-sub">首页精选 {len(brief_cards)} 条（全市场共收录 {total_all_briefs} 条 · 点进单市场看全部）</span>
           </div>
-          <div class="pcal-briefs-row">
+          {brief_filter_html}
+          <div class="pcal-briefs-row" id="pcal-briefs-row">
             {"".join(brief_cards)}
           </div>
+          {market_jump_html}
         </div>
         <div class="pcal-agenda-card">
           <div class="pcal-col-head">
@@ -6299,6 +6384,438 @@ def _render_policy_calendar_section(
       </div>
     </section>
     """
+
+
+def _render_market_news_radar(
+    market_slug: str,
+    policy_cal: dict[str, Any] | None,
+    eq_state: dict[str, Any],
+    gold_blocked: bool,
+) -> tuple[str, int]:
+    """Render uncapped complete news & policy deck for an individual market report page."""
+    if not isinstance(policy_cal, dict):
+        return "", 0
+    raw_briefs = [b for b in (policy_cal.get("policy_briefs") or []) if isinstance(b, dict)]
+    if not raw_briefs:
+        return "", 0
+    mkt_map = {
+        "a-share": ("a_share", "🇨🇳 中国 A 股"),
+        "hk-stock": ("hk_stock", "🇭🇰 中国香港股市"),
+        "us-stock": ("us_stock", "🇺🇸 美国股市"),
+        "gold": ("gold", "🥇 黄金与贵金属"),
+    }
+    eq_key, mkt_title = mkt_map.get(market_slug, (market_slug.replace("-", "_"), market_slug))
+    matched = [b for b in raw_briefs if eq_key in (b.get("affected_markets") or [])]
+    if not matched:
+        return "", 0
+
+    _tier_rank = {"P0": 0, "P1": 1, "P2": 2}
+    matched.sort(
+        key=lambda b: (
+            _tier_rank.get(str(b.get("impact_tier") or "P1").upper(), 1),
+            -int(str(b.get("date_cst") or "0000-00-00").replace("-", "") or "0"),
+            str(b.get("id") or ""),
+        )
+    )
+    _cat_cn = {
+        "top_politics": "顶层政策",
+        "central_bank": "央行利率",
+        "macro_data": "宏观数据",
+        "fiscal_policy": "财政与债市",
+        "regulation_trade": "监管与贸易",
+        "geopolitics_energy": "地缘与能源",
+        "liquidity_treasury": "流动性抽水",
+        "market_structure": "微观与财报",
+        "holiday_schedule": "交易日程",
+    }
+    _mkt_cn = {
+        "a_share": "A股",
+        "hk_stock": "港股",
+        "us_stock": "美股",
+        "rates_bonds_core": "中美债率",
+        "gold": "黄金",
+        "non_us_global_satellite": "非美全球",
+    }
+    as_of_disp = (
+        fmt_cst_compact(str(policy_cal.get("as_of_cst") or ""))
+        or fmt_cst_compact(str(eq_state.get("as_of_cst") or ""))
+    )
+
+    def _meter(tier_code: str) -> str:
+        lit = 3 if tier_code == "P0" else (2 if tier_code == "P1" else 1)
+        bars = "".join(f'<span class="pcal-bar{" active" if i <= lit else ""}"></span>' for i in range(1, 4))
+        return f'<span class="pcal-meter" aria-hidden="true">{bars}</span>'
+
+    seen_cats: list[tuple[str, str]] = []
+    seen_cat_keys: set[str] = set()
+    cards: list[str] = []
+    for b in matched:
+        _, reg_lbl = _pcal_norm_region(b.get("region"))
+        b_tier_code, tier_cls, tier_lbl = _pcal_norm_tier(b.get("impact_tier"))
+        cat_k = str(b.get("category") or "market_structure").strip().lower()
+        cat_lbl = _cat_cn.get(cat_k, "要闻深解")
+        if cat_k not in seen_cat_keys:
+            seen_cat_keys.add(cat_k)
+            seen_cats.append((cat_k, cat_lbl))
+        auth = _pcal_pick(b, "authority", "source_authority", "source", default="官源追踪")
+        ts = _pcal_pick(b, "date_cst", default=as_of_disp)
+        t_hm = str(b.get("time_cst") or "").strip()
+        ts_disp = f"{ts} {t_hm}" if (t_hm and t_hm not in ts) else ts
+        headline = _pcal_pick(b, "headline", "title", default="重要市场动态")
+        plain = _pcal_pick(b, "summary", "plain_takeaway", default="")
+        mkt_imp = _pcal_pick(b, "market_impact")
+        aff_labels = [_mkt_cn.get(str(m).strip(), str(m).strip()) for m in (b.get("affected_markets") or []) if str(m).strip()]
+        aff_txt = " / ".join(dict.fromkeys(aff_labels))
+        if "；" in mkt_imp:
+            p1, p2 = mkt_imp.split("；", 1)
+            trans = f"波及 {aff_txt}：{p1.strip()}" if aff_txt else p1.strip()
+            guard = re.sub(r"^(?:但是|但|不过)[，,：:\s]*", "", p2.strip())
+        else:
+            trans = f"波及 {aff_txt}：{mkt_imp}" if aff_txt else mkt_imp
+            guard = (
+                "黄金红灯停期严守新仓 0%，严控权益仓位上限，不追单日情绪脉冲。"
+                if gold_blocked
+                else "严守仓位纪律与风控锚点，不追单日情绪脉冲。"
+            )
+        src_url = str(b.get("source_url") or "").strip()
+        src_link = (
+            f'<a class="mnews-src-link" href="{esc(src_url)}" target="_blank" rel="noopener noreferrer">官源 ↗</a>'
+            if src_url.startswith("https://")
+            else ""
+        )
+        cards.append(
+            f'<article class="pcal-brief-card mnews-card" data-mnews-cat="{esc(cat_k)}" data-mnews-tier="{esc(b_tier_code)}">'
+            '<div class="pcal-brief-meta">'
+            f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
+            f'<span class="pcal-tier-pill {tier_cls}">{_meter(b_tier_code)}{esc(tier_lbl)}</span>'
+            f'<span class="mnews-cat-pill">{esc(cat_lbl)}</span>'
+            f'<span class="pcal-src">{esc(auth)} · {esc(ts_disp)}</span>'
+            f"{src_link}"
+            "</div>"
+            f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
+            f'<div class="pcal-brief-row"><strong>白话看懂：</strong>{esc(plain)}</div>'
+            f'<div class="pcal-brief-row"><strong>跨市传导：</strong>{esc(trans)}</div>'
+            f'<div class="pcal-brief-guard"><strong>实操边界：</strong>{esc(guard)}</div>'
+            "</article>"
+        )
+
+    cat_btns = "".join(
+        f'<button type="button" class="filter-pill" data-mnews-filter="{esc(ck)}" aria-pressed="false">{esc(cl)}</button>'
+        for ck, cl in seen_cats
+    )
+    html_block = f"""
+    <section class="mnews-section" id="sec-market-news" aria-labelledby="mnews-heading">
+      <div class="mnews-head">
+        <div>
+          <h2 id="mnews-heading" class="mnews-title">📰 {esc(mkt_title)} · 全部重要新闻与政策雷达</h2>
+          <p class="mnews-sub">无上限全量收录影响本市场的全部重要政策、央行、宏观、监管、财报与地缘动态（截至 {esc(as_of_disp)}）</p>
+        </div>
+        <span class="mnews-count-badge" id="mnews-count-status">全量收录 {len(cards)} 条 · 无上限</span>
+      </div>
+      <div class="mnews-filter-row no-print" role="toolbar" aria-label="筛选本市场重要新闻">
+        <button type="button" class="filter-pill active" data-mnews-filter="all" aria-pressed="true">全部 ({len(cards)})</button>
+        <button type="button" class="filter-pill" data-mnews-filter="major" aria-pressed="false">▮▮▮ 只看一级关键</button>
+        {cat_btns}
+      </div>
+      <div class="mnews-grid">
+        {"".join(cards)}
+      </div>
+    </section>"""
+    return html_block, len(cards)
+
+
+def _render_daily_visual_cockpit(
+    market_slug: str,
+    eq_state: dict[str, Any],
+    gold_snap: dict[str, Any],
+    body_html: str,
+) -> str:
+    """Render an instant visual dashboard (scorecard bars, wallet allocation ribbon, crisis gauges) at top of latest daily."""
+    markets = eq_state.get("markets") or {}
+    links = eq_state.get("cross_market_linkages") or {}
+    brake = links.get("crisis_correlation_brake") or {}
+
+    left_title = "📊 6 维大盘体检可视化仪表"
+    score_rows_html: list[str] = []
+    if market_slug == "gold":
+        left_title = "🚦 买金四步红绿灯进度仪"
+        for g in (gold_snap.get("tier1_gates") or [])[:4]:
+            if not isinstance(g, dict):
+                continue
+            passed = bool(g.get("passed"))
+            pct = 100 if passed else 22
+            tone = "green" if passed else "red"
+            badge = "已过关" if passed else "未过关"
+            gname = str(g.get("name") or "")
+            gread = str(g.get("reading") or "")
+            score_rows_html.append(
+                '<div class="dvc-score-row">'
+                f'<div class="dvc-sr-head"><span class="dvc-sr-name">{esc(gname)}</span>'
+                f'<span class="dvc-sr-val dvc-tone-{tone}">{esc(badge)}</span></div>'
+                f'<div class="dvc-bar-track"><div class="dvc-bar-fill dvc-fill-{tone}" style="width:{pct}%"></div></div>'
+                f'<div class="dvc-sr-sub" title="{esc(gread)}">{esc(gread)}</div>'
+                "</div>"
+            )
+    else:
+        dim_matches: list[tuple[str, float, float]] = []
+        for m in re.finditer(
+            r"<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>",
+            body_html,
+            flags=re.DOTALL,
+        ):
+            c1 = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+            c2 = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            sm = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)", c2)
+            if sm and re.search(r"[1-6]\.|维度|政策|估值|趋势|流动|宏观|利率|联汇|盈利", c1):
+                dim_matches.append((c1, float(sm.group(1)), float(sm.group(2))))
+        if len(dim_matches) < 4:
+            dim_matches = []
+            for m in re.finditer(
+                r"<li[^>]*>\s*<strong>\s*([1-6]\.[^<]+?)[（(]\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*[）)]\s*</strong>",
+                body_html,
+            ):
+                dim_matches.append((m.group(1).strip(), float(m.group(2)), float(m.group(3))))
+        for lbl, got, mx in dim_matches[:6]:
+            pct = max(6, min(100, int(round((got / max(mx, 0.1)) * 100))))
+            tone = "green" if got >= mx * 0.85 else ("amber" if got > 0 else "red")
+            score_rows_html.append(
+                '<div class="dvc-score-row">'
+                f'<div class="dvc-sr-head"><span class="dvc-sr-name">{esc(lbl)}</span>'
+                f'<span class="dvc-sr-val dvc-tone-{tone}">{got:g}/{mx:g}</span></div>'
+                f'<div class="dvc-bar-track"><div class="dvc-bar-fill dvc-fill-{tone}" style="width:{pct}%"></div></div>'
+                "</div>"
+            )
+
+    alloc_segments: list[tuple[str, int, str]] = []
+    alloc_note = ""
+    if market_slug == "a-share":
+        cap = int((markets.get("a_share") or {}).get("equity_cap_pct") or 40)
+        alloc_segments = [("A股权益上限", cap, "#1d4ed8"), ("短融/国债防盾", 100 - cap, "#0f766e")]
+        alloc_note = f"10 万池：股票 ≤ {cap}k ｜ 债现 ≥ {100 - cap}k ｜ 黄金新仓 0%"
+    elif market_slug == "hk-stock":
+        cap_off = int((markets.get("hk_stock") or {}).get("offshore_equity_cap_pct") or 35)
+        cap_con = int((markets.get("hk_stock") or {}).get("onshore_connect_cap_pct") or 25)
+        alloc_segments = [("港股离岸上限", cap_off, "#1d4ed8"), ("港元货基/短债盾", 100 - cap_off, "#0f766e")]
+        alloc_note = f"离岸 ≤ {cap_off}% / 港股通 ≤ {cap_con}% ｜ 零金新手金槽位暂泊债现（新仓 0%）"
+    elif market_slug == "us-stock":
+        us_m = markets.get("us_stock") or {}
+        eq_p = int(us_m.get("equity_cap_pct") or 28)
+        cash_p = int(us_m.get("cash_tbill_pct") or 62)
+        gold_p = int(us_m.get("gold_hold_pct") or 10)
+        alloc_segments = [
+            ("防弹衣价值股", eq_p, "#1d4ed8"),
+            ("超短美债盾", cash_p, "#0f766e"),
+            ("存量金", gold_p, "#b45309"),
+        ]
+        alloc_note = f"美股 {eq_p}% + 超短债 {cash_p}% + 存量金 {gold_p}%（零金新手转债）= 100%（科技与黄金新仓均 0%）"
+    else:
+        alloc_segments = [("黄金上限", 15, "#b45309"), ("待命债现与非金主池", 85, "#0f766e")]
+        alloc_note = "存量金占家庭资产上限 10%–15%（不追买）｜ 当前红灯 1/4 关，新仓严格 0%"
+
+    alloc_bar_html = "".join(
+        f'<div class="dvc-alloc-seg" style="width:{pct}%;background:{col}" title="{esc(lbl)} {pct}%">'
+        f'<span>{esc(f"{pct}%" if pct <= 18 else f"{lbl} {pct}%")}</span></div>'
+        for lbl, pct, col in alloc_segments
+        if pct > 0
+    )
+
+    us10y_live = _safe_float(((eq_state.get("rates_bonds_core") or {}).get("us_rates") or {}).get("us10y_asia_live_pct")) or _safe_float(gold_snap.get("us10y_live_pct")) or 4.85
+    vix_live = _safe_float(brake.get("vix_live")) or _safe_float(brake.get("vix_close")) or 25.0
+    usdjpy = _safe_float(brake.get("usdjpy_level")) or 159.0
+    hkma = _safe_float((links.get("rates_fx_chain") or {}).get("hkma_agg_bal_hkd_100m")) or 541.0
+
+    gauges = [
+        ("10年期美债", f"{us10y_live:.3f}%", "红线 5.25%", min(100, int(round(us10y_live / 5.25 * 100))), "amber" if us10y_live >= 4.75 else "green"),
+        ("恐慌 VIX", f"{vix_live:.2f}", "红线 30.0", min(100, int(round(vix_live / 30.0 * 100))), "amber" if vix_live >= 24.0 else "green"),
+        ("美元/日元", f"{usdjpy:.2f}", "干预警戒 160", min(100, int(round((usdjpy - 140.0) / 20.0 * 100))), "red" if usdjpy >= 159.0 else "amber"),
+        ("港银总结余", f"{hkma:.0f}亿", "底线 400亿", max(10, min(100, int(round((700.0 - hkma) / 300.0 * 100)))), "amber" if hkma <= 550.0 else "green"),
+    ]
+    gauge_html = "".join(
+        '<div class="dvc-gauge">'
+        f'<div class="dvc-g-top"><span class="dvc-g-lbl">{esc(gl)}</span><strong class="dvc-tone-{gt}">{esc(gv)}</strong></div>'
+        f'<div class="dvc-bar-track"><div class="dvc-bar-fill dvc-fill-{gt}" style="width:{gp}%"></div></div>'
+        f'<div class="dvc-g-sub">{esc(gth)}</div>'
+        "</div>"
+        for gl, gv, gth, gp, gt in gauges
+    )
+
+    left_card = (
+        '<div class="dvc-card">'
+        f'<div class="dvc-card-head">{esc(left_title)}</div>'
+        f'<div class="dvc-score-list">{"".join(score_rows_html)}</div>'
+        "</div>"
+        if score_rows_html
+        else ""
+    )
+
+    return (
+        '<section class="daily-visual-cockpit no-print" aria-label="10秒可视化快读仪表盘">'
+        '<div class="dvc-grid">'
+        f"{left_card}"
+        '<div class="dvc-card">'
+        '<div class="dvc-card-head">💼 钱包仓位配比条 &amp; 全球 4 阀熔断邻近仪</div>'
+        f'<div class="dvc-alloc-bar">{alloc_bar_html}</div>'
+        f'<div class="dvc-alloc-note">{esc(alloc_note)}</div>'
+        f'<div class="dvc-brake-grid">{gauge_html}</div>'
+        "</div>"
+        "</div>"
+        "</section>"
+    )
+
+
+def _enhance_daily_body_visuals(body_html: str) -> str:
+    """Automatically upgrade scenario probability tables ([●○]{10}) and arrow chains into vivid visual blocks."""
+    prob_colors = ["#1d4ed8", "#b45309", "#dc2626", "#0f766e", "#6366f1"]
+
+    def _upgrade_prob_table(match: re.Match[str]) -> str:
+        tbl_html = match.group(0)
+        if not re.search(r"[●○]{10}", tbl_html):
+            return tbl_html
+        rows_found: list[tuple[str, int]] = []
+        for rm in re.finditer(r"<tr[^>]*>(.*?)</tr>", tbl_html, flags=re.DOTALL):
+            row_inner = rm.group(1)
+            tds = re.findall(r"<td[^>]*>(.*?)</td>", row_inner, flags=re.DOTALL)
+            if not tds:
+                continue
+            dm = re.search(r"([●○]{10})", row_inner)
+            if dm:
+                pts = dm.group(1).count("●")
+                if pts > 0:
+                    c1_raw = re.split(r"<br\s*/?>", tds[0], maxsplit=1)[0]
+                    c1 = re.sub(r"<[^>]+>", "", c1_raw).strip()
+                    short_lbl = re.sub(r"^(?:情景\s*[A-D一二三四]\s*[：:]\s*)", "", c1)
+                    short_lbl = short_lbl if len(short_lbl) <= 14 else short_lbl[:13] + "…"
+                    rows_found.append((short_lbl, pts))
+        if not rows_found:
+            return tbl_html
+        total_pts = sum(p for _, p in rows_found)
+        if total_pts <= 0:
+            return tbl_html
+
+        segs = []
+        legends = []
+        for idx, (lbl, pts) in enumerate(rows_found):
+            col = prob_colors[idx % len(prob_colors)]
+            pct = round(pts / total_pts * 100)
+            segs.append(
+                f'<div class="prob-seg" style="width:{pct}%;background:{col}" title="{esc(lbl)} ({pct}%)">'
+                f'<span>{pct}%</span></div>'
+            )
+            legends.append(
+                f'<span class="prob-leg-item"><i style="background:{col}"></i>{esc(lbl)} <strong>{pts}/10 ({pct}%)</strong></span>'
+            )
+
+        def _stylize_dots(dm: re.Match[str]) -> str:
+            raw_d = dm.group(0)
+            spans = "".join(
+                '<span class="pdot pdot-on"></span>' if ch == "●" else '<span class="pdot pdot-off"></span>'
+                for ch in raw_d
+            )
+            return f'<span class="prob-dots" aria-label="{raw_d.count("●")} / 10">{spans}</span>'
+
+        upgraded_tbl = re.sub(r"[●○]{10}", _stylize_dots, tbl_html)
+        ribbon = (
+            '<div class="prob-ribbon-card">'
+            '<div class="prob-ribbon-head"><span>🎯 未来 48 小时四情景概率可视化分布</span>'
+            f'<span class="prob-ribbon-sum">合计 {total_pts}/10（100%）</span></div>'
+            f'<div class="prob-ribbon-bar">{"".join(segs)}</div>'
+            f'<div class="prob-ribbon-legend">{"".join(legends)}</div>'
+            "</div>"
+        )
+        return ribbon + upgraded_tbl
+
+    out = re.sub(
+        r'<div class="table-wrap[^"]*">.*?</table>\s*</div>',
+        _upgrade_prob_table,
+        body_html,
+        flags=re.DOTALL,
+    )
+
+    # 1b. Also upgrade <ul> scenario probability lists containing [●○]{10} (e.g., US compact watch reports)
+    def _upgrade_prob_ul(match: re.Match[str]) -> str:
+        ul_html = match.group(0)
+        if not re.search(r"[●○]{10}", ul_html):
+            return ul_html
+        rows_found: list[tuple[str, int]] = []
+        for lm in re.finditer(r"<li[^>]*>(.*?)</li>", ul_html, flags=re.DOTALL):
+            plain_li = re.sub(r"<[^>]+>", "", lm.group(1)).strip()
+            dm = re.search(r"([●○]{10})", plain_li)
+            if dm:
+                pts = dm.group(1).count("●")
+                if pts > 0:
+                    lbl = re.split(r"[（(：:]", plain_li, maxsplit=1)[0].strip()
+                    lbl = lbl if len(lbl) <= 14 else lbl[:13] + "…"
+                    rows_found.append((lbl, pts))
+        if len(rows_found) < 2:
+            return ul_html
+        total_pts = sum(p for _, p in rows_found)
+        if total_pts <= 0:
+            return ul_html
+        segs = []
+        legends = []
+        for idx, (lbl, pts) in enumerate(rows_found):
+            col = prob_colors[idx % len(prob_colors)]
+            pct = round(pts / total_pts * 100)
+            segs.append(
+                f'<div class="prob-seg" style="width:{pct}%;background:{col}" title="{esc(lbl)} ({pct}%)">'
+                f'<span>{pct}%</span></div>'
+            )
+            legends.append(
+                f'<span class="prob-leg-item"><i style="background:{col}"></i>{esc(lbl)} <strong>{pts}/10 ({pct}%)</strong></span>'
+            )
+
+        def _stylize_dots(dm: re.Match[str]) -> str:
+            raw_d = dm.group(0)
+            spans = "".join(
+                '<span class="pdot pdot-on"></span>' if ch == "●" else '<span class="pdot pdot-off"></span>'
+                for ch in raw_d
+            )
+            return f'<span class="prob-dots" aria-label="{raw_d.count("●")} / 10">{spans}</span>'
+
+        upgraded_ul = re.sub(r"[●○]{10}", _stylize_dots, ul_html)
+        ribbon = (
+            '<div class="prob-ribbon-card">'
+            '<div class="prob-ribbon-head"><span>🎯 情景概率可视化分布</span>'
+            f'<span class="prob-ribbon-sum">合计 {total_pts}/10（100%）</span></div>'
+            f'<div class="prob-ribbon-bar">{"".join(segs)}</div>'
+            f'<div class="prob-ribbon-legend">{"".join(legends)}</div>'
+            "</div>"
+        )
+        return ribbon + upgraded_ul
+
+    out = re.sub(r"<ul[^>]*>.*?</ul>", _upgrade_prob_ul, out, flags=re.DOTALL)
+
+    def _upgrade_flow_para(match: re.Match[str]) -> str:
+        full_p = match.group(0)
+        qm = re.search(r"「([^」]{20,})」", full_p)
+        if not qm or qm.group(1).count("→") < 2:
+            return full_p
+        raw_chain = qm.group(1)
+        steps = [s.strip() for s in raw_chain.split("→") if s.strip()]
+        if len(steps) < 3 or len(steps) > 6:
+            return full_p
+        nodes: list[str] = []
+        for idx, st in enumerate(steps):
+            nodes.append(
+                f'<div class="ifc-node"><span class="ifc-step">第 {idx + 1} 环</span>'
+                f'<span class="ifc-txt">{st}</span></div>'
+            )
+            if idx + 1 < len(steps):
+                nodes.append('<span class="ifc-arrow" aria-hidden="true">→</span>')
+        return (
+            '<div class="inline-flow-wrap">'
+            '<div class="inline-flow-head">🧭 跨资产因果传导可视化链路</div>'
+            f'<div class="inline-flow-chain">{"".join(nodes)}</div>'
+            "</div>"
+        )
+
+    out = re.sub(
+        r"<p>(?:<[^>]+>|\s)*[^<]{0,24}跨资产传导.*?</p>",
+        _upgrade_flow_para,
+        out,
+        flags=re.DOTALL,
+    )
+    return out
 
 
 def build_cockpit_page(
@@ -10371,15 +10888,35 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 item.session_label,
             )
             daily_kline_strip = _render_daily_kline_strip(item.market, multi_idx, base_prefix="../")
+            enhanced_body = _enhance_daily_body_visuals(item.body_html)
+            visual_cockpit = (
+                _render_daily_visual_cockpit(item.market, eq_state, gold_snap, item.body_html)
+                if is_latest
+                else ""
+            )
+            market_news_html = ""
+            page_toc = list(item.toc)
+            if is_latest or (
+                isinstance(policy_calendar_data, dict)
+                and f"{item.date_str}_{item.hhmm}{f'_r{item.rev}' if item.rev > 1 else ''}"
+                == policy_calendar_data.get("edition_id")
+            ):
+                market_news_html, mnews_cnt = _render_market_news_radar(
+                    item.market, policy_calendar_data, eq_state, gold_tier0_locked
+                )
+                if mnews_cnt > 0:
+                    page_toc.append((2, "sec-market-news", f"本市场全部重要新闻（{mnews_cnt} 条）"))
             doc_html = render_doc_with_toc(
                 toolbar_html=toolbar_html,
                 cover_html=item.cover_html,
-                body_html=item.body_html,
+                body_html=enhanced_body,
                 footer_note=item.footer_note,
-                toc_items=item.toc,
+                toc_items=page_toc,
                 doc_kind="daily",
                 disclosure_html=disclosure_inline,
                 kline_strip_html=daily_kline_strip,
+                visual_cockpit_html=visual_cockpit,
+                market_news_html=market_news_html,
             )
             full_page = render_page_shell(
                 title=item.title,

@@ -1716,15 +1716,16 @@ class AtomicRsiAuditAndInspectTests(unittest.TestCase):
                 with self.subTest(banned_fn=banned_fn):
                     self.assertIsNotNone(psd.BANNED_INTERNAL_RE.search(f"禁止输出 {banned_fn}"))
 
-            # 5. Live repo --inspect policy-calendar succeeds and stays compact (< 15 KB)
+            # 5. Live repo --inspect policy-calendar succeeds and stays compact (< 30 KB even with uncapped briefs)
             real_root = Path(__file__).resolve().parent.parent
             live_buf = StringIO()
             with patch.object(psd, "REPO_ROOT", real_root), redirect_stdout(live_buf):
                 rc_live = psd.main(["--inspect", "policy-calendar"])
             self.assertEqual(rc_live, 0)
-            self.assertLess(len(live_buf.getvalue().encode("utf-8")), 15000)
+            self.assertLess(len(live_buf.getvalue().encode("utf-8")), 30000)
             live_summary = json.loads(live_buf.getvalue())
-            self.assertGreaterEqual(live_summary["total_briefs"], 3)
+            self.assertGreaterEqual(live_summary["total_briefs"], 6)
+            self.assertTrue(6 <= live_summary["home_featured_briefs"] <= 9)
             self.assertEqual(live_summary["total_events"], 17)
 
 

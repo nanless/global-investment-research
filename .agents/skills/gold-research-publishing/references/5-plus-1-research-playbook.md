@@ -66,7 +66,7 @@
 - **必查清单**：
   - 霍尔木兹海峡/伊朗/中东/UKMTO 航运实况（**兼顾“局势升级避险”与“停火油价大跌反推实际利率上行”双向路径**）；
   - 俄乌/北约、中美经贸关税与科技出口管制、白宫/国会/财政部/联储官员最新讲话**原文与精确发稿时点**；
-  - **1–2 条一手官源政策/地缘要闻精读**及 **4 列未来 7–14 天全北京时间财经与政策排雷日历**（底层同步 14–30 天 `equity/state/policy_calendar.json` 与门户 `#sec-policy-calendar`，纯中文级别徽章如重磅/重要，零裸 `P0`/`P1`），覆盖宏观数据、央行会议、期权交割与地缘风险。
+  - **全量重要一手官源政策/地缘/央行购金要闻（无数量上限）**及 **4 列未来 7–14 天全北京时间财经与政策排雷日历**（底层同步 14–30 天 `equity/state/policy_calendar.json`：首页 `#sec-policy-calendar` 精选 6–9 条【`home_featured: true`】，单市场 `#sec-market-news` 按 `affected_markets` 无上限全量呈现，纯中文级别徽章如重磅/重要，零裸 `P0`/`P1`），覆盖宏观数据、央行会议、期权交割与地缘风险。
 
 ### 黄金专线 5（一体化第 ⑥ 路核心）：金融论坛、社交网络、预测市场与谣言排雷
 - **信源**：X（Twitter）、Reddit（`r/Gold`, `r/Silverbugs`, `r/WallStreetBets`, `r/Economics`, `r/investing`）、雪球、东方财富股吧、集思录、淘股吧、连登、微博财经、知乎、Seeking Alpha、ZeroHedge、Polymarket、Kalshi。
