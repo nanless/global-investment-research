@@ -37,7 +37,7 @@
      `小白词典`, `直接抄`, `蠢事`, `1分钟定心丸`, `1 分钟定心丸`, `保命铁律`（平等温和的「3 分钟速读结论」「关键词白话速查」不仅允许而且鼓励使用！）
    - *(历史旧刊 `< 2026-11-26_1800` 保持向后兼容。)*
 2. **全篇内部工程词、版本号与文件名硬拦（扫描 Layer 0–3 全部正文与全部组件 JSON）**：
-   - `_INTERNAL_FILENAME_LEAK_RE` 全篇阻断：`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`、`market_calendar.json`、`_edition_patch.json`、`_ledger_patch.json`、`_rsi_patch.json`、`_audit_patch.json`、`_rollover_patch.json`、`_archive_patch.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`unified-edition.prompt.md`、`DAILY_FORMAT_SPEC.md`、`DAILY_REPORT_SPEC.md`、`AGENTS.md`、`GEMINI.md`、`SKILL.md`、`patch_state_dbs.py`/`svg_geometry.py`/`fetch_kline_data.py` 等任意 `*.py` 脚本名、`V[2567].\d+`、`Subagent(s)`、`红队`、`法证`。
+   - `_INTERNAL_FILENAME_LEAK_RE` 全篇阻断：`master_snapshot.json`、`data_snapshot.json`、`market_state.json`、`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`、`policy_calendar.json`、`market_calendar.json`、`_edition_patch.json`、`_ledger_patch.json`、`_rsi_patch.json`、`_audit_patch.json`、`_rollover_patch.json`、`_archive_patch.json`、`audit_ledger.md`、`RSI_PLAYBOOK(.md)`、`rsi_metrics.json`、`sidecar.json`、`permissions.json`、`unified-edition.prompt.md`、`DAILY_FORMAT_SPEC.md`、`DAILY_REPORT_SPEC.md`、`AGENTS.md`、`GEMINI.md`、`SKILL.md`、`patch_state_dbs.py`/`svg_geometry.py`/`fetch_kline_data.py`/`realtime_monitor.py` 等任意 `*.py` 脚本名、`V[2567].\d+`、`Subagent(s)`、`红队`、`法证`。
 3. **裸 HTML 标签泄露检查**：正文代码块外 + 所有组件 JSON 内禁止出现未转义的 `div`/`span`/`table`/`tr`/`td`/`th`/`svg`/`rect`/`path`/`p`/`ul`/`ol`/`li`/`script`/`style`/`iframe`/`img`/`h1–h6`/`font`/`center` 等标签（组件内仅允许 `<br/>`、`<strong>`、`<code>`）。
 
 ### Gate 2：克制理性语调与感叹号红线
@@ -87,4 +87,4 @@
 1. **双快照解耦与惰性加载**：日常只更新 `data_snapshot.json`（跨项目 SSOT 唯一写入权），常规班次仅惰性读取对称结构的 `master_snapshot.json` 核验 5 大触发条件，命中时才全量读取并同步更新主报告正文与 `MASTER_BASELINE`；
 2. **外置长周期日历与抗阻塞校验**：`market_calendar.json` 已延展至 **`2027-06-30`**，集中维护美/中/港/欧/英/日/印休市叠加（A/B/C/GLOBAL）、半日市、独立 Cboe 现货 VIX 例外、四大央行议息、BCOM/GSCI 调仓及 `2027-03-14` 北美切换夏令时；覆盖硬底线 30 天（`<60 天` 自动提示展期）、核证有效期 90 天；
 3. **月度账本归档**：跨月后写紧凑 `gold/daily/_archive_patch.json` 并调用预授权 `scripts/patch_state_dbs.py --archive-gold-ledgers`，将 `daily/AUDIT_LOG.md` 与 `daily/CHANGELOG.md` 上月条目无损归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`（与发布器历史非空行保序校验兼容），防止单账本无限膨胀；
-4. **静态站统一验收**：所有源稿通过 `lint_readability.py --strict` 后，先执行 `scripts/fetch_kline_data.py --scope all` 刷新全市场 K 线分片，再由 `scripts/publish_site.py`（或排障时独立调用 `scripts/build_site.py --out _site` + `scripts/lint_site.py _site --strict`）执行全站渲染与 S1–S7 安全验收。
+4. **静态站统一验收**：所有源稿通过 `lint_readability.py --strict` 后，先执行 `scripts/fetch_kline_data.py --scope all` 刷新全市场 480+ 标的静态 K 线分片，再由 `scripts/publish_site.py`（或排障时独立调用 `scripts/build_site.py --out _site` + `scripts/lint_site.py _site --strict`）执行全站渲染与 S1–S7 安全验收。

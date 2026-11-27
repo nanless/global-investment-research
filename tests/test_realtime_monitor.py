@@ -1441,25 +1441,82 @@ class TestMonitorStateStore(unittest.TestCase):
     def test_p1_daily_cap_6_and_p0_bypass(self) -> None:
         store = self._new_store()
         t0 = _cst(2026, 11, 25, 10, 0)
+        domains = ("cn_pboc", "cn_fiscal", "cn_csrc", "hk_peg_hkma", "us_fed_fomc", "us_macro_data")
 
-        for i in range(6):
-            sig = _signal(signal_id=f"p1-{i}", cluster_key=f"cn_pboc:c{i}", severity="P1")
+        for i, dom in enumerate(domains):
+            sig = _signal(signal_id=f"p1-{i}", cluster_key=f"{dom}:c{i}", domain_id=dom, severity="P1")
             ok, reason = store.evaluate_dispatch(sig, t0 + timedelta(minutes=i))
             self.assertEqual((ok, reason), (True, "dispatched"))
             store.record_signal(sig, "dispatched", t0 + timedelta(minutes=i))
 
-        # 7th P1 on same day -> suppressed_daily_cap
-        sig7 = _signal(signal_id="p1-6", cluster_key="cn_pboc:c6", severity="P1")
+        # 7th P1 on same day (even distinct domain) -> suppressed_daily_cap
+        sig7 = _signal(signal_id="p1-6", cluster_key="cn_tariff:c6", domain_id="cn_tariff", severity="P1")
         self.assertEqual(store.evaluate_dispatch(sig7, t0 + timedelta(minutes=10)), (False, "suppressed_daily_cap"))
 
         # P0 on same day still dispatches
-        sig_p0 = _signal(signal_id="p0-1", cluster_key="crisis_breaker:p0", severity="P0", score=92)
+        sig_p0 = _signal(signal_id="p0-1", cluster_key="crisis_breaker:p0", domain_id="crisis_breaker", severity="P0", score=92)
         self.assertEqual(store.evaluate_dispatch(sig_p0, t0 + timedelta(minutes=11)), (True, "dispatched"))
 
         # Next CST day -> P1 quota resets
         next_day = _cst(2026, 11, 26, 9, 30)
-        sig_next = _signal(signal_id="p1-next", cluster_key="cn_pboc:next", severity="P1")
+        sig_next = _signal(signal_id="p1-next", cluster_key="cn_pboc:next", domain_id="cn_pboc", severity="P1")
         self.assertEqual(store.evaluate_dispatch(sig_next, next_day), (True, "dispatched"))
+
+    def test_per_domain_p1_cooldown_and_routine_noise_filter(self) -> None:
+        store = self._new_store()
+        t0 = _cst(2026, 11, 25, 10, 0)
+
+        s1 = _signal(signal_id="d1", cluster_key="cn_csrc:1", domain_id="cn_csrc", severity="P1")
+        self.assertEqual(store.evaluate_dispatch(s1, t0), (True, "dispatched"))
+        store.record_signal(s1, "dispatched", t0)
+
+        # Second distinct cluster in SAME domain within 30 min -> suppressed_domain_cooldown
+        s2 = _signal(signal_id="d2", cluster_key="cn_csrc:2", domain_id="cn_csrc", severity="P1")
+        self.assertEqual(store.evaluate_dispatch(s2, t0 + timedelta(minutes=10)), (False, "suppressed_domain_cooldown"))
+
+        # P0 in same domain bypasses domain cooldown
+        s_p0 = _signal(signal_id="d3", cluster_key="cn_csrc:p0", domain_id="cn_csrc", severity="P0", score=88)
+        self.assertEqual(store.evaluate_dispatch(s_p0, t0 + timedelta(minutes=10)), (True, "dispatched"))
+
+        # After 31 min -> same-domain P1 allowed again
+        self.assertEqual(store.evaluate_dispatch(s2, t0 + timedelta(minutes=31)), (True, "dispatched"))
+
+        # Routine diplomatic / administrative noise filtered out unless hard catalyst present
+        self.assertIsNone(rm.match_policy_domain("中国证监会主席会见外宾并出席开幕式"))
+        self.assertIsNone(rm.match_policy_domain("中国证监会通报编造传播误导性信息及行政处罚案例"))
+        self.assertIsNone(rm.match_policy_domain("国家发改委发布个人数字身份管理试点通知"))
+        # Hard catalyst overrides courtesy/meeting phrasing
+        matched = rm.match_policy_domain("中国人民银行行长会见外宾时宣布全面降准50个基点")
+        self.assertIsNotNone(matched)
+        self.assertEqual(matched.domain_id, "cn_pboc")
+
+    def test_cold_start_bootstrap_caps_first_poll_to_2_alerts(self) -> None:
+        now_dt = _cst(2026, 11, 27, 14, 0)
+        now_ts = now_dt.timestamp()
+        store = self._new_store()
+        # 4 distinct official high-score news items across 4 distinct domains on an EMPTY seen_items DB
+        items = [
+            rm.NewsItem("gov_yaowen", "国务院常务会议部署更加积极的财政政策", "国常会定调超常规逆周期调节", now_ts - 60, "https://www.gov.cn/1", 1, True),
+            rm.NewsItem("pbc_news", "中国人民银行宣布全面降准50个基点", "中国人民银行释放长期流动性", now_ts - 120, "https://www.pbc.gov.cn/2", 1, True),
+            rm.NewsItem("fed_press", "Federal Reserve FOMC emergency rate cut statement", "Federal Reserve cuts rates sharply", now_ts - 180, "https://www.federalreserve.gov/3", 1, True),
+            rm.NewsItem("hkma_rss", "HKMA intervenes at 7.85 weak-side convertibility undertaking", "HKMA 弱方兑换保证 银行体系总结余", now_ts - 240, "https://www.hkma.gov.hk/4", 1, True),
+        ]
+        quotes = {
+            "sh000001": rm.QuoteTick("sh000001", "上证", 3600.0, 3500.0, 2.86),
+            "sh000300": rm.QuoteTick("sh000300", "沪深300", 4060.0, 3900.0, 4.10),
+            "rt_hkHSI": rm.QuoteTick("rt_hkHSI", "恒指", 22700.0, 22000.0, 3.18),
+            "US10Y": rm.QuoteTick("US10Y", "US10Y", 4.95, 4.80, 3.12, change_bp=15.0, is_yield=True),
+        }
+        with mock.patch.object(rm, "poll_all_feeds", return_value=(items, {})), mock.patch.object(
+            rm, "poll_live_quotes", return_value=(quotes, {})
+        ), mock.patch.object(rm, "detect_market_first_anomalies", return_value=[]), mock.patch.object(
+            rm, "detect_upcoming_calendar_alerts", return_value=[]
+        ):
+            summary = rm.run_once(store=store, dry_run=True, enable_llm=False, now_cst=now_dt)
+        self.assertGreaterEqual(summary["signals_scored"], 4)
+        self.assertLessEqual(summary["dispatched_count"], 2)
+        sup_reasons = [s["reason"] for s in summary["suppressed_preview"]]
+        self.assertIn("suppressed_cold_start", sup_reasons)
 
     def test_quiet_hours_2330_to_0715_cst(self) -> None:
         store = self._new_store()

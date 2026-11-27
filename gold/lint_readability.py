@@ -74,6 +74,7 @@ SCORECARD_BANNED_RE = re.compile(
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"master_snapshot\.json|data_snapshot\.json|market_state\.json|permissions\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
+    r"edition-runs\.sqlite3|realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|unified-edition\.prompt\.md|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|"
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
@@ -87,6 +88,7 @@ SCORECARD_BANNED_RE = re.compile(
 _INTERNAL_FILENAME_LEAK_RE = re.compile(
     r"(?:master_snapshot\.json|data_snapshot\.json|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
+    r"edition-runs\.sqlite3|realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"audit_ledger\.md|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
     r"svg_geometry\.py|patch_state_dbs\.py|realtime_monitor\.py|wechat_notify\.py|_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"

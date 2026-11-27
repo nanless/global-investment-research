@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Independent Pre-Flight & Pure-Web Forensic Quality Linter for Global Equity Research
-(A-Share × HK-Stock × US-Stock + 8–12 Multi-Asset Channels + ETF Universe + 231-Stock Deep Dossiers
+(A-Share × HK-Stock × US-Stock + 12 Multi-Asset Channels + 181+ ETF Universe + 231-Stock Deep Dossiers
 + Cross-Project Gold SSOT Consistency Gate).
 
 Usage:
@@ -100,7 +100,11 @@ _ETF_ALLOWED_REGIONS = frozenset({
     "global",
 })
 _COCKPIT_ALLOWED_LAMPS = frozenset({"red", "yellow", "green"})
-_POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "JP", "GLOBAL"})
+_POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "UK", "JP", "GLOBAL"})
+POLICY_CAL_REGIONS = _POLICY_CAL_ALLOWED_REGIONS
+_BARE_IMPACT_TIER_RE = re.compile(r"(?<![A-Za-z0-9])P[0-2](?![A-Za-z0-9])")
+_POLICY_CAL_PROSE_SKIP_KEYS = frozenset({"impact_tier", "event_id", "brief_id", "id", "source_url"})
+_BARE_TENOR_RE = re.compile(r"(?<![A-Za-z0-9_.$€£¥￥])(?:1M|9M|2Y|3Y|5Y|10Y)(?![A-Za-z0-9_])")
 _POLICY_CAL_ALLOWED_CATEGORIES = frozenset({
     "top_politics",
     "central_bank",
@@ -234,7 +238,7 @@ _GOLD_DOSSIER_KEYS = frozenset({
     "a-share:601899", "a-share:600547", "a-share:600489", "a-share:600988", "a-share:000975",
     "hk-stock:02899.HK", "hk-stock:06181.HK", "hk-stock:01929.HK", "hk-stock:01818.HK",
     "hk-stock:01787.HK", "hk-stock:02099.HK",
-    "us-stock:NEM", "us-stock:GOLD", "us-stock:AEM", "us-stock:WPM", "us-stock:FNV",
+    "us-stock:NEM", "us-stock:B", "us-stock:AEM", "us-stock:WPM", "us-stock:FNV",
 })
 _GOLD_BASE_ROLE_RE = re.compile(r"(?:当下底座|绿色底座|🟢)")
 _GOLD_BASE_NEGATION_RE = re.compile(
@@ -279,7 +283,7 @@ _CRYPTO_NEGATION_GUARD_RE = re.compile(
     r"(?:严禁|禁止|切忌|勿|不得|不可|不能|不宜|不要|绝不|决不|暂不|停止|拒绝|不允许|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
     r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相)*"
     r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|低吸|布局|上车|交易|炒作|买卖|持有)[/／、与及和或])?[\s“‘「\x22*_]*$"
-    r"|(?:严禁|禁止|不得|切忌|不可|绝不)(?:[^。！？；，,|但可应须宜]{0,14})(?:与|及|和|或|、)[\s“‘「\x22*_]*$"
+    r"|(?:严禁|禁止|不得|切忌|不可|绝不)(?:[^。！？；，,|但可应须宜]{0,14})(?:与|及|和|或|、|/|／)[\s“‘「\x22*_]*$"
     r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?)\s+(?:from\s+)?(?:buy|add|accumulat|allocat|dca|trad)[\w\s]{0,16}$",
     flags=re.IGNORECASE,
 )
@@ -660,9 +664,11 @@ def _check_gate_3b(md_text: str, path: Path, *, is_flagship: bool, meta: dict | 
     if not is_flagship and sort_key >= ALL_MAIN_CUTOVER and DEEP_DOSSIERS_PATH.is_file():
         errs.extend(_check_daily_focus_table_vs_dossiers(body, path.name, market, edition_date=sort_key[0]))
 
-    # 8. Retracted-fact guard on flagship & post-cutover dailies
+    # 8. Retracted-fact guard on flagship & post-cutover dailies + PBOC Doc 42 crypto firewall on dailies
     if is_flagship or sort_key >= ALL_MAIN_CUTOVER:
         errs.extend(_check_retracted_facts(path.name, body))
+    if not is_flagship:
+        errs.extend(_scan_text_for_crypto_buy(path.name, md_text))
 
     # 9. Deterministic G2 / G3 / G5 / G7 / S2 & Phase D editorial depth gates (>= 2026-11-27_0730 dailies)
     if not is_flagship and sort_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]:
@@ -935,6 +941,15 @@ def _check_phase_d_editorial(body: str, filename: str, meta: dict | None) -> tup
                 f"{filename}: Gate R8 主刊加粗文字占比过低 ({bold_pct:.1f}% < 4.5%，避免过度删粗削弱层级)"
             )
 
+    tenor_scan = re.sub(r"```.*?```", "", body, flags=re.DOTALL)
+    tenor_scan = re.sub(r"https?://[^\s)\]>]+", "", tenor_scan)
+    bare_tenors = _BARE_TENOR_RE.findall(tenor_scan)
+    if bare_tenors:
+        warns.append(
+            f"{filename}: Gate R8 存在未转译裸期限缩写 ({len(bare_tenors)} 处): "
+            f"{sorted(set(bare_tenors))}（请改用中文如「前三季度/1月期/2年/10年」）"
+        )
+
     return errs, warns
 
 
@@ -999,7 +1014,10 @@ def _extract_dossier_div_ranges(entry: dict) -> list[tuple[float, float]]:
 
 def _extract_numeric_ranges(text: str) -> list[tuple[float, float]]:
     ranges: list[tuple[float, float]] = []
-    for m in re.finditer(r"(\d[\d,]*(?:\.\d+)?)\s*[–\-~～至]\s*(\d[\d,]*(?:\.\d+)?)", text):
+    for m in re.finditer(
+        r"(?<![\d.])(\d[\d,]*(?:\.\d+)?)\s*[–—\-~～至到]\s*(?:(?:HK|US|CN)?[$￥¥]\s*)?(\d[\d,]*(?:\.\d+)?)(?![\d.]|\s*[xX倍])",
+        text,
+    ):
         lo = float(m.group(1).replace(",", ""))
         hi = float(m.group(2).replace(",", ""))
         ranges.append((min(lo, hi), max(lo, hi)))
@@ -1101,7 +1119,7 @@ def _check_daily_focus_table_vs_dossiers(
                     )
 
             m_anchor = re.search(
-                r"(?:回踩|回调|慢吸|低吸|分批配|观察锚|安全锚|锚)\s*[$¥HK]*\s*(\d[\d,]*(?:\.\d+)?)\s*[–\-~～至]\s*[$¥HK]*\s*(\d[\d,]*(?:\.\d+)?)",
+                r"(?:回踩|回调|慢吸|低吸|分批配|观察锚|安全锚|锚)\s*(?:(?:HK|US|CN)?[$￥¥]\s*)?(\d[\d,]*(?:\.\d+)?)\s*[–—\-~～至到]\s*(?:(?:HK|US|CN)?[$￥¥]\s*)?(\d[\d,]*(?:\.\d+)?)(?![\d.]|\s*[xX倍])",
                 st,
             )
             if m_anchor:
@@ -2051,6 +2069,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                     hits = _BANNED_INTERNAL_RE.findall(sval)
                     if hits:
                         errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
+                    errs.extend(_scan_text_for_crypto_buy(jpath, sval))
                     if not jpath.endswith(".code"):
                         for m_rc in _MA_RESTRICTED_CODES_RE.finditer(sval):
                             win = sval[max(0, m_rc.start() - 40) : min(len(sval), m_rc.end() + 40)]
@@ -2218,6 +2237,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                     hits = _BANNED_INTERNAL_RE.findall(sval)
                     if hits:
                         errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
+                    errs.extend(_scan_text_for_crypto_buy(jpath, sval))
                     errs.extend(_check_retracted_facts(jpath, sval))
                     if enforce_g5_g7 and state_ed_date:
                         errs.extend(_check_shfe_night_close(jpath, sval))
@@ -2405,6 +2425,8 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
 
                     if enforce_g5_g7:
                         errs.extend(_check_dossiers_ah_and_dividends(dossiers, state))
+                for jpath, sval in _walk_json_strings(dd, "deep_dossiers.json"):
+                    errs.extend(_scan_text_for_crypto_buy(jpath, sval))
 
     # 4. policy_calendar.json (validated whenever present; >=14-day horizon enforced on live production state)
     if POLICY_CALENDAR_PATH.exists():
@@ -2617,6 +2639,13 @@ def _check_policy_calendar(
             errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
         if _LOCAL_PATH_RE.search(sval):
             errs.append(f"Gate 4 失败：{jpath} 泄露本机文件系统路径")
+        leaf_key = jpath.rsplit(".", 1)[-1].split("[", 1)[0]
+        if leaf_key not in _POLICY_CAL_PROSE_SKIP_KEYS:
+            m_tier = _BARE_IMPACT_TIER_RE.search(sval)
+            if m_tier:
+                errs.append(
+                    f"Gate 4 失败：{jpath} 正文禁止裸露内部优先级代号 {m_tier.group(0)!r}（请改用纯中文「重磅/重要/关注」）"
+                )
         for m_rc in RESTRICTED_CODES_RE.finditer(sval):
             win = sval[max(0, m_rc.start() - 40) : min(len(sval), m_rc.end() + 40)]
             if not RESTRICTED_WARN_RE.search(win):

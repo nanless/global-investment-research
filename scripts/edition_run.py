@@ -30,6 +30,7 @@ EXTENDED_EQUITY_STATE_FILES = (
     "equity/state/multi_asset_channels.json",
     "equity/state/etf_universe.json",
     "equity/state/deep_dossiers.json",
+    "equity/state/policy_calendar.json",
 )
 LAST_EDITION_WITHOUT_REVIEW = ("2026-11-25", 1800, 2)
 LAST_EDITION_WITHOUT_REVIEW_CLOSURE = ("2026-11-25", 1800, 3)

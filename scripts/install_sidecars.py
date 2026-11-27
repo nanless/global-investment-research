@@ -52,6 +52,11 @@ RETIRED_IDS = frozenset({
     "daily-gold-deep-research", "daily-gold-deep-research-evening",
     "daily-a-us-equity-research", "daily-a-us-equity-research-evening",
 })
+STALE_PREFIXES = ("gir-local-replay-",)
+
+
+def _is_stale_sidecar_id(sidecar_id: str) -> bool:
+    return sidecar_id in RETIRED_IDS or any(sidecar_id.startswith(prefix) for prefix in STALE_PREFIXES)
 
 
 def validate_paths(repo_root: Path, python_bin: str) -> None:
@@ -222,12 +227,12 @@ def atomic_write_text(dest: Path, content: str) -> None:
 
 
 def find_stale_sidecar_dirs(target_dir: Path) -> list[str]:
-    """Only report definitions retired by this project."""
+    """Report sidecar directories retired by this project or left over from local replay runs."""
     if not target_dir.is_dir():
         return []
     stale: list[str] = []
     for entry in sorted(target_dir.iterdir()):
-        if entry.name in RETIRED_IDS and (entry / "sidecar.json").is_file():
+        if _is_stale_sidecar_id(entry.name) and (entry.is_dir() or (entry / "sidecar.json").is_file()):
             stale.append(entry.name)
     return stale
 
@@ -250,6 +255,11 @@ def check_registry(
         return [f"Cannot read Antigravity registry: {exc}"]
 
     problems = []
+    for stale_id in sorted(k for k in entries if _is_stale_sidecar_id(k)):
+        stale_entry = entries.get(stale_id)
+        enabled_flag = isinstance(stale_entry, dict) and stale_entry.get("enabled") is True
+        state_desc = "still enabled" if enabled_flag else "stale entry"
+        problems.append(f"{stale_id}: retired/replay sidecar ({state_desc}) must be removed from Antigravity registry")
     projects_seen = set()
     for sidecar_id, (_, definition) in rendered.items():
         entry = entries.get(sidecar_id, {})

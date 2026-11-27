@@ -48,7 +48,7 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
 _SC3_KEY_RE = re.compile(r"^sctp(\d+)t", re.IGNORECASE)
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _WEBHOOK_KEY_RE = re.compile(r"([?&]key=)([^&\s]+)", re.IGNORECASE)
-_PLACEHOLDER_RE = re.compile(r"REPLACE_WITH_YOUR_|YOUR_[A-Z0-9_]+|^\.\.\.$", re.IGNORECASE)
+_PLACEHOLDER_RE = re.compile(r"REPLACE_WITH_|REPLACE_ME|YOUR_[A-Z0-9_]+|^\.\.\.$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

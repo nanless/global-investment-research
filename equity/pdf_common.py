@@ -623,6 +623,7 @@ _BANNED_INTERNAL_RE = re.compile(
     r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
+    r"edition-runs\.sqlite3|realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"master_snapshot\.json|data_snapshot\.json|unified-edition\.prompt\.md|permissions\.json|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|sidecar\.json|"
     r"RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|Meta-RSI|Recursive\s+Self-Improvement|"

@@ -110,7 +110,7 @@ global-investment-research/
 
 每次 `07:30`、`11:30` 或 `18:00` 一体化班次必须严格按以下顺序在同一会话内串行推进，严禁跳步或乱序：
 
-- **运行锁、单向时间窗、僵尸锁清理与维护者专属运维命令**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` / `--scheduled 1130` / `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `11:25–17:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**严格较早期号**（`0730 < 1130 < 1800`）、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。若历史已推送班次被后续提交覆盖，维护者可人工区分 **`complete-superseded`**（校验目标提交已是现网祖先且仅含授权文件变更后结案为 `complete`）与 **`close-superseded`**（将其标为 `superseded` 释锁）——**两项均为维护者专属手动运维命令，严禁纳入定时自动化 `automations/permissions.json` 白名单**。
+- **运行锁、单向时间窗、僵尸锁清理与维护者专属运维命令**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` / `--scheduled 1130` / `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `11:25–17:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**严格较早期号**（`0730 < 1130 < 1800`）、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。若历史已推送班次被后续提交覆盖，维护者可人工区分 **`complete-superseded`**（校验目标提交已是现网祖先且仅含授权文件变更后结案为 `complete`）与 **`close-superseded`**（将其标为 `failed` 并记录被后续提交替代的 `outcome` 以释锁）——**两项均为维护者专属手动运维命令，严禁纳入定时自动化 `automations/permissions.json` 白名单**。
 - **期号交接与三库同期锁**：当班黄金快照、黄金日报 `DAILY_META`、权益状态、新权益稿 `DAILY_META_JSON` 以及三大扩展数据库（`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。休市沿用旧稿时保留旧稿期号与时间，状态与三大数据库仍刷新至当班期号。
 
 1. **Step 0｜双轨 RSI 经验库冷启动**：
@@ -158,7 +158,7 @@ global-investment-research/
    - 确立 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据」** 三层结构；`DXY`/`COT`/`CDS`/`ERP`/`IRR` 等专业词移出“可不解释裸用”名单，首现配简短白话括注或交由站内术语浮窗解释；禁用居高临下说教口号，鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；
    - 所有公开文件、K 线分片 JSON 与生成静态网页严禁出现本地绝对路径、密钥或内部工程/脚本/RSI 文件名（含 `fetch_kline_data.py`，由 `scripts/lint_site.py` Gate S3 严守）。
 5. **无人值守分级写盘、预授权绝对路径裸命令与三道严格门禁零容忍**：
-   - 定时无人值守任务严禁调用 `edit_file`：中小 Markdown 与轻量快照一律使用 `write_file` 全量写盘；权益三大扩展大 JSON、黄金历史双账本与跨月归档、权益审计账本、三市旗舰月初滚存与双轨 `rsi_metrics.json` 统一走预授权 `scripts/patch_state_dbs.py` 增量原子命令；全市场 K 线刷新统一走预授权 `scripts/fetch_kline_data.py --scope all`；所有命令行操作仅运行 `sidecar.json` 预授权的绝对路径裸命令（56 项无通配符精确授权）；
+   - 定时无人值守任务常规禁 `edit_file`（**仅允许用 `edit_file` 定点修正 `equity/state/_edition_patch.json` 校验报错**）且严禁单轮并行打包 >2 个大型 `write_file`：中小 Markdown 与轻量快照一律使用 `write_file` 全量写盘；权益三大扩展大 JSON 与 `policy_calendar.json`、黄金历史双账本（`_ledger_patch.json` 须将 `<!-- GOLD_EDITION_CHANGELOG ... -->`/`<!-- GOLD_EDITION_REVIEW ... -->` 置于第 1 行）与跨月归档、权益审计账本、三市旗舰月初滚存与双轨 `rsi_metrics.json` 统一走预授权 `scripts/patch_state_dbs.py` 增量原子命令；全市场 K 线刷新统一走预授权 `scripts/fetch_kline_data.py --scope all`；所有命令行操作仅运行 `sidecar.json` 预授权的绝对路径裸命令（56 项无通配符精确授权）；
    - 交付与发布前，以下**三道严格门禁必须全部退出码 `0`（`0 errors, 0 warnings`）**：
      - `python3 gold/lint_readability.py --strict gold/daily/<最新黄金日报>.md`
      - `python3 equity/lint_equity.py --strict`

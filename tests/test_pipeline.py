@@ -650,8 +650,28 @@ class OperationalRegressionTest(unittest.TestCase):
             notes = []
             self.assertEqual(install_sidecars.check_registry(registry, rendered, notes), [])
             self.assertEqual(len(notes), 3)
+
+            # Retired or replay entries lingering in config.json must fail check_registry
+            entries_with_zombie = dict(entries)
+            entries_with_zombie["daily-gold-deep-research"] = {"enabled": True, "projectId": "old-1"}
+            entries_with_zombie["gir-local-replay-20261126-014653"] = {"enabled": False, "projectId": "old-2"}
+            registry.write_text(json.dumps({"sidecars": entries_with_zombie}))
+            zombie_problems = install_sidecars.check_registry(registry, rendered)
+            self.assertTrue(any("daily-gold-deep-research" in p and "still enabled" in p for p in zombie_problems))
+            self.assertTrue(any("gir-local-replay-20261126-014653" in p for p in zombie_problems))
+            registry.write_text(json.dumps({"sidecars": entries}))
+
+            # find_stale_sidecar_dirs must detect gir-local-replay-* dirs as well as retired IDs
+            sc_dir = base / "sidecars"
+            (sc_dir / "gir-local-replay-20261126-014653").mkdir(parents=True)
+            self.assertEqual(install_sidecars.find_stale_sidecar_dirs(sc_dir), ["gir-local-replay-20261126-014653"])
+
             (base / "projects" / "fixture-0.json").unlink()
             self.assertIn("cannot verify", install_sidecars.check_registry(registry, rendered)[0])
+
+            # Policy calendar must be enforced in both edition_run and publish_site extended state files
+            self.assertIn("equity/state/policy_calendar.json", edition_run.EXTENDED_EQUITY_STATE_FILES)
+            self.assertIn("equity/state/policy_calendar.json", publish_site.EXTENDED_EQUITY_STATE_FILES)
 
     def test_collect_data_caveats_sanitizes_internal_paths_and_filters_by_market(self):
         gold_snap = {

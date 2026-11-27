@@ -93,6 +93,7 @@ ETF_ALL_21_KEYS = frozenset({
     "gold_locked",
 })
 ETF_OPTIONAL_KEYS = frozenset({"updated_at", "asset_class", "region"})
+ETF_NEW_REQUIRED_KEYS = ETF_ALL_21_KEYS | frozenset({"asset_class", "region"})
 ETF_ALLOWED_KEYS = ETF_ALL_21_KEYS | ETF_OPTIONAL_KEYS
 ETF_ALLOWED_MARKETS = frozenset({"a-share", "hk-stock", "us-stock", "global", "multi-asset"})
 ETF_ALLOWED_CHANNELS = frozenset({
@@ -136,7 +137,10 @@ DOSSIER_DIMENSIONS = (
     "action_etf",
 )
 
-POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "JP", "GLOBAL"})
+POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "UK", "JP", "GLOBAL"})
+POLICY_CAL_REGIONS = POLICY_CAL_ALLOWED_REGIONS
+BARE_IMPACT_TIER_RE = re.compile(r"(?<![A-Za-z0-9])P[0-2](?![A-Za-z0-9])")
+POLICY_CAL_PROSE_SKIP_KEYS = frozenset({"impact_tier", "event_id", "brief_id", "id", "source_url"})
 POLICY_CAL_ALLOWED_CATEGORIES = frozenset({
     "top_politics",
     "central_bank",
@@ -271,7 +275,7 @@ GOLD_DOSSIER_KEYS = frozenset({
     "a-share:601899", "a-share:600547", "a-share:600489", "a-share:600988", "a-share:000975",
     "hk-stock:02899.HK", "hk-stock:06181.HK", "hk-stock:01929.HK", "hk-stock:01818.HK",
     "hk-stock:01787.HK", "hk-stock:02099.HK",
-    "us-stock:NEM", "us-stock:GOLD", "us-stock:AEM", "us-stock:WPM", "us-stock:FNV",
+    "us-stock:NEM", "us-stock:B", "us-stock:AEM", "us-stock:WPM", "us-stock:FNV",
 })
 GOLD_BASE_ROLE_RE = re.compile(r"(?:当下底座|绿色底座|🟢)")
 GOLD_BASE_NEGATION_RE = re.compile(
@@ -313,7 +317,7 @@ CRYPTO_NEGATION_GUARD_RE = re.compile(
     r"(?:严禁|禁止|切忌|勿|不得|不可|不能|不宜|不要|绝不|决不|暂不|停止|拒绝|不允许|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
     r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相)*"
     r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|低吸|布局|上车|交易|炒作|买卖|持有)[/／、与及和或])?[\s“‘「\x22*_]*$"
-    r"|(?:严禁|禁止|不得|切忌|不可|绝不)(?:[^。！？；，,|但可应须宜]{0,14})(?:与|及|和|或|、)[\s“‘「\x22*_]*$"
+    r"|(?:严禁|禁止|不得|切忌|不可|绝不)(?:[^。！？；，,|但可应须宜]{0,14})(?:与|及|和|或|、|/|／)[\s“‘「\x22*_]*$"
     r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?)\s+(?:from\s+)?(?:buy|add|accumulat|allocat|dca|trad)[\w\s]{0,16}$",
     flags=re.IGNORECASE,
 )
@@ -325,7 +329,7 @@ BANNED_INTERNAL_RE = re.compile(
     r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|svg_geometry\.py|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
-    r"realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
+    r"edition-runs\.sqlite3|realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"master_snapshot\.json|data_snapshot\.json|_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|_rollover_patch\.json|_archive_patch\.json|"
     r"unified-edition\.prompt\.md|permissions\.json|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|sidecar\.json|"
@@ -578,9 +582,12 @@ def _check_sibling_token_drift(
     obj_label: str,
     replaced_tokens: set[str],
     untouched_items: list[tuple[str, str]],
+    *,
+    errors: list[str] | None = None,
 ) -> None:
     if not replaced_tokens:
         return
+    local_errors: list[str] = errors if errors is not None else []
     for field_path, sval in untouched_items:
         for tok in sorted(replaced_tokens):
             if tok.endswith("%"):
@@ -597,10 +604,13 @@ def _check_sibling_token_drift(
             for m in pat.finditer(sval):
                 win = sval[max(0, m.start() - 20) : min(len(sval), m.end() + 20)]
                 if not hist_re.search(win):
-                    raise ValueError(
+                    local_errors.append(
                         f"Stale sibling token drift in {obj_label}.{field_path}: "
                         f"replaced token {tok!r} still appears without historical context -> {win!r}"
                     )
+                    break
+    if errors is None and local_errors:
+        raise ValueError("\n".join(local_errors))
 
 
 def _atomic_write_single(dest: Path, content: bytes) -> None:
@@ -678,18 +688,23 @@ def _merge_multi_asset(
     patch_root: dict[str, Any],
     edition_id: str,
     as_of_date: str,
+    *,
+    errors: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    local_errors: list[str] = errors if errors is not None else []
     ma = copy.deepcopy(orig)
     ma["edition_id"] = edition_id
     ma["as_of_date"] = as_of_date
     if "as_of_label" in patch_root and patch_root["as_of_label"] is not None:
         if not isinstance(patch_root["as_of_label"], str) or not patch_root["as_of_label"].strip():
-            raise ValueError("patch.as_of_label must be a non-empty string.")
-        ma["as_of_label"] = patch_root["as_of_label"].strip()
+            local_errors.append("patch.as_of_label must be a non-empty string.")
+        else:
+            ma["as_of_label"] = patch_root["as_of_label"].strip()
     if "gold_mutex_note" in patch_root and patch_root["gold_mutex_note"] is not None:
         if not isinstance(patch_root["gold_mutex_note"], str) or not patch_root["gold_mutex_note"].strip():
-            raise ValueError("patch.gold_mutex_note must be a non-empty string.")
-        ma["gold_mutex_note"] = patch_root["gold_mutex_note"].strip()
+            local_errors.append("patch.gold_mutex_note must be a non-empty string.")
+        else:
+            ma["gold_mutex_note"] = patch_root["gold_mutex_note"].strip()
 
     sec = patch_root.get("multi_asset_channels")
     stats: dict[str, Any] = {
@@ -699,12 +714,17 @@ def _merge_multi_asset(
         "untouched_channel_siblings": {},
     }
     if sec is None:
+        if errors is None and local_errors:
+            raise ValueError("\n".join(local_errors))
         return ma, stats
     if not isinstance(sec, dict):
-        raise ValueError("patch.multi_asset_channels must be an object.")
+        local_errors.append("patch.multi_asset_channels must be an object.")
+        if errors is None and local_errors:
+            raise ValueError("\n".join(local_errors))
+        return ma, stats
     unknown_sec = set(sec.keys()) - ALLOWED_MULTI_ASSET_PATCH_KEYS
     if unknown_sec:
-        raise ValueError(
+        local_errors.append(
             f"Unknown key(s) in multi_asset_channels patch: {sorted(unknown_sec)} "
             f"(allowed: {sorted(ALLOWED_MULTI_ASSET_PATCH_KEYS)})"
         )
@@ -712,142 +732,167 @@ def _merge_multi_asset(
     top_upd = sec.get("top_level_updates")
     if top_upd is not None:
         if not isinstance(top_upd, dict):
-            raise ValueError("multi_asset_channels.top_level_updates must be an object.")
-        if "channels" in top_upd:
-            raise ValueError("Use multi_asset_channels.channels_patch instead of replacing top-level 'channels'.")
-        for k, v in top_upd.items():
-            ma[k] = copy.deepcopy(v)
-            stats["top_keys_updated"] += 1
+            local_errors.append("multi_asset_channels.top_level_updates must be an object.")
+        else:
+            if "channels" in top_upd:
+                local_errors.append("Use multi_asset_channels.channels_patch instead of replacing top-level 'channels'.")
+            for k, v in top_upd.items():
+                if k == "channels":
+                    continue
+                ma[k] = copy.deepcopy(v)
+                stats["top_keys_updated"] += 1
 
     ch_patch = sec.get("channels_patch")
     if ch_patch is not None:
         if not isinstance(ch_patch, dict):
-            raise ValueError("multi_asset_channels.channels_patch must be an object keyed by channel id.")
-        channels = ma.get("channels")
-        if not isinstance(channels, list):
-            raise ValueError("multi_asset_channels.json missing 'channels' list.")
-        by_id = {ch.get("id"): ch for ch in channels if isinstance(ch, dict) and isinstance(ch.get("id"), str)}
-        for cid, upd in ch_patch.items():
-            if cid not in REQUIRED_CHANNEL_SET:
-                raise ValueError(f"Unknown channel id in channels_patch: {cid!r} (must be one of 12 standard IDs).")
-            if cid not in by_id:
-                raise ValueError(f"Channel {cid!r} not found in existing multi_asset_channels.json.")
-            if not isinstance(upd, dict):
-                raise ValueError(f"channels_patch[{cid!r}] must be an object.")
-            target_ch = by_id[cid]
-            orig_ch = copy.deepcopy(target_ch)
-            ch_old_tokens: set[str] = set()
-            ch_new_tokens: set[str] = set()
-            touched_top_keys: set[str] = set()
-            touched_product_fields: dict[str, set[str]] = {}
-            product_token_diffs: list[tuple[str, set[str], set[str]]] = []
-            stats["channels_patched"] += 1
-            for k, v in upd.items():
-                if k == "id":
-                    if v != cid:
-                        raise ValueError(f"Cannot change channel id {cid!r} -> {v!r}.")
-                    continue
-                if k == "products_upsert":
-                    touched_top_keys.add("products")
-                    if not isinstance(v, list):
-                        raise ValueError(f"channels_patch[{cid!r}].products_upsert must be a list.")
-                    prods = target_ch.setdefault("products", [])
-                    if not isinstance(prods, list):
-                        raise ValueError(f"Existing channel {cid!r}.products is not a list.")
-                    for pi, p_upd in enumerate(v):
-                        if not isinstance(p_upd, dict) or not isinstance(p_upd.get("code"), str) or not p_upd["code"].strip():
-                            raise ValueError(
-                                f"channels_patch[{cid!r}].products_upsert[{pi}] must be an object with non-empty 'code'."
-                            )
-                        p_key = p_upd["code"].strip().upper()
-                        existing = next(
-                            (p for p in prods if isinstance(p, dict) and str(p.get("code", "")).strip().upper() == p_key),
-                            None,
+            local_errors.append("multi_asset_channels.channels_patch must be an object keyed by channel id.")
+        else:
+            channels = ma.get("channels")
+            if not isinstance(channels, list):
+                local_errors.append("multi_asset_channels.json missing 'channels' list.")
+            else:
+                by_id = {ch.get("id"): ch for ch in channels if isinstance(ch, dict) and isinstance(ch.get("id"), str)}
+                for cid, upd in ch_patch.items():
+                    if cid not in REQUIRED_CHANNEL_SET:
+                        local_errors.append(
+                            f"Unknown channel id in channels_patch: {cid!r} (must be one of 12 standard IDs)."
                         )
-                        if existing is not None:
-                            p_touched = touched_product_fields.setdefault(p_key, set())
-                            p_old: set[str] = set()
-                            p_new: set[str] = set()
-                            for pk, pv in p_upd.items():
-                                if pk != "code":
-                                    p_old |= _extract_dynamic_tokens(existing.get(pk))
-                                    p_new |= _extract_dynamic_tokens(pv)
-                                    p_touched.add(pk)
-                                existing[pk] = copy.deepcopy(pv)
-                            product_token_diffs.append((p_key, p_old, p_new))
-                        else:
-                            for req_f in ("code", "name", "metric", "fee", "note"):
-                                if not isinstance(p_upd.get(req_f), str) or not p_upd[req_f].strip():
-                                    raise ValueError(
-                                        f"New product in channels_patch[{cid!r}].products_upsert[{pi}] missing non-empty {req_f!r}."
-                                    )
-                            prods.append(copy.deepcopy(p_upd))
-                        stats["products_upserted"] += 1
-                elif k == "products_remove":
-                    touched_top_keys.add("products")
-                    if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
-                        raise ValueError(f"channels_patch[{cid!r}].products_remove must be a list of product codes.")
-                    rem_keys = {x.strip().upper() for x in v}
-                    prods = target_ch.get("products", [])
-                    for p in prods:
-                        if isinstance(p, dict) and str(p.get("code", "")).strip().upper() in rem_keys:
-                            ch_old_tokens |= _extract_dynamic_tokens(p)
-                    target_ch["products"] = [
-                        p for p in prods if not (isinstance(p, dict) and str(p.get("code", "")).strip().upper() in rem_keys)
-                    ]
-                else:
-                    touched_top_keys.add(k)
-                    ch_old_tokens |= _extract_dynamic_tokens(orig_ch.get(k))
-                    ch_new_tokens |= _extract_dynamic_tokens(v)
-                    target_ch[k] = copy.deepcopy(v)
-
-            replaced_tokens = ch_old_tokens - ch_new_tokens
-            untouched_strings: list[tuple[str, str]] = []
-            for sk, sv in target_ch.items():
-                if sk in CHANNEL_META_KEYS:
-                    continue
-                if sk not in touched_top_keys:
-                    untouched_strings.extend(_walk_json_strings(sv, sk))
-                elif sk == "products" and "products" not in upd and isinstance(sv, list):
-                    for pi, prod in enumerate(sv):
-                        if not isinstance(prod, dict):
+                        continue
+                    if cid not in by_id:
+                        local_errors.append(f"Channel {cid!r} not found in existing multi_asset_channels.json.")
+                        continue
+                    if not isinstance(upd, dict):
+                        local_errors.append(f"channels_patch[{cid!r}] must be an object.")
+                        continue
+                    target_ch = by_id[cid]
+                    orig_ch = copy.deepcopy(target_ch)
+                    ch_old_tokens: set[str] = set()
+                    ch_new_tokens: set[str] = set()
+                    touched_top_keys: set[str] = set()
+                    touched_product_fields: dict[str, set[str]] = {}
+                    product_token_diffs: list[tuple[str, set[str], set[str]]] = []
+                    stats["channels_patched"] += 1
+                    for k, v in upd.items():
+                        if k == "id":
+                            if v != cid:
+                                local_errors.append(f"Cannot change channel id {cid!r} -> {v!r}.")
                             continue
-                        pk_norm = str(prod.get("code", "")).strip().upper()
-                        t_fields = touched_product_fields.get(pk_norm)
-                        if t_fields is None:
-                            untouched_strings.extend(_walk_json_strings(prod, f"products[{pi}]"))
+                        if k == "products_upsert":
+                            touched_top_keys.add("products")
+                            if not isinstance(v, list):
+                                local_errors.append(f"channels_patch[{cid!r}].products_upsert must be a list.")
+                                continue
+                            prods = target_ch.setdefault("products", [])
+                            if not isinstance(prods, list):
+                                local_errors.append(f"Existing channel {cid!r}.products is not a list.")
+                                continue
+                            for pi, p_upd in enumerate(v):
+                                if not isinstance(p_upd, dict) or not isinstance(p_upd.get("code"), str) or not p_upd["code"].strip():
+                                    local_errors.append(
+                                        f"channels_patch[{cid!r}].products_upsert[{pi}] must be an object with non-empty 'code'."
+                                    )
+                                    continue
+                                p_key = p_upd["code"].strip().upper()
+                                existing = next(
+                                    (p for p in prods if isinstance(p, dict) and str(p.get("code", "")).strip().upper() == p_key),
+                                    None,
+                                )
+                                if existing is not None:
+                                    p_touched = touched_product_fields.setdefault(p_key, set())
+                                    p_old: set[str] = set()
+                                    p_new: set[str] = set()
+                                    for pk, pv in p_upd.items():
+                                        if pk != "code":
+                                            p_old |= _extract_dynamic_tokens(existing.get(pk))
+                                            p_new |= _extract_dynamic_tokens(pv)
+                                            p_touched.add(pk)
+                                        existing[pk] = copy.deepcopy(pv)
+                                    product_token_diffs.append((p_key, p_old, p_new))
+                                else:
+                                    missing_req = [
+                                        req_f for req_f in ("code", "name", "metric", "fee", "note")
+                                        if not isinstance(p_upd.get(req_f), str) or not p_upd[req_f].strip()
+                                    ]
+                                    if missing_req:
+                                        for req_f in missing_req:
+                                            local_errors.append(
+                                                f"New product in channels_patch[{cid!r}].products_upsert[{pi}] missing non-empty {req_f!r}."
+                                            )
+                                        continue
+                                    prods.append(copy.deepcopy(p_upd))
+                                stats["products_upserted"] += 1
+                        elif k == "products_remove":
+                            touched_top_keys.add("products")
+                            if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+                                local_errors.append(f"channels_patch[{cid!r}].products_remove must be a list of product codes.")
+                                continue
+                            rem_keys = {x.strip().upper() for x in v}
+                            prods = target_ch.get("products", [])
+                            for p in prods:
+                                if isinstance(p, dict) and str(p.get("code", "")).strip().upper() in rem_keys:
+                                    ch_old_tokens |= _extract_dynamic_tokens(p)
+                            target_ch["products"] = [
+                                p for p in prods if not (isinstance(p, dict) and str(p.get("code", "")).strip().upper() in rem_keys)
+                            ]
                         else:
+                            touched_top_keys.add(k)
+                            ch_old_tokens |= _extract_dynamic_tokens(orig_ch.get(k))
+                            ch_new_tokens |= _extract_dynamic_tokens(v)
+                            target_ch[k] = copy.deepcopy(v)
+
+                    replaced_tokens = ch_old_tokens - ch_new_tokens
+                    untouched_strings: list[tuple[str, str]] = []
+                    for sk, sv in target_ch.items():
+                        if sk in CHANNEL_META_KEYS:
+                            continue
+                        if sk not in touched_top_keys:
+                            untouched_strings.extend(_walk_json_strings(sv, sk))
+                        elif sk == "products" and "products" not in upd and isinstance(sv, list):
+                            for pi, prod in enumerate(sv):
+                                if not isinstance(prod, dict):
+                                    continue
+                                pk_norm = str(prod.get("code", "")).strip().upper()
+                                t_fields = touched_product_fields.get(pk_norm)
+                                if t_fields is None:
+                                    untouched_strings.extend(_walk_json_strings(prod, f"products[{pi}]"))
+                                else:
+                                    for pf, pval in prod.items():
+                                        if pf != "code" and pf not in t_fields:
+                                            untouched_strings.extend(_walk_json_strings(pval, f"products[{pi}].{pf}"))
+                    _check_sibling_token_drift(
+                        f"multi_asset_channels[{cid}]", replaced_tokens, untouched_strings, errors=local_errors
+                    )
+
+                    if product_token_diffs and isinstance(target_ch.get("products"), list):
+                        merged_prod_old: dict[str, set[str]] = {}
+                        merged_prod_new: dict[str, set[str]] = {}
+                        for p_key, p_old, p_new in product_token_diffs:
+                            merged_prod_old.setdefault(p_key, set()).update(p_old)
+                            merged_prod_new.setdefault(p_key, set()).update(p_new)
+                        for pi, prod in enumerate(target_ch["products"]):
+                            if not isinstance(prod, dict):
+                                continue
+                            pk_norm = str(prod.get("code", "")).strip().upper()
+                            if pk_norm not in merged_prod_old:
+                                continue
+                            p_replaced = merged_prod_old[pk_norm] - merged_prod_new[pk_norm]
+                            if not p_replaced:
+                                continue
+                            t_fields = touched_product_fields.get(pk_norm, set())
+                            prod_untouched: list[tuple[str, str]] = []
                             for pf, pval in prod.items():
                                 if pf != "code" and pf not in t_fields:
-                                    untouched_strings.extend(_walk_json_strings(pval, f"products[{pi}].{pf}"))
-            _check_sibling_token_drift(f"multi_asset_channels[{cid}]", replaced_tokens, untouched_strings)
+                                    prod_untouched.extend(_walk_json_strings(pval, f"products[{pi}].{pf}"))
+                            _check_sibling_token_drift(
+                                f"multi_asset_channels[{cid}]", p_replaced, prod_untouched, errors=local_errors
+                            )
+                    untouched_sibs = sorted(
+                        sk for sk in target_ch.keys() if sk not in touched_top_keys and sk not in CHANNEL_META_KEYS
+                    )
+                    stats["untouched_channel_siblings"][cid] = untouched_sibs
 
-            if product_token_diffs and isinstance(target_ch.get("products"), list):
-                merged_prod_old: dict[str, set[str]] = {}
-                merged_prod_new: dict[str, set[str]] = {}
-                for p_key, p_old, p_new in product_token_diffs:
-                    merged_prod_old.setdefault(p_key, set()).update(p_old)
-                    merged_prod_new.setdefault(p_key, set()).update(p_new)
-                for pi, prod in enumerate(target_ch["products"]):
-                    if not isinstance(prod, dict):
-                        continue
-                    pk_norm = str(prod.get("code", "")).strip().upper()
-                    if pk_norm not in merged_prod_old:
-                        continue
-                    p_replaced = merged_prod_old[pk_norm] - merged_prod_new[pk_norm]
-                    if not p_replaced:
-                        continue
-                    t_fields = touched_product_fields.get(pk_norm, set())
-                    prod_untouched: list[tuple[str, str]] = []
-                    for pf, pval in prod.items():
-                        if pf != "code" and pf not in t_fields:
-                            prod_untouched.extend(_walk_json_strings(pval, f"products[{pi}].{pf}"))
-                    _check_sibling_token_drift(f"multi_asset_channels[{cid}]", p_replaced, prod_untouched)
-            untouched_sibs = sorted(
-                sk for sk in target_ch.keys() if sk not in touched_top_keys and sk not in CHANNEL_META_KEYS
-            )
-            stats["untouched_channel_siblings"][cid] = untouched_sibs
-
+    if errors is None and local_errors:
+        raise ValueError("\n".join(local_errors))
     return ma, stats
 
 
@@ -856,164 +901,198 @@ def _merge_etf_universe(
     patch_root: dict[str, Any],
     edition_id: str,
     as_of_date: str,
+    *,
+    errors: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    local_errors: list[str] = errors if errors is not None else []
     eu = copy.deepcopy(orig)
     eu["edition_id"] = edition_id
     eu["as_of_date"] = as_of_date
     eu["updated_at"] = as_of_date
     if "as_of_label" in patch_root and patch_root["as_of_label"] is not None:
         if not isinstance(patch_root["as_of_label"], str) or not patch_root["as_of_label"].strip():
-            raise ValueError("patch.as_of_label must be a non-empty string.")
-        eu["as_of_label"] = patch_root["as_of_label"].strip()
+            local_errors.append("patch.as_of_label must be a non-empty string.")
+        else:
+            eu["as_of_label"] = patch_root["as_of_label"].strip()
     if "gold_tier0_locked" in patch_root and patch_root["gold_tier0_locked"] is not None:
         if not isinstance(patch_root["gold_tier0_locked"], bool):
-            raise ValueError("patch.gold_tier0_locked must be a boolean.")
-        eu["gold_tier0_locked"] = patch_root["gold_tier0_locked"]
+            local_errors.append("patch.gold_tier0_locked must be a boolean.")
+        else:
+            eu["gold_tier0_locked"] = patch_root["gold_tier0_locked"]
     if "gold_lock_notice" in patch_root and patch_root["gold_lock_notice"] is not None:
         if not isinstance(patch_root["gold_lock_notice"], str) or not patch_root["gold_lock_notice"].strip():
-            raise ValueError("patch.gold_lock_notice must be a non-empty string.")
-        eu["gold_lock_notice"] = patch_root["gold_lock_notice"].strip()
-
-    etfs = eu.get("etfs")
-    if not isinstance(etfs, list):
-        raise ValueError("etf_universe.json missing 'etfs' list.")
-    orig_count = len(etfs)
+            local_errors.append("patch.gold_lock_notice must be a non-empty string.")
+        else:
+            eu["gold_lock_notice"] = patch_root["gold_lock_notice"].strip()
 
     stats = {"top_keys_updated": 0, "etfs_updated": 0, "etfs_added": 0, "etfs_removed": 0}
+    etfs = eu.get("etfs")
+    if not isinstance(etfs, list):
+        local_errors.append("etf_universe.json missing 'etfs' list.")
+        if errors is None and local_errors:
+            raise ValueError("\n".join(local_errors))
+        return eu, stats
+    orig_count = len(etfs)
+
     sec = patch_root.get("etf_universe")
     if sec is not None:
         if not isinstance(sec, dict):
-            raise ValueError("patch.etf_universe must be an object.")
-        unknown_sec = set(sec.keys()) - ALLOWED_ETF_PATCH_KEYS
-        if unknown_sec:
-            raise ValueError(
-                f"Unknown key(s) in etf_universe patch: {sorted(unknown_sec)} "
-                f"(allowed: {sorted(ALLOWED_ETF_PATCH_KEYS)})"
-            )
-
-        top_upd = sec.get("top_level_updates")
-        if top_upd is not None:
-            if not isinstance(top_upd, dict):
-                raise ValueError("etf_universe.top_level_updates must be an object.")
-            forbidden_top = {
-                "etfs", "total_etfs", "counts_by_market", "counts_by_channel",
-                "counts_by_asset_class", "counts_by_region",
-            }
-            overlap = forbidden_top & set(top_upd.keys())
-            if overlap:
-                raise ValueError(f"Cannot override auto-managed etf_universe keys via top_level_updates: {sorted(overlap)}")
-            for k, v in top_upd.items():
-                eu[k] = copy.deepcopy(v)
-                stats["top_keys_updated"] += 1
-
-        # Process etfs_remove first
-        rem_raw = sec.get("etfs_remove")
-        if rem_raw is not None:
-            if not isinstance(rem_raw, list) or not all(isinstance(c, str) and c.strip() for c in rem_raw):
-                raise ValueError("etf_universe.etfs_remove must be a list of non-empty ETF code strings.")
-            rem_norms = {_normalize_etf_code(c) for c in rem_raw}
-            if len(rem_norms) > MAX_ETF_DELTA:
-                raise ValueError(
-                    f"etfs_remove attempts to remove {len(rem_norms)} ETFs (> safety limit {MAX_ETF_DELTA})."
+            local_errors.append("patch.etf_universe must be an object.")
+        else:
+            unknown_sec = set(sec.keys()) - ALLOWED_ETF_PATCH_KEYS
+            if unknown_sec:
+                local_errors.append(
+                    f"Unknown key(s) in etf_universe patch: {sorted(unknown_sec)} "
+                    f"(allowed: {sorted(ALLOWED_ETF_PATCH_KEYS)})"
                 )
-            existing_norms = {_normalize_etf_code(e.get("code")) for e in etfs if isinstance(e, dict)}
-            missing_rem = sorted(rem_norms - existing_norms)
-            if missing_rem:
-                raise ValueError(f"etfs_remove references unknown ETF code(s): {missing_rem}")
-            new_etfs: list[dict[str, Any]] = []
-            for item in etfs:
-                if isinstance(item, dict) and _normalize_etf_code(item.get("code")) in rem_norms:
-                    stats["etfs_removed"] += 1
-                    continue
-                new_etfs.append(item)
-            etfs = new_etfs
-            eu["etfs"] = etfs
 
-        # Process etfs_upsert (list of dicts, or dict keyed by code)
-        ups_raw = sec.get("etfs_upsert")
-        if ups_raw is not None:
-            ups_list: list[dict[str, Any]] = []
-            if isinstance(ups_raw, list):
-                for idx, entry in enumerate(ups_raw):
-                    if not isinstance(entry, dict) or not isinstance(entry.get("code"), str) or not entry["code"].strip():
-                        raise ValueError(f"etf_universe.etfs_upsert[{idx}] must be an object with non-empty 'code'.")
-                    ups_list.append(entry)
-            elif isinstance(ups_raw, dict):
-                for code_k, entry in ups_raw.items():
-                    if not isinstance(entry, dict):
-                        raise ValueError(f"etf_universe.etfs_upsert[{code_k!r}] must be an object.")
-                    merged_e = dict(entry)
-                    merged_e.setdefault("code", str(code_k))
-                    ups_list.append(merged_e)
-            else:
-                raise ValueError("etf_universe.etfs_upsert must be a list of ETF objects (or object keyed by code).")
-
-            index_by_norm: dict[str, dict[str, Any]] = {}
-            for item in etfs:
-                if isinstance(item, dict) and item.get("code"):
-                    index_by_norm[_normalize_etf_code(item["code"])] = item
-
-            for entry in ups_list:
-                norm_code = _normalize_etf_code(entry["code"])
-                if not norm_code:
-                    raise ValueError(f"Invalid ETF code in etfs_upsert: {entry.get('code')!r}")
-                if norm_code in index_by_norm:
-                    extra_keys = sorted(set(entry.keys()) - ETF_ALLOWED_KEYS)
-                    if extra_keys:
-                        raise ValueError(
-                            f"ETF {norm_code!r} in etfs_upsert has unknown key(s): {extra_keys} "
-                            f"(allowed: {sorted(ETF_ALLOWED_KEYS)})"
-                        )
-                    target = index_by_norm[norm_code]
-                    canonical_code = target["code"]
-                    if entry.get("updated_at") is not None:
-                        _validate_date(entry["updated_at"], f"etf_universe[{canonical_code}].updated_at")
-                    orig_etf = copy.deepcopy(target)
-                    old_tokens: set[str] = set()
-                    new_tokens: set[str] = set()
-                    touched_keys: set[str] = set()
-                    for k, v in entry.items():
-                        if k == "code":
-                            continue  # Preserve existing canonical code format
-                        touched_keys.add(k)
-                        if k != "updated_at":
-                            old_tokens |= _extract_dynamic_tokens(orig_etf.get(k))
-                            new_tokens |= _extract_dynamic_tokens(v)
-                        target[k] = copy.deepcopy(v)
-                    target["code"] = canonical_code
-                    target["updated_at"] = as_of_date
-                    replaced_tokens = old_tokens - new_tokens
-                    untouched_strings: list[tuple[str, str]] = []
-                    for sk, sv in target.items():
-                        if sk in ("code", "updated_at") or sk in touched_keys:
-                            continue
-                        untouched_strings.extend(_walk_json_strings(sv, sk))
-                    _check_sibling_token_drift(f"etf_universe[{canonical_code}]", replaced_tokens, untouched_strings)
-                    stats["etfs_updated"] += 1
+            top_upd = sec.get("top_level_updates")
+            if top_upd is not None:
+                if not isinstance(top_upd, dict):
+                    local_errors.append("etf_universe.top_level_updates must be an object.")
                 else:
-                    missing_keys = sorted(ETF_ALL_21_KEYS - set(entry.keys()))
-                    extra_keys = sorted(set(entry.keys()) - ETF_ALLOWED_KEYS)
-                    if missing_keys:
-                        raise ValueError(
-                            f"New ETF {norm_code!r} in etfs_upsert must provide all 21 standard keys; missing: {missing_keys}"
+                    forbidden_top = {
+                        "etfs", "total_etfs", "counts_by_market", "counts_by_channel",
+                        "counts_by_asset_class", "counts_by_region",
+                    }
+                    overlap = forbidden_top & set(top_upd.keys())
+                    if overlap:
+                        local_errors.append(
+                            f"Cannot override auto-managed etf_universe keys via top_level_updates: {sorted(overlap)}"
                         )
-                    if extra_keys:
-                        raise ValueError(
-                            f"New ETF {norm_code!r} has unknown key(s): {extra_keys} "
-                            f"(allowed: {sorted(ETF_ALLOWED_KEYS)})"
+                    for k, v in top_upd.items():
+                        if k in forbidden_top:
+                            continue
+                        eu[k] = copy.deepcopy(v)
+                        stats["top_keys_updated"] += 1
+
+            # Process etfs_remove first
+            rem_raw = sec.get("etfs_remove")
+            if rem_raw is not None:
+                if not isinstance(rem_raw, list) or not all(isinstance(c, str) and c.strip() for c in rem_raw):
+                    local_errors.append("etf_universe.etfs_remove must be a list of non-empty ETF code strings.")
+                else:
+                    rem_norms = {_normalize_etf_code(c) for c in rem_raw}
+                    if len(rem_norms) > MAX_ETF_DELTA:
+                        local_errors.append(
+                            f"etfs_remove attempts to remove {len(rem_norms)} ETFs (> safety limit {MAX_ETF_DELTA})."
                         )
-                    if entry.get("updated_at") is not None:
-                        _validate_date(entry["updated_at"], f"etf_universe[{norm_code}].updated_at")
-                    new_item = copy.deepcopy(entry)
-                    new_item["code"] = norm_code
-                    new_item["updated_at"] = as_of_date
-                    etfs.append(new_item)
-                    index_by_norm[norm_code] = new_item
-                    stats["etfs_added"] += 1
+                    existing_norms = {_normalize_etf_code(e.get("code")) for e in etfs if isinstance(e, dict)}
+                    missing_rem = sorted(rem_norms - existing_norms)
+                    if missing_rem:
+                        local_errors.append(f"etfs_remove references unknown ETF code(s): {missing_rem}")
+                    new_etfs: list[dict[str, Any]] = []
+                    for item in etfs:
+                        if isinstance(item, dict) and _normalize_etf_code(item.get("code")) in rem_norms:
+                            stats["etfs_removed"] += 1
+                            continue
+                        new_etfs.append(item)
+                    etfs = new_etfs
+                    eu["etfs"] = etfs
+
+            # Process etfs_upsert (list of dicts, or dict keyed by code)
+            ups_raw = sec.get("etfs_upsert")
+            if ups_raw is not None:
+                ups_list: list[dict[str, Any]] = []
+                if isinstance(ups_raw, list):
+                    for idx, entry in enumerate(ups_raw):
+                        if not isinstance(entry, dict) or not isinstance(entry.get("code"), str) or not entry["code"].strip():
+                            local_errors.append(
+                                f"etf_universe.etfs_upsert[{idx}] must be an object with non-empty 'code'."
+                            )
+                            continue
+                        ups_list.append(entry)
+                elif isinstance(ups_raw, dict):
+                    for code_k, entry in ups_raw.items():
+                        if not isinstance(entry, dict):
+                            local_errors.append(f"etf_universe.etfs_upsert[{code_k!r}] must be an object.")
+                            continue
+                        merged_e = dict(entry)
+                        merged_e.setdefault("code", str(code_k))
+                        ups_list.append(merged_e)
+                else:
+                    local_errors.append(
+                        "etf_universe.etfs_upsert must be a list of ETF objects (or object keyed by code)."
+                    )
+
+                index_by_norm: dict[str, dict[str, Any]] = {}
+                for item in etfs:
+                    if isinstance(item, dict) and item.get("code"):
+                        index_by_norm[_normalize_etf_code(item["code"])] = item
+
+                for entry in ups_list:
+                    norm_code = _normalize_etf_code(entry["code"])
+                    if not norm_code:
+                        local_errors.append(f"Invalid ETF code in etfs_upsert: {entry.get('code')!r}")
+                        continue
+                    if norm_code in index_by_norm:
+                        extra_keys = sorted(set(entry.keys()) - ETF_ALLOWED_KEYS)
+                        if extra_keys:
+                            local_errors.append(
+                                f"ETF {norm_code!r} in etfs_upsert has unknown key(s): {extra_keys} "
+                                f"(allowed: {sorted(ETF_ALLOWED_KEYS)})"
+                            )
+                        target = index_by_norm[norm_code]
+                        canonical_code = target["code"]
+                        if entry.get("updated_at") is not None:
+                            try:
+                                _validate_date(entry["updated_at"], f"etf_universe[{canonical_code}].updated_at")
+                            except ValueError as exc:
+                                local_errors.append(str(exc))
+                        orig_etf = copy.deepcopy(target)
+                        old_tokens: set[str] = set()
+                        new_tokens: set[str] = set()
+                        touched_keys: set[str] = set()
+                        for k, v in entry.items():
+                            if k == "code" or k not in ETF_ALLOWED_KEYS:
+                                continue  # Preserve existing canonical code format & skip invalid keys
+                            touched_keys.add(k)
+                            if k != "updated_at":
+                                old_tokens |= _extract_dynamic_tokens(orig_etf.get(k))
+                                new_tokens |= _extract_dynamic_tokens(v)
+                            target[k] = copy.deepcopy(v)
+                        target["code"] = canonical_code
+                        target["updated_at"] = as_of_date
+                        replaced_tokens = old_tokens - new_tokens
+                        untouched_strings: list[tuple[str, str]] = []
+                        for sk, sv in target.items():
+                            if sk in ("code", "updated_at") or sk in touched_keys:
+                                continue
+                            untouched_strings.extend(_walk_json_strings(sv, sk))
+                        _check_sibling_token_drift(
+                            f"etf_universe[{canonical_code}]", replaced_tokens, untouched_strings, errors=local_errors
+                        )
+                        stats["etfs_updated"] += 1
+                    else:
+                        missing_keys = sorted(ETF_NEW_REQUIRED_KEYS - set(entry.keys()))
+                        extra_keys = sorted(set(entry.keys()) - ETF_ALLOWED_KEYS)
+                        if missing_keys:
+                            local_errors.append(
+                                f"New ETF {norm_code!r} in etfs_upsert must provide all 21 standard keys "
+                                f"plus required orthogonal fields 'asset_class' and 'region'; missing: {missing_keys}"
+                            )
+                        if extra_keys:
+                            local_errors.append(
+                                f"New ETF {norm_code!r} has unknown key(s): {extra_keys} "
+                                f"(allowed: {sorted(ETF_ALLOWED_KEYS)})"
+                            )
+                        if entry.get("updated_at") is not None:
+                            try:
+                                _validate_date(entry["updated_at"], f"etf_universe[{norm_code}].updated_at")
+                            except ValueError as exc:
+                                local_errors.append(str(exc))
+                        if missing_keys:
+                            continue
+                        new_item = {k: copy.deepcopy(v) for k, v in entry.items() if k in ETF_ALLOWED_KEYS}
+                        new_item["code"] = norm_code
+                        new_item["updated_at"] = as_of_date
+                        etfs.append(new_item)
+                        index_by_norm[norm_code] = new_item
+                        stats["etfs_added"] += 1
 
     delta = len(etfs) - orig_count
     if abs(delta) > MAX_ETF_DELTA:
-        raise ValueError(
+        local_errors.append(
             f"ETF universe net count change |{delta:+d}| exceeds safety limit ({MAX_ETF_DELTA}); "
             f"orig={orig_count}, new={len(etfs)}."
         )
@@ -1057,6 +1136,8 @@ def _merge_etf_universe(
         eu["counts_by_region"] = {
             k: reg_counter[k] for k in dict.fromkeys([*orig_reg_order, *reg_counter.keys()]) if reg_counter.get(k, 0) > 0
         }
+    if errors is None and local_errors:
+        raise ValueError("\n".join(local_errors))
     return eu, stats
 
 
@@ -1126,112 +1207,129 @@ def _merge_deep_dossiers(
     as_of_date: str,
     *,
     market_state: dict[str, Any] | None = None,
+    errors: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    local_errors: list[str] = errors if errors is not None else []
     dd = copy.deepcopy(orig)
     dd["edition_id"] = edition_id
     dd["as_of_date"] = as_of_date
     dd["updated_at"] = as_of_date
 
-    dossiers = dd.get("dossiers")
-    if not isinstance(dossiers, dict):
-        raise ValueError("deep_dossiers.json missing 'dossiers' object.")
-
-    twin_map = _build_ah_twin_map(market_state, dossiers)
     stats: dict[str, Any] = {
         "top_keys_updated": 0,
         "stocks_patched": 0,
         "unpatched_ah_twins": {},
     }
+    dossiers = dd.get("dossiers")
+    if not isinstance(dossiers, dict):
+        local_errors.append("deep_dossiers.json missing 'dossiers' object.")
+        if errors is None and local_errors:
+            raise ValueError("\n".join(local_errors))
+        return dd, stats
+
+    twin_map = _build_ah_twin_map(market_state, dossiers)
     sec = patch_root.get("deep_dossiers")
     if sec is not None:
         if not isinstance(sec, dict):
-            raise ValueError("patch.deep_dossiers must be an object.")
-        unknown_sec = set(sec.keys()) - ALLOWED_DOSSIERS_PATCH_KEYS
-        if unknown_sec:
-            raise ValueError(
-                f"Unknown key(s) in deep_dossiers patch: {sorted(unknown_sec)} "
-                f"(allowed: {sorted(ALLOWED_DOSSIERS_PATCH_KEYS)})"
-            )
-
-        top_upd = sec.get("top_level_updates")
-        if top_upd is not None:
-            if not isinstance(top_upd, dict):
-                raise ValueError("deep_dossiers.top_level_updates must be an object.")
-            forbidden_top = {"dossiers", "total_stocks", "core_deep_count", "standard_deep_count"}
-            overlap = forbidden_top & set(top_upd.keys())
-            if overlap:
-                raise ValueError(
-                    f"Cannot override auto-managed deep_dossiers keys via top_level_updates: {sorted(overlap)}"
+            local_errors.append("patch.deep_dossiers must be an object.")
+        else:
+            unknown_sec = set(sec.keys()) - ALLOWED_DOSSIERS_PATCH_KEYS
+            if unknown_sec:
+                local_errors.append(
+                    f"Unknown key(s) in deep_dossiers patch: {sorted(unknown_sec)} "
+                    f"(allowed: {sorted(ALLOWED_DOSSIERS_PATCH_KEYS)})"
                 )
-            for k, v in top_upd.items():
-                dd[k] = copy.deepcopy(v)
-                stats["top_keys_updated"] += 1
 
-        dp = sec.get("dossiers_patch")
-        if dp is not None:
-            if not isinstance(dp, dict):
-                raise ValueError("deep_dossiers.dossiers_patch must be an object keyed by stock key.")
-            for stock_key, upd in dp.items():
-                if stock_key not in dossiers:
-                    raise ValueError(
-                        f"dossiers_patch key {stock_key!r} is not in the existing stock pool (strictly forbidden to add/rename pool keys)."
-                    )
-                if not isinstance(upd, dict) or not upd:
-                    raise ValueError(f"dossiers_patch[{stock_key!r}] must be a non-empty object.")
-                target = dossiers[stock_key]
-                orig_entry = copy.deepcopy(target)
-                old_tokens: set[str] = set()
-                new_tokens: set[str] = set()
-                touched_keys: set[str] = set()
-                for k, v in upd.items():
-                    if k in ("market", "code") and v != target.get(k):
-                        raise ValueError(f"Cannot mutate immutable {k!r} on dossier {stock_key!r}.")
-                    touched_keys.add(k)
-                    old_tokens |= _extract_dynamic_tokens(orig_entry.get(k))
-                    new_tokens |= _extract_dynamic_tokens(v)
-                    target[k] = copy.deepcopy(v)
-                target["updated_at"] = as_of_date
-                replaced_tokens = old_tokens - new_tokens
-                untouched_strings: list[tuple[str, str]] = []
-                for sk, sv in target.items():
-                    if sk in DOSSIER_META_KEYS or sk in touched_keys:
-                        continue
-                    untouched_strings.extend(_walk_json_strings(sv, sk))
-                _check_sibling_token_drift(f"deep_dossiers[{stock_key}]", replaced_tokens, untouched_strings)
-                stats["stocks_patched"] += 1
+            top_upd = sec.get("top_level_updates")
+            if top_upd is not None:
+                if not isinstance(top_upd, dict):
+                    local_errors.append("deep_dossiers.top_level_updates must be an object.")
+                else:
+                    forbidden_top = {"dossiers", "total_stocks", "core_deep_count", "standard_deep_count"}
+                    overlap = forbidden_top & set(top_upd.keys())
+                    if overlap:
+                        local_errors.append(
+                            f"Cannot override auto-managed deep_dossiers keys via top_level_updates: {sorted(overlap)}"
+                        )
+                    for k, v in top_upd.items():
+                        if k in forbidden_top:
+                            continue
+                        dd[k] = copy.deepcopy(v)
+                        stats["top_keys_updated"] += 1
 
-            # A/H Twin Sync Guard: if baseline_note or valuation_anchor changed on one side,
-            # ensure its unpatched A/H twin does not drift >0.6pp from market_state benchmark.
-            for stock_key, upd in dp.items():
-                if not isinstance(upd, dict):
-                    continue
-                if "baseline_note" not in upd and "valuation_anchor" not in upd:
-                    continue
-                twin_info = twin_map.get(stock_key)
-                if twin_info is None:
-                    continue
-                twin_key, bench_pct = twin_info
-                if twin_key in dp:
-                    continue
-                stats["unpatched_ah_twins"][stock_key] = twin_key
-                twin_entry = dossiers.get(twin_key)
-                if not isinstance(twin_entry, dict):
-                    continue
-                for field in ("baseline_note", "valuation_anchor"):
-                    fval = str(twin_entry.get(field, ""))
-                    for raw_match, lo, hi in _iter_ah_premium_mentions(fval):
-                        if bench_pct < lo - AH_PREMIUM_TOLERANCE_PP or bench_pct > hi + AH_PREMIUM_TOLERANCE_PP:
-                            raise ValueError(
-                                f"A/H twin sync required: patched {stock_key!r} without twin {twin_key!r}, "
-                                f"whose {field} still states {raw_match!r} vs market_state benchmark "
-                                f"{bench_pct:+.1f}% (drift > {AH_PREMIUM_TOLERANCE_PP:.1f}pp)."
+            dp = sec.get("dossiers_patch")
+            if dp is not None:
+                if not isinstance(dp, dict):
+                    local_errors.append("deep_dossiers.dossiers_patch must be an object keyed by stock key.")
+                else:
+                    for stock_key, upd in dp.items():
+                        if stock_key not in dossiers:
+                            local_errors.append(
+                                f"dossiers_patch key {stock_key!r} is not in the existing stock pool (strictly forbidden to add/rename pool keys)."
                             )
+                            continue
+                        if not isinstance(upd, dict) or not upd:
+                            local_errors.append(f"dossiers_patch[{stock_key!r}] must be a non-empty object.")
+                            continue
+                        target = dossiers[stock_key]
+                        orig_entry = copy.deepcopy(target)
+                        old_tokens: set[str] = set()
+                        new_tokens: set[str] = set()
+                        touched_keys: set[str] = set()
+                        for k, v in upd.items():
+                            if k in ("market", "code") and v != target.get(k):
+                                local_errors.append(f"Cannot mutate immutable {k!r} on dossier {stock_key!r}.")
+                                continue
+                            touched_keys.add(k)
+                            old_tokens |= _extract_dynamic_tokens(orig_entry.get(k))
+                            new_tokens |= _extract_dynamic_tokens(v)
+                            target[k] = copy.deepcopy(v)
+                        target["updated_at"] = as_of_date
+                        replaced_tokens = old_tokens - new_tokens
+                        untouched_strings: list[tuple[str, str]] = []
+                        for sk, sv in target.items():
+                            if sk in DOSSIER_META_KEYS or sk in touched_keys:
+                                continue
+                            untouched_strings.extend(_walk_json_strings(sv, sk))
+                        _check_sibling_token_drift(
+                            f"deep_dossiers[{stock_key}]", replaced_tokens, untouched_strings, errors=local_errors
+                        )
+                        stats["stocks_patched"] += 1
+
+                    # A/H Twin Sync Guard: if baseline_note or valuation_anchor changed on one side,
+                    # ensure its unpatched A/H twin does not drift >0.6pp from market_state benchmark.
+                    for stock_key, upd in dp.items():
+                        if not isinstance(upd, dict):
+                            continue
+                        if "baseline_note" not in upd and "valuation_anchor" not in upd:
+                            continue
+                        twin_info = twin_map.get(stock_key)
+                        if twin_info is None:
+                            continue
+                        twin_key, bench_pct = twin_info
+                        if twin_key in dp:
+                            continue
+                        stats["unpatched_ah_twins"][stock_key] = twin_key
+                        twin_entry = dossiers.get(twin_key)
+                        if not isinstance(twin_entry, dict):
+                            continue
+                        for field in ("baseline_note", "valuation_anchor"):
+                            fval = str(twin_entry.get(field, ""))
+                            for raw_match, lo, hi in _iter_ah_premium_mentions(fval):
+                                if bench_pct < lo - AH_PREMIUM_TOLERANCE_PP or bench_pct > hi + AH_PREMIUM_TOLERANCE_PP:
+                                    local_errors.append(
+                                        f"A/H twin sync required: patched {stock_key!r} without twin {twin_key!r}, "
+                                        f"whose {field} still states {raw_match!r} vs market_state benchmark "
+                                        f"{bench_pct:+.1f}% (drift > {AH_PREMIUM_TOLERANCE_PP:.1f}pp)."
+                                    )
 
     dd["total_stocks"] = len(dossiers)
     dd["core_deep_count"] = sum(
         1 for entry in dossiers.values() if isinstance(entry, dict) and entry.get("depth_tier") == "core_deep"
     )
     dd["standard_deep_count"] = dd["total_stocks"] - dd["core_deep_count"]
+    if errors is None and local_errors:
+        raise ValueError("\n".join(local_errors))
     return dd, stats
 
 
@@ -1242,25 +1340,26 @@ def _merge_policy_calendar(
     as_of_date: str,
     *,
     market_state: dict[str, Any] | None = None,
+    errors: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    local_errors: list[str] = errors if errors is not None else []
     pc = copy.deepcopy(orig)
     pc["edition_id"] = edition_id
 
+    fallback_ts = (
+        f"{as_of_date}T{edition_id[11:13]}:{edition_id[13:15]}:00+08:00"
+        if DATE_RE.fullmatch(as_of_date) and len(edition_id) >= 15 and edition_id[11:15].isdigit()
+        else None
+    )
     ms_as_of = market_state.get("as_of_cst") if isinstance(market_state, dict) else None
     if isinstance(ms_as_of, str):
         try:
             pc["as_of_cst"] = _validate_iso_cst_timestamp(ms_as_of, "market_state.as_of_cst")
         except ValueError:
-            pc["as_of_cst"] = f"{as_of_date}T{edition_id[11:13]}:{edition_id[13:15]}:00+08:00"
-    else:
-        pc["as_of_cst"] = f"{as_of_date}T{edition_id[11:13]}:{edition_id[13:15]}:00+08:00"
-
-    briefs = pc.get("policy_briefs")
-    if not isinstance(briefs, list):
-        raise ValueError("policy_calendar.json missing 'policy_briefs' list.")
-    events = pc.get("events")
-    if not isinstance(events, list):
-        raise ValueError("policy_calendar.json missing 'events' list.")
+            if fallback_ts is not None:
+                pc["as_of_cst"] = fallback_ts
+    elif fallback_ts is not None:
+        pc["as_of_cst"] = fallback_ts
 
     stats: dict[str, Any] = {
         "top_keys_updated": 0,
@@ -1271,131 +1370,164 @@ def _merge_policy_calendar(
         "events_pruned": 0,
         "pruned_event_ids": [],
     }
+    briefs = pc.get("policy_briefs")
+    if not isinstance(briefs, list):
+        local_errors.append("policy_calendar.json missing 'policy_briefs' list.")
+    events = pc.get("events")
+    if not isinstance(events, list):
+        local_errors.append("policy_calendar.json missing 'events' list.")
+    if not isinstance(briefs, list) or not isinstance(events, list):
+        if errors is None and local_errors:
+            raise ValueError("\n".join(local_errors))
+        return pc, stats
 
     sec = patch_root.get("policy_calendar")
     if sec is not None:
         if not isinstance(sec, dict):
-            raise ValueError("patch.policy_calendar must be an object.")
-        unknown_sec = set(sec.keys()) - ALLOWED_POLICY_CALENDAR_PATCH_KEYS
-        if unknown_sec:
-            raise ValueError(
-                f"Unknown key(s) in policy_calendar patch: {sorted(unknown_sec)} "
-                f"(allowed: {sorted(ALLOWED_POLICY_CALENDAR_PATCH_KEYS)})"
-            )
+            local_errors.append("patch.policy_calendar must be an object.")
+        else:
+            unknown_sec = set(sec.keys()) - ALLOWED_POLICY_CALENDAR_PATCH_KEYS
+            if unknown_sec:
+                local_errors.append(
+                    f"Unknown key(s) in policy_calendar patch: {sorted(unknown_sec)} "
+                    f"(allowed: {sorted(ALLOWED_POLICY_CALENDAR_PATCH_KEYS)})"
+                )
 
-        top_upd = sec.get("top_level_updates")
-        if top_upd is not None:
-            if not isinstance(top_upd, dict):
-                raise ValueError("policy_calendar.top_level_updates must be an object.")
-            forbidden_top = {"policy_briefs", "events", "edition_id"}
-            overlap = forbidden_top & set(top_upd.keys())
-            if overlap:
-                raise ValueError(
-                    f"Cannot override auto-managed policy_calendar keys via top_level_updates: {sorted(overlap)}"
-                )
-            unknown_top = set(top_upd.keys()) - ALLOWED_POLICY_CALENDAR_TOP_KEYS
-            if unknown_top:
-                raise ValueError(
-                    f"Unknown key(s) in policy_calendar.top_level_updates: {sorted(unknown_top)} "
-                    f"(allowed: {sorted(ALLOWED_POLICY_CALENDAR_TOP_KEYS)})"
-                )
-            for k, v in top_upd.items():
-                if k == "as_of_cst":
-                    pc[k] = _validate_iso_cst_timestamp(v, "policy_calendar.top_level_updates.as_of_cst")
+            top_upd = sec.get("top_level_updates")
+            if top_upd is not None:
+                if not isinstance(top_upd, dict):
+                    local_errors.append("policy_calendar.top_level_updates must be an object.")
                 else:
-                    pc[k] = copy.deepcopy(v)
-                stats["top_keys_updated"] += 1
-
-        briefs_rep = sec.get("policy_briefs_replace")
-        if briefs_rep is not None:
-            if not isinstance(briefs_rep, list) or not all(isinstance(b, dict) for b in briefs_rep):
-                raise ValueError("policy_calendar.policy_briefs_replace must be a list of brief objects.")
-            pc["policy_briefs"] = copy.deepcopy(briefs_rep)
-            stats["briefs_replaced"] = len(briefs_rep)
-
-        rem_raw = sec.get("events_remove")
-        if rem_raw is not None:
-            if not isinstance(rem_raw, list) or not all(isinstance(eid, str) and eid.strip() for eid in rem_raw):
-                raise ValueError("policy_calendar.events_remove must be a list of non-empty event_id strings.")
-            rem_set = {eid.strip() for eid in rem_raw}
-            kept: list[Any] = []
-            for ev in events:
-                if isinstance(ev, dict) and str(ev.get("event_id", "")).strip() in rem_set:
-                    stats["events_removed"] += 1
-                    continue
-                kept.append(ev)
-            events = kept
-            pc["events"] = events
-
-        ups_raw = sec.get("events_upsert")
-        if ups_raw is not None:
-            ups_list: list[dict[str, Any]] = []
-            if isinstance(ups_raw, list):
-                for idx, entry in enumerate(ups_raw):
-                    if not isinstance(entry, dict) or not isinstance(entry.get("event_id"), str) or not entry["event_id"].strip():
-                        raise ValueError(
-                            f"policy_calendar.events_upsert[{idx}] must be an object with non-empty 'event_id'."
+                    forbidden_top = {"policy_briefs", "events", "edition_id"}
+                    overlap = forbidden_top & set(top_upd.keys())
+                    if overlap:
+                        local_errors.append(
+                            f"Cannot override auto-managed policy_calendar keys via top_level_updates: {sorted(overlap)}"
                         )
-                    ups_list.append(entry)
-            elif isinstance(ups_raw, dict):
-                for eid_k, entry in ups_raw.items():
-                    if not isinstance(entry, dict):
-                        raise ValueError(f"policy_calendar.events_upsert[{eid_k!r}] must be an object.")
-                    merged_e = dict(entry)
-                    merged_e.setdefault("event_id", str(eid_k))
-                    ups_list.append(merged_e)
-            else:
-                raise ValueError("policy_calendar.events_upsert must be a list of event objects (or object keyed by event_id).")
-
-            by_eid: dict[str, dict[str, Any]] = {}
-            for ev in events:
-                if isinstance(ev, dict) and isinstance(ev.get("event_id"), str) and ev["event_id"].strip():
-                    by_eid[ev["event_id"].strip()] = ev
-
-            for entry in ups_list:
-                eid = entry["event_id"].strip()
-                if eid in by_eid:
-                    target = by_eid[eid]
-                    for k, v in entry.items():
-                        if k == "event_id":
+                    unknown_top = set(top_upd.keys()) - ALLOWED_POLICY_CALENDAR_TOP_KEYS - forbidden_top
+                    if unknown_top:
+                        local_errors.append(
+                            f"Unknown key(s) in policy_calendar.top_level_updates: {sorted(unknown_top)} "
+                            f"(allowed: {sorted(ALLOWED_POLICY_CALENDAR_TOP_KEYS)})"
+                        )
+                    for k, v in top_upd.items():
+                        if k not in ALLOWED_POLICY_CALENDAR_TOP_KEYS:
                             continue
-                        if k == "watch_triggers" and isinstance(v, dict) and isinstance(target.get("watch_triggers"), dict):
-                            merged_wt = copy.deepcopy(target["watch_triggers"])
-                            merged_wt.update(copy.deepcopy(v))
-                            target["watch_triggers"] = merged_wt
+                        if k == "as_of_cst":
+                            try:
+                                pc[k] = _validate_iso_cst_timestamp(v, "policy_calendar.top_level_updates.as_of_cst")
+                            except ValueError as exc:
+                                local_errors.append(str(exc))
+                                continue
                         else:
-                            target[k] = copy.deepcopy(v)
-                    stats["events_updated"] += 1
+                            pc[k] = copy.deepcopy(v)
+                        stats["top_keys_updated"] += 1
+
+            briefs_rep = sec.get("policy_briefs_replace")
+            if briefs_rep is not None:
+                if not isinstance(briefs_rep, list) or not all(isinstance(b, dict) for b in briefs_rep):
+                    local_errors.append("policy_calendar.policy_briefs_replace must be a list of brief objects.")
                 else:
-                    missing = sorted(POLICY_CAL_EVENT_REQUIRED_KEYS - set(entry.keys()))
-                    if missing:
-                        raise ValueError(
-                            f"New event {eid!r} in policy_calendar.events_upsert missing required key(s): {missing}"
-                        )
-                    new_ev = copy.deepcopy(entry)
-                    new_ev["event_id"] = eid
-                    events.append(new_ev)
-                    by_eid[eid] = new_ev
-                    stats["events_added"] += 1
+                    pc["policy_briefs"] = copy.deepcopy(briefs_rep)
+                    stats["briefs_replaced"] = len(briefs_rep)
+
+            rem_raw = sec.get("events_remove")
+            if rem_raw is not None:
+                if not isinstance(rem_raw, list) or not all(isinstance(eid, str) and eid.strip() for eid in rem_raw):
+                    local_errors.append("policy_calendar.events_remove must be a list of non-empty event_id strings.")
+                else:
+                    rem_set = {eid.strip() for eid in rem_raw}
+                    kept: list[Any] = []
+                    for ev in events:
+                        if isinstance(ev, dict) and str(ev.get("event_id", "")).strip() in rem_set:
+                            stats["events_removed"] += 1
+                            continue
+                        kept.append(ev)
+                    events = kept
+                    pc["events"] = events
+
+            ups_raw = sec.get("events_upsert")
+            if ups_raw is not None:
+                ups_list: list[dict[str, Any]] = []
+                if isinstance(ups_raw, list):
+                    for idx, entry in enumerate(ups_raw):
+                        if not isinstance(entry, dict) or not isinstance(entry.get("event_id"), str) or not entry["event_id"].strip():
+                            local_errors.append(
+                                f"policy_calendar.events_upsert[{idx}] must be an object with non-empty 'event_id'."
+                            )
+                            continue
+                        ups_list.append(entry)
+                elif isinstance(ups_raw, dict):
+                    for eid_k, entry in ups_raw.items():
+                        if not isinstance(entry, dict):
+                            local_errors.append(f"policy_calendar.events_upsert[{eid_k!r}] must be an object.")
+                            continue
+                        merged_e = dict(entry)
+                        merged_e.setdefault("event_id", str(eid_k))
+                        ups_list.append(merged_e)
+                else:
+                    local_errors.append(
+                        "policy_calendar.events_upsert must be a list of event objects (or object keyed by event_id)."
+                    )
+
+                by_eid: dict[str, dict[str, Any]] = {}
+                for ev in events:
+                    if isinstance(ev, dict) and isinstance(ev.get("event_id"), str) and ev["event_id"].strip():
+                        by_eid[ev["event_id"].strip()] = ev
+
+                for entry in ups_list:
+                    eid = entry["event_id"].strip()
+                    if eid in by_eid:
+                        target = by_eid[eid]
+                        for k, v in entry.items():
+                            if k == "event_id":
+                                continue
+                            if k == "watch_triggers" and isinstance(v, dict) and isinstance(target.get("watch_triggers"), dict):
+                                merged_wt = copy.deepcopy(target["watch_triggers"])
+                                merged_wt.update(copy.deepcopy(v))
+                                target["watch_triggers"] = merged_wt
+                            else:
+                                target[k] = copy.deepcopy(v)
+                        stats["events_updated"] += 1
+                    else:
+                        missing = sorted(POLICY_CAL_EVENT_REQUIRED_KEYS - set(entry.keys()))
+                        if missing:
+                            local_errors.append(
+                                f"New event {eid!r} in policy_calendar.events_upsert missing required key(s): {missing}"
+                            )
+                            continue
+                        new_ev = copy.deepcopy(entry)
+                        new_ev["event_id"] = eid
+                        events.append(new_ev)
+                        by_eid[eid] = new_ev
+                        stats["events_added"] += 1
 
     # Auto-prune expired events whose end_date_cst < edition_date - 2d
-    ed_dt = datetime.strptime(as_of_date, "%Y-%m-%d").date()
-    prune_cutoff = (ed_dt - timedelta(days=2)).isoformat()
-    active_events: list[Any] = []
-    for ev in events:
-        if isinstance(ev, dict):
-            end_raw = ev.get("end_date_cst") or ev.get("date_cst")
-            if isinstance(end_raw, str) and DATE_RE.fullmatch(end_raw.strip()):
-                try:
-                    datetime.strptime(end_raw.strip(), "%Y-%m-%d")
-                except ValueError:
-                    pass
-                else:
-                    if end_raw.strip() < prune_cutoff:
-                        stats["events_pruned"] += 1
-                        stats["pruned_event_ids"].append(str(ev.get("event_id", "")).strip())
-                        continue
-        active_events.append(ev)
+    ed_dt = None
+    if DATE_RE.fullmatch(as_of_date):
+        try:
+            ed_dt = datetime.strptime(as_of_date, "%Y-%m-%d").date()
+        except ValueError:
+            ed_dt = None
+    if ed_dt is not None:
+        prune_cutoff = (ed_dt - timedelta(days=2)).isoformat()
+        active_events: list[Any] = []
+        for ev in events:
+            if isinstance(ev, dict):
+                end_raw = ev.get("end_date_cst") or ev.get("date_cst")
+                if isinstance(end_raw, str) and DATE_RE.fullmatch(end_raw.strip()):
+                    try:
+                        datetime.strptime(end_raw.strip(), "%Y-%m-%d")
+                    except ValueError:
+                        pass
+                    else:
+                        if end_raw.strip() < prune_cutoff:
+                            stats["events_pruned"] += 1
+                            stats["pruned_event_ids"].append(str(ev.get("event_id", "")).strip())
+                            continue
+            active_events.append(ev)
+    else:
+        active_events = list(events)
 
     active_events.sort(
         key=lambda ev: (
@@ -1405,6 +1537,8 @@ def _merge_policy_calendar(
         )
     )
     pc["events"] = active_events
+    if errors is None and local_errors:
+        raise ValueError("\n".join(local_errors))
     return pc, stats
 
 
@@ -1588,6 +1722,14 @@ def _validate_policy_calendar(
             errs.append(f"{jpath}: leaked internal term(s): {sorted(set(hits))}")
         if LOCAL_PATH_RE.search(sval):
             errs.append(f"{jpath}: leaked local filesystem path.")
+        leaf_key = jpath.rsplit(".", 1)[-1].split("[", 1)[0]
+        if leaf_key not in POLICY_CAL_PROSE_SKIP_KEYS:
+            m_tier = BARE_IMPACT_TIER_RE.search(sval)
+            if m_tier:
+                errs.append(
+                    f"{jpath}: reader-visible bare priority token {m_tier.group(0)!r} forbidden in prose "
+                    f"(use plain Chinese '重磅/重要/关注')."
+                )
         for rel_label, rel_re in rel_date_patterns:
             m_rel = rel_re.search(sval)
             if m_rel:
@@ -2087,6 +2229,7 @@ def _validate_merged_equity_dbs(
                             f"{jpath}: restricted code {m_rc.group(0)} mentioned without warning within ±40 chars -> {win!r}"
                         )
                         break
+            errs.extend(_scan_text_for_crypto_buy(jpath, sval))
             if gold_tier0_active:
                 errs.extend(_scan_text_for_gold_buy(jpath, sval))
 
@@ -2109,53 +2252,87 @@ def apply_equity_patch(
     state_path = _safe_repo_path(repo_root, "equity", "state", "market_state.json")
 
     patch_root = _read_json_obj(patch_path, "equity/state/_edition_patch.json")
+    errors: list[str] = []
+
     unknown_top = set(patch_root.keys()) - ALLOWED_EQUITY_PATCH_TOP_KEYS
     if unknown_top:
-        raise ValueError(
+        errors.append(
             f"Unknown top-level key(s) in _edition_patch.json: {sorted(unknown_top)} "
             f"(allowed: {sorted(ALLOWED_EQUITY_PATCH_TOP_KEYS)})"
         )
 
-    edition_id = _validate_edition_id(patch_root.get("edition_id"))
-    as_of_date = (
-        _validate_date(patch_root["as_of_date"], "as_of_date")
-        if patch_root.get("as_of_date") is not None
-        else edition_id[:10]
-    )
+    try:
+        edition_id = _validate_edition_id(patch_root.get("edition_id"))
+        edition_id_valid = True
+    except ValueError as exc:
+        errors.append(str(exc))
+        edition_id = str(patch_root.get("edition_id") or "").strip()
+        edition_id_valid = False
+
+    if patch_root.get("as_of_date") is not None:
+        try:
+            as_of_date = _validate_date(patch_root["as_of_date"], "as_of_date")
+        except ValueError as exc:
+            errors.append(str(exc))
+            as_of_date = edition_id[:10] if edition_id_valid else ""
+    else:
+        as_of_date = edition_id[:10] if edition_id_valid else ""
 
     gold_snap: dict[str, Any] | None = None
     if gold_path.is_file():
-        gold_snap = _read_json_obj(gold_path, "gold/data_snapshot.json")
+        try:
+            gold_snap = _read_json_obj(gold_path, "gold/data_snapshot.json")
+        except ValueError as exc:
+            errors.append(str(exc))
     elif not skip_edition_lock:
-        raise ValueError("Missing gold/data_snapshot.json for edition lock and Gold Tier-0 mirror verification.")
+        errors.append("Missing gold/data_snapshot.json for edition lock and Gold Tier-0 mirror verification.")
 
     market_state: dict[str, Any] | None = None
     if state_path.is_file():
-        market_state = _read_json_obj(state_path, "equity/state/market_state.json")
+        try:
+            market_state = _read_json_obj(state_path, "equity/state/market_state.json")
+        except ValueError as exc:
+            errors.append(str(exc))
     elif not skip_edition_lock:
-        raise ValueError("Missing equity/state/market_state.json for edition lock verification.")
+        errors.append("Missing equity/state/market_state.json for edition lock verification.")
 
-    if not skip_edition_lock:
-        assert gold_snap is not None and market_state is not None
-        if gold_snap.get("edition_id") != edition_id:
-            raise ValueError(
+    if not skip_edition_lock and edition_id_valid:
+        if gold_snap is not None and gold_snap.get("edition_id") != edition_id:
+            errors.append(
                 f"Edition lock mismatch: patch edition_id ({edition_id!r}) != gold/data_snapshot.json ({gold_snap.get('edition_id')!r})."
             )
-        if market_state.get("edition_id") != edition_id:
-            raise ValueError(
+        if market_state is not None and market_state.get("edition_id") != edition_id:
+            errors.append(
                 f"Edition lock mismatch: patch edition_id ({edition_id!r}) != equity/state/market_state.json ({market_state.get('edition_id')!r})."
             )
 
-    orig_ma = _read_json_obj(ma_path, "equity/state/multi_asset_channels.json")
-    orig_eu = _read_json_obj(eu_path, "equity/state/etf_universe.json")
-    orig_dd = _read_json_obj(dd_path, "equity/state/deep_dossiers.json")
+    orig_ma: dict[str, Any] | None = None
+    orig_eu: dict[str, Any] | None = None
+    orig_dd: dict[str, Any] | None = None
+    for attr_label, p_obj in (
+        ("ma", (ma_path, "equity/state/multi_asset_channels.json")),
+        ("eu", (eu_path, "equity/state/etf_universe.json")),
+        ("dd", (dd_path, "equity/state/deep_dossiers.json")),
+    ):
+        try:
+            loaded = _read_json_obj(p_obj[0], p_obj[1])
+        except ValueError as exc:
+            errors.append(str(exc))
+            loaded = None
+        if attr_label == "ma":
+            orig_ma = loaded
+        elif attr_label == "eu":
+            orig_eu = loaded
+        else:
+            orig_dd = loaded
 
     if gold_snap is not None:
         gold_tier0_active = (
             str(gold_snap.get("tier_code", "")).strip() == "Tier 0" or gold_snap.get("new_buy_allowed") is False
         )
     else:
-        gold_tier0_active = bool(patch_root.get("gold_tier0_locked", orig_eu.get("gold_tier0_locked", True)))
+        default_lock = orig_eu.get("gold_tier0_locked", True) if isinstance(orig_eu, dict) else True
+        gold_tier0_active = bool(patch_root.get("gold_tier0_locked", default_lock))
 
     expected_pool = 231
     if isinstance(market_state, dict) and isinstance(market_state.get("markets"), dict):
@@ -2167,45 +2344,66 @@ def apply_equity_patch(
         if len(counts) == 3 and all(type(c) is int and c > 0 for c in counts):
             expected_pool = sum(counts)
 
-    merged_ma, ma_stats = _merge_multi_asset(orig_ma, patch_root, edition_id, as_of_date)
-    merged_eu, eu_stats = _merge_etf_universe(orig_eu, patch_root, edition_id, as_of_date)
-    merged_dd, dd_stats = _merge_deep_dossiers(
-        orig_dd,
-        patch_root,
-        edition_id,
-        as_of_date,
-        market_state=market_state,
-    )
+    merged_ma: dict[str, Any] | None = None
+    ma_stats: dict[str, Any] = {}
+    if orig_ma is not None:
+        merged_ma, ma_stats = _merge_multi_asset(orig_ma, patch_root, edition_id, as_of_date, errors=errors)
 
-    merged_pc: dict[str, Any] | None = None
-    pc_stats: dict[str, Any] | None = None
-    if patch_root.get("policy_calendar") is not None or pc_path.is_file():
-        orig_pc = _read_json_obj(pc_path, "equity/state/policy_calendar.json")
-        merged_pc, pc_stats = _merge_policy_calendar(
-            orig_pc,
+    merged_eu: dict[str, Any] | None = None
+    eu_stats: dict[str, Any] = {}
+    if orig_eu is not None:
+        merged_eu, eu_stats = _merge_etf_universe(orig_eu, patch_root, edition_id, as_of_date, errors=errors)
+
+    merged_dd: dict[str, Any] | None = None
+    dd_stats: dict[str, Any] = {}
+    if orig_dd is not None:
+        merged_dd, dd_stats = _merge_deep_dossiers(
+            orig_dd,
             patch_root,
             edition_id,
             as_of_date,
             market_state=market_state,
+            errors=errors,
         )
+
+    merged_pc: dict[str, Any] | None = None
+    pc_stats: dict[str, Any] | None = None
+    if patch_root.get("policy_calendar") is not None or pc_path.is_file():
+        try:
+            orig_pc = _read_json_obj(pc_path, "equity/state/policy_calendar.json")
+        except ValueError as exc:
+            errors.append(str(exc))
+            orig_pc = None
+        if orig_pc is not None:
+            merged_pc, pc_stats = _merge_policy_calendar(
+                orig_pc,
+                patch_root,
+                edition_id,
+                as_of_date,
+                market_state=market_state,
+                errors=errors,
+            )
 
     untouched_channel_siblings = ma_stats.pop("untouched_channel_siblings", {})
     unpatched_ah_twins = dd_stats.pop("unpatched_ah_twins", {})
 
     # Mirror live Gold Tier-0 status if patch did not explicitly override
-    if gold_snap is not None and "gold_tier0_locked" not in patch_root:
+    if merged_eu is not None and gold_snap is not None and "gold_tier0_locked" not in patch_root:
         merged_eu["gold_tier0_locked"] = gold_tier0_active
 
-    errors = _validate_merged_equity_dbs(
-        merged_ma,
-        merged_eu,
-        merged_dd,
-        edition_id=edition_id,
-        gold_tier0_active=gold_tier0_active,
-        expected_pool=expected_pool,
-        as_of_date=as_of_date,
-        market_state=market_state,
-    )
+    if merged_ma is not None and merged_eu is not None and merged_dd is not None:
+        errors.extend(
+            _validate_merged_equity_dbs(
+                merged_ma,
+                merged_eu,
+                merged_dd,
+                edition_id=edition_id,
+                gold_tier0_active=gold_tier0_active,
+                expected_pool=expected_pool,
+                as_of_date=as_of_date,
+                market_state=market_state,
+            )
+        )
     if merged_pc is not None:
         errors.extend(
             _validate_policy_calendar(
@@ -2216,10 +2414,10 @@ def apply_equity_patch(
             )
         )
     if errors:
-        preview = "\n  - ".join(errors[:20])
-        more = f"\n  ... (+{len(errors) - 20} more)" if len(errors) > 20 else ""
-        raise ValueError(f"Pre-write validation failed ({len(errors)} error(s)):\n  - {preview}{more}")
+        formatted = "\n  - ".join(errors)
+        raise ValueError(f"Pre-write validation failed ({len(errors)} error(s)):\n  - {formatted}")
 
+    assert merged_ma is not None and merged_eu is not None and merged_dd is not None
     writes = [
         (ma_path, _serialize_json(merged_ma)),
         (eu_path, _serialize_json(merged_eu)),
@@ -2443,18 +2641,30 @@ def prepend_gold_ledgers(
             f"_ledger_patch.json.changelog_entry_md contains deprecated local binary/release link(s): {sorted(set(cl_bin_links))[:5]}"
         )
 
-    # Ensure CHANGELOG entry carries the canonical edition marker matching edition_id
+    # Ensure CHANGELOG entry carries the canonical edition marker on line 1 (strictly before any heading)
+    first_cl_line = next((ln.strip() for ln in changelog_entry.splitlines() if ln.strip()), "")
     cl_markers = GOLD_CHANGELOG_MARKER_RE.findall(changelog_entry)
-    if cl_markers:
+    if cl_markers or "GOLD_EDITION_CHANGELOG" in changelog_entry:
         if cl_markers != [edition_id]:
             raise ValueError(
                 f"changelog_entry_md GOLD_EDITION_CHANGELOG marker(s) {cl_markers!r} do not match edition_id {edition_id!r}."
+            )
+        if not re.match(r"^<!--\s*GOLD_EDITION_CHANGELOG\b", first_cl_line):
+            raise ValueError(
+                "changelog_entry_md must place <!-- GOLD_EDITION_CHANGELOG ... --> on the first non-empty line "
+                "(strictly before any #/##/### heading) to prevent orphan headings."
             )
         normalized_changelog_entry = changelog_entry.strip()
     else:
         normalized_changelog_entry = f"<!-- GOLD_EDITION_CHANGELOG {edition_id} -->\n\n{changelog_entry.strip()}"
 
-    # Validate GOLD_EDITION_REVIEW JSON inside audit_review_block_md (mirroring gold/lint_readability.py)
+    # Validate GOLD_EDITION_REVIEW JSON inside audit_review_block_md (must be on line 1 before any heading)
+    first_au_line = next((ln.strip() for ln in audit_review_block.splitlines() if ln.strip()), "")
+    if not re.match(r"^<!--\s*GOLD_EDITION_REVIEW\b", first_au_line):
+        raise ValueError(
+            "audit_review_block_md must place <!-- GOLD_EDITION_REVIEW {...} --> on the first non-empty line "
+            "(strictly before any #/##/### heading) to prevent orphan headings."
+        )
     review_matches = GOLD_REVIEW_BLOCK_RE.findall(audit_review_block)
     if len(review_matches) != 1:
         raise ValueError(
@@ -3471,10 +3681,25 @@ def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str
             "as_of_cst": pc.get("as_of_cst"),
             "horizon_days": pc.get("horizon_days"),
             "horizon_end_cst": max(end_dates) if end_dates else None,
+            "policy_briefs_count": len(briefs),
+            "events_count": len(events),
             "total_briefs": len(briefs),
             "total_events": len(events),
             "counts_by_tier": {k: tier_counter[k] for k in ("P0", "P1", "P2") if tier_counter.get(k, 0) > 0},
             "counts_by_region": dict(sorted(region_counter.items())),
+            "patch_schema_hint": {
+                "allowed_patch_keys": sorted(ALLOWED_POLICY_CALENDAR_PATCH_KEYS),
+                "top_level_updates_allowed_keys": sorted(ALLOWED_POLICY_CALENDAR_TOP_KEYS),
+                "valid_affected_markets": [
+                    "a_share",
+                    "hk_stock",
+                    "us_stock",
+                    "rates_bonds_core",
+                    "gold",
+                    "non_us_global_satellite",
+                ],
+                "valid_regions": sorted(POLICY_CAL_ALLOWED_REGIONS),
+            },
             "policy_briefs": [
                 {
                     "id": b.get("id"),
@@ -3488,7 +3713,7 @@ def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str
                 for b in briefs
                 if isinstance(b, dict)
             ],
-            "upcoming_events": [
+            "events": [
                 {
                     "event_id": ev.get("event_id"),
                     "date_cst": ev.get("date_cst"),
@@ -3518,7 +3743,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     mode.add_argument(
         "--apply",
         action="store_true",
-        help="Validate and atomically merge equity/state/_edition_patch.json into the 3 equity state databases.",
+        help="Validate and atomically merge equity/state/_edition_patch.json into the 3 equity state databases and policy_calendar.json.",
     )
     mode.add_argument(
         "--prepend-gold-ledgers",

@@ -1979,6 +1979,102 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
             ):
                 self.assertEqual(json.loads((sandbox / rel).read_text(encoding="utf-8"))["edition_id"], mid_ed)
 
+    def test_multi_error_accumulation_inspect_hint_uk_region_and_line1_marker(self):
+        real_root = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox = Path(tmp)
+            (sandbox / "gold" / "daily").mkdir(parents=True)
+            (sandbox / "equity" / "state").mkdir(parents=True)
+            for rel in (
+                "gold/data_snapshot.json",
+                "gold/daily/CHANGELOG.md",
+                "gold/daily/AUDIT_LOG.md",
+                "equity/state/market_state.json",
+                "equity/state/multi_asset_channels.json",
+                "equity/state/etf_universe.json",
+                "equity/state/deep_dossiers.json",
+                "equity/state/policy_calendar.json",
+            ):
+                shutil.copy2(real_root / rel, sandbox / rel)
+
+            ed = json.loads((sandbox / "equity/state/market_state.json").read_text(encoding="utf-8"))["edition_id"]
+            before_mac = (sandbox / "equity/state/multi_asset_channels.json").read_text(encoding="utf-8")
+
+            # 1. Inspect policy-calendar returns real key 'events' + patch_schema_hint with UK
+            out_buf = StringIO()
+            with patch.object(psd, "REPO_ROOT", sandbox), redirect_stdout(out_buf):
+                rc_insp = psd.main(["--inspect", "policy-calendar"])
+            self.assertEqual(rc_insp, 0)
+            insp = json.loads(out_buf.getvalue())
+            self.assertIn("events", insp)
+            self.assertNotIn("upcoming_events", insp)
+            self.assertIn("patch_schema_hint", insp)
+            self.assertIn("UK", insp["patch_schema_hint"]["valid_regions"])
+            self.assertIn("UK", psd.POLICY_CAL_REGIONS)
+
+            # 2. Multi-error accumulation across multiple DBs fails once with ALL errors and writes ZERO files
+            bad_patch = {
+                "edition_id": ed,
+                "multi_asset_channels": {
+                    "channels_patch": {
+                        "qdii_mrf": {"today_alert": "建议立即买入 BTC 与以太坊避险"}
+                    }
+                },
+                "etf_universe": {
+                    "etfs_upsert": [{"code": "999999", "name": "缺字段新基"}]
+                },
+                "policy_calendar": {
+                    "events_upsert": [{
+                        "event_id": "uk_bad_prose_20261215",
+                        "date_cst": "2026-12-15",
+                        "end_date_cst": "2026-12-15",
+                        "date_precision": "exact",
+                        "time_cst": "20:00",
+                        "region": "UK",
+                        "category": "central_bank",
+                        "impact_tier": "P0",
+                        "title": "英国央行议息（这是 P0 重磅事件）",
+                        "affected_markets": ["non_us_global_satellite"],
+                        "expected_consensus": "维持利率不变",
+                        "market_transmission": "英债波动",
+                        "watch_triggers": {"upside_bull": "温和降息", "downside_bear": "通胀偏热"},
+                        "pre_event_stance": "保持防守",
+                        "source_url": "https://www.bankofengland.co.uk/",
+                        "monitor_window_min": 60,
+                    }]
+                },
+            }
+            (sandbox / "equity/state/_edition_patch.json").write_text(
+                json.dumps(bad_patch, ensure_ascii=False), encoding="utf-8"
+            )
+            with patch.object(psd, "REPO_ROOT", sandbox):
+                err_buf = StringIO()
+                with redirect_stderr(err_buf):
+                    rc = psd.main(["--apply"])
+            self.assertNotEqual(rc, 0)
+            err_txt = err_buf.getvalue()
+            self.assertIn("银发〔2026〕42号", err_txt)
+            self.assertIn("asset_class", err_txt)
+            self.assertIn("region", err_txt)
+            self.assertIn("P0", err_txt)
+            # Zero partial writes on failure
+            self.assertEqual((sandbox / "equity/state/multi_asset_channels.json").read_text(encoding="utf-8"), before_mac)
+
+            # 3. --prepend-gold-ledgers rejects heading before <!-- GOLD_EDITION_* --> marker
+            bad_ledger = {
+                "edition_id": ed,
+                "changelog_entry_md": f"## {ed} 错误顺序标题\n<!-- GOLD_EDITION_CHANGELOG {ed} -->\n- 记录。\n",
+                "audit_review_block_md": f"### {ed} 错误顺序\n<!-- GOLD_EDITION_REVIEW {{\"edition_id\": \"{ed}\"}} -->\n",
+            }
+            (sandbox / "gold/daily/_ledger_patch.json").write_text(
+                json.dumps(bad_ledger, ensure_ascii=False), encoding="utf-8"
+            )
+            with patch.object(psd, "REPO_ROOT", sandbox):
+                err_buf2 = StringIO()
+                with redirect_stderr(err_buf2):
+                    rc2 = psd.main(["--prepend-gold-ledgers"])
+            self.assertNotEqual(rc2, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

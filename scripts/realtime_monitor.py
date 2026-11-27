@@ -305,6 +305,17 @@ _RUMOR_CUE_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPLICIT_RUMOR_HARD_RE = re.compile(r"(?:小作文|网传|未经证实|传闻|\brumor\b|\bunconfirmed\b|\bunverified\b)", re.IGNORECASE)
+_ROUTINE_NOISE_RE = re.compile(
+    r"(?:会见|访问|出席[^\n。；]{0,20}(?:开幕式|闭幕式|峰会|论坛|招待会)|致贺信|致贺电|慰问电|数字身份|"
+    r"编造传播[^\n。；]{0,20}误导性信息|警示函|行政处罚|立案调查|纪律处分|任职资格核准)",
+    re.IGNORECASE,
+)
+_HARD_CATALYST_OVERRIDE_RE = re.compile(
+    r"(?:降准|降息|特别国债|超长期特别国债|平准基金|融资保证金|印花税|加征关税|301关税|232关税|122条款|"
+    r"出口管制|实体清单|31 CFR Part 851|互换便利|回购增持再贷款|买断式逆回购|赤字率|化债方案|弱方兑换保证|联系汇率|"
+    r"(?<![A-Za-z0-9])(?:LPR|MLF|FOMC|QRA|Section 122|IEEPA|tariff|export control|rate cut|rate hike)(?![A-Za-z0-9]))",
+    re.IGNORECASE,
+)
 _HK_TAX_TOPIC_RE = re.compile(r"(?:港股通红利税|港股红利税|港股股息税|港股红利所得税)")
 _HK_TAX_ENACTED_RE = re.compile(r"(?:正式发布|正式宣布|正式实施|正式落地|印发|联合公告|财政部公告\s*第|税务总局公告\s*第)")
 _POSITIVE_CUE_RE = re.compile(
@@ -1096,6 +1107,8 @@ def _kw_in_text(kw: str, text_low: str) -> bool:
 
 
 def match_policy_domain(text: str) -> PolicyDomainRule | None:
+    if _ROUTINE_NOISE_RE.search(text) and not _HARD_CATALYST_OVERRIDE_RE.search(text):
+        return None
     low = text.lower()
     best: tuple[int, int, PolicyDomainRule] | None = None
     for rule in POLICY_DOMAINS:
@@ -1698,6 +1711,26 @@ class MonitorStateStore:
             self._conn.commit()
         return default_cluster_key, sorted(set(sources)), is_official
 
+    def seen_items_count(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) AS cnt FROM seen_items").fetchone()
+        return int(row["cnt"]) if row else 0
+
+    def _domain_p1_in_cooldown(self, domain_id: str, now_ts: float, domain_cooldown_sec: int) -> bool:
+        if domain_cooldown_sec <= 0 or domain_id in ("crisis_breaker", "calendar_prealert"):
+            return False
+        cutoff = now_ts - domain_cooldown_sec
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM signal_audit
+            WHERE domain_id = ? AND severity = 'P1'
+              AND action IN ('dispatched', 'dry_run_dispatch')
+              AND created_ts >= ?
+            LIMIT 1
+            """,
+            (domain_id, cutoff),
+        ).fetchone()
+        return row is not None
+
     def _p1_sent_today(self, now_cst: datetime) -> int:
         day_prefix = now_cst.strftime("%Y-%m-%d")
         row = self._conn.execute(
@@ -1713,6 +1746,7 @@ class MonitorStateStore:
         *,
         in_calendar_p0_window: bool = False,
         cooldown_sec: int = 7200,
+        domain_cooldown_sec: int = 1800,
         p1_daily_cap: int = 6,
     ) -> tuple[bool, str]:
         """Return (should_send, decision_reason). Mutates signal.escalation_tag on pierce."""
@@ -1745,6 +1779,9 @@ class MonitorStateStore:
                     signal.escalation_tag = "【进展升级】"
                 else:
                     return False, "suppressed_cooldown"
+
+        if signal.severity == "P1" and not signal.escalation_tag and self._domain_p1_in_cooldown(signal.domain_id, now_ts, domain_cooldown_sec):
+            return False, "suppressed_domain_cooldown"
 
         if signal.severity == "P1" and self._p1_sent_today(now_dt) >= p1_daily_cap:
             return False, "suppressed_daily_cap"
@@ -2147,6 +2184,7 @@ def run_once(
     raw_items, feed_errors = poll_all_feeds(sources_filter=sources_filter, now_ts=now_dt.timestamp())
     quotes, quote_errors = poll_live_quotes()
 
+    cold_start_bootstrap = (store.seen_items_count() == 0)
     unseen_items = store.mark_and_filter_unseen(raw_items, now_dt.timestamp(), persist=not dry_run)
     news_signals = classify_and_score(
         unseen_items,
@@ -2177,8 +2215,19 @@ def run_once(
 
     dispatched: list[dict[str, Any]] = []
     suppressed: list[dict[str, Any]] = []
+    domains_dispatched_p1: set[str] = set()
+    cold_start_cap = 2
     for sig in all_signals:
         should_send, reason = store.evaluate_dispatch(sig, now_dt, in_calendar_p0_window=in_p0_win)
+        if should_send and cold_start_bootstrap and len(dispatched) >= cold_start_cap:
+            should_send, reason = False, "suppressed_cold_start"
+        if (
+            should_send
+            and sig.severity == "P1"
+            and sig.domain_id not in ("crisis_breaker", "calendar_prealert")
+            and sig.domain_id in domains_dispatched_p1
+        ):
+            should_send, reason = False, "suppressed_domain_cooldown"
         if should_send:
             alert_title, memo_md = interpret_and_render_memo(sig, ssot, now_cst=now_dt, enable_llm=enable_llm)
             msg = wechat_notify.AlertMessage(
@@ -2201,6 +2250,8 @@ def run_once(
                 action = "delivery_failed"
             if not dry_run:
                 store.record_signal(sig, action, now_dt)
+            if sig.severity == "P1":
+                domains_dispatched_p1.add(sig.domain_id)
             dispatched.append(
                 {
                     "severity": sig.severity,

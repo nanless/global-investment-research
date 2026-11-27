@@ -1515,6 +1515,11 @@ class TestCliSmoke(unittest.TestCase):
             wn._wecom_url({"webhook_url": "HTTPS://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc"}).startswith("HTTPS://")
         )
 
+    def test_placeholder_detection_catches_short_replace_tokens(self) -> None:
+        for tok in ("AT_REPLACE_WITH_WXPUSHER_TOKEN", "REPLACE_WITH_YOUR_UID", "REPLACE_ME", "YOUR_KEY", "..."):
+            self.assertTrue(wn._is_placeholder(tok), f"Expected placeholder rejected: {tok}")
+        self.assertFalse(wn._is_placeholder("AT_realLiveToken99887766"))
+
 
 if __name__ == "__main__":
     unittest.main()

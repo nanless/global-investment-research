@@ -8,7 +8,7 @@
 
 | 字段名 | 适用范围 | 类型 | 填写规则与红线 |
 | :--- | :--- | :--- | :--- |
-| `edition_id` | **日报必填** | `string` | 班次期号，格式 `YYYY-MM-DD_{0730\|1130\|1800}` 或附加 `_rN`（如 `"2026-11-27_1130"`），须与日报文件名、`state/market_state.json`、三大扩展数据库及黄金共享快照完全一致。 |
+| `edition_id` | **日报必填** | `string` | 班次期号，格式 `YYYY-MM-DD_{0730\|1130\|1800}` 或附加 `_rN`（如 `"2026-11-27_1130"`），须与日报文件名、`state/market_state.json`、三大扩展数据库、`state/policy_calendar.json` 及黄金共享快照完全一致。 |
 | `edition_type` | **日报必填** | `string` | 场次刊型标识：自 `2026-11-26_1800` 起新刊使用 **`"main"`**（全时段完整主刊，必含 ≥2 张矢量 SVG 图）或 **`"holiday_watch"`**（休市/半日市升级守望刊，建议 ≥1 张矢量 SVG 图）；仅向下兼容 `2026-11-26_1800` 之前的历史 `"light"` 轻刊。 |
 | `period_slug` | 旗舰必填 / 日报可选 | `string` | 月刊标识符，格式 `YYYY_MM`（如 `"2026_11"`）。与 `{market}_market_report_{slug}.md` 及 `{market}_market_report_latest.md` 原子同步，供静态门户直读渲染。 |
 | `version` | 旗舰必填 | `string` | 刊期中文名（如 `"2026年11月刊"`），**严禁写内部工程版本号如 `V9.2`/`V10.0`**。 |

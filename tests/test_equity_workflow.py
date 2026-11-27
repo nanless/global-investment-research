@@ -1305,9 +1305,10 @@ class EquityWorkflowTests(unittest.TestCase):
         pc_path.write_text(json.dumps(pc_26, ensure_ascii=False), encoding="utf-8")
         for db in ("multi_asset_channels.json", "etf_universe.json", "deep_dossiers.json"):
             p_db = self.root / "equity/state" / db
-            obj = json.loads(p_db.read_text(encoding="utf-8"))
-            obj["edition_id"] = "2026-11-26_1800"
-            p_db.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+            if p_db.is_file():
+                obj = json.loads(p_db.read_text(encoding="utf-8"))
+                obj["edition_id"] = "2026-11-26_1800"
+                p_db.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
         a_daily = self.issue("a_share", "main")
         self.issue("hk_stock", "main")
         self.issue("us_stock", "holiday_watch")
@@ -1319,6 +1320,93 @@ class EquityWorkflowTests(unittest.TestCase):
         self.assertEqual(res_prose.returncode, 1, res_prose.stdout)
         self.assertIn("policy_calendar.json", res_prose.stdout)
         self.assertIn("realtime_monitor.py", res_prose.stdout)
+
+    def test_numeric_ranges_currency_pe_skip_uk_region_bare_p0_and_bare_9m(self):
+        import equity.lint_equity as le
+
+        # 1. Currency-prefixed upper bound matched & valuation multiples skipped
+        self.assertEqual(le._extract_numeric_ranges("安全买点 $540–$555 与 ¥10–¥20"), [(540.0, 555.0), (10.0, 20.0)])
+        self.assertEqual(le._extract_numeric_ranges("前瞻 PE 14.3–15.0x，历史均值 12–15倍"), [])
+        self.assertIn("UK", le.POLICY_CAL_REGIONS)
+
+        # 2. Bare P0 in policy_calendar.json prose blocked, while UK region with clean prose passes
+        self.advance("2026-11-26_1800")
+        pc_path = self.root / "equity/state/policy_calendar.json"
+        clean_uk = {
+            "schema_version": "1.0",
+            "edition_id": "2026-11-26_1800",
+            "as_of_cst": "2026-11-26T18:00:00+08:00",
+            "horizon_days": 14,
+            "policy_briefs": [
+                {
+                    "id": "uk_boe_brief",
+                    "date_cst": "2026-11-26",
+                    "region": "UK",
+                    "category": "central_bank",
+                    "impact_tier": "P0",
+                    "authority": "Bank of England",
+                    "affected_markets": ["non_us_global_satellite", "rates_bonds_core"],
+                    "headline": "英国央行维持利率不变",
+                    "summary": "英国央行最新声明偏审慎。",
+                    "market_impact": "影响英债与欧股风险偏好。",
+                    "source_url": "https://www.bankofengland.co.uk/",
+                }
+            ],
+            "events": [
+                {
+                    "event_id": "uk_boe_20261217",
+                    "date_cst": "2026-12-17",
+                    "end_date_cst": "2026-12-17",
+                    "date_precision": "exact",
+                    "time_cst": "20:00",
+                    "region": "UK",
+                    "category": "central_bank",
+                    "impact_tier": "P0",
+                    "title": "英国央行 12 月利率决议",
+                    "affected_markets": ["non_us_global_satellite", "rates_bonds_core"],
+                    "expected_consensus": "市场预期按兵不动。",
+                    "market_transmission": "英债与欧元区利率联动。",
+                    "watch_triggers": {"upside_bull": "释放降息路径", "downside_bear": "再通胀抬头"},
+                    "pre_event_stance": "维持全球防守配比。",
+                    "source_url": "https://www.bankofengland.co.uk/",
+                    "monitor_window_min": 60,
+                }
+            ],
+        }
+        for db in ("multi_asset_channels.json", "etf_universe.json", "deep_dossiers.json"):
+            p_db = self.root / "equity/state" / db
+            if p_db.is_file():
+                obj = json.loads(p_db.read_text(encoding="utf-8"))
+                obj["edition_id"] = "2026-11-26_1800"
+                p_db.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        a_daily = self.issue("a_share", "main")
+        self.issue("hk_stock", "main")
+        self.issue("us_stock", "holiday_watch")
+
+        pc_path.write_text(json.dumps(clean_uk, ensure_ascii=False), encoding="utf-8")
+        res_ok = self.lint("--precheck", "--strict")
+        self.assertEqual(res_ok.returncode, 0, res_ok.stdout + res_ok.stderr)
+
+        bad_p0 = deepcopy(clean_uk)
+        bad_p0["events"][0]["title"] = "英国央行 P0 重磅决议"
+        pc_path.write_text(json.dumps(bad_p0, ensure_ascii=False), encoding="utf-8")
+        res_p0 = self.lint("--precheck", "--strict")
+        self.assertEqual(res_p0.returncode, 1, res_p0.stdout)
+        self.assertIn("P0", res_p0.stdout)
+
+        # 3. Bare 9M warning caught in post-cutover editorial check while 9MB / $9M / 前三季度 stay clean
+        _, warns_9m = le._check_phase_d_editorial(
+            "## 正文\n\n**公司要点**：公司 9M 归母净利大增。\n",
+            "2026-11-27_1800_a_share.md",
+            {"edition_type": "main"},
+        )
+        self.assertTrue(any("9M" in w for w in warns_9m), warns_9m)
+        _, warns_clean = le._check_phase_d_editorial(
+            "## 正文\n\n**公司要点**：附件 9MB、融资 $9M、前三季度业绩稳健。\n",
+            "2026-11-27_1800_a_share.md",
+            {"edition_type": "main"},
+        )
+        self.assertFalse(any("裸期限缩写" in w for w in warns_clean), warns_clean)
 
 
 if __name__ == "__main__":

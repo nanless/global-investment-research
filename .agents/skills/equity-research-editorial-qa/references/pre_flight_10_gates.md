@@ -1,11 +1,11 @@
 # 发版前 10 项全量质量与合规门禁（Pre-Flight 10 Gates · 纯网页三班次 10+1 21 图 + 交互 K 线版）
 
-每次发布 **A 股 / 港股 / 美股** 独立全时段主刊（`main`，07:30 早 / 11:30 午 / 18:00 晚）、升级版休市守望刊（`holiday_watch`）或修订三份旗舰常青手册前，必须逐项通过以下 **10 道硬门禁**（已与最新 `lint_equity.py` Gate 0–5、Gate 3B、三大扩展数据库校验、跨项目黄金门禁 C1–C3 及静态站点门禁 `lint_site.py` **S1–S7** 100% 同步）；自查溯源隔离记入 `state/audit_ledger.md`，双轨严检全绿后再执行 Step 5 受控 RSI 盲审、440+ K 线抓取与纯网页发布。
+每次发布 **A 股 / 港股 / 美股** 独立全时段主刊（`main`，07:30 早 / 11:30 午 / 18:00 晚）、升级版休市守望刊（`holiday_watch`）或修订三份旗舰常青手册前，必须逐项通过以下 **10 道硬门禁**（已与最新 `lint_equity.py` Gate 0–5、Gate 3B、三大扩展数据库与 `policy_calendar.json` 校验、跨项目黄金门禁 C1–C3 及静态站点门禁 `lint_site.py` **S1–S7** 100% 同步）；自查溯源隔离记入 `state/audit_ledger.md`，双轨严检全绿后再执行 Step 5 受控 RSI 盲审、480+ K 线抓取与纯网页发布。
 
 ---
 
 ## 门禁 1｜7 类一手源核验、多指数优先级秩序、跨项目黄金 SSOT 与透明披露反阻塞
-- ☐ 全部收盘/午收、成交额、央行公开市场、国债拍卖、公司财报、退市状态、**12 大个人多元渠道实时利率/溢价/公告**与 **174+ 跨 6 通道重点 ETF 数据** 均经 10 路调研核验至 7 类官方一手信源，严禁采信未刷新缓存（中金所必核 `YYYYMMDD` 日期戳）；**严禁单指数播报，强制按优先级排序**（A 股必以**上证指数 `000001` #1 领衔** 12 指数，港股恒指/恒科/国指/恒综/AH 溢价，美股标普/纳综/纳100/道指/罗素/等权/费半/VIX）。
+- ☐ 全部收盘/午收、成交额、央行公开市场、国债拍卖、公司财报、退市状态、**按 4 大执行角色分层的 12 大个人多元渠道实时利率/溢价/公告**、**181+ 正交标注（`asset_class × region × 6 通道`）重点 ETF 数据**与 **14–30 天前瞻 `policy_calendar.json` 财经/政策事件** 均经 10 路调研核验至 7 类官方一手信源，严禁采信未刷新缓存（中金所必核 `YYYYMMDD` 日期戳）；**严禁单指数播报，强制按 Layer 2 对称 `3×2` 六市场架构与机构优先级排序**（A 股必以**上证指数 `000001` #1 领衔** 12 指数，港股离岸折价腿恒指/恒科/国指/恒综 `HSCI`/AH 溢价 `HSAHP`，美股标普/纳综/纳100/道指/罗素/等权/费半/VIX，同步追踪 `rates_bonds_core` 中美利率与 `non_us_global_satellite` 9 只非美指数；BTC 严守央行 **`银发〔2026〕42号`** 中国大陆 0% 严禁配仓，仅作 Layer 1 只读流动性温度计）。
 - ☐ **跨项目黄金 SSOT 与三班次单向截点宽限（Gate C1）**：黄金与权益声明同一有效 `edition_id`（`0730`/`1130`/`1800`）；黄金截点早于或同分钟于权益且间隔 **≤ 6 小时**，两轨截点与日报 `chart_live.as_of_full` 各落在所标班次 **`[-5 分钟, +6 小时]`** 单向窗口内；共享宏观键完全对齐；假日/周末或美东非 VIX 窗（含 `07:30` 与 `11:30`）允许双轨 `brent_live_usd` 与 `vix_live` 同口径同时留空；期铜异动 `≥ 3.5%` 时 A/港报告须评估有色传导（Gate C3）。
 - ☐ 严防退市股、停申基金与到期兑付误判：绝不列入已于 2026-01-27 退市的恒生银行 `00011`（用渣打 `02888` 替代）；**严禁推荐已暂停申购的 MRF `968118`**。
 - ☐ **反阻塞透明披露**：截点未出官值或暂不可取数据严禁编造、亦不阻塞按时发刊，写入文末“待下期补核项”、挂入 `pending_backfills` 并同步写入纯读者中文 `data_caveats` 数组供门户展示。
@@ -17,7 +17,7 @@
 - ☐ 均线偏离率、6 维体检拆解、压力测试与自然频率 10 点进度条（**四情景完整拆分与理由，四行之和精确 = 10，严禁只甩偷懒单边如 `7/10`**）经反算零误差，严禁伪精确小数概率。
 
 ## 门禁 3｜四灯、6 维拆解、48 小时双向剧本、四色锁仓与三市危机熔断统一
-- ☐ 首屏、正文、SVG 与 `state/market_state.json` 四灯、体检分（含 **6 维拆解分项**）、股票上限、防踏空阈值及 `stock_pool_count` 100% 一致，零 `Tier 0–3` 或混用 `✅`；配齐 **1 句利率→汇率→信用→大宗→ERP 跨资产传导链** 与 **未来 48 小时上行/下行双向催化剧本**。
+- ☐ 首屏、正文、SVG 与 `state/market_state.json` 四灯、体检分（含 **6 维拆解分项**）、股票上限、防踏空阈值及 `stock_pool_count` 100% 一致，零 `Tier 0–3` 或混用 `✅`；配齐 **1 句利率→汇率→信用→大宗→ERP 跨资产传导链**、**1–2 条一手官源政策/时政财经要闻精读**（A 股政策市主线、港股 A+美双轨催化、美股联储/财政/关税地缘）与 **4 列未来 7–14 天全北京时间财经与政策日历表**（与 `state/policy_calendar.json` 及门户首页 `#sec-policy-calendar` 逐项同步，纯中文级别徽章如重磅/重要，零裸 `P0`/`P1`，严守黄金红灯锁），以及 **未来 48 小时上行/下行双向催化剧本**。
 - ☐ 全部 `🔵 🔒未来主攻` 买点解锁锚点严格低于现价/现估值；图文色标 100% 一致。
 - ☐ **三市危机总熔断三阀完全统一**：`VIX 连 2 日 > 30` / 日元 3 日急升 `>3%` / 10 年美债 `>5.25%`（港股叠加金管局总结余 `<400 亿港元`）。
 - ☐ 下单前 3 秒自检卡 100% 正向“全选是”，含 `☐` 方框、单股 ≤ 8%、跨三市 AI 科技 ≤ 20%、≥2 条当期特化核对项及“事前验尸”条款。
@@ -27,7 +27,7 @@
   - 场内首选 0.20% 宽基/现金流/红利/银行 ETF（`510300`/`563360`/`159201`/`563020`/`515180`/`516310`），严防把 `561910`（电池）误作银行、`515080`（中证红利）误作红利质量、或推荐微型 `158008`/`020035`；
   - **可转债 ETF 跨库费率护栏**：全市场 `511380` 为 **0.20%/年**、投资级 AA+ `511180` 为 **0.30%/年**，`multi_asset_channels.json`、`etf_universe.json` 与正文严禁混写；
   - `008142`/`008143` 严格同步 2026 销售费改（A 申购上限 0.30%/1 折 0.03%【过渡 0.06%】、运营 0.20%/年；C 销服上限 0.20%/年且 2027-01-01 起满 1 年“先收后返”免收，但长持 ≥1 年仍 1 折 A 更省；现行未整改旧合同 `008143` 仍 0.55%/年满 30 天免赎回，绝不可写 7 天免赎回）。
-- ☐ **12 大渠道与 QDII 制度硬红线零遗漏**：① 活钱逆回购周四 3 天息与节前倒数第 2 交易日窗口；② 存款/大额存单多数大行**禁止二次转让**、二手接盘单直接提前支取亏本陷阱及单法人 50 万存保；③ 境内外币存款理财核算汇兑损益与 5 万美元额度；④ 债券 2025-08-08 增值税新老划断，并**明确区分交易所公司债 ETF 底层付息仍扣 20% 税（区别于银行间短融 ETF `511360`）**；⑤ 银行理财禁估值平滑与固收+真实含权；⑥ 储蓄保险用真实年化 IRR 穿透演示话术与前期退保损失；⑦ 个人养老金仅 ≥20% 边际税率档显著合算；⑧ **QDII 五铁律**（溢价 >2%–3% 不追且用 `0.5 × (N/250) × r_excess` 衡量排队盈亏平衡、TA 账户跨三方合并拒单 vs 直销/代销双轨分计、美元现汇仍占同公司 SAFE 额度、互挂 ETF 必披露穿透双层年费、严禁臆测联接代码）、MRF 累计份额避 20% 税（**禁推停申 `968118`**）与 2026-08-07 新规 **`2027-12-31` LOF 退市线**；⑨ 可转债（`511380` 0.20% vs `511180` 0.30%）去刚兑违约、强赎 Z 标识及【误导拦截 1】严禁写“末日二级卖出免 20% 个人税”；⑩ REITs 产权 NOI vs 特许经营权含还本看中债 IRR 及薄量破发；⑪ 非金商品豆粕 `159985` 正展期 vs 白银/原油 LOF 溢价磨损退市；⑫ 私募与标品信托严守 300 万合规门槛与远离非标资金池。
+- ☐ **12 大渠道与 QDII 制度硬红线零遗漏**：① 活钱逆回购周四 3 天息与节前倒数第 2 交易日窗口；② 存款/大额存单多数大行**禁止二次转让**、二手接盘单直接提前支取亏本陷阱及单法人 50 万存保；③ 境内外币存款理财核算汇兑损益与 5 万美元额度；④ 债券 2025-08-08 增值税新老划断，并**明确区分交易所公司债 ETF 底层付息仍扣 20% 税（区别于银行间短融 ETF `511360`）**；⑤ 银行理财禁估值平滑与固收+真实含权；⑥ 储蓄保险用真实年化 IRR 穿透演示话术与前期退保损失；⑦ 个人养老金仅 ≥20% 边际税率档显著合算；⑧ 渠道 08 显式定名 **「QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通」**（10 元起普通人普惠跨境渠道，绝非高净值专属），落实 **QDII 五铁律**（溢价 >2%–3% 不追且用 `0.5 × (N/250) × r_excess` 衡量排队盈亏平衡、TA 账户跨三方合并拒单 vs 直销/代销双轨分计、美元现汇仍占同公司 SAFE 额度、互挂 ETF 必披露穿透双层年费、严禁臆测联接代码；凡限额/溢价变动必同步 `multi_asset_channels.qdii_channel_comparison`、`etf_universe.key_2026_rules` 与同系纳指兄弟 ETF）、MRF 累计份额避 20% 税（**禁推停申 `968118`**）与 2026-08-07 新规 **`2027-12-31` LOF 退市线**；⑨ 可转债（`511380` 0.20% vs `511180` 0.30%）去刚兑违约、强赎 Z 标识及【误导拦截 1】严禁写“末日二级卖出免 20% 个人税”；⑩ REITs 产权 NOI vs 特许经营权含还本看中债 IRR 及薄量破发；⑪ 非金商品豆粕 `159985` 正展期 vs 白银/原油 LOF 溢价磨损退市；⑫ 私募与标品信托严守 300 万合规门槛与远离非标资金池。
 - ☐ **港股三通道与离岸美股/UCITS 合规**：①【误导拦截 2】严禁笼统写“红筹股一律 28% 税”；②【误导拦截 3】非 QDII 港股通 ETF（`159545`/`159792`/`520900`/`159570`/`513750`）买前仍须查折溢价，严禁写“零溢价”；准确标明 `513530`/`513950`/`513970`/`513260`/`513010` 属 **QDII**；绝不把沙特 `520830`、A 股电力 `159611`、亚洲半导体 `03119` 或亚投债 `03141` 误作港股红利；离岸恒科用 `03067` 替代 `03033`；③ 美股/爱尔兰 UCITS 核对 W-8BEN、QII、6 万美元美国遗产税，**特别预警 `02840.HK` 底层美国信托计入美国遗产税（大额红灯解除后改选 `IGLN.L` / `03081.HK`）**，并明示**中国居民个人境外所得 20% 全球申报与 CRS 透明合规**及 5 万美元便利化购汇禁用于境外证券。
 
 ## 门禁 5｜精准时区、冬夏令时、07:30/11:30/18:00 截点与工作日日历
@@ -45,18 +45,18 @@
 
 ## 门禁 8｜21 张矢量 SVG 图动态键覆写、`CHART_A2` 贴水正号与黄金红灯全载体锁（Gate C2）
 - ☐ 嵌入式图表动态键齐全；SVG 字号 `≥ 9.0`；**`CHART_A2` 期货贴水 `ann_disc` 须为正数（折价/贴水 > 0，升水 < 0，严禁贴水填负号）**；`H6`/`U5`/`U6` 精准动态布局、双端零碰撞零截断。
-- ☐ **跨项目黄金红灯互斥锁全载体达标（Gate C2 & Gate S6/S7）**：黄金红灯停期，Markdown、JSON、**三大扩展数据库（`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`）**、交互 K 线技术诊断条、渲染后 SVG 与全站网页均零新买/补齐黄金指令，严禁将黄金/金矿股或 ETF（`518660`/`517520`/`02840`/`03081`/`IAUM`/`IGLN`/`NEM`/`601899`/`02899.HK`）标为绿色底座。
+- ☐ **跨项目黄金红灯互斥锁全载体达标（Gate C2 & Gate S6/S7）**：黄金红灯停期，Markdown、JSON、`state/market_state.json`（Gate C2 同步扫描）、**三大扩展数据库（`multi_asset_channels.json`/`etf_universe.json`【强制 `asset_class == "gold" <=> gold_locked=True`】/`deep_dossiers.json`）**、`state/policy_calendar.json`、交互 K 线技术诊断条、渲染后 SVG 与全站网页均零新买/补齐黄金指令，严禁将黄金/金矿股或 ETF（`518660`/`517520`/`02840`/`03081`/`IAUM`/`IGLN`/`NEM`/`601899`/`02899.HK`）标为绿色底座。
 
-## 门禁 9｜三市六文件 + 三大扩展数据库同期 `edition_id` 锁、兄弟/孪生同步与审计账本闭环
-一次标准发版严禁 `edit_file`：中小 Markdown 与轻量状态文件（1–5 项）一律用 `write_file` 全量写盘；**第 6 项三大扩展大 JSON 写嵌套补丁 `_edition_patch.json` 走 `scripts/patch_state_dbs.py --apply`（只读查库用 `--inspect <target>`），第 7 项持续增长的 `state/audit_ledger.md` 强制写 3 键 `_audit_patch.json` 走 `--prepend-equity-audit` 无损头插（严禁全量重写），月初切换 `period_slug` 写 `_rollover_patch.json` 走 `--rollover-equity-month`（防 300s 超时）**：
+## 门禁 9｜三市六文件 + 三大扩展数据库与政策日历同期 `edition_id` 锁、兄弟/孪生同步与审计账本闭环
+一次标准发版常规禁 `edit_file`（**仅允许用 `edit_file` 定点修正 `equity/state/_edition_patch.json` 校验报错**）且严禁单轮并行打包 >2 个大型 `write_file`：中小 Markdown 与轻量状态文件（1–5 项）一律用 `write_file` 全量写盘；**第 6 项三大扩展大 JSON 及可选 `state/policy_calendar.json` 写嵌套补丁 `_edition_patch.json` 走 `scripts/patch_state_dbs.py --apply`（只读查库用 `--inspect <target>`，含 `policy-calendar`），第 7 项持续增长的 `state/audit_ledger.md` 强制写 3 键 `_audit_patch.json` 走 `--prepend-equity-audit` 无损头插（严禁全量重写），月初切换 `period_slug` 写 `_rollover_patch.json` 走 `--rollover-equity-month`（防 300s 超时）**：
 1. ☐ `daily/YYYY-MM-DD_{0730,1130,1800}_{a_share,hk_stock,us_stock}.md`（或 `_r2`）
 2. ☐ `daily/INDEX.md`（刷新顶部 ≤4 列驾驶舱 + 100% 闭环总占比 + 最新行，仅纯网页/Markdown 链接，严禁离线附件链接；前刊勘误须联动更新）
 3. ☐ `daily/CHANGELOG.md`（纯读者中文观点演进，单条 ≤130 字）
 4. ☐ `daily/SCORECARD.md`（客观回填到期预判 + 工作日新登可证伪投资预判，禁混入后台数据回补工单；前刊勘误须联动更新）
 5. ☐ `state/market_state.json`（规范无日期键 + 多指数 `index_matrix` + 27 对 A/H 基准 + 黄金镜像 + `pending_backfills` + 纯读者中文 `data_caveats`）
-6. ☐ **`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`**（经 `_edition_patch.json` + `scripts/patch_state_dbs.py --apply` 原子合并并**强制同步 `edition_id`**，同步扫清修改标的关联兄弟字段与 27 对 A/H 孪生股口径，**严守诚实单股 `updated_at`（仅更新本期实审股票，绝不批量刷写未核查标的）**，按早/午/晚/周分层刷新矩阵更新 12 大渠道、174+ 重点 ETF 与当班 4–6 只焦点股 / 周日 6–10 只轮换龙头的 7 维深度档案）
+6. ☐ **`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json` 与 `state/policy_calendar.json`**（经 `_edition_patch.json` + `scripts/patch_state_dbs.py --apply` 原子合并并**强制同步 `edition_id`**，同步扫清修改标的关联兄弟字段与 27 对 A/H 孪生股口径，**严守诚实单股 `updated_at`（仅更新本期实审股票，绝不批量刷写未核查标的）**，按早/午/晚/周分层刷新矩阵更新 12 大渠道、181+ 正交标注重点 ETF、14–30 天前瞻政策日历与当班 4–6 只焦点股 / 周日 6–10 只轮换龙头的 7 维深度档案）
 7. ☐ `state/audit_ledger.md`（强制写 3 键 `equity/state/_audit_patch.json` 经 `scripts/patch_state_dbs.py --prepend-equity-audit` 无损头插一手源核验、红队纠偏 Diff 与数据回补记录）
 - ☐ 命中旗舰 5 条触发阈值或月初跨月滚存时，跨月一律写 `_rollover_patch.json` 走 `scripts/patch_state_dbs.py --rollover-equity-month` 原子克隆 `{market}_market_report_{slug}.md`、`{market}_market_report_latest.md`（字节一致）与 `report_meta_*.json`。
 
-## 门禁 10｜纯网页源稿严检、Step 5 盲审闭环、440+ K 线抓取与单次静态门户发布
-- ☐ 运行 `lint_equity.py --strict`（覆盖 Gate 0–5、Gate 3B、三大深研库、21 张 SVG 演练、旗舰 `.md` 同步与跨项目黄金 C1–C3，退出码 0、0 错 0 警）→ Step 5 独立盲审闭环并经 `scripts/patch_state_dbs.py --append-equity-rsi`（及 `--append-gold-rsi`）无损追加 `rsi_metrics.json` 后复跑双轨严检 → 运行 `scripts/fetch_kline_data.py --scope all` 刷新全市场 440+ 静态 K 线分片至 `equity/state/klines/` → 推进 `publish` 执行 `publish_site.py --edition-token <token>`（构建完整纯网页门户含 `charts.html` 并通过 **S1–S7** 严检后推送）→ 执行 `edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功；如发布构建报错则用已授权的 `build_site.py` / `lint_site.py` / `unittest` 排障修复后再发布。
+## 门禁 10｜纯网页源稿严检、Step 5 盲审闭环、480+ K 线抓取与单次静态门户发布
+- ☐ 运行 `lint_equity.py --strict`（覆盖 Gate 0–5、Gate 3B、三大深研库、21 张 SVG 演练、旗舰 `.md` 同步与跨项目黄金 C1–C3，退出码 0、0 错 0 警）→ Step 5 独立盲审闭环并经 `scripts/patch_state_dbs.py --append-equity-rsi`（及 `--append-gold-rsi`）无损追加 `rsi_metrics.json` 后复跑双轨严检 → 运行 `scripts/fetch_kline_data.py --scope all` 刷新全市场 480+ 标的（含 68 只核心基准）静态 K 线分片至 `equity/state/klines/` → 推进 `publish` 执行 `publish_site.py --edition-token <token>`（构建完整纯网页门户含 `charts.html` 与 `#sec-policy-calendar` 并通过 **S1–S7** 严检后推送）→ 执行 `edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功；如发布构建报错则用已授权的 `build_site.py` / `lint_site.py` / `unittest` 排障修复后再发布。本机伴随工具 `scripts/realtime_monitor.py` 与 `scripts/wechat_notify.py` 独立于定时 56 项权限之外只读运行（状态落 `.git/realtime-monitor.sqlite3` 零仓库污染）。

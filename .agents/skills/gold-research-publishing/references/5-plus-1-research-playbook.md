@@ -1,7 +1,7 @@
 # 两阶段调研与红队复核操作手册（一体化 10+1 日常主力 · 独立黄金 5+1 单跑回退）
 
 > **调度架构总览**：
-> - **一体化 10+1（日常主力 · 每日 `07:30` 早报 / `11:30` 午报 / `18:00` 晚报定时三班次强制执行）**：在单仓库一体化单会话任务（`daily-global-investment-research` / `daily-global-investment-research-midday` / `daily-global-investment-research-evening`）中，**阶段 2A 并行启动共享 10 路 `research` 子代理**：① 黄金与贵金属（午报锁 11:30 上金/沪金早盘同刻平价与四大行金条/金店新牌价）、② 中国 A 股（全 12 大优先指数且上证 #1 领衔）、③ 中国香港股市（5 基准 + `11:15` HIBOR）、④ 美国股市（8 基准）、⑤ 跨资产宏观汇率与大宗、⑥ 三地社区与谣言辟谣、**⑦A 境内稳健与税优 6 渠道**（活钱与现金管理 `reverse_repo`、人民币银行存款全家桶 `large_cds`、债券与债券 ETF `bonds`、公募基金/银行理财与投顾 `funds_wm`、储蓄型商业保险 `savings_insurance`、个人养老金与税优账户 `tax_advantaged_accounts`）、**⑦B 跨境/固收增强/另类/私募信托与打新反诈**（境内外币存款与理财 `fx_deposits_wm`、场内外 QDII/香港互认与理财通 `qdii_mrf`【含直销 App vs 支付宝分轨与 LOF 退市】、可转债 `convertible_bonds`、公募 REITs 与不动产租金对比 `c_reits`、非黄金大宗商品与白银铂钯 `commodity_etfs`、合规私募与标品信托 300 万专享 `private_funds_trust` 及横向打新工具箱/双层风控警示墙）、**⑧A 全市场 174+ 重点 ETF 实时溢价/停牌/规模/穿透费率专线**、**⑧B 当班全部约 16 只焦点股（A/港/美各 4–6 只及周日 6–10 只全池轮换）7 维深研与近 24 小时官方公告硬扫雷专线**。待全部返回后启动 **阶段 2B 1 路统一跨轨红队**，一次覆盖双轨 7 类官方信源、同步锁定共享宏观数字、跨轨统一税费口径与黄金红灯互斥锁，详见仓库根宪章 `<REPO_ROOT>/AGENTS.md`。
+> - **一体化 10+1（日常主力 · 每日 `07:30` 早报 / `11:30` 午报 / `18:00` 晚报定时三班次强制执行）**：在单仓库一体化单会话任务（`daily-global-investment-research` / `daily-global-investment-research-midday` / `daily-global-investment-research-evening`）中，**阶段 2A 并行启动共享 10 路 `research` 子代理**：① 黄金与贵金属（午报锁 11:30 上金/沪金早盘同刻平价与四大行金条/金店新牌价，兼采央行购金与地缘政策要闻）、② 中国 A 股（政策市主线，全 12 大优先指数且上证 #1 领衔）、③ 中国香港股市（中国离岸折价腿，5 基准 + `11:15` HIBOR + A/美双轨政策催化）、④ 美国股市（8 基准 + 联储/财政/关税与地缘政策）、⑤ 跨资产宏观汇率与大宗（含 Layer 1 7 枚宏观气象条【中美 10Y 利差 + 央行 `银发〔2026〕42号` 0% 配仓 BTC 只读流动性温度计】、非美全球卫星日/欧/台韩/印锚点与未来 14–30 天 P0/P1 财经政策日历增量供 `equity/state/policy_calendar.json` 同步）、⑥ 三地社区与谣言辟谣、**⑦A 境内稳健与税优 6 渠道**（活钱与现金管理 `reverse_repo`、人民币银行存款全家桶 `large_cds`、债券与债券 ETF `bonds`、公募基金/银行理财与投顾 `funds_wm`、储蓄型商业保险 `savings_insurance`、个人养老金与税优账户 `tax_advantaged_accounts`）、**⑦B 跨境/固收增强/另类/私募信托与打新反诈**（境内外币存款与理财 `fx_deposits_wm`、**QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通** `qdii_mrf`【10 元起普惠渠道，含直销 App vs 支付宝分轨、TA 合并与 LOF 退市】、可转债 `convertible_bonds`、公募 REITs 与不动产租金对比 `c_reits`、非黄金大宗商品与白银铂钯 `commodity_etfs`、合规私募与标品信托 300 万专享 `private_funds_trust` 及横向打新工具箱/双层风控警示墙）、**⑧A 全市场 181+ 正交标注（`asset_class × region × 6 通道`）重点 ETF 实时溢价/停牌/规模/穿透费率专线**、**⑧B 当班全部约 16 只焦点股（A/港/美各 4–6 只及周日 6–10 只全池轮换）7 维深研与近 24 小时官方公告硬扫雷专线**。待全部返回后启动 **阶段 2B 1 路统一跨轨红队**，一次覆盖双轨 7 类官方信源、同步锁定共享宏观数字、跨轨统一税费口径与黄金红灯互斥锁，详见仓库根宪章 `<REPO_ROOT>/AGENTS.md`。
 > - **独立黄金 5+1（单跑回退 · 仅单独维护、勘误或手动重跑黄金轨时使用）**：当不联动权益与多元渠道轨、仅独立运行黄金深度研报时，回退至下文第 2–3 节的 **5 路黄金专项并发调研 + 第 6 路黄金红队**；其全部信源清单与一体化 10+1 的第 ①、⑤、⑥ 路一一对应。
 
 本文档固化 `global-investment-research/gold` 的全信源外部调研、无情红队对抗审计、周末/局部休市切换、`CHANGELOG.md` / `AUDIT_LOG.md` / `SCORECARD.md` 三账本维护及月度归档协议与 Step 5 RSI 盲审模板（纯网页版，不涉任何离线二进制文档）。
@@ -11,7 +11,7 @@
 ## 1. 安全、防卡壳、官收白/黑名单与抗阻塞前提
 
 1. **命令边界、防卡壳红线与三层 RSI 防篡改**：
-   - 在定时自动化任务中，主代理严禁运行 `date`、`ls`、`curl` 等未授权 shell 命令，**亦严禁调用 `edit_file`**：中小 Markdown 与轻量快照（日报、`data_snapshot.json`、`market_state.json`、`SCORECARD.md`、两份 `RSI_PLAYBOOK.md` 等）一律使用 `write_file` 全量写盘；**所有大文件、增长型账本、双轨 `rsi_metrics.json` 与月初滚存/归档严禁整文件重写，统一写微型补丁并调用预授权 `scripts/patch_state_dbs.py` 原子命令（彻底防 300s 超时）**：权益三大扩展大 JSON（`_edition_patch.json` → `--apply`，只读查库用 `--inspect <target>`）、黄金历史双账本（`_ledger_patch.json` → `--prepend-gold-ledgers`；跨月归档 `_archive_patch.json` → `--archive-gold-ledgers`）、权益审计账本（`_audit_patch.json` → `--prepend-equity-audit`）、双轨 `rsi_metrics.json`（`gold/daily/_rsi_patch.json` → `--append-gold-rsi`、`equity/state/_rsi_patch.json` → `--append-equity-rsi`）及权益月初旗舰滚存（`_rollover_patch.json` → `--rollover-equity-month`）；
+   - 在定时自动化任务中，主代理严禁运行 `date`、`ls`、`curl` 等未授权 shell 命令，**常规严禁调用 `edit_file`（仅允许用 `edit_file` 定点修正 `equity/state/_edition_patch.json` 校验报错），且严禁单轮并行打包 >2 个大型 `write_file`**：中小 Markdown 与轻量快照（日报、`data_snapshot.json`、`market_state.json`、`SCORECARD.md`、两份 `RSI_PLAYBOOK.md` 等）一律使用 `write_file` 全量写盘；**所有大文件、增长型账本、双轨 `rsi_metrics.json` 与月初滚存/归档严禁整文件重写，统一写微型补丁并调用预授权 `scripts/patch_state_dbs.py` 原子命令（彻底防 300s 超时）**：权益三大扩展大 JSON 及可选 `policy_calendar.json`（`_edition_patch.json` → `--apply`，只读查库用 `--inspect <target>` 含 `policy-calendar`）、黄金历史双账本（`_ledger_patch.json`【`changelog_entry_md` 与 `audit_review_block_md` 须将 `<!-- GOLD_EDITION_CHANGELOG ... -->` / `<!-- GOLD_EDITION_REVIEW ... -->` 置于第 1 行，严禁前放 `#`/`##`/`###` 标题】→ `--prepend-gold-ledgers`；跨月归档 `_archive_patch.json` → `--archive-gold-ledgers`）、权益审计账本（`_audit_patch.json` → `--prepend-equity-audit`）、双轨 `rsi_metrics.json`（`gold/daily/_rsi_patch.json` → `--append-gold-rsi`、`equity/state/_rsi_patch.json` → `--append-equity-rsi`）及权益月初旗舰滚存（`_rollover_patch.json` → `--rollover-equity-month`）；
    - 正常发刊阶段（Step 1–4）严禁修改任何 `.py` 脚本与规则文件，仅在 Step 5 RSI 闭环中严格按 Tier A/B/C 权限边界执行受控自进化（永不削弱门禁，永不静默修改 `AGENTS.md` 或核心金融风控红线）；
    - 调用预授权质检、大库补丁、K 线抓取与发布脚本（`scripts/patch_state_dbs.py`、`scripts/fetch_kline_data.py`、`gold/lint_readability.py`、`equity/lint_equity.py`、`scripts/build_site.py`、`scripts/lint_site.py`、`scripts/publish_site.py`、`scripts/edition_run.py` 及排障用 `unittest`）必须使用绝对路径裸命令（禁加 `cd &&` 前缀）；常规班次执行**惰性主报告加载**（仅读 `master_snapshot.json` 核验 5 大触发条件，命中时才全量读取主报告 MD）；同场修订加 `_r2` 后缀严禁覆写既有归档。
 2. **联网边界**：所有外部实时行情、政策原文、研报与舆情调研，统一交由 `research` 子代理使用中英双语 `search_web` 完成。
@@ -39,7 +39,7 @@
 | **第 ⑤ 路：跨资产宏观、汇率与地缘专线** | **黄金专线 2 + 黄金专线 4** | G4 央行、美债 `DFII10`/`2Y-FF`、汇市/油气/VIX/信用配管、霍尔木兹与地缘排雷日历 |
 | **第 ⑥ 路：三地社区情绪与谣言辟谣专线** | **黄金专线 5** | 国内外金融论坛、社媒情绪极值、Polymarket/Kalshi 赔率与官方谣言证伪 |
 | **第 ⑦A / ⑦B 路：12 大个人多元渠道双专线** | *仅一体化班次启用（单跑跳过）* | ⑦A 境内稳健税优 6 渠道；⑦B 跨境（含 QDII 直销 vs 支付宝分轨与 LOF 退市）/固收增强/另类/私募信托与打新反诈 |
-| **第 ⑧A / ⑧B 路：174+ ETF 与焦点股 7 维双专线** | *仅一体化班次启用（单跑跳过）* | ⑧A 全市场 174+ ETF 溢价/停牌/规模与互挂穿透费率；⑧B 当班全部约 16 只焦点股（A/港/美各 4–6 只及周日 6–10 只全池轮换）7 维深研与近 24h 扫雷 |
+| **第 ⑧A / ⑧B 路：181+ 正交标注 ETF 与焦点股 7 维双专线** | *仅一体化班次启用（单跑跳过）* | ⑧A 全市场 181+ 正交标注（`asset_class × region × 6 通道`）ETF 溢价/停牌/规模与互挂穿透费率；⑧B 当班全部约 16 只焦点股（A/港/美各 4–6 只及周日 6–10 只全池轮换）7 维深研与近 24h 扫雷 |
 
 - **独立黄金 5 路细分清单（单跑黄金轨时使用；亦作为一体化第 ①/⑤/⑥ 路的完整检索验收单）**：
 
@@ -66,7 +66,7 @@
 - **必查清单**：
   - 霍尔木兹海峡/伊朗/中东/UKMTO 航运实况（**兼顾“局势升级避险”与“停火油价大跌反推实际利率上行”双向路径**）；
   - 俄乌/北约、中美经贸关税与科技出口管制、白宫/国会/财政部/联储官员最新讲话**原文与精确发稿时点**；
-  - 未来 7 天宏观数据、央行会议、期权交割与地缘风险排雷日历。
+  - **1–2 条一手官源政策/地缘要闻精读**及 **4 列未来 7–14 天全北京时间财经与政策排雷日历**（底层同步 14–30 天 `equity/state/policy_calendar.json` 与门户 `#sec-policy-calendar`，纯中文级别徽章如重磅/重要，零裸 `P0`/`P1`），覆盖宏观数据、央行会议、期权交割与地缘风险。
 
 ### 黄金专线 5（一体化第 ⑥ 路核心）：金融论坛、社交网络、预测市场与谣言排雷
 - **信源**：X（Twitter）、Reddit（`r/Gold`, `r/Silverbugs`, `r/WallStreetBets`, `r/Economics`, `r/investing`）、雪球、东方财富股吧、集思录、淘股吧、连登、微博财经、知乎、Seeking Alpha、ZeroHedge、Polymarket、Kalshi。
@@ -82,7 +82,7 @@
 - **核心核查项**：
   1. 逐项精确复算买金四步红绿灯（`real_yield`/`rate_spread`/`vix`/`ny_close`）及 VIX 十日窗口与 `vix_daily_row_checks`；
   2. 核验是否触发 `DFII10` 60 日收盘新高机械砍半硬止损线，或「布油 `< 80` 且 `DFII10 > 2.95%` 站稳 5 日」尾部深熊升级线；
-  3. **一体化班次额外必核**：双轨共享宏观基准与多指数优先级秩序（A 股上证 #1）100% 一致、黄金 `Tier 0`/`new_buy_allowed == false` 全载体互斥锁（含交互 K 线诊断）、跨轨统一税费与 QDII 制度红线（`008142`/`008143`、TA 合并 vs 直销分轨、互挂双层穿透费、2027-12-31 LOF 退市、禁推 `968118`、二手存单禁二次转让、交易所公司债 ETF 底层 20% 扣税、中国居民 20% 离岸税与 CRS、`02840.HK` 美国遗产税）、12 大渠道与 174+ ETF 分类、焦点股 7 维实证及三大扩展库同期 `edition_id` 锁；
+  3. **一体化班次额外必核**：双轨共享宏观基准与对称 `3×2` 六市场多指数优先级秩序（A 股上证 #1）100% 一致、黄金 `Tier 0`/`new_buy_allowed == false` 全载体互斥锁（含交互 K 线诊断与 `asset_class == "gold" <=> gold_locked=True`）、央行 `银发〔2026〕42号` 中国大陆 BTC 0% 严禁配仓只读防火墙、跨轨统一税费与 QDII 制度红线（`008142`/`008143`、TA 合并 vs 直销分轨、互挂双层穿透费、2027-12-31 LOF 退市、禁推 `968118`、二手存单禁二次转让、交易所公司债 ETF 底层 20% 扣税、中国居民 20% 离岸税与 CRS、`02840.HK` 美国遗产税）、4 角色层 12 大渠道与 181+ 正交标注 ETF 分类、焦点股 7 维实证、三大扩展库与 `policy_calendar.json` 同期 `edition_id` 锁及日报 7–14 天日历与 `#sec-policy-calendar` 逐项一致；
   4. 逐条对抗旧结论、旧数字、跨源口径冲突、时区归因漏洞与小白三层白话清晰度，核查 `data_caveats` 无内部文件名泄露；
   5. **强制输出四张无情清单**：**【新增】** / **【更新】** / **【修正】**（标明是否改变核心买金建议）/ **【删除】**。
 
@@ -90,7 +90,7 @@
 
 ## 4. 周末专项版与工作日局部休市叠加协议（由 `market_calendar.json` 动态驱动）
 
-1. **周末专项版（周六 / 周日全市场休市及 `GLOBAL` 全球节假日）**：切勿强找休市当日成交价，将焦点切换为：7×24 链上黄金（`XAUT`/`PAXG`）与 `BTC`、周日中东股市开盘（沙特 `TASI` / 埃及 `EGX30`）、周五盘后期货持仓周报深拆、国内菜百/水贝周末线下客流、美欧周末政经访谈。
+1. **周末专项版（周六 / 周日全市场休市及 `GLOBAL` 全球节假日）**：切勿强找休市当日成交价，将焦点切换为：7×24 链上黄金（`XAUT`/`PAXG`）与 `BTC` 只读流动性温度计（遵照央行 `银发〔2026〕42号` 中国大陆 0% 严禁配仓，禁买卖/渠道导流）、周日中东股市开盘（沙特 `TASI` / 埃及 `EGX30`）、周五盘后期货持仓周报深拆、国内菜百/水贝周末线下客流、美欧周末政经访谈。
 2. **工作日局部休市叠加模式（统一先查覆盖至 `2027-06-30` 的 `market_calendar.json`）**：
    - **A 类（美盘休市/半日市提前收，如感恩节、黑五、平安夜、圣诞、马丁路德金日、总统日、耶稣受难日、阵亡将士纪念日、六月节）**：美债/美股/期金报告明标休市或推迟、沿用上一 NY 终盘，半日市支持 VIX `provisional_close`，聚焦伦敦/上金所/上期所实盘与薄量防插针；
    - **B 类（中国休市，如春节连休、清明、劳动节）**：上金所/沪金/在岸汇率与国内金店明标休市（Gate 5 自动放行金店价对齐预警），聚焦 COMEX/伦敦/离岸人民币与海外 ETF，并跟踪节后复市缺口；
@@ -138,4 +138,4 @@
 
 ### Meta-RSI 周期总复盘与纯网页站点单次发布
 - 当 `daily/rsi_metrics.json` 中 `len(runs) % 10 == 0` 时，盲审子代理额外对比近 10 刊的 6 维均值趋势、一次过 `--strict` 比率、高频扣分项与预判命中率，输出 1–3 条系统级 Tier C 进化提案呈报用户。
-- **终检全绿、K 线刷新与纯网页单次发布**：修正已证实盲审发现并经 `scripts/patch_state_dbs.py --append-gold-rsi`（及一体化班次 `--append-equity-rsi`）无损追加两轨 `rsi_metrics.json`、完成 Tier A/B 落盘后，复跑黄金与权益严格门禁；一体化班次先执行 `python3 <REPO_ROOT>/scripts/fetch_kline_data.py --scope all` 刷新全市场 440+ 静态 K 线分片，再按根契约登记进入 `publish`，用同一班次 token 执行一次 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`（通过 S1–S7 严检），随后运行 `edition_run.py complete <token>` 验证 GitHub Pages 部署成功后结束。
+- **终检全绿、K 线刷新与纯网页单次发布**：修正已证实盲审发现并经 `scripts/patch_state_dbs.py --append-gold-rsi`（及一体化班次 `--append-equity-rsi`）无损追加两轨 `rsi_metrics.json`、完成 Tier A/B 落盘后，复跑黄金与权益严格门禁；一体化班次先执行 `python3 <REPO_ROOT>/scripts/fetch_kline_data.py --scope all` 刷新全市场 480+ 标的（含 68 只核心基准）静态 K 线分片，再按根契约登记进入 `publish`，用同一班次 token 执行一次 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`（通过 S1–S7 严检），随后运行 `edition_run.py complete <token>` 验证 GitHub Pages 部署成功后结束。本机伴随工具 `scripts/realtime_monitor.py` 与 `scripts/wechat_notify.py` 独立于定时 56 项权限之外只读运行（状态落 `.git/realtime-monitor.sqlite3` 零仓库污染）。

@@ -53,6 +53,7 @@ EXTENDED_EQUITY_STATE_FILES = (
     "equity/state/multi_asset_channels.json",
     "equity/state/etf_universe.json",
     "equity/state/deep_dossiers.json",
+    "equity/state/policy_calendar.json",
 )
 GOLD_MASTER = "黄金跨世纪周期与2026-2030终审研究报告"
 CST = timezone(timedelta(hours=8))

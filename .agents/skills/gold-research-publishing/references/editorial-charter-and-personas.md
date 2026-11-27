@@ -31,7 +31,7 @@
      | :--- | :--- | :--- |
      | **第一档 · 自由使用** | 全篇（含 Layer 0–1） | 仅日常极高频词与代码：`ETF`、`VIX`（首现仍建议附“恐慌指数”）、`GLD`/`GDX`（仅代码）、`鹰派`、`鸽派`、`提保`、`轧空`、`逼空`、`上影线` |
      | **第二档 · 首次必附白话括注** | 首次出现必配简短白话括注，或交给站内术语白话浮窗 | `DXY`（美元指数）、`COT`（期货大资金持仓报告）、`CDS`（债务违约保险费率）、`CFTC`（美国期交委）、`DFII10`（10 年美债扣除通胀后的真实利率）、`2Y−FF`（2 年美债减政策利率利差）、`ON RRP`（联储隔夜逆回购余额）、`HY/CCC OAS`（高收益信用利差）、`IOPV`（盘中实时参考净值）、`bp`（基点，1% 的百分之一） |
-     | **第三档 · 门禁硬拦** | **全篇拦截（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）** | 内部版本号（`V2.x/V5.x/V6.x/V7.x`）、工程术语（`Subagent`/`红队`/`法证`）及一切内部文件名（`data_snapshot.json`/`master_snapshot.json`/`market_state.json`/`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`/`market_calendar.json`/`_edition_patch.json`/`_ledger_patch.json`/`_rsi_patch.json`/`_audit_patch.json`/`_rollover_patch.json`/`_archive_patch.json`/`RSI_PLAYBOOK(.md)`/`rsi_metrics.json`/`AGENTS.md`/`SKILL.md`/`patch_state_dbs.py`/`svg_geometry.py`/`fetch_kline_data.py` 等任意 `*.py`）；全篇拦截 6 个居高临下口号（`小白词典`/`直接抄`/`蠢事`/`1分钟定心丸`/`1 分钟定心丸`/`保命铁律`） |
+     | **第三档 · 门禁硬拦** | **全篇拦截（含 Layer 2/3 与全部组件，含 `DAILY_GLOSSARY`）** | 内部版本号（`V2.x/V5.x/V6.x/V7.x`）、工程术语（`Subagent`/`红队`/`法证`）及一切内部文件名（`data_snapshot.json`/`master_snapshot.json`/`market_state.json`/`multi_asset_channels.json`/`etf_universe.json`/`deep_dossiers.json`/`policy_calendar.json`/`market_calendar.json`/`_edition_patch.json`/`_ledger_patch.json`/`_rsi_patch.json`/`_audit_patch.json`/`_rollover_patch.json`/`_archive_patch.json`/`RSI_PLAYBOOK(.md)`/`rsi_metrics.json`/`AGENTS.md`/`SKILL.md`/`patch_state_dbs.py`/`svg_geometry.py`/`fetch_kline_data.py`/`realtime_monitor.py` 等任意 `*.py`）；全篇拦截 6 个居高临下口号（`小白词典`/`直接抄`/`蠢事`/`1分钟定心丸`/`1 分钟定心丸`/`保命铁律`） |
      | **第三档 · 门禁硬拦** | **Layer 0–1 拦截** | 生僻卖方量化词（`stop-through`、`IFRS 9`、`HQLA`、`FVOCI`、`ROTCE`、`Call Wall`/`Put Wall`、`负 Gamma`、`R²=`）、未消歧人名（`Daniel Ghali`/`Michael Hsueh`）、工程路数（`子代理`/`63 路`）、赌徒口语（`梭哈`、`做T`、`短线波段`、`高弹性`）、跨市涨跌色混用（`收红`/`收绿`/`翻红`/`翻绿`）、平行打分（`六灯`、`X/6`） |
 
    - **标点、煽动词与排版干净度**：所有论证区分 **【客观事实】/【逻辑推论】/【概率与失效边界】**；Layer 0–1 感叹号必须为 **0**（FAIL），收敛新刊全篇 **≤5**（旧刊 ≤2）；全文严禁 **13 个夸张煽动词**；全篇**加粗文字密度 ≤14%**；**裸数字、金额与百分比不套反引号**（仅证券/期货/基金代码如 `` `518660` ``、`` `008142` ``、`` `GCZ26` ``、`` `au2702` `` 可用反引号）。
@@ -46,7 +46,7 @@
 ## 2. 核心策略与宏观风控唯一口径
 
 ### 2.1 买金四步红绿灯（Tier 0–3）与 A 类唯一分批比例
-全系统（主报告、早/晚报、周末版、`data_snapshot.json`）唯一统一配比为 **`30% + 45% + 25%`**：
+全系统（主报告、早/午/晚三班报、周末版、`data_snapshot.json`）唯一统一配比为 **`30% + 45% + 25%`**：
 
 | 档位 | 红绿灯状态 | 仓位动作（相对家庭黄金目标预算，建议总资产 10%–15%） | 典型门槛参考（四关全过方入 Tier 1） |
 | :--- | :--- | :--- | :--- |
@@ -112,5 +112,5 @@
 | 维度 | 每日三刊（收敛在线主刊：早报 07:30 / 午报 11:30 / 晚报 18:00 / 周末版） | 全景主报告（1971–2030） |
 | :--- | :--- | :--- |
 | **定位与图数** | 精炼在线主刊 · 3 张 640px 矢量图 | 百科级常青主报告 · 7 张 640px 矢量图 |
-| **核心使命** | 过去 24h / 本时段核心驱动、30 秒白话结论、双刻度钱包账与 A/B/D/C 行动、关键谣言证伪、结合当日案例的宏观机理、未来 7 天排雷日历 | 55 年通货膨胀与购买力长河、边际买家结构切换、久期与债务桥梁、全球供需全配平账本、12 大投行 2027 中位校准、全渠道买卖/税制/回购百科 |
+| **核心使命** | 过去 24h / 本时段核心驱动、30 秒白话结论、双刻度钱包账与 A/B/D/C 行动、关键谣言证伪、结合当日案例的宏观机理、**1–2 条一手官源政策/地缘要闻精读与 4 列未来 7–14 天全北京时间财经与政策排雷日历**（纯中文级别徽章、零裸 `P0`/`P1`、与门户 `#sec-policy-calendar` 同步） | 55 年通货膨胀与购买力长河、边际买家结构切换、久期与债务桥梁、全球供需全配平账本、12 大投行 2027 中位校准、全渠道买卖/税制/回购百科 |
 | **严禁越界行为** | 禁止搬运 55 年历史长表、12 大行逐家完整列表与冗长复读 | 禁止堆砌一次性盘中碎片噪音、内部版本号与历史版本 Diff 流水账 |
