@@ -1996,8 +1996,37 @@ class OperationalRegressionTest(unittest.TestCase):
                 edition_id="2026-11-27_1130",
                 as_of_short="2026-11-27 11:30",
                 as_of_bjt="2026年11月27日（周五）11:30",
+                vix_close=28.29,
                 vix_live=None,
                 vix_live_as_of=None,
+                vix_10d_window_end="2026-11-25",
+                vix_10d_session_closes=[
+                    {"date": "2026-11-12", "close": 21.05},
+                    {"date": "2026-11-13", "close": 19.3},
+                    {"date": "2026-11-16", "close": 22.91},
+                    {"date": "2026-11-17", "close": 25.46},
+                    {"date": "2026-11-18", "close": 24.56},
+                    {"date": "2026-11-19", "close": 28.44},
+                    {"date": "2026-11-20", "close": 35.89},
+                    {"date": "2026-11-23", "close": 26.62},
+                    {"date": "2026-11-24", "close": 26.36},
+                    {"date": "2026-11-25", "close": 28.29},
+                ],
+                vix_daily_row_checks={
+                    "2026-11-25": {
+                        "status": "published",
+                        "checked_at": "2026-11-26 23:45",
+                        "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                        "note": "synthetic 2026-11-27 11:30 fixture",
+                    },
+                    "2026-11-26": {
+                        "status": "no_row_confirmed",
+                        "checked_at": "2026-11-27 11:20",
+                        "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                        "confirmation_source": "https://www.cboe.com/about/hours/us-options/",
+                        "note": "synthetic 2026-11-27 11:30 Thanksgiving no-row fixture",
+                    },
+                },
                 index_matrix={"shcomp": {"close": 4012.5, "chg_pct": 0.42}},
             )
             tmp_snap.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
