@@ -1306,9 +1306,9 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
                 g_dt = datetime.strptime(g_ts_s, "%Y-%m-%d %H:%M")
                 e_dt = datetime.fromisoformat(e_ts_s).replace(tzinfo=None)
                 delta_h = (e_dt - g_dt).total_seconds() / 3600.0
-                # Unified sequential run windows (07:25–13:30 / 17:55–次日 00:00 CST, Gold SSOT first -> Equity second) allow <= 6.0h freshness; off-window manual <= 10.5h
+                # Unified sequential run windows (07:25–13:30 / 11:25–17:30 / 17:55–次日 00:00 CST, Gold SSOT first -> Equity second) allow <= 6.0h freshness; off-window manual <= 10.5h
                 in_slot_window = (
-                    e_dt.hour in (7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21, 22, 23)
+                    e_dt.hour in range(7, 24)
                     or (e_dt.hour == 0 and e_dt.minute == 0)
                 )
                 max_h = 6.0 if in_slot_window else 10.5

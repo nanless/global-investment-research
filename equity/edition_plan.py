@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 MARKETS = ("a_share", "hk_stock", "us_stock")
 ALL_MAIN_CUTOVER = ("2026-11-26", 1800, 1)
-_EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
+_EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\d+))?")
 _WATCH_TYPES = {"partial_holiday", "half_day", "long_holiday_start", "full_holiday_and_rollover"}
 _MODE_WATCH = "mode_2_watch_brief"
 _MODE_CLOSED = "mode_3_index_changelog_only"
@@ -120,9 +120,12 @@ def calendar_rules(state: dict, calendar: dict) -> tuple[list[dict], list[str]]:
                 errors.append(f"{label}.affected_sessions 含无效、重复或超出日期范围的班次")
                 continue
             if first == last and markets == ["us_stock"] and mode == _MODE_WATCH:
-                expected = {f"{first}_1800", f"{first + timedelta(days=1)}_0730"}
-                if set(sessions) != expected:
-                    errors.append(f"{label} 美股休市窗口应覆盖当日晚刊和次日早刊")
+                next_day = first + timedelta(days=1)
+                valid_sets = [{f"{first}_1800", f"{next_day}_0730"}]
+                if next_day.weekday() < 5:
+                    valid_sets.append({f"{first}_1800", f"{next_day}_0730", f"{next_day}_1130"})
+                if set(sessions) not in valid_sets:
+                    errors.append(f"{label} 美股休市窗口应覆盖当日晚刊和次日早刊（工作日可含次日午刊）")
         if "source_url" in row and not _valid_evidence(row["source_url"]):
             errors.append(f"{label}.source_url 须为有效 HTTPS 网址")
         if "gold_event_id" in row and shared:
@@ -179,10 +182,16 @@ def _scheduled_types(day: date, hhmm: int, rules: list[dict], *, all_main: bool 
         for market in rule["markets"]:
             if plan[market] is None:
                 continue
-            trading_day = day - timedelta(days=1) if market == "us_stock" and morning else day
-            affects = (
-                session in rule["sessions"] if rule["sessions"] else rule["first"] <= trading_day <= rule["last"]
-            )
+            trading_day = day - timedelta(days=1) if market == "us_stock" and hhmm in (730, 1130) else day
+            if rule["sessions"]:
+                affects = session in rule["sessions"] or (
+                    market == "us_stock"
+                    and hhmm == 1130
+                    and f"{day}_0730" in rule["sessions"]
+                    and rule["first"] <= trading_day <= rule["last"]
+                )
+            else:
+                affects = rule["first"] <= trading_day <= rule["last"]
             if not affects:
                 continue
             if rule["mode"] == _MODE_CLOSED:
@@ -205,7 +214,7 @@ def _valid_evidence(value: object) -> bool:
 def edition_plan(edition_id: str, state: dict, calendar: dict) -> tuple[dict, list[str]]:
     key = parse_edition_id(edition_id)
     if key is None:
-        return {}, ["edition_id 须为 YYYY-MM-DD_0730 或 YYYY-MM-DD_1800，可附 _rN"]
+        return {}, ["edition_id 须为 YYYY-MM-DD_0730、YYYY-MM-DD_1130 或 YYYY-MM-DD_1800，可附 _rN"]
     rules, errors = calendar_rules(state, calendar)
     if errors:
         return {}, errors

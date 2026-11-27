@@ -79,7 +79,7 @@ SCORECARD_BANNED_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|lint_(?:readability|equity|site)\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|svg_geometry\.py|patch_state_dbs\.py|"
+    r"chart_input\.py|install_sidecars\.py|svg_geometry\.py|patch_state_dbs\.py|fetch_kline_data\.py|"
     r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"63\s*路|红队|法证|\bGate\s*[0-6]\b)",
     flags=re.IGNORECASE,
@@ -807,10 +807,10 @@ def _check_report_structure(
 
 _CN_COUNT_MAP: dict[str, int] = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5}
 _SIGNAL_COUNT_RE = re.compile(
-    r"([1-9]|[一二两三四五])\s*(?:件|条|个)\s*(?:晚间|早间|盘前|盘后|实盘|真|核心)?(?:真信号|信号)"
+    r"([1-9]|[一二两三四五])\s*(?:件|条|个)\s*(?:晚间|早间|午间|早盘|盘前|盘后|实盘|真|核心)?(?:真信号|信号)"
 )
 _NOISE_COUNT_RE = re.compile(
-    r"([1-9]|[一二两三四五])\s*(?:件|条|个)\s*(?:刚出现的)?(?:晚间|早间|盘前|实盘|热传|隔夜|全网|今日|流行)?(?:假象|误导|谣言|噪音)"
+    r"([1-9]|[一二两三四五])\s*(?:件|条|个)\s*(?:刚出现的)?(?:晚间|早间|午间|早盘|盘前|实盘|热传|隔夜|全网|今日|流行)?(?:假象|误导|谣言|噪音)"
 )
 
 

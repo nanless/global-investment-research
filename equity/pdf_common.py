@@ -264,8 +264,8 @@ def classify_callout(raw_lines: list[str]) -> str:
         k in joined
         for k in (
             "双钥匙", "压力测试", "前置安全", "默认核心", "极简方案", "3 只 ETF", "路线 A", "极端恐慌",
-            "昨日→今日", "早刊→晚刊", "早刊→午刊", "今早", "万一不回调", "双账户专属", "双账户实操",
-            "昨日预判验真", "早刊预判验真", "下单执行", "港股衔接", "税务", "双向防踏空",
+            "昨日→今日", "早刊→晚刊", "早刊→午刊", "午刊→晚刊", "今早", "万一不回调", "双账户专属", "双账户实操",
+            "昨日预判验真", "早刊预判验真", "午刊预判验真", "下单执行", "港股衔接", "税务", "双向防踏空",
         )
     ):
         cls = "callout callout-guard"
@@ -619,7 +619,7 @@ _BANNED_INTERNAL_RE = re.compile(
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
     r"edition_(?:run|plan|validation)\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|"
-    r"svg_geometry\.py|patch_state_dbs\.py|"
+    r"svg_geometry\.py|patch_state_dbs\.py|fetch_kline_data\.py|"
     r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
@@ -671,7 +671,7 @@ _US_0730_AFTERHOURS_RE = re.compile(
     r"08:00.{0,8}盘后终盘|盘后终盘.{0,12}08:00|20:00\s*EDT.{0,8}盘后终盘)"
 )
 _US_0730_DEFER_ALLOW_RE = re.compile(
-    r"(?:待下期补核|待补核|待今晚|待今日|待明日|由.{0,6}18:00|由晚刊封账|尚未终盘|人工补核|盘后回溯)"
+    r"(?:待下期补核|待补核|待今日午刊|待今晚|待今日|待明日|由.{0,6}(?:11:30|18:00)|由(?:午|晚)刊封账|尚未终盘|人工补核|盘后回溯)"
 )
 
 
@@ -719,7 +719,7 @@ def lint_markdown_report(
     if "_0730_us_stock" in filename:
         for ln in combined_scan.splitlines():
             if _US_0730_AFTERHOURS_RE.search(ln) and not _US_0730_DEFER_ALLOW_RE.search(ln):
-                errors.append("07:30 美股早刊时间穿越违规：严禁写入 09:00/08:00 CST 盘后终盘（统一由 18:00 晚刊封账）")
+                errors.append("07:30 美股早刊时间穿越违规：严禁写入 09:00/08:00 CST 盘后终盘（由 11:30 午刊或 18:00 晚刊封账）")
                 break
 
     for ln in combined_scan.splitlines():

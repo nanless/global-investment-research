@@ -23,7 +23,7 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
 BEIJING = timezone(timedelta(hours=8))
-EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
+EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\d+))?")
 PHASES = ("research", "gold", "equity", "publish")
 GOLD_HISTORY_LEDGERS = ("gold/daily/AUDIT_LOG.md", "gold/daily/CHANGELOG.md")
 EXTENDED_EQUITY_STATE_FILES = (
@@ -145,7 +145,7 @@ def _record_phase_timestamp(
 def edition_id(value: str) -> str:
     match = EDITION_RE.fullmatch(value)
     if match is None:
-        raise argparse.ArgumentTypeError("use YYYY-MM-DD_0730 or YYYY-MM-DD_1800, optionally followed by _rN")
+        raise argparse.ArgumentTypeError("use YYYY-MM-DD_0730, YYYY-MM-DD_1130 or YYYY-MM-DD_1800, optionally followed by _rN")
     try:
         datetime.strptime(match[1], "%Y-%m-%d")
     except ValueError as exc:
@@ -246,6 +246,9 @@ def scheduled_edition(slot: str) -> str:
     hhmm = now.strftime("%H%M")
     if slot == "0730":
         in_window = "0725" <= hhmm <= "1330"
+        edition_day = now.date()
+    elif slot == "1130":
+        in_window = "1125" <= hhmm <= "1730"
         edition_day = now.date()
     elif slot == "1800":
         if "1755" <= hhmm <= "2359":
@@ -1119,7 +1122,7 @@ def main() -> int:
     start = commands.add_parser("begin")
     edition_choice = start.add_mutually_exclusive_group(required=True)
     edition_choice.add_argument("edition", nargs="?", type=edition_id)
-    edition_choice.add_argument("--scheduled", choices=("0730", "1800"))
+    edition_choice.add_argument("--scheduled", choices=("0730", "1130", "1800"))
     advance_cmd = commands.add_parser("advance")
     advance_cmd.add_argument("token")
     advance_cmd.add_argument("phase", choices=PHASES[1:])

@@ -392,7 +392,7 @@ def _latest_daily(folder: Path, pattern: re.Pattern[str]) -> Path:
                 raise RuntimeError(f"Invalid report date/time in {path.name}") from exc
             if match[3] and int(match[3]) < 2:
                 raise RuntimeError(f"A revised report must use _r2 or a later revision: {path.name}")
-            if match[2] not in {"0730", "1800"}:
+            if match[2] not in {"0730", "1130", "1800"}:
                 continue
             key = (match[1], int(match[2]), int(match[3] or 1))
             if key in seen:

@@ -23,6 +23,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 import urllib.parse
@@ -54,6 +55,7 @@ REQUIRED_SENTINEL_FILES: tuple[str, ...] = (".nojekyll",)
 # Core site artifacts that MUST exist and be non-empty.
 REQUIRED_NONEMPTY_FILES: tuple[str, ...] = (
     "index.html",
+    "charts.html",
     "channels.html",
     "etfs.html",
     "screener.html",
@@ -70,6 +72,7 @@ REQUIRED_NONEMPTY_FILES: tuple[str, ...] = (
     "daily/us-stock-latest.html",
     "assets/app.css",
     "assets/app.js",
+    "assets/kline.js",
     "assets/favicon.svg",
     "manifest.json",
 )
@@ -275,7 +278,7 @@ S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|"
+    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|fetch_kline_data\.py|"
     r"_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|"
     r"_rollover_patch\.json|_archive_patch\.json|"
     r"AGENTS\.md|SKILL\.md|GEMINI\.md|audit_ledger\.md|gold-research-publishing)(?![A-Za-z0-9_])",
@@ -466,6 +469,7 @@ S6_PERMANENT_INVARIANTS: tuple[tuple[str, re.Pattern[str]], ...] = (
 CORE_HUB_H1_PAGES: frozenset[str] = frozenset(
     {
         "index.html",
+        "charts.html",
         "channels.html",
         "etfs.html",
         "screener.html",
@@ -2467,7 +2471,7 @@ def run_gate_s6(
                 )
 
     # 5. Restricted code warning guard across active pages (968118 / 968001 / 00011 must carry ±40-char warning).
-    active_restricted_roots = {"index.html", "channels.html", "etfs.html", "screener.html", "guide.html"}
+    active_restricted_roots = {"index.html", "charts.html", "channels.html", "etfs.html", "screener.html", "guide.html"}
     for path, doc in sorted(parsed_htmls.items()):
         if not (
             path in active_restricted_roots
@@ -2487,10 +2491,10 @@ def run_gate_s6(
                 if rc_hits >= 5:
                     break
 
-    # 6. A dated archive preserves its original decisions. Check live pages (incl. guide.html) and this edition's dated copies.
+    # 6. A dated archive preserves its original decisions. Check live pages (incl. guide.html & charts.html) and this edition's dated copies.
     if gold_new_buy_blocked:
         edition_slug = str((gold_snap or {}).get("edition_id", "")).replace("_", "-")
-        live_root_pages = {"index.html", "channels.html", "etfs.html", "screener.html", "scorecard.html", "guide.html"}
+        live_root_pages = {"index.html", "charts.html", "channels.html", "etfs.html", "screener.html", "scorecard.html", "guide.html"}
         for path, doc in parsed_htmls.items():
             if (path in live_root_pages
                     or path.startswith(("reports/", "channels/")) or path.endswith("-latest.html")
@@ -2558,6 +2562,171 @@ def run_gate_s6(
                 )
 
 
+S7_FORBIDDEN_RAW_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:NaN|Infinity)(?![A-Za-z0-9_])|/Users/|C:\\",
+)
+
+
+def run_gate_s7(
+    site_dir: Path,
+    parsed_htmls: dict[str, ParsedHtml],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Gate S7: K-Line shard integrity, multi-index priority ordering & charts.html integration."""
+    index_doc = parsed_htmls.get("index.html")
+    if index_doc is not None:
+        vis = index_doc.visible_text
+        for req_idx_lbl in ("上证指数", "沪深300", "创业板指", "科创50"):
+            if req_idx_lbl not in vis:
+                errors.append(
+                    f"[S7] index.html: missing required A-share multi-index label {req_idx_lbl!r}"
+                )
+        has_charts_link = any(
+            lk.tag == "a" and (lk.value == "charts.html" or lk.value.startswith("charts.html#"))
+            for lk in index_doc.links
+        )
+        if not has_charts_link:
+            errors.append("[S7] index.html: missing link to interactive K-line terminal charts.html")
+
+    charts_doc = parsed_htmls.get("charts.html")
+    if charts_doc is None:
+        errors.append("[S7] Missing charts.html interactive K-line terminal page")
+
+    klines_dir = site_dir / "assets" / "klines"
+    manifest_path = klines_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return
+
+    try:
+        raw_manifest = manifest_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        errors.append(f"[S7] assets/klines/manifest.json unreadable: {exc}")
+        return
+
+    if S7_FORBIDDEN_RAW_RE.search(raw_manifest):
+        errors.append("[S7] assets/klines/manifest.json contains forbidden NaN/Infinity/local path token")
+
+    try:
+        manifest = json.loads(raw_manifest)
+    except json.JSONDecodeError as exc:
+        errors.append(f"[S7] assets/klines/manifest.json invalid JSON: {exc}")
+        return
+
+    if not isinstance(manifest, dict):
+        errors.append("[S7] assets/klines/manifest.json root must be a JSON object")
+        return
+
+    catalog = manifest.get("catalog")
+    shards = manifest.get("shards")
+    if not isinstance(catalog, list) or not catalog:
+        errors.append("[S7] assets/klines/manifest.json: 'catalog' must be a non-empty list")
+        return
+    if not isinstance(shards, dict) or not shards:
+        errors.append("[S7] assets/klines/manifest.json: 'shards' must be a non-empty object")
+        return
+
+    # Verify A-share multi-index priority: idx_sh000001 (上证指数) MUST be priority #1!
+    a_indices = [c for c in catalog if isinstance(c, dict) and c.get("group") == "a_index"]
+    if not a_indices:
+        errors.append("[S7] assets/klines/manifest.json: missing a_index entries in catalog")
+    else:
+        sse_item = next((c for c in a_indices if c.get("id") == "idx_sh000001"), None)
+        if sse_item is None:
+            errors.append("[S7] assets/klines/manifest.json: missing primary A-share index idx_sh000001 (上证指数)")
+        else:
+            has_explicit_prio = any(isinstance(c.get("priority"), (int, float)) for c in a_indices)
+            if has_explicit_prio:
+                sse_prio = sse_item.get("priority")
+                min_prio = min(
+                    float(c["priority"]) for c in a_indices if isinstance(c.get("priority"), (int, float))
+                )
+                if not isinstance(sse_prio, (int, float)) or float(sse_prio) != min_prio or float(sse_prio) > 1:
+                    errors.append(
+                        f"[S7] assets/klines/manifest.json: idx_sh000001 must have priority #1 (got {sse_prio!r})"
+                    )
+            elif a_indices[0].get("id") != "idx_sh000001":
+                errors.append(
+                    f"[S7] assets/klines/manifest.json: idx_sh000001 must be first a_index entry (got {a_indices[0].get('id')!r})"
+                )
+
+    # Resolve all shard filenames (supports both string "core.json" and dict {"file": "core.json", ...})
+    shard_files: set[str] = set()
+    for sk, sv in shards.items():
+        if isinstance(sv, str) and sv.strip():
+            shard_files.add(sv.strip())
+        elif isinstance(sv, dict) and isinstance(sv.get("file"), str) and sv["file"].strip():
+            shard_files.add(sv["file"].strip())
+        else:
+            errors.append(f"[S7] assets/klines/manifest.json: invalid shards[{sk!r}] entry: {sv!r}")
+
+    for c in catalog:
+        if isinstance(c, dict) and c.get("shard"):
+            skey = str(c["shard"]).strip()
+            sv = shards.get(skey)
+            if isinstance(sv, str) and sv.strip():
+                shard_files.add(sv.strip())
+            elif isinstance(sv, dict) and isinstance(sv.get("file"), str) and sv["file"].strip():
+                shard_files.add(sv["file"].strip())
+            else:
+                shard_files.add(skey if skey.endswith(".json") else f"{skey}.json")
+
+    bar_errors = 0
+    for sfile in sorted(shard_files):
+        sp = klines_dir / sfile
+        if not sp.is_file():
+            errors.append(f"[S7] Missing K-line shard file referenced by manifest: assets/klines/{sfile}")
+            continue
+        try:
+            s_raw = sp.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            errors.append(f"[S7] assets/klines/{sfile} unreadable: {exc}")
+            continue
+        if S7_FORBIDDEN_RAW_RE.search(s_raw):
+            errors.append(f"[S7] assets/klines/{sfile}: contains forbidden NaN/Infinity/local path token")
+        try:
+            s_obj = json.loads(s_raw)
+        except json.JSONDecodeError as exc:
+            errors.append(f"[S7] assets/klines/{sfile}: invalid JSON: {exc}")
+            continue
+        series = s_obj.get("series") if isinstance(s_obj, dict) else None
+        if not isinstance(series, dict) or not series:
+            errors.append(f"[S7] assets/klines/{sfile}: missing non-empty 'series' object")
+            continue
+        for sym_id, sdata in series.items():
+            if not isinstance(sdata, dict) or not isinstance(sdata.get("bars"), list):
+                errors.append(f"[S7] assets/klines/{sfile}: series {sym_id!r} missing bars list")
+                bar_errors += 1
+                if bar_errors >= 10:
+                    break
+                continue
+            for bidx, bar in enumerate(sdata["bars"]):
+                if not isinstance(bar, list) or len(bar) < 5:
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] malformed bar {bar!r}")
+                    bar_errors += 1
+                    break
+                dt, o, h, l, c = bar[0], bar[1], bar[2], bar[3], bar[4]
+                if not isinstance(dt, str) or not dt.strip():
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] invalid date {dt!r}")
+                    bar_errors += 1
+                    break
+                if any(
+                    not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(float(v))
+                    for v in (o, h, l, c)
+                ):
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] non-finite OHLC {bar!r}")
+                    bar_errors += 1
+                    break
+                if float(c) <= 0 or float(h) < float(l):
+                    errors.append(
+                        f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] invalid OHLC invariant (close={c}, high={h}, low={l})"
+                    )
+                    bar_errors += 1
+                    break
+            if bar_errors >= 10:
+                break
+
+
 # ---------------------------------------------------------------------------
 # CLI entrypoint
 # ---------------------------------------------------------------------------
@@ -2623,13 +2792,16 @@ def main(argv: list[str] | None = None) -> int:
             already_checked_json_gold=True,
         )
 
+        # Gate S7: K-Line shard integrity, multi-index priority ordering & charts.html integration.
+        run_gate_s7(site_dir, parsed_htmls, errors, warnings)
+
     mode = "STRICT" if strict else "STANDARD"
     print(
         f"=== lint_site.py [{mode}] checked {len(parsed_htmls)} HTML / "
         f"{len(all_files)} total file(s) in {site_dir.name} ==="
     )
     if not errors and not warnings:
-        print("  PASS: All 6 forensic site gates (S1-S6) passed cleanly.")
+        print("  PASS: All 7 forensic site gates (S1-S7) passed cleanly.")
     else:
         for e in errors:
             print(f"  [FAIL] {e}")

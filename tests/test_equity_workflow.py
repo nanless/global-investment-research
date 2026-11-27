@@ -974,6 +974,91 @@ class EquityWorkflowTests(unittest.TestCase):
         res_ok = self.lint("--precheck", "--strict")
         self.assertEqual(res_ok.returncode, 0, res_ok.stdout + res_ok.stderr)
 
+    def test_midday_1130_plan_matrix_and_window_validation(self):
+        # 1. Plan matrix with legacy 2-item us_thanksgiving_2026 still yields holiday_watch on 2026-11-27_1130
+        for session, expected in (
+            ("2026-11-27_1130", ("main", "main", "holiday_watch")),
+            ("2026-11-28_1130", (None, None, None)),
+            ("2026-11-29_1130", (None, None, None)),
+            ("2026-11-30_1130", ("main", "main", "main")),
+            ("2026-12-01_1130", ("main", "main", "main")),
+            ("2026-12-24_1130", ("main", "holiday_watch", "main")),
+            ("2026-12-25_1130", ("main", "holiday_watch", "holiday_watch")),
+            ("2027-01-01_1130", (None, None, "main")),
+            ("2027-02-08_1130", ("holiday_watch", "holiday_watch", "main")),
+        ):
+            with self.subTest(session=session):
+                self.assertEqual(self._types(session), expected)
+
+        # 2. Explicit 3-item affected_sessions on weekday-following single-day US holiday passes & plans holiday_watch
+        self.state["calendar_overrides"][0]["affected_sessions"] = [
+            "2026-11-26_1800", "2026-11-27_0730", "2026-11-27_1130",
+        ]
+        cal_path = self.root / "gold/market_calendar.json"
+        cal = json.loads(cal_path.read_text(encoding="utf-8"))
+        cal["calendar_overrides"][0]["affected_editions"] = [
+            "2026-11-26_1800", "2026-11-27_0730", "2026-11-27_1130",
+        ]
+        cal_path.write_text(json.dumps(cal, ensure_ascii=False), encoding="utf-8")
+        self.save()
+        self.assertEqual(self._types("2026-11-27_1130"), ("main", "main", "holiday_watch"))
+
+        # 3. Single-day US holiday followed by Saturday (Black Friday 2026-11-27 -> Sat 2026-11-28) rejects 2026-11-28_1130
+        bad_bf = deepcopy(self.state)
+        bad_bf["calendar_overrides"][1]["affected_sessions"] = [
+            "2026-11-27_1800", "2026-11-28_0730", "2026-11-28_1130",
+        ]
+        self.state_path.write_text(json.dumps(bad_bf, ensure_ascii=False), encoding="utf-8")
+        res_bf = self.lint("--plan", "2026-11-27_1800")
+        self.assertNotEqual(res_bf.returncode, 0)
+        self.save()
+
+        # 4. Full 1130 precheck + optional index_matrix + window boundaries (11:24 reject, 11:25 pass, 17:30 pass, 17:31 reject)
+        self.advance("2026-11-27_1130")
+        self.state["index_matrix"] = {"shcomp": {"close": 4010.2, "chg_pct": 0.35}}
+        self.save()
+        self.issue("a_share", "main")
+        self.issue("hk_stock", "main")
+        self.issue("us_stock", "holiday_watch")
+        res_mid = self.lint("--precheck", "--strict")
+        self.assertEqual(res_mid.returncode, 0, res_mid.stdout + res_mid.stderr)
+
+        for stamp, iso, should_pass in (
+            ("2026-11-27 11:24", "2026-11-27T11:24:00+08:00", False),
+            ("2026-11-27 11:25", "2026-11-27T11:25:00+08:00", True),
+            ("2026-11-27 17:30", "2026-11-27T17:30:00+08:00", True),
+            ("2026-11-27 17:31", "2026-11-27T17:31:00+08:00", False),
+        ):
+            with self.subTest(midday_window=stamp):
+                self.gold["as_of_short"] = stamp
+                self.state["as_of_cst"] = iso
+                self.state["markets"]["gold_mirror_readonly"]["as_of_short"] = stamp
+                self.save()
+                for mkt in MARKETS:
+                    daily_p = self.root / "equity" / self.state["markets"][mkt]["latest_daily"]
+                    meta, body = extract_daily_meta(daily_p.read_text(encoding="utf-8"), daily_p)
+                    meta["chart_live"]["as_of_full"] = f"{stamp} 北京时间"
+                    daily_p.write_text(
+                        f"{body}\n\n<!-- DAILY_META_JSON {json.dumps(meta, ensure_ascii=False)} -->\n",
+                        encoding="utf-8",
+                    )
+                res_win = self.lint("--precheck", "--strict")
+                if should_pass:
+                    self.assertEqual(res_win.returncode, 0, res_win.stdout + res_win.stderr)
+                else:
+                    self.assertEqual(res_win.returncode, 1, res_win.stdout)
+                    self.assertIn("班次前 5 分钟至班次后 6 小时内", res_win.stdout)
+
+        # 5. pdf_common allows 07:30 US report deferring after-hours to 11:30 midday & blocks fetch_kline_data.py
+        errs_ok, _ = pdf_common.lint_markdown_report(
+            "美股 09:00 盘后终盘由 11:30 午刊封账。", "2026-11-27_0730_us_stock.md"
+        )
+        self.assertEqual(errs_ok, [])
+        errs_leak, _ = pdf_common.lint_markdown_report(
+            "参考 fetch_kline_data.py 拉取行情。", "2026-11-27_1130_a_share.md"
+        )
+        self.assertTrue(any("fetch_kline_data.py" in e for e in errs_leak), errs_leak)
+
 
 if __name__ == "__main__":
     unittest.main()

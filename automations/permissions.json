@@ -23,6 +23,8 @@
   "command(__PYTHON_BIN__ __REPO_ROOT__/scripts/lint_site.py)",
   "command(python3 __REPO_ROOT__/scripts/publish_site.py)",
   "command(__PYTHON_BIN__ __REPO_ROOT__/scripts/publish_site.py)",
+  "command(python3 __REPO_ROOT__/scripts/fetch_kline_data.py)",
+  "command(__PYTHON_BIN__ __REPO_ROOT__/scripts/fetch_kline_data.py)",
   "command(python3 -m unittest discover -s __REPO_ROOT__/tests)",
   "command(__PYTHON_BIN__ -m unittest discover -s __REPO_ROOT__/tests)",
   "command(python3 __REPO_ROOT__/scripts/patch_state_dbs.py --apply)",

@@ -371,6 +371,12 @@
     const jumpActions = rawQ.length >= 2
       ? [
           {
+            title: "在 K 线图表终端查看「" + rawQ + "」→",
+            meta: "直达全市场 K 线",
+            href: basePrefix + "charts.html#q=" + encodeURIComponent(rawQ),
+            keywords: "",
+          },
+          {
             title: "在 231 股池搜索「" + rawQ + "」→",
             meta: "直达筛选器",
             href: basePrefix + "screener.html#q=" + encodeURIComponent(rawQ),
@@ -993,6 +999,7 @@
 
     if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditableElement(document.activeElement)) {
       const searchBox =
+        document.getElementById("kline-search") ||
         document.getElementById("scr-search") ||
         document.getElementById("etf-search") ||
         document.getElementById("arc-search") ||
@@ -1015,6 +1022,170 @@
       }
     }
   });
+
+  /* ------------------------------------------------------------------------
+     9B. Universal Watchlist Store (`localStorage.gir_watchlist`)
+     ------------------------------------------------------------------------ */
+  const WATCH_STORAGE_KEY = "gir_watchlist";
+
+  function readWatchlistRaw() {
+    try {
+      const raw = localStorage.getItem(WATCH_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(function (x) { return x && typeof x === "object" && (x.id || x.code || x.klineId); });
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  function writeWatchlistRaw(list) {
+    try {
+      localStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(list));
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent("gir:watchlist-change", { detail: { items: list } }));
+  }
+
+  const WatchlistStore = {
+    getAll: function () {
+      return readWatchlistRaw();
+    },
+    has: function (idOrKline) {
+      const key = String(idOrKline || "").trim();
+      if (!key) return false;
+      return readWatchlistRaw().some(function (x) {
+        return x.id === key || x.klineId === key || x.code === key;
+      });
+    },
+    toggle: function (entry) {
+      if (!entry || (!entry.id && !entry.code && !entry.klineId)) return false;
+      const list = readWatchlistRaw();
+      const targetId = String(entry.id || entry.klineId || entry.code).trim();
+      const targetKline = String(entry.klineId || "").trim();
+      const idx = list.findIndex(function (x) {
+        return x.id === targetId || (targetKline && x.klineId === targetKline);
+      });
+      let added = false;
+      if (idx >= 0) {
+        list.splice(idx, 1);
+      } else {
+        list.push({
+          kind: String(entry.kind || "stock"),
+          id: targetId,
+          klineId: targetKline || targetId,
+          code: String(entry.code || "").trim(),
+          name: String(entry.name || entry.code || targetId).trim(),
+        });
+        added = true;
+      }
+      writeWatchlistRaw(list);
+      return added;
+    },
+    clear: function () {
+      writeWatchlistRaw([]);
+    },
+    syncButtons: function () {
+      const list = readWatchlistRaw();
+      const set = new Set();
+      list.forEach(function (x) {
+        if (x.id) set.add(x.id);
+        if (x.klineId) set.add(x.klineId);
+        if (x.code) set.add(x.code);
+      });
+      document.querySelectorAll("[data-watch-toggle]").forEach(function (btn) {
+        const id = btn.getAttribute("data-watch-id") || "";
+        const kl = btn.getAttribute("data-watch-kline") || "";
+        const on = set.has(id) || (kl && set.has(kl));
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+        btn.textContent = on ? "★" : "☆";
+      });
+      document.querySelectorAll("[data-watch-count]").forEach(function (el) {
+        el.textContent = list.length > 0 ? " (" + list.length + ")" : "";
+      });
+    },
+  };
+
+  window.GIRWatchlist = WatchlistStore;
+
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest("[data-watch-toggle]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    WatchlistStore.toggle({
+      kind: btn.getAttribute("data-watch-kind") || "stock",
+      id: btn.getAttribute("data-watch-id") || "",
+      klineId: btn.getAttribute("data-watch-kline") || "",
+      code: btn.getAttribute("data-watch-code") || "",
+      name: btn.getAttribute("data-watch-name") || "",
+    });
+  });
+
+  function renderHomeWatchlistBar() {
+    const bar = document.getElementById("home-watchlist-bar");
+    const listWrap = document.getElementById("home-watchlist-items");
+    const cntEl = document.getElementById("home-watchlist-cnt");
+    if (!bar || !listWrap) return;
+    const items = WatchlistStore.getAll();
+    if (items.length === 0) {
+      bar.hidden = true;
+      return;
+    }
+    let idxMap = {};
+    const idxEl = document.getElementById("home-watch-index");
+    if (idxEl) {
+      try {
+        const parsed = JSON.parse(idxEl.textContent || "{}");
+        if (parsed && typeof parsed === "object") idxMap = parsed;
+      } catch (_) {}
+    }
+    bar.hidden = false;
+    if (cntEl) cntEl.textContent = String(items.length);
+    listWrap.innerHTML = items
+      .slice(0, 12)
+      .map(function (w) {
+        const meta = idxMap[w.id] || idxMap[w.code] || null;
+        const name = (meta && meta.name) || w.name || w.code || w.id;
+        const code = (meta && meta.code) || w.code || "";
+        const price = (meta && meta.price) || "";
+        const role = (meta && meta.role) || "";
+        const kHref = "charts.html#sym=" + encodeURIComponent(w.klineId || w.id);
+        const detailHref = w.kind === "etf"
+          ? "etfs.html#q=" + encodeURIComponent(code || name)
+          : w.kind === "stock"
+          ? "screener.html#q=" + encodeURIComponent(code || name)
+          : kHref;
+        return (
+          '<div class="watch-pill">' +
+          '<a class="watch-pill-main" href="' + escHtml(detailHref) + '">' +
+          "<strong>" + escHtml(name) + "</strong>" +
+          (code ? ' <span class="code-tag">' + escHtml(code) + "</span>" : "") +
+          (price ? ' <span class="watch-pill-meta">' + escHtml(price) + "</span>" : "") +
+          (role ? ' <span class="watch-pill-role">' + escHtml(role) + "</span>" : "") +
+          "</a>" +
+          '<a class="kline-quick-btn" href="' + escHtml(kHref) + '" title="查看交互 K 线">📈</a>' +
+          '<button type="button" class="star-btn active" data-watch-toggle="1" data-watch-kind="' + escHtml(w.kind) +
+          '" data-watch-id="' + escHtml(w.id) + '" data-watch-kline="' + escHtml(w.klineId) +
+          '" data-watch-code="' + escHtml(code) + '" data-watch-name="' + escHtml(name) + '" aria-label="移出自选">★</button>' +
+          "</div>"
+        );
+      })
+      .join("");
+  }
+
+  window.addEventListener("gir:watchlist-change", function () {
+    WatchlistStore.syncButtons();
+    renderHomeWatchlistBar();
+  });
+  window.addEventListener("storage", function (e) {
+    if (e.key === WATCH_STORAGE_KEY) {
+      window.dispatchEvent(new CustomEvent("gir:watchlist-change", { detail: { items: WatchlistStore.getAll() } }));
+    }
+  });
+  WatchlistStore.syncButtons();
+  renderHomeWatchlistBar();
 
   /* ------------------------------------------------------------------------
      10. Supercharged 231-Stock Global Screener (#screener-data)
@@ -1066,6 +1237,7 @@
       "near-anchor": "贴近安全锚 ≤12%",
       "ah-inverted": "AH 倒挂",
       "hide-red": "隐藏高危回避",
+      watchlist: "★ 我的自选",
     };
 
     const sortHeaders = Array.from(document.querySelectorAll("table.screener-table th.sortable"));
@@ -1084,6 +1256,10 @@
       if (preset === "near-anchor") return isFiniteNum(st.anchor_gap_pct) && st.anchor_gap_pct <= 12.0;
       if (preset === "ah-inverted") return isFiniteNum(st.ah_pct) && st.ah_pct < 0;
       if (preset === "hide-red") return st.color !== "r";
+      if (preset === "watchlist") {
+        const dk = st.market + ":" + st.code;
+        return WatchlistStore.has(dk) || WatchlistStore.has("stk_" + st.code) || WatchlistStore.has(st.code);
+      }
       return true;
     }
 
@@ -1220,7 +1396,7 @@
         const token = safeDecode(raw);
         if (["a-share", "hk-stock", "us-stock"].indexOf(token) !== -1) {
           state.market = token;
-        } else if (["base", "high-div", "near-anchor", "ah-inverted", "hide-red"].indexOf(token) !== -1) {
+        } else if (["base", "high-div", "near-anchor", "ah-inverted", "hide-red", "watchlist"].indexOf(token) !== -1) {
           state.preset = token;
         }
       } else {
@@ -1233,7 +1409,7 @@
             state.market = v;
           } else if (k === "color" && ["all", "g", "b", "y", "r"].indexOf(v) !== -1) {
             state.color = v;
-          } else if (k === "preset" && ["all", "base", "high-div", "near-anchor", "ah-inverted", "hide-red"].indexOf(v) !== -1) {
+          } else if (k === "preset" && ["all", "base", "high-div", "near-anchor", "ah-inverted", "hide-red", "watchlist"].indexOf(v) !== -1) {
             state.preset = v;
           } else if (k === "sectors" && v) {
             v.split(",").map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (s) {
@@ -1418,13 +1594,20 @@
             .map(function (st) {
               const mark = COLOR_MARK[st.color] || "●";
               const dKey = st.market + ":" + st.code;
+              const isStar = WatchlistStore.has(dKey) || WatchlistStore.has("stk_" + st.code);
+              const starBtn =
+                '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="stock" ' +
+                'data-watch-id="' + escHtml(dKey) + '" data-watch-kline="' + escHtml("stk_" + st.code) + '" ' +
+                'data-watch-code="' + escHtml(st.code) + '" data-watch-name="' + escHtml(st.name) + '" aria-label="切换自选">' +
+                (isStar ? "★" : "☆") + "</button>";
               const dBtn = st.dossier
-                ? ' <button type="button" class="dossier-btn" data-dossier-key="' + escHtml(dKey) + '">7维深研</button>'
+                ? ' <button type="button" class="dossier-btn" data-dossier-key="' + escHtml(dKey) + '">7维深研</button>' +
+                  ' <button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(dKey) + '" data-open-tab="kline" title="查看交互 K 线">📈 K线</button>'
                 : "";
               return (
                 '<tr class="row-' + escHtml(st.color) + '" data-market="' + escHtml(st.market) + '">' +
                 '<td class="col-sticky"><span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span></td>" +
-                '<td><strong>' + escHtml(st.name) + '</strong> <span class="code-tag">' + escHtml(st.code) + "</span></td>" +
+                '<td>' + starBtn + ' <strong>' + escHtml(st.name) + '</strong> <span class="code-tag">' + escHtml(st.code) + "</span></td>" +
                 '<td class="nw">' + escHtml(st.sector) + "</td>" +
                 '<td><div><strong>' + escHtml(st.price) + "</strong></div>" + formatValuationChips(st) + "</td>" +
                 "<td>" + formatDivAhCell(st) + "</td>" +
@@ -1451,10 +1634,18 @@
               const mark = COLOR_MARK[st.color] || "●";
               const divAh = formatDivAhCell(st);
               const hasDivAh = divAh.indexOf("val-chips") !== -1;
+              const dKey = st.market + ":" + st.code;
+              const isStar = WatchlistStore.has(dKey) || WatchlistStore.has("stk_" + st.code);
+              const starBtn =
+                '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="stock" ' +
+                'data-watch-id="' + escHtml(dKey) + '" data-watch-kline="' + escHtml("stk_" + st.code) + '" ' +
+                'data-watch-code="' + escHtml(st.code) + '" data-watch-name="' + escHtml(st.name) + '" aria-label="切换自选">' +
+                (isStar ? "★" : "☆") + "</button>";
               return (
                 '<div class="stock-card sc-' + escHtml(st.color) + '">' +
                 '<div class="sc-top">' +
                 '<div class="sc-title">' +
+                starBtn +
                 '<span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span>" +
                 "<span>" + escHtml(st.name) + "</span>" +
                 '<span class="code-tag">' + escHtml(st.code) + "</span>" +
@@ -1470,10 +1661,13 @@
                 (hasDivAh ? divAh : "") +
                 '<div class="sc-summary">' + escHtml(st.summary) + "</div>" +
                 '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
+                '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
                 (st.dossier
-                  ? '<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(st.market + ":" + st.code) + '">查看 7 维深度档案</button>'
+                  ? '<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(dKey) + '">7 维档案</button>' +
+                    '<button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(dKey) + '" data-open-tab="kline">📈 K线</button>'
                   : "") +
-                '<a href="' + escHtml(st.report_url) + '" style="font-size:12.5px;font-weight:700;">查看该市场全景手册 →</a>' +
+                "</div>" +
+                '<a href="' + escHtml(st.report_url) + '" style="font-size:12.5px;font-weight:700;">全景手册 →</a>' +
                 "</div>" +
                 "</div>"
               );
@@ -1637,11 +1831,23 @@
       ["action_etf", "⑦ 操作边界（IF→THEN）与低费 ETF 替身"],
     ];
 
-    function openStockDossier(key) {
+    let activeDossierChart = null;
+    function destroyDossierChart() {
+      if (activeDossierChart) {
+        try { activeDossierChart.destroy(); } catch (_) {}
+        activeDossierChart = null;
+      }
+    }
+
+    function openStockDossier(key, initialTab) {
       const st = stockByKey.get(key);
       if (!st || !st.dossier || !dossierModal) return;
+      destroyDossierChart();
       const d = st.dossier;
       const mark = COLOR_MARK[st.color] || "●";
+      const dKey = st.market + ":" + st.code;
+      const klineSym = "stk_" + st.code;
+      const isStar = WatchlistStore.has(dKey) || WatchlistStore.has(klineSym);
       if (dossierTitle) dossierTitle.textContent = st.name + " (" + st.code + ")";
       if (dossierSub) {
         dossierSub.textContent =
@@ -1654,10 +1860,15 @@
           '<span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span>" +
           '<span class="act-pill act-' + escHtml(st.color) + '">' + mark + " " + escHtml(st.action_label) + "</span>" +
           '<span class="dossier-depth-badge ' + (isCore ? "depth-core" : "depth-std") + '">' +
-          (isCore ? "核心旗舰 7 维全拆解" : "池内标准 7 维档案") + "</span>";
+          (isCore ? "核心旗舰 7 维全拆解" : "池内标准 7 维档案") + "</span>" +
+          '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="stock" ' +
+          'data-watch-id="' + escHtml(dKey) + '" data-watch-kline="' + escHtml(klineSym) + '" ' +
+          'data-watch-code="' + escHtml(st.code) + '" data-watch-name="' + escHtml(st.name) + '" aria-label="切换自选">' +
+          (isStar ? "★" : "☆") + "</button>";
       }
+      const startTab = initialTab === "kline" ? "kline" : "dossier";
       if (dossierBody) {
-        dossierBody.innerHTML =
+        const dossierGridHtml =
           '<div class="dossier-grid">' +
           DOSSIER_DIMS.map(function (pair) {
             const val = d[pair[0]] || "暂无补充";
@@ -1669,6 +1880,50 @@
             );
           }).join("") +
           "</div>";
+        dossierBody.innerHTML =
+          '<div class="modal-tab-bar" role="tablist">' +
+          '<button type="button" class="modal-tab-btn' + (startTab === "dossier" ? " active" : "") + '" data-modal-tab="dossier">📋 7 维机构深研</button>' +
+          '<button type="button" class="modal-tab-btn' + (startTab === "kline" ? " active" : "") + '" data-modal-tab="kline">📈 互动 K 线与技术指标</button>' +
+          '<a class="btn btn-sm modal-tab-ext" href="charts.html#sym=' + encodeURIComponent(klineSym) + '">全屏终端 ↗</a>' +
+          "</div>" +
+          '<div class="modal-tab-pane" data-modal-pane="dossier"' + (startTab === "kline" ? " hidden" : "") + ">" + dossierGridHtml + "</div>" +
+          '<div class="modal-tab-pane" data-modal-pane="kline"' + (startTab !== "kline" ? " hidden" : "") + ">" +
+          '<div class="kline-mount" id="dossier-kline-mount"></div></div>';
+
+        function mountDossierKline() {
+          const mountEl = document.getElementById("dossier-kline-mount");
+          if (!mountEl || !window.GIRKline) return;
+          if (!activeDossierChart) {
+            activeDossierChart = window.GIRKline.mount(mountEl, {
+              symbolId: klineSym,
+              height: 360,
+              mode: "modal",
+              anchorLow: st.anchor_low,
+              anchorHigh: st.anchor_high,
+              goldLocked: !!st.is_gold_locked,
+            });
+          } else {
+            activeDossierChart.resize();
+          }
+        }
+
+        dossierBody.querySelectorAll("[data-modal-tab]").forEach(function (tBtn) {
+          tBtn.addEventListener("click", function () {
+            const target = tBtn.getAttribute("data-modal-tab");
+            dossierBody.querySelectorAll("[data-modal-tab]").forEach(function (b) {
+              b.classList.toggle("active", b === tBtn);
+            });
+            dossierBody.querySelectorAll("[data-modal-pane]").forEach(function (p) {
+              p.hidden = p.getAttribute("data-modal-pane") !== target;
+            });
+            if (target === "kline") {
+              window.requestAnimationFrame(mountDossierKline);
+            }
+          });
+        });
+        if (startTab === "kline") {
+          window.requestAnimationFrame(mountDossierKline);
+        }
       }
       if (dossierFootLink) dossierFootLink.setAttribute("href", st.report_url || "#");
       if (dossierFootDate) {
@@ -1681,10 +1936,10 @@
 
     if (dossierModal) {
       document.querySelectorAll("[data-action='close-dossier']").forEach(function (b) {
-        b.addEventListener("click", function () { hideDialog(dossierModal); });
+        b.addEventListener("click", function () { destroyDossierChart(); hideDialog(dossierModal); });
       });
       dossierModal.addEventListener("click", function (e) {
-        if (e.target === dossierModal) hideDialog(dossierModal);
+        if (e.target === dossierModal) { destroyDossierChart(); hideDialog(dossierModal); }
       });
     }
 
@@ -1697,12 +1952,144 @@
         }
         const dBtn = e.target.closest("[data-dossier-key]");
         if (dBtn) {
-          openStockDossier(dBtn.getAttribute("data-dossier-key"));
+          openStockDossier(dBtn.getAttribute("data-dossier-key"), dBtn.getAttribute("data-open-tab") || "dossier");
         }
       });
     });
 
+    /* 10B. 27-Pair A/H After-Tax Dividend & Arbitrage Matrix View on screener.html */
+    const scrViewBtns = Array.from(document.querySelectorAll("[data-scr-view]"));
+    const scrPoolPane = document.getElementById("scr-view-pool");
+    const scrAhPane = document.getElementById("scr-view-ah");
+    const ahDataEl = document.getElementById("ah-matrix-data");
+    const ahTbody = document.getElementById("ah-matrix-tbody");
+    const ahCountEl = document.getElementById("ah-matrix-count");
+    const ahFilterBtns = Array.from(document.querySelectorAll("[data-ah-filter]"));
+    let ahRowsAll = [];
+    let ahFilter = "all";
+    let ahSortKey = "ah_premium_pct";
+    let ahSortDir = -1;
+
+    if (ahDataEl) {
+      try {
+        const parsedAh = JSON.parse(ahDataEl.textContent || "[]");
+        if (Array.isArray(parsedAh)) ahRowsAll = parsedAh;
+      } catch (_) {}
+    }
+
+    function renderAhMatrix() {
+      if (!ahTbody || ahRowsAll.length === 0) return;
+      ahFilterBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-ah-filter") || "all") === ahFilter);
+      });
+      let rows = ahRowsAll.filter(function (r) {
+        if (ahFilter === "a-cheaper") return isFiniteNum(r.ah_premium_pct) && r.ah_premium_pct < 0;
+        if (ahFilter === "hk-connect-wins") return isFiniteNum(r.net_div_spread) && r.net_div_spread > 0;
+        if (ahFilter === "a-div-wins") return isFiniteNum(r.net_div_spread) && r.net_div_spread <= 0 && isFiniteNum(r.a_div_pct) && r.a_div_pct > 0;
+        if (ahFilter === "high-prem") return isFiniteNum(r.ah_premium_pct) && r.ah_premium_pct >= 50;
+        return true;
+      });
+      rows = rows.slice().sort(function (a, b) {
+        const va = a[ahSortKey];
+        const vb = b[ahSortKey];
+        if (isFiniteNum(va) && isFiniteNum(vb)) return (va - vb) * ahSortDir;
+        if (isFiniteNum(va)) return -1;
+        if (isFiniteNum(vb)) return 1;
+        return String(a.name || "").localeCompare(String(b.name || ""), "zh-Hans-CN") * ahSortDir;
+      });
+      if (ahCountEl) {
+        ahCountEl.textContent = "显示 " + rows.length + " / " + ahRowsAll.length + " 对 A/H 孪生股";
+      }
+      ahTbody.innerHTML = rows
+        .map(function (r) {
+          const prem = isFiniteNum(r.ah_premium_pct) ? r.ah_premium_pct : null;
+          const premCls = prem != null && prem < 0 ? "ah-pill ah-disc" : "ah-pill ah-prem";
+          const premTxt = prem != null ? (prem >= 0 ? "+" : "") + prem.toFixed(1) + "%" : "—";
+          const barPct = prem != null ? Math.min(100, Math.round((Math.abs(prem) / 120) * 100)) : 0;
+          const barHtml =
+            prem == null
+              ? "—"
+              : prem < 0
+              ? '<div class="ah-bi-track"><div class="ah-bi-left"><span class="ah-bi-fill ah-bi-disc" style="width:' + barPct + '%;"></span></div><div class="ah-bi-right"></div></div>'
+              : '<div class="ah-bi-track"><div class="ah-bi-left"></div><div class="ah-bi-right"><span class="ah-bi-fill ah-bi-prem" style="width:' + barPct + '%;"></span></div></div>';
+          const aDiv = isFiniteNum(r.a_div_pct) ? r.a_div_pct.toFixed(2) + "%" : "—";
+          const hDivNet = isFiniteNum(r.h_connect_after_tax_div) ? r.h_connect_after_tax_div.toFixed(2) + "%" : "—";
+          const taxTag = r.h_tax_rate_pct ? "（扣" + r.h_tax_rate_pct + "%税）" : "";
+          const spreadTxt = isFiniteNum(r.net_div_spread)
+            ? (r.net_div_spread > 0 ? "港通高 +" + r.net_div_spread.toFixed(2) + "pp" : "A股高 +" + Math.abs(r.net_div_spread).toFixed(2) + "pp")
+            : "无股息差对比";
+          const btns = [];
+          if (r.a_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.a_key) + '">A 7维</button>');
+          if (r.h_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.h_key) + '">H 7维</button>');
+          if (r.a_code) btns.push('<button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(r.a_key || r.h_key || "") + '" data-open-tab="kline">📈 K线</button>');
+          return (
+            "<tr>" +
+            '<td><strong>' + escHtml(r.name) + '</strong><div class="sec-sub">' + escHtml(r.a_code) + " / " + escHtml(r.h_code) + "</div></td>" +
+            '<td><div>A: ' + escHtml(r.a_price || "—") + '</div><div class="sec-sub">H: ' + escHtml(r.h_price || "—") + "</div></td>" +
+            '<td><span class="' + premCls + '">' + escHtml(premTxt) + "</span>" + barHtml + "</td>" +
+            '<td><div>A 持有>1年免税: <strong>' + escHtml(aDiv) + '</strong></div><div class="sec-sub">H 港股通税后: <strong>' + escHtml(hDivNet) + "</strong>" + escHtml(taxTag) + "</div></td>" +
+            '<td><div><span class="ah-verdict-pill ah-v-' + escHtml(r.verdict_tone || "neutral") + '">' + escHtml(r.verdict_label || "均衡") + '</span></div><div class="sec-sub">' + escHtml(spreadTxt) + "</div></td>" +
+            '<td><div style="display:flex;gap:5px;flex-wrap:wrap;">' + btns.join("") + "</div></td>" +
+            "</tr>"
+          );
+        })
+        .join("");
+    }
+
+    function setScreenerView(viewName, syncHash) {
+      const isAh = viewName === "ah-matrix";
+      scrViewBtns.forEach(function (b) {
+        b.classList.toggle("active", (b.getAttribute("data-scr-view") || "pool") === (isAh ? "ah-matrix" : "pool"));
+      });
+      if (scrPoolPane) scrPoolPane.hidden = isAh;
+      if (scrAhPane) scrAhPane.hidden = !isAh;
+      if (isAh) renderAhMatrix();
+      if (syncHash && history.replaceState) {
+        try {
+          history.replaceState(null, "", isAh ? "#view=ah-matrix" : window.location.pathname + window.location.search);
+        } catch (_) {}
+      }
+    }
+
+    scrViewBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        setScreenerView(b.getAttribute("data-scr-view") || "pool", true);
+      });
+    });
+    ahFilterBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        ahFilter = b.getAttribute("data-ah-filter") || "all";
+        renderAhMatrix();
+      });
+    });
+    document.querySelectorAll("[data-ah-sort]").forEach(function (th) {
+      const btn = th.querySelector("button") || th;
+      btn.addEventListener("click", function () {
+        const k = th.getAttribute("data-ah-sort");
+        if (ahSortKey === k) ahSortDir *= -1;
+        else { ahSortKey = k; ahSortDir = -1; }
+        renderAhMatrix();
+      });
+    });
+    if (ahTbody) {
+      ahTbody.addEventListener("click", function (e) {
+        const dBtn = e.target.closest("[data-dossier-key]");
+        if (dBtn) {
+          openStockDossier(dBtn.getAttribute("data-dossier-key"), dBtn.getAttribute("data-open-tab") || "dossier");
+        }
+      });
+    }
+
+    window.addEventListener("gir:watchlist-change", function () {
+      if (state.preset === "watchlist") renderScreener(false);
+    });
+
     window.addEventListener("hashchange", function () {
+      if ((window.location.hash || "").indexOf("view=ah-matrix") !== -1) {
+        setScreenerView("ah-matrix", false);
+        return;
+      }
+      setScreenerView("pool", false);
       if (applyHashToState(true)) {
         renderSectorControls();
         renderScreener(false);
@@ -1710,7 +2097,11 @@
     });
 
     if (hasData) {
-      applyHashToState();
+      if ((window.location.hash || "").indexOf("view=ah-matrix") !== -1) {
+        setScreenerView("ah-matrix", false);
+      } else {
+        applyHashToState();
+      }
       renderSectorControls();
       renderScreener(false);
       root.classList.add("screener-enhanced");
@@ -2009,7 +2400,7 @@
         let ok =
           (!isSup || arcState.showSuperseded) &&
           (arcState.market === "all" || m === arcState.market) &&
-          (arcState.session === "all" || s === arcState.session || (arcState.session === "evening" && s === "midday")) &&
+          (arcState.session === "all" || s === arcState.session) &&
           (arcState.editionType === "all" || ed === arcState.editionType);
 
         if (ok && tokens.length > 0) {
@@ -2288,9 +2679,21 @@
       if (it && it.code) etfByCode.set(String(it.code), it);
     });
 
-    function openEtfModal(code) {
+    let activeEtfChart = null;
+    function destroyEtfChart() {
+      if (activeEtfChart) {
+        try { activeEtfChart.destroy(); } catch (_) {}
+        activeEtfChart = null;
+      }
+    }
+
+    function openEtfModal(code, initialTab) {
       const it = etfByCode.get(String(code || ""));
       if (!it || !etfModal) return;
+      destroyEtfChart();
+      const basePrefix = document.body.getAttribute("data-base-prefix") || "";
+      const klineSym = "etf_" + it.code;
+      const isStar = WatchlistStore.has(it.code) || WatchlistStore.has(klineSym);
       if (etfModalTitle) etfModalTitle.textContent = cleanEtfDisplayText(it.name) + " (" + it.code + ")";
       if (etfModalSub) {
         etfModalSub.textContent =
@@ -2301,8 +2704,13 @@
           '<span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span>" +
           '<span class="etf-chan-tag">' + escHtml(it.channel) + "</span>" +
           '<span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + "</span>" +
-          '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>";
+          '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
+          '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="etf" ' +
+          'data-watch-id="' + escHtml(it.code) + '" data-watch-kline="' + escHtml(klineSym) + '" ' +
+          'data-watch-code="' + escHtml(it.code) + '" data-watch-name="' + escHtml(cleanEtfDisplayText(it.name)) + '" aria-label="切换自选">' +
+          (isStar ? "★" : "☆") + "</button>";
       }
+      const startTab = initialTab === "kline" ? "kline" : "detail";
       if (etfModalBody) {
         const blocks = [
           ["① 核心投资逻辑与定位", it.thesis_deep],
@@ -2313,7 +2721,7 @@
           ["⑥ 核心风险与排雷边界", it.risk_boundary],
           ["⑦ 场外联接或低费替身对照", it.otc_feeder || "暂无场外联接补充，详见频道主表"],
         ];
-        etfModalBody.innerHTML =
+        const detailGridHtml =
           '<div class="dossier-grid">' +
           blocks.map(function (b) {
             return (
@@ -2324,6 +2732,49 @@
             );
           }).join("") +
           "</div>";
+
+        etfModalBody.innerHTML =
+          '<div class="modal-tab-bar" role="tablist">' +
+          '<button type="button" class="modal-tab-btn' + (startTab === "detail" ? " active" : "") + '" data-etf-modal-tab="detail">📋 详情与税费</button>' +
+          '<button type="button" class="modal-tab-btn' + (startTab === "kline" ? " active" : "") + '" data-etf-modal-tab="kline">📈 互动 K 线与技术指标</button>' +
+          '<a class="btn btn-sm modal-tab-ext" href="' + escHtml(basePrefix + "charts.html#sym=" + encodeURIComponent(klineSym)) + '">全屏终端 ↗</a>' +
+          "</div>" +
+          '<div class="modal-tab-pane" data-etf-modal-pane="detail"' + (startTab === "kline" ? " hidden" : "") + ">" + detailGridHtml + "</div>" +
+          '<div class="modal-tab-pane" data-etf-modal-pane="kline"' + (startTab !== "kline" ? " hidden" : "") + ">" +
+          '<div class="kline-mount" id="etf-kline-mount"></div></div>';
+
+        function mountEtfKline() {
+          const mountEl = document.getElementById("etf-kline-mount");
+          if (!mountEl || !window.GIRKline) return;
+          if (!activeEtfChart) {
+            activeEtfChart = window.GIRKline.mount(mountEl, {
+              symbolId: klineSym,
+              height: 360,
+              mode: "modal",
+              goldLocked: !!it.gold_locked,
+            });
+          } else {
+            activeEtfChart.resize();
+          }
+        }
+
+        etfModalBody.querySelectorAll("[data-etf-modal-tab]").forEach(function (tBtn) {
+          tBtn.addEventListener("click", function () {
+            const target = tBtn.getAttribute("data-etf-modal-tab");
+            etfModalBody.querySelectorAll("[data-etf-modal-tab]").forEach(function (b) {
+              b.classList.toggle("active", b === tBtn);
+            });
+            etfModalBody.querySelectorAll("[data-etf-modal-pane]").forEach(function (p) {
+              p.hidden = p.getAttribute("data-etf-modal-pane") !== target;
+            });
+            if (target === "kline") {
+              window.requestAnimationFrame(mountEtfKline);
+            }
+          });
+        });
+        if (startTab === "kline") {
+          window.requestAnimationFrame(mountEtfKline);
+        }
       }
       showDialog(etfModal);
     }
@@ -2331,10 +2782,10 @@
     if (etfModal && !etfModal.dataset.boundClose) {
       etfModal.dataset.boundClose = "1";
       document.querySelectorAll("[data-action='close-etf']").forEach(function (b) {
-        b.addEventListener("click", function () { hideDialog(etfModal); });
+        b.addEventListener("click", function () { destroyEtfChart(); hideDialog(etfModal); });
       });
       etfModal.addEventListener("click", function (e) {
-        if (e.target === etfModal) hideDialog(etfModal);
+        if (e.target === etfModal) { destroyEtfChart(); hideDialog(etfModal); }
       });
     }
 
@@ -2357,7 +2808,7 @@
       if (chEtfTable) {
         chEtfTable.addEventListener("click", function (e) {
           const btn = e.target.closest("[data-etf-code]");
-          if (btn) openChEtfModal(btn.getAttribute("data-etf-code"));
+          if (btn) openChEtfModal(btn.getAttribute("data-etf-code"), btn.getAttribute("data-open-tab") || "detail");
         });
       }
     }
@@ -2411,6 +2862,7 @@
       if (p === "base") return !it.gold_locked && String(it.action_role || "").indexOf("底座") !== -1;
       if (p === "high-risk") return it.premium_status === "high_risk" || String(it.action_role || "").indexOf("高危") !== -1;
       if (p === "hide-gold") return !it.gold_locked;
+      if (p === "watchlist") return WatchlistStore.has(it.code) || WatchlistStore.has("etf_" + it.code);
       return true;
     }
 
@@ -2522,6 +2974,10 @@
       if (etfCount) {
         etfCount.textContent = "显示 " + rows.length + " / " + allEtfs.length + " 只重点 ETF";
       }
+      const etfQdiiPanel = document.getElementById("etf-qdii-panel");
+      if (etfQdiiPanel) {
+        etfQdiiPanel.classList.toggle("qdii-panel-highlight", etfState.channel === "境内QDII");
+      }
 
       if (etfTbody) {
         if (rows.length === 0) {
@@ -2535,15 +2991,22 @@
           etfTbody.innerHTML = rows.map(function (it) {
             const dispName = cleanEtfDisplayText(it.name);
             const dispCat = cleanEtfDisplayText(it.category);
+            const kSym = "etf_" + it.code;
+            const isStar = WatchlistStore.has(it.code) || WatchlistStore.has(kSym);
+            const starBtn =
+              '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="etf" ' +
+              'data-watch-id="' + escHtml(it.code) + '" data-watch-kline="' + escHtml(kSym) + '" ' +
+              'data-watch-code="' + escHtml(it.code) + '" data-watch-name="' + escHtml(dispName) + '" aria-label="切换自选">' +
+              (isStar ? "★" : "☆") + "</button>";
             return (
               "<tr>" +
-              '<td><div><strong>' + escHtml(dispName) + '</strong></div><div><span class="code-tag">' + escHtml(it.code) + '</span> <span class="etf-chan-tag">' + escHtml(dispCat) + "</span></div></td>" +
+              '<td><div>' + starBtn + ' <strong>' + escHtml(dispName) + '</strong></div><div><span class="code-tag">' + escHtml(it.code) + '</span> <span class="etf-chan-tag">' + escHtml(dispCat) + "</span></div></td>" +
               '<td><div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + '</span></div><div><span class="etf-chan-tag">' + escHtml(it.channel) + "</span></div></td>" +
               "<td><div>" + escHtml(it.tracking_index) + '</div><div class="sec-sub">' + escHtml(it.yield_or_pe) + "</div></td>" +
               '<td class="col-num"><strong>' + escHtml(it.fee_total_pct) + "</strong></td>" +
               "<td><div><strong>" + escHtml(it.aum) + '</strong></div><div class="sec-sub">' + escHtml(it.liquidity) + "</div></td>" +
               '<td><div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + '</span></div><div class="sec-sub">' + escHtml(it.premium_note) + "</div></td>" +
-              '<td><div><span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + '</span></div><div style="margin-top:5px;"><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">深度拆解</button></div></td>' +
+              '<td><div><span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + '</span></div><div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap;"><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">深度拆解</button><button type="button" class="kline-quick-btn" data-etf-code="' + escHtml(it.code) + '" data-open-tab="kline">📈 K线</button></div></td>' +
               "</tr>"
             );
           }).join("");
@@ -2561,16 +3024,23 @@
         } else {
           etfCardsEl.innerHTML = rows.map(function (it) {
             const dispName = cleanEtfDisplayText(it.name);
+            const kSym = "etf_" + it.code;
+            const isStar = WatchlistStore.has(it.code) || WatchlistStore.has(kSym);
+            const starBtn =
+              '<button type="button" class="star-btn' + (isStar ? " active" : "") + '" data-watch-toggle="1" data-watch-kind="etf" ' +
+              'data-watch-id="' + escHtml(it.code) + '" data-watch-kline="' + escHtml(kSym) + '" ' +
+              'data-watch-code="' + escHtml(it.code) + '" data-watch-name="' + escHtml(dispName) + '" aria-label="切换自选">' +
+              (isStar ? "★" : "☆") + "</button>";
             return (
               '<div class="etf-card">' +
               '<div class="etf-card-top">' +
-              '<div><span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(dispName) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
+              '<div>' + starBtn + ' <span class="mkt-badge mkt-' + escHtml(it.market) + '">' + escHtml(it.market_label) + "</span> <strong>" + escHtml(dispName) + '</strong> <span class="code-tag">' + escHtml(it.code) + "</span></div>" +
               '<span class="role-pill ' + etfRoleClass(it) + '">' + escHtml(it.action_role) + "</span>" +
               "</div>" +
               '<div class="etf-card-meta"><span><strong>通道：</strong>' + escHtml(it.channel) + "</span><span><strong>费率：</strong>" + escHtml(it.fee_total_pct) + "</span><span><strong>规模：</strong>" + escHtml(it.aum) + "</span></div>" +
               '<div><span class="prem-pill prem-' + escHtml(it.premium_status) + '">' + escHtml(PREM_LABELS[it.premium_status] || it.premium_status) + '</span> <span class="sec-sub">' + escHtml(it.yield_or_pe) + "</span></div>" +
               '<div class="sc-summary">' + escHtml(it.thesis_deep) + "</div>" +
-              '<div><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">查看 ETF 7 维深度拆解</button></div>' +
+              '<div style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" class="dossier-btn" style="margin-left:0;" data-etf-code="' + escHtml(it.code) + '">ETF 7 维拆解</button><button type="button" class="kline-quick-btn" data-etf-code="' + escHtml(it.code) + '" data-open-tab="kline">📈 K线</button></div>' +
               "</div>"
             );
           }).join("");
@@ -2655,7 +3125,7 @@
           return;
         }
         const btn = e.target.closest("[data-etf-code]");
-        if (btn) openEtfModal(btn.getAttribute("data-etf-code"));
+        if (btn) openEtfModal(btn.getAttribute("data-etf-code"), btn.getAttribute("data-open-tab") || "detail");
       });
     });
 
@@ -2678,7 +3148,7 @@
           etfState.market = v;
         } else if (k === "channel" && v) {
           etfState.channel = v;
-        } else if (k === "preset" && ["all", "low-fee", "base", "cash-shield", "high-risk", "hide-gold"].indexOf(v) !== -1) {
+        } else if (k === "preset" && ["all", "low-fee", "base", "cash-shield", "high-risk", "hide-gold", "watchlist"].indexOf(v) !== -1) {
           etfState.preset = v;
         } else if (k === "q") {
           etfState.q = v;
@@ -2691,6 +3161,9 @@
       applyEtfHash();
       renderEtfs(false);
       root.classList.add("etf-enhanced");
+      window.addEventListener("gir:watchlist-change", function () {
+        if (etfState.preset === "watchlist") renderEtfs(false);
+      });
       window.addEventListener("hashchange", function () {
         applyEtfHash();
         renderEtfs(false);
@@ -2820,5 +3293,276 @@
         applyGuideFilter(true);
       }
     });
+  }
+
+  /* ------------------------------------------------------------------------
+     16. Interactive Personal Wallet Calculator (`#wallet-calc-data`)
+     ------------------------------------------------------------------------ */
+  const walletDataEl = document.getElementById("wallet-calc-data");
+  const walletBox = document.querySelector("[data-wallet-calc]");
+  if (walletDataEl && walletBox) {
+    let wCfg = { gold_new_buy_allowed: false, eq_cap_pct: 35, gold_cap_pct: 10 };
+    try {
+      const parsed = JSON.parse(walletDataEl.textContent || "{}");
+      if (parsed && typeof parsed === "object") wCfg = Object.assign(wCfg, parsed);
+    } catch (_) {}
+
+    const amountInput = walletBox.querySelector("[data-wcalc-amount]");
+    const presetBtns = Array.from(walletBox.querySelectorAll("[data-wcalc-preset]"));
+    const profileBtns = Array.from(walletBox.querySelectorAll("[data-wcalc-profile]"));
+    const outBucketsEl = walletBox.querySelector("[data-wcalc-buckets]");
+    const outRulesEl = walletBox.querySelector("[data-wcalc-rules]");
+    const copyBtn = walletBox.querySelector("[data-wcalc-copy]");
+
+    let curWan = 10;
+    let curProfile = "balanced"; // conservative | balanced | aggressive
+    try {
+      const saved = JSON.parse(localStorage.getItem("gir_wallet_calc") || "null");
+      if (saved && isFiniteNum(saved.wan) && saved.wan > 0) curWan = saved.wan;
+      if (saved && ["conservative", "balanced", "aggressive"].indexOf(saved.profile) !== -1) curProfile = saved.profile;
+    } catch (_) {}
+    if (amountInput) amountInput.value = String(curWan);
+
+    const PROFILES = {
+      conservative: { label: "保守稳健", liquid: 25, stable: 50, equity: 18, multi: 7, goldSlot: 5 },
+      balanced: { label: "均衡成长", liquid: 20, stable: 40, equity: 30, multi: 10, goldSlot: 8 },
+      aggressive: { label: "积极进取", liquid: 15, stable: 28, equity: 42, multi: 15, goldSlot: 10 },
+    };
+
+    function fmtRmb(v) {
+      return "¥" + Math.round(v).toLocaleString("en-US");
+    }
+
+    function computeWalletPlan() {
+      const total = Math.max(1000, Math.round(curWan * 10000));
+      const prof = PROFILES[curProfile] || PROFILES.balanced;
+      const goldAllowed = !!wCfg.gold_new_buy_allowed;
+      const eqCap = isFiniteNum(wCfg.eq_cap_pct) ? Math.max(15, Math.min(60, wCfg.eq_cap_pct)) : 35;
+
+      // Respect live market equity cap: trim aggressive equity if market is red-light capped
+      let eqPct = Math.min(prof.equity, eqCap);
+      let overflowEq = prof.equity - eqPct;
+      let liqPct = prof.liquid;
+      let stabPct = prof.stable + overflowEq;
+      let multiPct = prof.multi;
+      let goldPct = goldAllowed ? Math.min(prof.goldSlot, 12) : 0;
+
+      if (goldAllowed) {
+        stabPct = Math.max(10, stabPct - goldPct);
+      }
+      const sumPct = liqPct + stabPct + eqPct + multiPct + goldPct;
+      if (sumPct !== 100) stabPct += 100 - sumPct;
+
+      const liqAmt = Math.round((total * liqPct) / 100);
+      const stabAmt = Math.round((total * stabPct) / 100);
+      const eqAmt = Math.round((total * eqPct) / 100);
+      const multiAmt = Math.round((total * multiPct) / 100);
+      const goldAmt = goldAllowed ? total - liqAmt - stabAmt - eqAmt - multiAmt : 0;
+      const singleStockCap = Math.round(total * 0.08);
+      const cashPlusStable = liqAmt + stabAmt;
+
+      const liqVehicle = liqAmt < 12000
+        ? "货币基金 / 周四国债逆回购（1 元起投；活钱低于 1.2 万暂不配 511360）"
+        : "短融 ETF（511360，约 1.14 万/手）+ 周四国债逆回购 + 货基";
+      const stabVehicle = cashPlusStable > 500000
+        ? "储蓄国债 / 政金债 ETF / 拆存 " + Math.ceil(cashPlusStable / 470000) + " 家银行存款（单行 ≤47万）"
+        : "储蓄国债 / 债券 ETF（511260/511010）/ 单行 50 万内存款";
+      const eqVehicle = singleStockCap < 15000
+        ? "红利/宽基低费 ETF（510300 / 563360 / 515180，规避单股碎股摩擦）"
+        : "红利低波 + 沪深300/A500 核心宽基 + 防弹衣龙头（单股严控 ≤" + fmtRmb(singleStockCap) + "）";
+      const multiVehicle = "投资级转债 ETF（511180）/ 锁汇香港互认债基 / 场外低溢价 QDII 定投";
+
+      return {
+        total: total,
+        prof: prof,
+        goldAllowed: goldAllowed,
+        liqPct: liqPct, stabPct: stabPct, eqPct: eqPct, multiPct: multiPct, goldPct: goldPct,
+        liqAmt: liqAmt, stabAmt: stabAmt, eqAmt: eqAmt, multiAmt: multiAmt, goldAmt: goldAmt,
+        singleStockCap: singleStockCap,
+        cashPlusStable: cashPlusStable,
+        liqVehicle: liqVehicle,
+        stabVehicle: stabVehicle,
+        eqVehicle: eqVehicle,
+        multiVehicle: multiVehicle,
+      };
+    }
+
+    function renderWallet() {
+      presetBtns.forEach(function (b) {
+        b.classList.toggle("active", Number(b.getAttribute("data-wcalc-preset")) === curWan);
+      });
+      profileBtns.forEach(function (b) {
+        b.classList.toggle("active", b.getAttribute("data-wcalc-profile") === curProfile);
+      });
+      try {
+        localStorage.setItem("gir_wallet_calc", JSON.stringify({ wan: curWan, profile: curProfile }));
+      } catch (_) {}
+
+      const p = computeWalletPlan();
+      if (outBucketsEl) {
+        const cards = [
+          { icon: "💧", name: "活钱应急", pct: p.liqPct, amt: p.liqAmt, tip: p.liqVehicle, cls: "wb-liquid" },
+          { icon: "🛡️", name: "稳健压舱", pct: p.stabPct, amt: p.stabAmt, tip: p.stabVehicle, cls: "wb-stable" },
+          { icon: "🌱", name: "权益定投", pct: p.eqPct, amt: p.eqAmt, tip: p.eqVehicle, cls: "wb-equity" },
+          { icon: "🌐", name: "跨境与多元", pct: p.multiPct, amt: p.multiAmt, tip: p.multiVehicle, cls: "wb-multi" },
+        ];
+        if (p.goldAllowed) {
+          cards.push({
+            icon: "🥇",
+            name: "黄金分批",
+            pct: p.goldPct,
+            amt: p.goldAmt,
+            tip: "按家庭总资产 10%–15% 封顶分批配置，不加杠杆",
+            cls: "wb-gold",
+          });
+        } else {
+          cards.push({
+            icon: "🛑",
+            name: "黄金新仓锁",
+            pct: 0,
+            amt: 0,
+            tip: "0 元（红灯观察期不新买，原黄金预算暂泊活钱/短债）",
+            cls: "wb-gold-lock",
+          });
+        }
+        outBucketsEl.innerHTML = cards
+          .map(function (c) {
+            return (
+              '<div class="wcalc-bucket ' + c.cls + '">' +
+              '<div class="wcalc-b-top"><span>' + c.icon + " " + escHtml(c.name) + '</span><strong>' + c.pct + "%</strong></div>" +
+              '<div class="wcalc-b-amt">' + (c.cls === "wb-gold-lock" ? "0 元（红灯锁）" : fmtRmb(c.amt)) + "</div>" +
+              '<div class="wcalc-b-tip">' + escHtml(c.tip) + "</div>" +
+              "</div>"
+            );
+          })
+          .join("");
+      }
+
+      if (outRulesEl) {
+        const rules = [];
+        if (!p.goldAllowed) {
+          rules.push("🛑 黄金红灯观察锁：黄金新仓严格为 0 元（老持仓稳拿不乱割），原黄金预算已自动转泊活钱/短债池。");
+        } else {
+          rules.push("🥇 黄金上限纪律：任何情形下家庭黄金总占比严控 10%–15%，不加杠杆。");
+        }
+        if (p.liqAmt < 12000) {
+          rules.push("💧 511360 门槛自动切换：当前活钱 " + fmtRmb(p.liqAmt) + " 低于 12,000 元（短融 ETF 100 份约 1.14 万元起步），已自动切换为 1 元起投的货币基金 / 1,000 元起投国债逆回购。");
+        }
+        if (p.cashPlusStable > 500000) {
+          const banks = Math.ceil(p.cashPlusStable / 470000);
+          rules.push("🏦 50 万存保分银行提醒：活钱 + 稳健合计 " + fmtRmb(p.cashPlusStable) + " 超过 50 万元，银行存款部分请拆分至至少 " + banks + " 家独立法人银行，单行本息严控 47 万元以内。");
+        }
+        rules.push("🎯 8% 单股上限红线：本次总资金单只个股最高严控 " + fmtRmb(p.singleStockCap) + "（绝不单吊押注" + (p.singleStockCap < 15000 ? "；资金体量优先使用低费率 ETF 分散" : "") + "）。");
+        outRulesEl.innerHTML = rules.map(function (r) { return "<li>" + escHtml(r) + "</li>"; }).join("");
+      }
+    }
+
+    presetBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        const v = Number(b.getAttribute("data-wcalc-preset"));
+        if (isFiniteNum(v) && v > 0) {
+          curWan = v;
+          if (amountInput) amountInput.value = String(v);
+          renderWallet();
+        }
+      });
+    });
+    profileBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        curProfile = b.getAttribute("data-wcalc-profile") || "balanced";
+        renderWallet();
+      });
+    });
+    if (amountInput) {
+      amountInput.addEventListener("input", function () {
+        const v = parseFloat(amountInput.value);
+        if (isFiniteNum(v) && v >= 0.1 && v <= 100000) {
+          curWan = v;
+          renderWallet();
+        }
+      });
+    }
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        const p = computeWalletPlan();
+        const summary =
+          "【全球投研 · 我的钱包试算（" + p.prof.label + " · 总计 " + fmtRmb(p.total) + "）】\n" +
+          "1. 活钱应急 (" + p.liqPct + "%): " + fmtRmb(p.liqAmt) + "\n" +
+          "2. 稳健压舱 (" + p.stabPct + "%): " + fmtRmb(p.stabAmt) + "\n" +
+          "3. 权益定投 (" + p.eqPct + "%): " + fmtRmb(p.eqAmt) + "\n" +
+          "4. 跨境与多元 (" + p.multiPct + "%): " + fmtRmb(p.multiAmt) + "\n" +
+          "5. 黄金新仓: " + (p.goldAllowed ? fmtRmb(p.goldAmt) : "0 元（红灯观察期不新买）") + "\n" +
+          "单股上限(8%): " + fmtRmb(p.singleStockCap);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(summary).then(function () {
+            copyBtn.textContent = "已复制 ✓";
+            window.setTimeout(function () { copyBtn.textContent = "复制试算方案"; }, 1800);
+          }).catch(function () {});
+        }
+      });
+    }
+    renderWallet();
+  }
+
+  /* ------------------------------------------------------------------------
+     17. QDII On-Exchange Premium vs OTC Queue Breakeven Calculator
+     ------------------------------------------------------------------------ */
+  const qdiiCalc = document.querySelector("[data-qdii-calc]");
+  if (qdiiCalc) {
+    const premIn = qdiiCalc.querySelector("[data-qcalc-prem]");
+    const amtIn = qdiiCalc.querySelector("[data-qcalc-amt]");
+    const limIn = qdiiCalc.querySelector("[data-qcalc-lim]");
+    const limPresets = Array.from(qdiiCalc.querySelectorAll("[data-qcalc-lim-preset]"));
+    const outEl = qdiiCalc.querySelector("[data-qcalc-out]");
+
+    function renderQdiiCalc() {
+      const prem = Math.max(0, Math.min(80, parseFloat(premIn && premIn.value) || 0));
+      const wan = Math.max(0.1, Math.min(5000, parseFloat(amtIn && amtIn.value) || 5));
+      const dailyLim = Math.max(10, Math.min(1000000, parseFloat(limIn && limIn.value) || 1000));
+      const totalRmb = Math.round(wan * 10000);
+      const days = Math.ceil(totalRmb / dailyLim);
+      const months = (days / 21).toFixed(1);
+      const premCost = Math.round((totalRmb * prem) / (100 + prem));
+      // Average capital enters midway through queue, so market must rally ~2x premium during queue to break even
+      const breakevenRally = (prem * 2).toFixed(1);
+
+      limPresets.forEach(function (b) {
+        b.classList.toggle("active", Number(b.getAttribute("data-qcalc-lim-preset")) === dailyLim);
+      });
+
+      let verdictCls = "qcalc-ok";
+      let verdictTxt = "溢价处于 1.5% 以内温和区间：可对比场内买卖价差与场外申购费，若急于一次性建仓成本可控。";
+      if (prem > 3.0) {
+        verdictCls = "qcalc-danger";
+        verdictTxt = "高危溢价陷阱（> 3%）：场内硬买即刻多付 " + premCost.toLocaleString("en-US") + " 元溢价；除非底层在 " + days + " 个交易日内暴涨超 " + breakevenRally + "%，否则溢价回落将造成直接实亏！强烈建议改用官方直销 App 提高单日限额，或拆分多只同赛道场外联接按净值定投。";
+      } else if (prem > 1.5) {
+        verdictCls = "qcalc-warn";
+        verdictTxt = "溢价偏高（1.5%–3.0%）：建议优先核查基金公司官方直销 App 是否给出更高限额（常为支付宝/三方的 5–10 倍），尽量按净值分批申购减少无谓磨损。";
+      }
+
+      if (outEl) {
+        outEl.innerHTML =
+          '<div class="qcalc-metrics">' +
+          '<div class="qcalc-m"><div class="qcalc-m-lbl">场外排队所需交易日</div><div class="qcalc-m-val">' + days + ' 日（约 ' + months + ' 个月）</div></div>' +
+          '<div class="qcalc-m"><div class="qcalc-m-lbl">场内硬追即刻溢价成本</div><div class="qcalc-m-val">¥' + premCost.toLocaleString("en-US") + '</div></div>' +
+          '<div class="qcalc-m"><div class="qcalc-m-lbl">排队期打平需标的上涨</div><div class="qcalc-m-val">约 +' + breakevenRally + '%</div></div>' +
+          "</div>" +
+          '<div class="qcalc-verdict ' + verdictCls + '">' + escHtml(verdictTxt) + "</div>";
+      }
+    }
+
+    [premIn, amtIn, limIn].forEach(function (inp) {
+      if (inp) inp.addEventListener("input", renderQdiiCalc);
+    });
+    limPresets.forEach(function (b) {
+      b.addEventListener("click", function () {
+        const v = Number(b.getAttribute("data-qcalc-lim-preset"));
+        if (limIn && isFiniteNum(v)) {
+          limIn.value = String(v);
+          renderQdiiCalc();
+        }
+      });
+    });
+    renderQdiiCalc();
   }
 })();

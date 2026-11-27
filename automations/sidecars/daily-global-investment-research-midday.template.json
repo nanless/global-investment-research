@@ -1,0 +1,22 @@
+{
+  "builtin": "schedule",
+  "restart_policy": "always",
+  "args": [
+    "CRON_TZ=Asia/Shanghai 30 11 * * *",
+    "agentapi",
+    "new-conversation",
+    "--model=gemini-4-neon-xhigh",
+    "--",
+    "__UNIFIED_PROMPT__"
+  ],
+  "display_name": "全球大类资产深度投研（11:30 一体化午报 · 黄金×A/港/美×12大渠道）",
+  "description": "每天北京时间 11:30 单会话串行执行全球大类资产午报全流程（黄金 SSOT 优先落盘 → 零滞后接力 A/港/美股与三大深研库）：纯网页静态门户唯一交付，四市完整收敛主刊（All-4-Main，A股早盘 11:30 官收、港股午盘前实盘、上金所早盘与隔夜美股盘后终盘封账，休市/半日市切守望刊，周末休市沿用旧稿）、12 大个人多元合规渠道（首页简洁概览卡+独立详情页）、140+ 跨 6 通道重点 ETF、231 只全行业龙头零模板化 7 维深研、共享 10+1 一手源调研红队、三库期号同期锁、小白友好三层写作、data_caveats 透明披露、双轨严格门禁、统一 RSI 盲审与单次 GitHub Pages 纯网页发布。",
+  "agent_permissions": {
+    "workspace_uris": [
+      "file://__REPO_ROOT__"
+    ],
+    "access_grants": [
+      "__SHARED_GRANTS__"
+    ]
+  }
+}

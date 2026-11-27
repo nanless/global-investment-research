@@ -9,6 +9,7 @@ from datetime import datetime
 from io import StringIO
 import json
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -1446,7 +1447,9 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
     def test_permissions_json_includes_new_patch_state_dbs_commands_safely(self):
         repo = Path(__file__).resolve().parent.parent
         perms = json.loads((repo / "automations" / "permissions.json").read_text("utf-8"))
-        self.assertEqual(len(perms), 54)
+        self.assertEqual(len(perms), 56)
+        self.assertIn("command(python3 __REPO_ROOT__/scripts/fetch_kline_data.py)", perms)
+        self.assertIn("command(__PYTHON_BIN__ __REPO_ROOT__/scripts/fetch_kline_data.py)", perms)
         for verb in (
             "--append-gold-rsi",
             "--append-equity-rsi",
@@ -1464,6 +1467,107 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                 self.assertNotIn(forbidden, entry)
         for _, tpl_path in install_sidecars.discover_templates(repo / "automations" / "sidecars"):
             install_sidecars.render_template(tpl_path, repo, sys.executable)
+
+    def test_midday_1130_edition_id_supported_across_patch_verbs(self):
+        self.assertEqual(psd._validate_edition_id("2026-11-27_1130"), "2026-11-27_1130")
+        self.assertEqual(psd._validate_edition_id("2026-11-27_1130_r2"), "2026-11-27_1130_r2")
+        with self.assertRaises(ValueError):
+            psd._validate_edition_id("2026-11-27_1630")
+        self.assertLess(psd._edition_sort_key("2026-11-27_0730"), psd._edition_sort_key("2026-11-27_1130"))
+        self.assertLess(psd._edition_sort_key("2026-11-27_1130"), psd._edition_sort_key("2026-11-27_1800"))
+        self.assertIsNotNone(psd.BANNED_INTERNAL_RE.search("请勿在正文泄露 fetch_kline_data.py"))
+
+        real_root = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox = Path(tmp)
+            (sandbox / "gold" / "daily").mkdir(parents=True)
+            (sandbox / "equity" / "state").mkdir(parents=True)
+            for rel in (
+                "gold/data_snapshot.json",
+                "gold/daily/CHANGELOG.md",
+                "gold/daily/AUDIT_LOG.md",
+                "gold/daily/rsi_metrics.json",
+                "equity/state/market_state.json",
+                "equity/state/multi_asset_channels.json",
+                "equity/state/etf_universe.json",
+                "equity/state/deep_dossiers.json",
+                "equity/state/audit_ledger.md",
+                "equity/state/rsi_metrics.json",
+            ):
+                shutil.copy2(real_root / rel, sandbox / rel)
+
+            mid_ed = "2099-12-31_1130"
+            gold_obj = json.loads((sandbox / "gold/data_snapshot.json").read_text(encoding="utf-8"))
+            gold_obj.update(edition_id=mid_ed, as_of_short="2099-12-31 11:30", tier_code="Tier 0", new_buy_allowed=False)
+            (sandbox / "gold/data_snapshot.json").write_text(json.dumps(gold_obj, ensure_ascii=False), encoding="utf-8")
+            ms_obj = json.loads((sandbox / "equity/state/market_state.json").read_text(encoding="utf-8"))
+            ms_obj["edition_id"] = mid_ed
+            (sandbox / "equity/state/market_state.json").write_text(json.dumps(ms_obj, ensure_ascii=False), encoding="utf-8")
+
+            # 1. --apply with 1130
+            (sandbox / "equity/state/_edition_patch.json").write_text(
+                json.dumps({"edition_id": mid_ed, "as_of_date": "2099-12-31", "gold_tier0_locked": True}),
+                encoding="utf-8",
+            )
+            # 2. --prepend-gold-ledgers with 1130
+            review = {
+                "edition_id": mid_ed,
+                "as_of_short": "2099-12-31 11:30",
+                "note": "午报四关核验完成",
+                "sources": {
+                    "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center"],
+                    "rate_spread": ["https://www.newyorkfed.org/markets/reference-rates/effr"],
+                    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"],
+                    "ny_close": ["https://www.lbma.org.uk/prices-and-data/precious-metal-prices"],
+                },
+                "forecast_review": {"status": "none_due", "note": "午报无到期项", "sources": []},
+            }
+            (sandbox / "gold/daily/_ledger_patch.json").write_text(
+                json.dumps({
+                    "edition_id": mid_ed,
+                    "changelog_entry_md": f"<!-- GOLD_EDITION_CHANGELOG {mid_ed} -->\n\n### {mid_ed} 午报\n\n- 午报记录。\n",
+                    "audit_review_block_md": (
+                        f"<!-- GOLD_EDITION_REVIEW {json.dumps(review, ensure_ascii=False)} -->\n"
+                        f"### {mid_ed} 午报核验\n\n- 核验通过。\n"
+                    ),
+                }, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            # 3. --prepend-equity-audit with 1130
+            (sandbox / "equity/state/_audit_patch.json").write_text(
+                json.dumps({"edition_id": mid_ed, "entry_md": f"## {mid_ed} 午报审计\n\n- 午报审计完成。\n"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            # 4. --append-gold-rsi & --append-equity-rsi with 1130
+            rsi_run = {
+                "run_id": mid_ed,
+                "date": "2099-12-31",
+                "edition_type": "midday",
+                "scores": dict.fromkeys(psd.RSI_REQUIRED_SCORE_KEYS, 5),
+                "total_score": 30,
+                "max_score": 30,
+                "review_closure": {"reviewer_completed": True, "findings": []},
+            }
+            (sandbox / "gold/daily/_rsi_patch.json").write_text(json.dumps(rsi_run, ensure_ascii=False), encoding="utf-8")
+            (sandbox / "equity/state/_rsi_patch.json").write_text(json.dumps(rsi_run, ensure_ascii=False), encoding="utf-8")
+
+            with patch.object(psd, "REPO_ROOT", sandbox):
+                for flag in (
+                    "--apply",
+                    "--prepend-gold-ledgers",
+                    "--prepend-equity-audit",
+                    "--append-gold-rsi",
+                    "--append-equity-rsi",
+                ):
+                    with self.subTest(flag=flag):
+                        self.assertEqual(psd.main([flag]), 0)
+
+            for rel in (
+                "equity/state/multi_asset_channels.json",
+                "equity/state/etf_universe.json",
+                "equity/state/deep_dossiers.json",
+            ):
+                self.assertEqual(json.loads((sandbox / rel).read_text(encoding="utf-8"))["edition_id"], mid_ed)
 
 
 if __name__ == "__main__":

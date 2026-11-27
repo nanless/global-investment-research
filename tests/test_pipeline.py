@@ -1,5 +1,5 @@
 from contextlib import redirect_stderr
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 import json
 from pathlib import Path
@@ -622,7 +622,7 @@ class OperationalRegressionTest(unittest.TestCase):
         rendered = {name: install_sidecars.render_template(path, root, "/usr/bin/python3")
                     for name, path in templates.items()}
         for name, (_, definition) in rendered.items():
-            slot = "1800" if name.endswith("evening") else "0730"
+            slot = install_sidecars.SLOTS[name]
             self.assertIn(f"begin --scheduled {slot}", definition["args"][-1])
             self.assertIn("publish_site.py --edition-token", definition["args"][-1])
         with tempfile.TemporaryDirectory() as temporary:
@@ -648,7 +648,7 @@ class OperationalRegressionTest(unittest.TestCase):
             registry.write_text(json.dumps({"sidecars": entries}))
             notes = []
             self.assertEqual(install_sidecars.check_registry(registry, rendered, notes), [])
-            self.assertEqual(len(notes), 2)
+            self.assertEqual(len(notes), 3)
             (base / "projects" / "fixture-0.json").unlink()
             self.assertIn("cannot verify", install_sidecars.check_registry(registry, rendered)[0])
 
@@ -1357,7 +1357,7 @@ class OperationalRegressionTest(unittest.TestCase):
         expected_grants = len(install_sidecars._dedupe_preserve_order(raw_perms))
         self.assertGreaterEqual(expected_grants, 42)
         templates = dict(install_sidecars.discover_templates(root / "automations" / "sidecars"))
-        self.assertEqual(len(templates), 2)
+        self.assertEqual(len(templates), 3)
         for _, path in templates.items():
             _, definition = install_sidecars.render_template(path, root, "/usr/bin/python3")
             grants = definition["agent_permissions"]["access_grants"]
@@ -1365,6 +1365,7 @@ class OperationalRegressionTest(unittest.TestCase):
             self.assertGreaterEqual(len(grants), 42)
             self.assertTrue(any("patch_state_dbs.py --apply" in str(g) for g in grants))
             self.assertTrue(any("patch_state_dbs.py --prepend-gold-ledgers" in str(g) for g in grants))
+            self.assertTrue(any("fetch_kline_data.py" in str(g) for g in grants))
 
     def test_patch_state_dbs_apply_rollback_and_prepend_gold_ledgers(self):
         real_root = Path(__file__).resolve().parent.parent
@@ -1818,6 +1819,120 @@ class OperationalRegressionTest(unittest.TestCase):
                     self.assertEqual(row["status"], "complete")
                 finally:
                     runs.close()
+
+    def test_midday_1130_slot_window_reaping_publish_and_gold_validation(self):
+        # 1. edition_run 1130 window boundaries (11:24 reject, 11:25 accept, 17:30 accept, 17:31 reject)
+        self.assertEqual(edition_run.edition_id("2026-11-27_1130"), "2026-11-27_1130")
+        self.assertEqual(edition_run.edition_id("2026-11-27_1130_r2"), "2026-11-27_1130_r2")
+        with self.assertRaises(Exception):
+            edition_run.edition_id("2026-11-27_1630")
+
+        class _FrozenMiddayDT(datetime):
+            _now: datetime = datetime(2026, 11, 27, 11, 25, tzinfo=edition_run.BEIJING)
+
+            @classmethod
+            def now(cls, tz=None):
+                return cls._now if tz is None else cls._now.astimezone(tz)
+
+        with patch.object(edition_run, "datetime", _FrozenMiddayDT):
+            for hour, minute, should_pass in (
+                (11, 24, False),
+                (11, 25, True),
+                (11, 30, True),
+                (17, 30, True),
+                (17, 31, False),
+            ):
+                with self.subTest(midday_time=f"{hour:02d}:{minute:02d}"):
+                    _FrozenMiddayDT._now = datetime(2026, 11, 27, hour, minute, tzinfo=edition_run.BEIJING)
+                    if should_pass:
+                        self.assertEqual(edition_run.scheduled_edition("1130"), "2026-11-27_1130")
+                    else:
+                        with self.assertRaisesRegex(ValueError, "Outside the Beijing run window"):
+                            edition_run.scheduled_edition("1130")
+
+        # 2. edition_run stale-lock reaping across 0730 -> 1130 -> 1800
+        with tempfile.TemporaryDirectory() as temporary:
+            git_dir = Path(temporary)
+            with patch.object(edition_run, "git_directory", return_value=git_dir), patch.object(
+                edition_run, "git_value", return_value="a" * 40
+            ):
+                runs = edition_run.open_runs()
+                try:
+                    t0 = edition_run.begin(runs, "2026-11-27_0730")
+                    stale_ts = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(timespec="seconds")
+                    with runs:
+                        runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (stale_ts, t0))
+                    # 1130 cleanly reaps stale unpushed 0730
+                    self.assertEqual(
+                        edition_run.reap_stale_unpushed_run(runs, "2026-11-27_1130"),
+                        "2026-11-27_0730",
+                    )
+                    t1 = edition_run.begin(runs, "2026-11-27_1130")
+                    with runs:
+                        runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (stale_ts, t1))
+                    # Earlier 0730 must NOT reap newer 1130
+                    self.assertIsNone(edition_run.reap_stale_unpushed_run(runs, "2026-11-27_0730"))
+                    # Later 1800 cleanly reaps stale unpushed 1130
+                    self.assertEqual(
+                        edition_run.reap_stale_unpushed_run(runs, "2026-11-27_1800"),
+                        "2026-11-27_1130",
+                    )
+                finally:
+                    runs.close()
+
+        # 3. install_sidecars midday template schedule & slot rendering
+        repo = Path(__file__).resolve().parent.parent
+        templates = dict(install_sidecars.discover_templates(repo / "automations" / "sidecars"))
+        self.assertIn("daily-global-investment-research-midday", templates)
+        _, midday_def = install_sidecars.render_template(
+            templates["daily-global-investment-research-midday"], repo, sys.executable
+        )
+        self.assertEqual(midday_def["args"][0], "CRON_TZ=Asia/Shanghai 30 11 * * *")
+        self.assertIn("begin --scheduled 1130", midday_def["args"][-1])
+
+        # 4. publish_site._latest_daily selects 1130 over 0730, 1800 over 1130, and ignores retired 1630
+        with tempfile.TemporaryDirectory() as temporary:
+            daily_dir = Path(temporary)
+            morn = daily_dir / "2026-11-27_0730_早报_黄金深度研报.md"
+            mid = daily_dir / "2026-11-27_1130_午报_黄金深度研报.md"
+            retired = daily_dir / "2026-11-27_1630_午报_黄金深度研报.md"
+            for p in (morn, mid, retired):
+                p.write_text("# test\n", encoding="utf-8")
+            self.assertEqual(publish_site._latest_daily(daily_dir, publish_site.GOLD_DAILY_RE), mid)
+            eve = daily_dir / "2026-11-27_1800_晚报_黄金深度研报.md"
+            eve.write_text("# test\n", encoding="utf-8")
+            self.assertEqual(publish_site._latest_daily(daily_dir, publish_site.GOLD_DAILY_RE), eve)
+
+        # 5. gold/edition_validation 1130 window + Thanksgiving VIX holiday check + optional index_matrix
+        gold_dir = str(repo / "gold")
+        if gold_dir not in sys.path:
+            sys.path.insert(0, gold_dir)
+        import edition_validation as gold_ev
+        import lint_readability as gold_lint
+
+        for hh, mm, ok in ((11, 24, False), (11, 25, True), (11, 30, True), (17, 30, True), (17, 31, False)):
+            errs = []
+            res = gold_ev.check_edition_time(("2026-11-27", "1130", 1), datetime(2026, 11, 27, hh, mm), errs)
+            self.assertEqual(res, ok, f"{hh:02d}:{mm:02d} -> {errs}")
+            self.assertEqual(bool(errs), not ok)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            tmp_snap = Path(temporary) / "data_snapshot.json"
+            snap = json.loads((repo / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
+            snap.update(
+                edition_id="2026-11-27_1130",
+                as_of_short="2026-11-27 11:30",
+                as_of_bjt="2026年11月27日（周五）11:30",
+                vix_live=None,
+                vix_live_as_of=None,
+                index_matrix={"shcomp": {"close": 4012.5, "chg_pct": 0.42}},
+            )
+            tmp_snap.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+            errs, warns = [], []
+            with patch.object(gold_lint, "DAILY_SNAPSHOT_PATH", tmp_snap):
+                gold_lint.validate_snapshot_file(tmp_snap, errs, warns, validated_on=date(2026, 11, 27))
+            self.assertEqual(errs, [])
+            self.assertEqual(warns, [])
 
 
 if __name__ == "__main__":

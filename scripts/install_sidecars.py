@@ -40,7 +40,13 @@ SHELL_INJECTION_RE = re.compile(r"(?:;|&&|\|\||\||`|\$\()")
 FENCED_CODE_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 SCHEDULES = {
     "daily-global-investment-research": "CRON_TZ=Asia/Shanghai 30 7 * * *",
+    "daily-global-investment-research-midday": "CRON_TZ=Asia/Shanghai 30 11 * * *",
     "daily-global-investment-research-evening": "CRON_TZ=Asia/Shanghai 0 18 * * *",
+}
+SLOTS = {
+    "daily-global-investment-research": "0730",
+    "daily-global-investment-research-midday": "1130",
+    "daily-global-investment-research-evening": "1800",
 }
 RETIRED_IDS = frozenset({
     "daily-gold-deep-research", "daily-gold-deep-research-evening",
@@ -68,7 +74,7 @@ def discover_templates(template_dir: Path) -> list[tuple[str, Path]]:
                 raise ValueError(f"Empty sidecar id for template: {path}")
             templates.append((sidecar_id, path))
     if {sidecar_id for sidecar_id, _ in templates} != set(SCHEDULES):
-        raise ValueError("The automation directory must contain exactly the two unified templates.")
+        raise ValueError("The automation directory must contain exactly the three unified templates.")
     return templates
 
 
@@ -104,7 +110,7 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
     prompt = (template_path.parent.parent / "unified-edition.prompt.md").read_text(encoding="utf-8")
     if "__RUN_SLOT__" not in prompt:
         raise ValueError("The shared prompt does not select its scheduled slot.")
-    slot = "0730" if sidecar_id == "daily-global-investment-research" else "1800"
+    slot = SLOTS[sidecar_id]
     args[5] = (prompt.replace("__RUN_SLOT__", slot).replace("__REPO_ROOT__", str(repo_root))
                .replace("__PYTHON_BIN__", python_bin))
 
@@ -410,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
             written.append((dest, previous))
             print(f"[INSTALLED] {sidecar_id} -> {dest} ({len(data['agent_permissions']['access_grants'])} grants)")
     except (OSError, ValueError) as exc:
-        print(f"[FAIL] Cannot install both tasks: {exc}", file=sys.stderr)
+        print(f"[FAIL] Cannot install all scheduled tasks: {exc}", file=sys.stderr)
         for path, previous in reversed(written):
             try:
                 if previous is None:

@@ -35,7 +35,7 @@ from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1800)(?:_r([2-9]|[1-9]\d+))?")
+EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\d+))?")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PERIOD_SLUG_RE = re.compile(r"^\d{4}_(0[1-9]|1[0-2])$")
 ROLLOVER_MARKETS = ("a_share", "hk_stock", "us_stock")
@@ -230,7 +230,7 @@ BANNED_INTERNAL_RE = re.compile(
     r"(?:\bV\d+\.\d+\b|Subagent|红队|法证|\bTier\s*[0-3]\b|\bSSOT\b|"
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
-    r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|svg_geometry\.py|"
+    r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|fetch_kline_data\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|svg_geometry\.py|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|market_calendar\.json|"
     r"master_snapshot\.json|data_snapshot\.json|_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|_rollover_patch\.json|_archive_patch\.json|"
@@ -319,7 +319,7 @@ def _safe_repo_path(repo_root: Path, *parts: str) -> Path:
 
 def _validate_edition_id(value: object) -> str:
     if not isinstance(value, str):
-        raise ValueError("edition_id must be a string (YYYY-MM-DD_0730 or YYYY-MM-DD_1800[_rN]).")
+        raise ValueError("edition_id must be a string (YYYY-MM-DD_0730, YYYY-MM-DD_1130 or YYYY-MM-DD_1800[_rN]).")
     m = EDITION_RE.fullmatch(value.strip())
     if m is None:
         raise ValueError(f"Invalid edition_id format: {value!r}")

@@ -1,6 +1,6 @@
 # 受控三层 RSI 自我复盘与递归优化唯一详规（Bounded RSI Self-Review Protocol · 纯网页版）
 
-本协议为全项目 Step 5 受控三层 RSI 自我复盘的**唯一权威详规**（`GEMINI.md`、`DAILY_REPORT_SPEC.md` 与 `state/RSI_PLAYBOOK.md` 均以本协议为准，一体化单会话编排见 `<REPO_ROOT>/AGENTS.md`）。每次 **07:30 一体化早报（`_0730_`）** 或 **18:00 一体化晚报（`_1800_`）**（含周末突发升级刊）的候选源稿通过双轨严检（0 错 0 警）后，发布前必须执行本闭环（一体化班次由 1 路统一盲审子代理联合覆盖黄金 + 三市权益 + 12 大多元渠道/140+ ETF/231 股 7 维深研库，并分别落盘至两轨 RSI 台账）。全部 RSI 产物永久隔离于 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`，**绝不泄露至任何读者可见 `.md` / `.html` / 三大扩展 JSON / `INDEX.md` / `CHANGELOG.md` / `SCORECARD.md`**。
+本协议为全项目 Step 5 受控三层 RSI 自我复盘的**唯一权威详规**（`GEMINI.md`、`DAILY_REPORT_SPEC.md` 与 `state/RSI_PLAYBOOK.md` 均以本协议为准，一体化单会话编排见 `<REPO_ROOT>/AGENTS.md`）。每次 **07:30 一体化早报（`_0730_`）**、**11:30 一体化午报（`_1130_`）** 或 **18:00 一体化晚报（`_1800_`）**（含周末突发升级刊）的候选源稿通过双轨严检（0 错 0 警）后，发布前必须执行本闭环（一体化班次由 1 路统一盲审子代理联合覆盖黄金 + 三市权益 + 12 大多元渠道/174+ ETF/231 股 7 维深研库，并分别落盘至两轨 RSI 台账）。全部 RSI 产物永久隔离于 `state/RSI_PLAYBOOK.md` 与 `state/rsi_metrics.json`，**绝不泄露至任何读者可见 `.md` / `.html` / 三大扩展 JSON / K 线分片 JSON / `INDEX.md` / `CHANGELOG.md` / `SCORECARD.md`**。
 
 ---
 
@@ -26,7 +26,7 @@
 
 每次候选源稿通过本地严格门禁后，启动 **1 个独立只读 `research` 子代理**（`Role: "RSI Self-Review & Improvement Auditor"`）：
 
-> 你负责独立只读盲审，所有判断交回主会话。请完整核查本期候选 **三市日报源稿**（`daily/YYYY-MM-DD_HHMM_a_share.md`、`daily/YYYY-MM-DD_HHMM_hk_stock.md`、`daily/YYYY-MM-DD_HHMM_us_stock.md`，含涉及更新的旗舰手册与 `report_meta_*.json`）、**三大扩展数据库**（`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`，重点核查顶层 `edition_id` 同期锁、12 大渠道小白一句话/今日避坑/统一灯号、140+ ETF 通道与溢价预警及焦点股 7 维零模板化深研）、配套同步文件（`daily/INDEX.md`、`daily/CHANGELOG.md`、`daily/SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`）、跨项目黄金快照与日报（`../gold/data_snapshot.json` 与本期黄金日报）以及历史经验文件（`state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json`）。按以下 6 个维度逐项打分（1–5 分整数），写清每项缺陷、文件位置、原值、核对依据及其观测时点：
+> 你负责独立只读盲审，所有判断交回主会话。请完整核查本期候选 **三市日报源稿**（`daily/YYYY-MM-DD_HHMM_a_share.md`、`daily/YYYY-MM-DD_HHMM_hk_stock.md`、`daily/YYYY-MM-DD_HHMM_us_stock.md`，含涉及更新的旗舰手册与 `report_meta_*.json`）、**三大扩展数据库**（`state/multi_asset_channels.json`、`state/etf_universe.json`、`state/deep_dossiers.json`，重点核查顶层 `edition_id` 同期锁、12 大渠道小白一句话/今日避坑/统一灯号、174+ ETF 通道与溢价预警及焦点股 7 维零模板化深研）、配套同步文件（`daily/INDEX.md`、`daily/CHANGELOG.md`、`daily/SCORECARD.md`、`state/market_state.json`、`state/audit_ledger.md`）、跨项目黄金快照与日报（`../gold/data_snapshot.json` 与本期黄金日报）以及历史经验文件（`state/RSI_PLAYBOOK.md`、`state/rsi_metrics.json`）。按以下 6 个维度逐项打分（1–5 分整数），写清每项缺陷、文件位置、原值、核对依据及其观测时点：
 > 1. `data_freshness_and_zero_hallucination`（7 类一手源鲜度、两轨截点落在所标班次 **`[-5 分钟, +6 小时]`** 单向窗口且黄金早于或同分钟于权益【差值 ≤6 小时】、共享宏观键对齐、假日/周末双轨 `brent_live_usd`/`vix_live` 空值口径一致、T+1 挂账与纯读者中文 `data_caveats` 透明披露、无日期规范键、三大扩展库同期 `edition_id` 锁、A/H 同股 PE 物理学一致、冬夏令时与合约口径零误差、无退市股 `00011` 或停申基金 `968118` 误推）
 > 2. `prior_forecast_calibration`（上期 `next_run_watch` 与 `SCORECARD.md` 到期预判客观验真、不回避失误、新登检验日均为工作日）
 > 3. `plain_language_and_strict_readability`（小白友好三层结构：`30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据`、`DXY`/`COT`/`CDS`/`ERP`/`IRR` 首现配简短白话括注、零居高临下说教口号、零内部工程/RSI/版本词泄露、零跨市涨跌色系混用、跨轨统一税费红线零冲突【`008142`/`008143`、二手存单禁二次转让、交易所公司债 ETF 底层 20% 税、中国居民 20% 境外税与 CRS、`02840.HK` 美国遗产税】、零 3 项已证伪税务/ETF/转债误导、反引号/粗体/段长/3 秒正向自检卡/黄金红灯全载体互斥锁零破口）
@@ -116,4 +116,4 @@
 ## 五、每 10 刊 Meta-RSI 跨周期趋势总复盘与终检收官
 
 1. **Meta-RSI 触发**：每当 `len(runs) > 0` 且 `len(runs) % 10 == 0` 时，盲审子代理同步统计最近 10 刊总分均值、一次过率（`first_pass_clean` 占比）与 6 个维度各自均分，锁定连续得分最低的 1–2 个结构性瓶颈维度，输出 **≤2 条高价值 Tier C 根因升级提案** 写入 `state/RSI_PLAYBOOK.md` 第四节待用户审批，同时彻底淘汰过时条目保持手册 ≤180 行。
-2. **统一终检与单次纯网页站点发布**：Tier A 经 `--append-gold-rsi` / `--append-equity-rsi` 无损追加（及按需 Tier B）落盘后复跑双轨严检，确认手册行数、JSON 合法性、`run_id` 唯一性及各维分数在 1–5 且合计正确。推进本期令牌到 `publish`，执行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`（若构建或门禁异常可用预授权 `build_site.py` / `lint_site.py` / `unittest` 排障修复后重跑），再执行 `python3 <REPO_ROOT>/scripts/edition_run.py complete <token>` 验证 GitHub Pages 部署成功即闭环。
+2. **统一终检、K 线刷新与单次纯网页站点发布**：Tier A 经 `--append-gold-rsi` / `--append-equity-rsi` 无损追加（及按需 Tier B）落盘后复跑双轨严检，确认手册行数、JSON 合法性、`run_id` 唯一性及各维分数在 1–5 且合计正确。随后执行 `python3 <REPO_ROOT>/scripts/fetch_kline_data.py --scope all` 刷新全市场 440+ 静态 K 线分片至 `equity/state/klines/`，推进本期令牌到 `publish`，执行 `python3 <REPO_ROOT>/scripts/publish_site.py --edition-token <token>`（通过 S1–S7 严检；若构建或门禁异常可用预授权 `build_site.py` / `lint_site.py` / `unittest` 排障修复后重跑），再执行 `python3 <REPO_ROOT>/scripts/edition_run.py complete <token>` 验证 GitHub Pages 部署成功即闭环。

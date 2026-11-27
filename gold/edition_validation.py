@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 BEIJING = ZoneInfo("Asia/Shanghai")
 NEW_YORK = ZoneInfo("America/New_York")
 LAST_LEGACY_EDITION = ("2026-11-25", "1800", 2)
-EDITION_SLOTS = ("0730", "1800")
+EDITION_SLOTS = ("0730", "1130", "1800")
 ENTRY_GATE_IDS = ("real_yield", "rate_spread", "vix", "ny_close")
 MAX_EDITION_EARLY = timedelta(minutes=5)
 MAX_EDITION_LAG = timedelta(hours=6)
@@ -70,7 +70,7 @@ def _valid_number(value: object) -> bool:
 def check_edition_time(edition: tuple[str, str, int], as_of: datetime, errors: list[str]) -> bool:
     day, slot, revision = edition
     if slot not in EDITION_SLOTS or revision < 1:
-        errors.append("[Gate 5 班次非法] 新刊仅支持 07:30 与 18:00 班次")
+        errors.append("[Gate 5 班次非法] 新刊仅支持 07:30、11:30 与 18:00 班次")
         return False
     if as_of.tzinfo is not None:
         as_of = as_of.astimezone(BEIJING).replace(tzinfo=None)

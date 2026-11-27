@@ -1401,7 +1401,7 @@ def md_to_html(
 
 def build_cover_html(title: str, meta: dict, accent: str = "#b45309") -> str:
     safe_accent = sanitize_hex_color(accent, "#b45309")
-    tag = esc(meta.get("tag", "每日黄金深度研报 · 北京时间 07:30 & 18:00 双刊"))
+    tag = esc(meta.get("tag", "每日黄金深度研报 · 北京时间 07:30 · 11:30 · 18:00 三刊"))
     ts = esc(meta.get("timestamp", ""))
     summary = _protect_atomic_units(esc(meta.get("summary", "")))
     kpis = meta.get("kpis", [])
