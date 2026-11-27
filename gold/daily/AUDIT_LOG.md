@@ -5,6 +5,30 @@
 ---
 
 <!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-27_1800_r2",
+  "as_of_short": "2026-11-27 23:55",
+  "note": "完成 2026-11-27 18:00 工作日晚报 23:55 BJT 修订封账版四重交叉验证：核销 Cboe VIX_History.csv 已补录 2026-11-26 完整行（O 27.18 / H 27.54 / L 26.57 / C 26.80，status 升级为 published，十日窗口推进至 2026-11-13..2026-11-26）及 23:55 BJT（10:55 EST 黑五常规窗内）实盘 VIX 25.38（倒挂 UX1 23.73 > UX2 23.30）；核销 23:55 黑五美盘现货金自日高 $3,685.11 倒吐 $61.77 至 $3,623.34 (+0.96% vs 11/25 NY)、布油 1 月 BZF27 自 $98.06 倒跌至 $94.80 (-1.83%) 与 WTI 翻跌至 $83.45 (-0.27%) 之际 10Y 名义美债反升至 4.914%、10Y 实际利率 US10YTIPS 扩至 2.783%（日内 2.735%-2.796% 未触 ≤2.72%）、2Y 美债升至 4.697%（实时利差 +81.7bp）；核销 NY Fed 11/25 SOFR 3.95% (+5bp vs IORB)、11/27 LBMA AM 金定盘 $3,672.10 (+3.08%) / 银午盘 $44.0400 (+6.02%)、国内四大黄金 ETF 11/27 官方 NAV（518880 7.4473/-0.085%/-3.72 亿、518800 7.8078/+0.80 亿、159934 7.7806、159937 7.4308；沪市 4 只合计净赎回 -3.25 亿）、SGE Au(T+D) 递延费由空付多翻转为多付空及夜盘自 786.60 回吐至 778.03（按同刻离岸汇率 6.6552 折算理论平价 775.28、温和价差 +2.75 元/+0.35%，无逼空抢筹）、SHFE au2702 夜盘 777.32 (-1.08%/OI +1,882) 与 ag2702 夜盘 10,287 (-1.87%/OI +11,152) 及具名席位明细；买金维持 Tier 0 红灯停（1/4 关、new_buy_allowed=false）与主报告 0/5 锁（含 60 日新高硬止损与尾部深熊 0/2 核验）。",
+  "sources": {
+    "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"],
+    "rate_spread": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv", "https://markets.newyorkfed.org/api/rates/all/latest.json"],
+    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv", "https://www.cboe.com/tradable_products/vix/"],
+    "ny_close": ["https://www.lbma.org.uk/prices-and-data/precious-metal-prices", "https://www.sge.com.cn/sjzx/mrhqsj", "https://www.shfe.com.cn/data/tradedata/future/dailydata/kx20261127.dat", "https://www.shfe.com.cn/data/tradedata/future/dailydata/pm20261127.dat"]
+  },
+  "forecast_review": {
+    "status": "none_due",
+    "note": "本 23:55 修订封账版无新增到期结案项（11/27 早报 161226 与老铺除净项已于同日 18:30 初版严格结案为部分兑现，历史 10 项结案行保持原样零改动），并在 6 项持续追踪项中追加 23:55 美盘倒吐、实际利率 2.783% 与沪银夜盘回吐进展注记，待 2026-11-28 07:30 周六早报起逐项验真。",
+    "sources": ["https://www.shfe.com.cn/data/tradedata/future/dailydata/kx20261127.dat", "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"]
+  }
+} -->
+
+### 2026-11-27 18:00 晚报修订封账核验记录（截点 2026-11-27 23:55）
+
+- **三大信任资产增量（累计拦谣 46 条 · 模型升级 18 项 · 细节校准 41 项 · 核心结论影响 0/41）**：① 新增拦谣 #45–#46：拆穿“欧盘破 3,685 证明高美债利率已拦不住金价启动”（美盘油价倒跌却推升 10Y 实际利率至 2.783%、现货金回吐 61.77 美元且沪市金基净赎回 3.25 亿）与“Au(T+D) 大涨代表实物逼空”（递延费已翻向多付空、15:30 仅微溢 +0.83 元且夜盘自 786.60 回吐至 778.03）；② 新增校准 #39–#41：彻底核销国内四大黄金基金 11/27 官方净值与沪市官方份额流（修正 18:30 初版混用 11/26 净值口径），补录 Cboe 11/26 官方收盘 26.80、NY Fed 11/25 SOFR 3.95% 及 11/27 LBMA 早盘金银定盘，并修正婚庆省钱表述重复笔误。
+- **真正处于 23:55 窗口外的剩余挂账（归 `2026-11-28_0730`）**：美盘黑五正式收盘（02:00 美股 / 03:00 美债 / 03:45 期金 / 06:00 纽约现货日收）与 11/27 美债官曲/GLD 持仓/GDX 净值、11/25 TGA 与 HY/CCC OAS、11/27 LBMA 午盘金定盘公开镜像、01:00 LME 17:00 官收，以及深交所 159934/159937 当日份额变动与山东黄金说明会文字纪要。
+
+---
+
+<!-- GOLD_EDITION_REVIEW {
   "edition_id": "2026-11-27_1800",
   "as_of_short": "2026-11-27 18:30",
   "note": "完成 2026-11-27 18:00 工作日晚报（黑五半日市盘前 A 类局部休市）四重交叉验证：全量封账 SGE 15:30 官方日终（Au99.99 784.00/+2.37%/加权 777.79、Au(T+D) 783.35 多付空、Ag(T+D) 10,456 多付空、上海金早 775.47[纠偏午报 768.24 旧值]/午 784.26）及 15:30 同刻溢价（+0.83 元/+0.11%）、SHFE kx20261127.dat（au2702 收 785.84/结 775.18、ag2702 收 10,483/结 9,971、cu2701 收 93,660/结 91,820）与 pm20261127.dat 前 20 席位（au2702 净多 +56,631/+2,647、ag2702 净多 +17,228/-3,147）；直核 18:20 BJT（05:20 EST，落入 Cboe 11/27 首窗 03:15-09:25 EST）实时现货恐慌 24.82（官收死守 11/25 28.29，11/26 no_row_confirmed），同步 18:11 欧盘现货金 $3,671.08 (+2.29% vs NY)、欧盘 10 年美债 4.912%/2 年 4.687%、布油 1 月 $97.25 与 16:30 在岸人民币 6.6544；买金维持 Tier 0 红灯停（1/4 关、新仓 0%）与主报告 0/5 锁。",

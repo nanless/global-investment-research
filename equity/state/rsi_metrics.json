@@ -911,6 +911,67 @@
         "【下周一 11/30 四重催化交汇哨兵】紧盯 09:30 中国 11 月官方 PMI、A 股融资保证金降至 80%、15:00 明晟剔除 22 A 股与 15 港股尾盘调仓、大成 000834 限购砍半及沪深 300 站稳 4,025 第 2 日检验",
         "【新周期第 1/10 刊首轮双零冲刺】贯彻派生表+同赛道+勘误股三联动与裸期限/尾表缩写全扫，力争首个 first_pass_clean=true"
       ]
+    },
+    {
+      "run_id": "2026-11-27_1800_r2",
+      "edition_type": "weekday_evening_revision_unified",
+      "reports": [
+        "daily/2026-11-27_1800_a_share_r2.md",
+        "daily/2026-11-27_1800_hk_stock_r2.md",
+        "daily/2026-11-27_1800_us_stock_r2.md"
+      ],
+      "timestamp_cst": "2026-11-27T23:55:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "lint_errors_fixed": 6,
+      "flagship_updated": false,
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 5,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 28,
+      "max_score": 30,
+      "prior_predictions_checked": 4,
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "E-R2-01 [P0]: 独立只读盲审拦截港股修订晚刊 L24/L44 将昨夜 11/27 01:00 沪铜夜盘官收 89,270（先于日盘 +5.51% 收 93,660）误写为日盘后 01:00 回吐（时间倒置，截点 23:55 当夜 01:00 尚未收盘）",
+            "status": "resolved",
+            "evidence": "已修正 2026-11-27_1800_hk_stock_r2.md L24 与 L44 为“沪铜日盘反弹收 93,660，有色夜盘将于明晨 01:00 收盘，薄量窗口仍须防铜矿回吐”，与 A 股修订晚刊完全对齐"
+          },
+          {
+            "description": "E-R2-02 [P1]: 跨轨核查发现港股 14 日历 L169 与 market_state.json calendar_overrides 仍写“净抽水逾 580 亿”，未与美股核销的“私营部门真实净抽水 815.1 亿美元”同步；初轮严检亦拦截 4 只焦点股 baseline_note 缺 11/27 收盘价、dfii10_live_pct 漂移及跨市涨跌色“翻绿”歧义",
+            "status": "resolved",
+            "evidence": "已全量同步 hk_stock_r2.md L169 与 market_state.json L399 为“私营部门真实净抽水 815.1 亿美元”，更新 8 只焦点股 baseline_note、对齐 dfii10_pct=2.783、清除全部“翻绿”改为“转跌”，并同步修复 A 股三连发/四连发因果表述、德国失业率 2011 年以来新高、policy_calendar 美欧英加息概率及沪深 300 200 周线口径，复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-R2-03 [DISCLOSED_CAVEAT]: 11/27 A 股两融日终余额、宽基基金官方份额、中证市盈率终值、恒指夜期 03:00 终盘及黑五 02:00/03:00 美股债官收截至 23:55 尚未公布",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.nasdaqtrader.com/TraderNews.aspx?id=UTP2026-34",
+              "due_edition": "2026-11-28_0730",
+              "disposition": "全部待补录项已 1:1 写入 market_state.json pending_backfills 与 data_caveats 及三市修订晚刊末尾透明披露，周六 07:30 早刊一次性核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【时间轴先后防倒置铁律】引用 shfe_copper_night_rmb 或夜盘字段时必须核对收盘时间戳是否早于当日日盘（如 01:00 有色夜盘属前一交易夜，晚刊 23:55 截点下当夜 01:00 尚未收盘，绝不可倒挂为盘后暴跌）",
+        "【修订版跨轨全局同步自检】任何修订版更新共享宏观数字（如 815.1 亿抽水、央行加息概率、德失业新高）或 AH 溢价时，落盘前对四稿 + market_state + policy_calendar + baseline_note 同步全扫，并严禁用“翻绿/翻红”描述美股涨跌"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周六 07:30 黑五美股周五复盘主刊 + 全量挂账清零】封账明晨 02:00 美股与 03:00 美债官收、恒指夜期 03:00 终盘、11/27 两融日终与宽基基金官方份额，同步验真美股午刊 4.91% 劈叉预判",
+        "【11/30 周一四重撞车哨兵】盯 09:30 中国 11 月 PMI、降保 80%、15:00 明晟剔除 22 A 股与 15 港股尾盘冲击、大成 000834 限购砍半及 21:30 美国财政部 815.1 亿美元真实净抽水",
+        "【旗舰 5 条件持续跟踪】验证沪深 300 能否在下周一二完成 4,025 点 200 周线连续 3 日放量站稳（今为第 1/3 日）及中金所前 20 机构空头是否收手"
+      ]
     }
   ]
 }

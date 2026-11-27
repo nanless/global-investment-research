@@ -815,6 +815,63 @@
         "【11/29 周日第 42 届产油国会议与沪银空头压力追踪】跟踪布油 1 月合约（$97.25）与下周日产油国产量决议对再通胀与美债利率的传导，观察沪银 ag2702 暴涨 +12.33% 后空头大增 +6,716 手的回吐风险",
         "【新周期第 1/10 刊零失误起跑】贯彻双账本标记首行铁律与尾表缩写自检，守住 first_pass_strict=true 且总分冲刺 ≥28/30"
       ]
+    },
+    {
+      "run_id": "2026-11-27_1800_r2",
+      "edition_type": "weekday_evening_revision_unified",
+      "report_file": "daily/2026-11-27_1800_晚报_黄金深度研报_r2.md",
+      "timestamp_bjt": "2026-11-27 23:55",
+      "first_pass_strict": true,
+      "lint_retries": 0,
+      "visual_retries": 0,
+      "master_updated": false,
+      "lint_errors_fixed": 0,
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 5,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 28,
+      "max_score": 30,
+      "prior_predictions_checked": 4,
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "G-R2-01 [P1]: 独立只读盲审发现 23:55 夜盘 Au(T+D) 778.03 对 XAU $3,623.34 × CNH 6.6552 ÷ 31.1034768 理论平价 775.28 的同刻价差实为 +2.75 元/克（+0.35%），原稿误沿用早先高位报价计算出的 +0.07 元/克与“溢价归零”表述",
+            "status": "resolved",
+            "evidence": "已全量修正 gold/data_snapshot.json（sge_autd_2355_premium_rmb: 2.75 及 rmb_channels.note）、2026-11-27_1800_晚报_黄金深度研报_r2.md、gold/daily/CHANGELOG.md、gold/daily/AUDIT_LOG.md 及权益侧引用，改为精准披露 +2.75 元/克温和价差并以内盘递延费翻多付空、夜盘自 786.60 回吐及沪市金基赎回 3.25 亿夯实降温结论"
+          },
+          {
+            "description": "G-R2-02 [P1]: 黄金晚报 14 日历 11/30 行仍写“净抽水逾 580 亿”，未同步美股核销后的“私营部门真实净抽水 815.1 亿美元”；图 2 沪深 300 4,025 误标“年线”而非“200 周线”",
+            "status": "resolved",
+            "evidence": "已将 L345 更新为“美债私营部门真实净抽水 815.1 亿美元”并与美股/港股/market_state.json 100% 统一，同时将 L255 改为“4,063.06 站 200 周线首日”"
+          },
+          {
+            "description": "G-R2-03 [DISCLOSED_CAVEAT]: 11/27 黑五美盘 02:00/03:00/03:45/06:00 官收、11/27 LBMA 午盘定盘、深交所 159934/159937 当日份额变动与山东黄金 11/26 纪要截至 23:55 尚未公布",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.lbma.org.uk/prices-and-data/precious-metal-prices",
+              "due_edition": "2026-11-28_0730",
+              "disposition": "已 1:1 写入 gold/data_snapshot.json data_caveats 与修订晚报正文透明披露，维持 1/4 红灯停新仓 0%，明晨 07:30 周六早报一次性核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【同刻平价算术闭环铁律】任何修订版刷新 spot_gold_live_usd 或 sge_autd_night_rmb 后，必须用同分钟 XAU × 实时汇率 ÷ 31.1034768 重算溢价，严禁沿用上一分钟截点的预计算价差",
+        "【跨轨宏观口径同步铁律】美股核销重大宏观新口径（如 11/30 美债私营部门真实净抽水 815.1 亿美元、五大央行加息概率）时，须全仓库 grep 同步黄金 14 日历与权益各稿"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周六 07:30 黑五官收终判第 4 关】核销 11/28 06:00 纽约现货官收是否站稳 3,589.85 美元并验证黑五美债官方曲线（实际利率是否回落至 2.72% 下方）",
+        "【11/29 周日第 42 届产油国会议与沪银夜盘增仓压力】追踪布油 1 月倒跌 94.80 美元后油会决议及沪银 ag2702 夜盘增仓 +11,152 手的回调风险",
+        "【上线前同刻溢价自检】对 sge_autd_*_premium_rmb 做实时算术复算（容差 ≤0.50 元/克）确保零口径背离"
+      ]
     }
   ]
 }
