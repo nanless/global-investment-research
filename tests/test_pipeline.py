@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import shutil
-from scripts import build_site, edition_run, install_sidecars, lint_site, patch_state_dbs, publish_site
+from scripts import build_site, edition_run, fetch_kline_data, install_sidecars, lint_site, patch_state_dbs, publish_site
 
 
 class EditionRunTest(unittest.TestCase):
@@ -2006,6 +2006,103 @@ class OperationalRegressionTest(unittest.TestCase):
                 gold_lint.validate_snapshot_file(tmp_snap, errs, warns, validated_on=date(2026, 11, 27))
             self.assertEqual(errs, [])
             self.assertEqual(warns, [])
+
+    def test_upgraded_prompt_institutional_contract_and_56_grants(self):
+        repo = Path(__file__).resolve().parent.parent
+        grants = json.loads((repo / "automations" / "permissions.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(grants), 56)
+
+        prompt_text = (repo / "automations" / "unified-edition.prompt.md").read_text(encoding="utf-8")
+        self.assertLessEqual(len(prompt_text.splitlines()), 62)
+        for req in (
+            "__RUN_SLOT__",
+            "__REPO_ROOT__",
+            "__PYTHON_BIN__",
+            "17:55–次日 00:00",
+            "begin --scheduled __RUN_SLOT__",
+            "publish_site.py --edition-token",
+            ".agents/skills/equity-research-editorial-qa/references/master-research-and-sources-playbook.md",
+            "Due-Backfill Sweep",
+            "Cutoff Drift Guard",
+            "StockAnalysis",
+            "Barchart",
+            "空付多↔多付空",
+            "CBBC",
+            "Fed BS",
+            "【事前验尸】",
+            "4-3-2-1",
+            "Evening Midday-Residue Sweep",
+            "5 大触发",
+        ):
+            self.assertIn(req, prompt_text, f"Missing required upgraded prompt token: {req!r}")
+
+    def test_kline_cmd_hg_cents_normalization_oil_label_and_fx_t0_freshness(self):
+        specs = {s.id: s for s in fetch_kline_data.build_core_specs()}
+        hg_spec = specs["cmd_HG"]
+        self.assertEqual(hg_spec.unit, "美元/磅")
+        self.assertEqual(hg_spec.price_divisor_if_gt, (50.0, 100.0))
+        self.assertEqual(specs["cmd_OIL"].name, "布伦特原油主力连续")
+
+        # Live Sina cents/lb bars (>50) normalize ÷100 to 4-decimal USD/lb; already-USD bars stay idempotent
+        raw_hg = [
+            ["2026-11-26", "548.050", "555.350", "542.850", "543.350", "0"],
+            ["2026-11-27", "548.050", "576.050", "542.850", "567.350", "0"],
+        ]
+        norm = fetch_kline_data.sanitize_bars(
+            raw_hg,
+            decimals_override=hg_spec.decimals_override,
+            price_divisor_if_gt=hg_spec.price_divisor_if_gt,
+        )
+        self.assertEqual(
+            norm,
+            [
+                ["2026-11-26", 5.4805, 5.5535, 5.4285, 5.4335, 0],
+                ["2026-11-27", 5.4805, 5.7605, 5.4285, 5.6735, 0],
+            ],
+        )
+        self.assertEqual(
+            fetch_kline_data.sanitize_bars(
+                norm,
+                decimals_override=hg_spec.decimals_override,
+                price_divisor_if_gt=hg_spec.price_divisor_if_gt,
+            ),
+            norm,
+        )
+
+        # Stale-cache fallback also normalizes legacy cents bars cleanly
+        rec, fail = fetch_kline_data.merge_with_stale_cache(
+            hg_spec,
+            [],
+            None,
+            "simulated_timeout",
+            {"provider": "sina_global_futures", "bars": raw_hg},
+            bars_limit=150,
+        )
+        self.assertIsNotNone(rec)
+        self.assertIsNotNone(fail)
+        assert rec is not None
+        self.assertEqual(rec["latest_close"], 5.6735)
+        self.assertEqual(rec["bars"][-1], ["2026-11-27", 5.4805, 5.7605, 5.4285, 5.6735, 0])
+
+        # Sina FX T-0 batch quotes: Sat <06:30 CST maps to Friday NY session; Sat >=06:30 / Sun skipped
+        raw_fx_quotes = (
+            'var hq_str_fx_susdcnh="00:42:33,6.6560,6.6563,6.6613,139,6.6615,6.6668,6.6529,6.6560,离岸人民币,-0.08,-0.0053,0.002,,6.99,6.64,,2026-11-28";\n'
+            'var hq_str_fx_susdjpy="08:00:00,159.48,159.52,159.25,10,159.25,159.59,159.12,159.48,日元,0.14,0.23,0.002,,163.9,152.1,,2026-11-28";\n'
+            'var hq_str_fx_seurusd="14:00:00,1.0938,1.0939,1.0967,52,1.0973,1.0986,1.0934,1.0938,欧元,-0.26,-0.0029,0.004,,1.20,1.08,,2026-11-27";\n'
+        )
+        parsed_q = fetch_kline_data.parse_sina_fx_quotes(raw_fx_quotes)
+        self.assertEqual(parsed_q["fx_susdcnh"], ["2026-11-27", 6.6615, 6.6668, 6.6529, 6.656, 0])
+        self.assertNotIn("fx_susdjpy", parsed_q)
+        self.assertEqual(parsed_q["fx_seurusd"], ["2026-11-27", 1.0973, 1.0986, 1.0934, 1.0938, 0])
+        merged = fetch_kline_data.merge_cnbc_t0_quote(
+            [["2026-11-26", 6.6687, 6.6699, 6.658, 6.6613, 0]],
+            parsed_q["fx_susdcnh"],
+        )
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged[-1][0], "2026-11-27")
+        # Does not duplicate when historical feed already has 2026-11-27
+        merged_dup = fetch_kline_data.merge_cnbc_t0_quote(merged, parsed_q["fx_susdcnh"])
+        self.assertEqual(len(merged_dup), 2)
 
 
 if __name__ == "__main__":

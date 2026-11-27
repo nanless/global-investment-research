@@ -51,9 +51,19 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 
 ---
 
-## 4. 按需加载参考手册（Progressive Disclosure）
+## 4. 黄金深度底线、权威信源总手册与发前清扫强制标准
 
-1. **小白三层编辑宪章、升级版三档词汇、A/B/D/C 画像与买金税制回购详规**：[./references/editorial-charter-and-personas.md](./references/editorial-charter-and-personas.md)
-2. **10 个 `DAILY_*` 组件 JSON Schema、主报告 7 图、双快照与三班次抗阻塞日历契约**：[./references/directives-and-snapshot-schema.md](./references/directives-and-snapshot-schema.md)
-3. **纯网页 6 道门禁词表、`.sn-grid`/`.kpi-strip.cols-4`、640px 矢量防撞引擎与跨月运维**：[./references/7-gates-and-ooxml-engine.md](./references/7-gates-and-ooxml-engine.md)
-4. **统一 10+1（独立 5+1 回退）调研红队操作手册、七大信源、月度归档与 RSI 协议**：[./references/5-plus-1-research-playbook.md](./references/5-plus-1-research-playbook.md)
+黄金早/午/晚与周末全班次同步执行仓库总作战手册 [master-research-and-sources-playbook.md](../equity-research-editorial-qa/references/master-research-and-sources-playbook.md)（尤其是支柱 6/7/11/12 与 Section 2–4）：
+- **黄金主刊机构级深度下限（`≥ 4,500–6,000` 字）**：单段 `≤ 220–240` 字仅为移动端清晰分块，绝不可据此缩成简报；正文须齐备 **油价下名义利率 vs `T10YIE` 盈亏平衡 vs 隐含 `DFII10` 对第 1 关的真实量化拆解**、**同分钟平价溢价与上金所 `Au(T+D)` 递延费方向切换（`空付多` ↔ `多付空`）法证**、**上期所金银前 20 具名席位多空归因**、**5 大央行定价对比表**、**国内 7 渠道金价与税费拆解表**、COMEX 注册/合格库存 + COT + 央行购金背景、金矿股 vs 金饰股分化、BOJ/日元跨资产传导，以及 1–2 条完整 **5 环政策/地缘传导链**；核心数字复读 `≤ 3 次`，四情景概率须独立于权益三市差异化推演且零反引号。
+- **信源白黑名单与截点漂移防线**：强制沿用 **`.gov.cn` 双路并查回退**、美股 `GLD`/`GDX` 白名单（严禁混用国内黄金 ETF T 日收盘价与 T-1 官方净值）、LME 17:00 同口径铜价、上期所夜盘 `02:30`/`01:00`/`23:00` 铁律与 **永久拉黑 `Barchart`**；若距启动超 **45 分钟**且 `18:30` 伦敦定盘、`20:00–21:00` SOFR/美宏观等预定事件已落地，必须执行增量补刷，严禁发出过期“待公布”内容。
+- **送检前强制清扫**：① 按 `next_review == 当班 edition_id` 清零 `data_snapshot.json.data_caveats` 到期挂账；② `18:00` 晚报跨快照与正文清扫午盘残迹；③ 核验主报告 5 大触发条件（含 60 日新高止损与尾部深熊线）并显式记入 `daily/AUDIT_LOG.md`。
+
+---
+
+## 5. 按需加载参考手册（Progressive Disclosure）
+
+1. **全球多资产 12 支柱投研因子、4 级权威信源、10+1 双语检索模板、班次核查单与深度硬底线总手册**：[../equity-research-editorial-qa/references/master-research-and-sources-playbook.md](../equity-research-editorial-qa/references/master-research-and-sources-playbook.md)
+2. **小白三层编辑宪章、升级版三档词汇、A/B/D/C 画像与买金税制回购详规**：[./references/editorial-charter-and-personas.md](./references/editorial-charter-and-personas.md)
+3. **10 个 `DAILY_*` 组件 JSON Schema、主报告 7 图、双快照与三班次抗阻塞日历契约**：[./references/directives-and-snapshot-schema.md](./references/directives-and-snapshot-schema.md)
+4. **纯网页 6 道门禁词表、`.sn-grid`/`.kpi-strip.cols-4`、640px 矢量防撞引擎与跨月运维**：[./references/7-gates-and-ooxml-engine.md](./references/7-gates-and-ooxml-engine.md)
+5. **统一 10+1（独立 5+1 回退）调研红队操作手册、七大信源、月度归档与 RSI 协议**：[./references/5-plus-1-research-playbook.md](./references/5-plus-1-research-playbook.md)

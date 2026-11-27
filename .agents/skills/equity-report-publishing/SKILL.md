@@ -49,8 +49,18 @@ description: >-
 
 ---
 
-## 3. 配套参考文档与三市开箱模板
+## 3. 机构级深度验收、截点漂移防线与发前 4 项卫生清扫（对接总作战手册）
 
+出版与落盘阶段（Step 4–5）须同步核验 [master-research-and-sources-playbook.md](../equity-research-editorial-qa/references/master-research-and-sources-playbook.md) 中的出版硬门槛，防止浅薄摘要或跨班次脏数据上线：
+- **深度底线与移动端分块澄清**：单段/列表字数约束仅为移动端清晰阅读分块，严禁据此压缩成 7 段简报；A/港主刊须达 **`≥ 4,200–5,500` 字**（含首屏外 ≥2 个深度专题与完整 5 环政策传导链），美股主刊/守望刊 **`≥ 3,500–5,000` 字**（`holiday_watch` 须含 `≥ 60%` 全新增量、克隆前班 `≤ 35%`），核心数字正文复读 `≤ 3 次`，四情景 10 点条须分市场差异化且零反引号。
+- **截点漂移防线（Cutoff Drift Guard）**：若距调研启动已超 **45 分钟**且期间有重大预定事件（`18:30` 定盘、`19:00` 财报电话会、`20:00–21:00` SOFR/美宏观、`12:00` 南向等）落地，先做定向增量补刷更新 `as_of` 与正文再送检，严禁发布过时“待公布”文案。
+- **送检前 4 项卫生清扫**：在运行 `lint_equity.py --strict` 前完成 ① `next_review == 当班 edition_id` 到期挂账清零；② 4 点跨库联动（重算全部 27 对 A/H、刷新所有 `≥ 5%` 异动 ETF/个股并清除过时阻力位旧述、同步 5 只兄弟纳指 ETF 与 A/H 孪生股、同步 `qdii_channel_comparison`/`key_2026_rules`）；③ `18:00` 晚刊跨 4 JSON 与源稿清扫 `午收`/`11:30`/`12:00`/`10:30复牌` 午盘残迹；④ 在 `state/audit_ledger.md` 显式登记旗舰 5 条触发核查（尤须核验 200 日/200 周线突破与框架级政策落地）。
+
+---
+
+## 4. 配套参考文档与三市开箱模板
+
+- **全球多资产 12 支柱投研因子、4 级权威信源、10+1 双语检索模板、班次核查单与深度硬底线总手册**：[../equity-research-editorial-qa/references/master-research-and-sources-playbook.md](../equity-research-editorial-qa/references/master-research-and-sources-playbook.md)
 - 图表元数据与 **21 张矢量图（A1–A7 / H1–H7 / U1–U7）** 动静态契约：[references/chart_meta_schema.md](references/chart_meta_schema.md)
 - 2026–2027 三市休市/半日市/冬夏令时表（含三班次 `0730`/`1130`/`1800` 判定）与跨月滚存 SOP：[references/holiday_and_rollover_sop.md](references/holiday_and_rollover_sop.md)
 - 三市全时段完整主刊模板（含小白三层结构、多指数标准、12 大渠道与重点 ETF 雷达 + 焦点股 7 维深研 + ≥2 张矢量图）：[resources/daily_main_template.md](resources/daily_main_template.md)

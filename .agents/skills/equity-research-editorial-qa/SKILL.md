@@ -51,8 +51,19 @@ description: >-
 
 ---
 
-## 2. 配套深度核验手册（单一权威源）
+## 2. 投研总因子矩阵、权威信源与机构级深度底线（强制执行）
 
+所有早/午/晚及周末班次的 `10+1` 调研与写稿，必须同步落实总作战手册 [references/master-research-and-sources-playbook.md](references/master-research-and-sources-playbook.md) 的四项硬约束：
+- **12 大 MECE 因子与 4 级权威信源**：严格按总手册覆盖全部 12 支柱（中/港/美宏观与衍生品微结构、中金所前 20 席位正套/中性对冲 vs 单边空头归因、港股 P&L 利润桥/配售吸收天数/牛熊证/Part 851、美元净流动性 `H.4.1 − TGA − ON RRP`、美债 `T10YIE`/`DFII10` 与 `HY`/`CCC OAS` 消歧、日本 `stat.go.jp` 9162 vs 6959 双口径 CPI 等），执行 **`.gov.cn` 双路并查回退**、美股 ETF 白名单与 **永久拉黑 `Barchart`**，直接调用全 10+1 中英双语 `search_web` 模板。
+- **三班次硬截点与截点漂移防线（Cutoff Drift Guard）**：严守 `07:30` 禁写美股盘后终盘、`11:30` 港股南向挂 `data_caveats` 且 `vix_live: null`、`18:00` 全仓清扫午盘残迹；若距首轮启动超 **45 分钟**且期间有重大预定事件落地（如 `18:30` LBMA 定盘、`19:00` 财报电话会、`20:00–21:00` SOFR/美宏观），必须增量补刷而非发“待公布”过期稿。
+- **机构级深度硬底线（反“7 段流水账”）**：单段/列表字数上限仅服务移动端视觉分块，**绝非删减深度的借口**——A 股 / 港股主刊 **`≥ 4,200–5,500` 字**（首屏外至少 2 个深度专题）、美股主刊/守望刊 **`≥ 3,500–5,000` 字**（`holiday_watch` 须 `≥ 60%` 全新增量、严禁克隆前班 `> 35%`）；每条政策精读走完 **5 环传导链**（官文变化 → 定价机制 → 标的 → 二阶误判 → 量化证伪线）；反回声重复（同一核心数字 `≤ 3 次`）；分市场差异化四情景 10 点条（禁四市照抄 `4-3-2-1`，`[●○]{10}` 零反引号）；48 小时剧本禁写“连 3 日”类伪条件。
+- **发前 4 项强制卫生清扫**：① 到期挂账清零（`next_review == 当班 edition_id`）；② 4 点跨库联动（重算 27 对 A/H、刷新全部 `≥ 5%` 异动 ETF/股并清过时技术述语、同步 5 只兄弟纳指 ETF 与 A/H 孪生股、同步 `qdii_channel_comparison`/`key_2026_rules`）；③ `18:00` 午盘残迹清扫；④ `audit_ledger.md` 显式登记旗舰 5 条触发核查（含 200 日/200 周均线突破与重磅政策落地）。
+
+---
+
+## 3. 配套深度核验手册（单一权威源）
+
+- **12 支柱 MECE 投研总因子矩阵、4 级权威信源、10+1 双语检索模板、班次核查单与深度硬底线总手册**：[references/master-research-and-sources-playbook.md](references/master-research-and-sources-playbook.md)
 - 发版前 10 项全量门禁清单（含三班次、三层信息架构、4 角色层 12 大执行渠道、181+ ETF 正交 `asset_class × region` 枚举与 231 股 7 维深研核验）：[references/pre_flight_10_gates.md](references/pre_flight_10_gates.md)
 - 中美港双账户 + 12 大个人多元渠道（含 QDII 场内 vs 官方直销 App/支付宝制度规则）税费、权限、低费 ETF 与合规唯一详表：[references/dual_account_tax_and_rules.md](references/dual_account_tax_and_rules.md)
 - 受控三层 RSI 自我复盘与纯网页盲审协议唯一详规：[references/rsi_self_review_protocol.md](references/rsi_self_review_protocol.md)

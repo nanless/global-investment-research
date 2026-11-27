@@ -191,6 +191,7 @@ class InstrumentSpec:
     optional_min_bars: int = 0  # if > 0 and fetched bars < this, omit cleanly
     force_no_volume: bool = False
     decimals_override: int | None = None
+    price_divisor_if_gt: tuple[float, float] | None = None
 
 
 def build_core_specs() -> list[InstrumentSpec]:
@@ -246,9 +247,9 @@ def build_core_specs() -> list[InstrumentSpec]:
         InstrumentSpec("cmd_XPT", "XPT", "现货铂金", "gold_metal", "黄金与贵金属", "USD", "美元/盎司", "core", "sina_global_futures", "XPT"),
         InstrumentSpec("cmd_AgTD", "Ag(T+D)", "上金所Ag(T+D)", "gold_metal", "黄金与贵金属", "CNY", "元/千克", "core", "sge_daily", "Ag(T+D)", force_no_volume=True),
         # --- Industrial Metals, Energy, FX & Crypto (15) ---
-        InstrumentSpec("cmd_HG", "HG", "COMEX铜", "macro_cmd", "宏观商品与汇率", "USD", "美元/磅", "core", "sina_global_futures", "HG"),
+        InstrumentSpec("cmd_HG", "HG", "COMEX铜", "macro_cmd", "宏观商品与汇率", "USD", "美元/磅", "core", "sina_global_futures", "HG", decimals_override=4, price_divisor_if_gt=(50.0, 100.0)),
         InstrumentSpec("cmd_CU0", "CU0", "沪铜主力连续", "macro_cmd", "宏观商品与汇率", "CNY", "元/吨", "core", "sina_inner_futures", "CU0"),
-        InstrumentSpec("cmd_OIL", "OIL", "布伦特原油", "macro_cmd", "宏观商品与汇率", "USD", "美元/桶", "core", "sina_global_futures", "OIL"),
+        InstrumentSpec("cmd_OIL", "OIL", "布伦特原油主力连续", "macro_cmd", "宏观商品与汇率", "USD", "美元/桶", "core", "sina_global_futures", "OIL"),
         InstrumentSpec("cmd_CL", "CL", "WTI原油", "macro_cmd", "宏观商品与汇率", "USD", "美元/桶", "core", "sina_global_futures", "CL"),
         InstrumentSpec("cmd_SC0", "SC0", "上海原油主力", "macro_cmd", "宏观商品与汇率", "CNY", "元/桶", "core", "sina_inner_futures", "SC0"),
         InstrumentSpec("cmd_NG", "NG", "NYMEX天然气", "macro_cmd", "宏观商品与汇率", "USD", "美元/百万英热", "core", "sina_global_futures", "NG"),
@@ -562,12 +563,45 @@ def normalize_date_mmddyyyy(raw: str) -> str | None:
     return None
 
 
+def normalize_bar_units(
+    raw_bars: list[list[Any]],
+    *,
+    price_divisor_if_gt: tuple[float, float] | None = None,
+) -> list[list[Any]]:
+    """Normalize OHLC unit mismatches (e.g. Sina COMEX copper HG cents/lb -> USD/lb).
+
+    When `price_divisor_if_gt=(threshold, divisor)` is set, any bar whose close
+    exceeds `threshold` has its OHLC values divided by `divisor`. Idempotent for
+    bars already in target units (`close <= threshold`).
+    """
+    if not price_divisor_if_gt:
+        return list(raw_bars)
+    threshold, divisor = price_divisor_if_gt
+    if divisor <= 0:
+        return list(raw_bars)
+    out: list[list[Any]] = []
+    for row in raw_bars:
+        if not isinstance(row, (list, tuple)) or len(row) < 5:
+            out.append(row)
+            continue
+        o = _to_float(row[1])
+        h = _to_float(row[2])
+        l = _to_float(row[3])
+        c = _to_float(row[4])
+        if o is not None and h is not None and l is not None and c is not None and c > threshold:
+            out.append([row[0], o / divisor, h / divisor, l / divisor, c / divisor, *list(row[5:])])
+        else:
+            out.append(list(row))
+    return out
+
+
 def sanitize_bars(
     raw_bars: list[list[Any]],
     *,
     bars_limit: int = DEFAULT_BARS,
     decimals_override: int | None = None,
     force_no_volume: bool = False,
+    price_divisor_if_gt: tuple[float, float] | None = None,
 ) -> list[list[Any]]:
     """Validate, deduplicate by ISO date, sort ascending, round, and slice to last N bars.
 
@@ -576,8 +610,9 @@ def sanitize_bars(
     invalid date, or NaN/Inf. Clamps slight intraday envelope anomalies where
     open/close lies outside [low, high] while raw high >= low.
     """
+    rows = normalize_bar_units(raw_bars, price_divisor_if_gt=price_divisor_if_gt)
     by_date: dict[str, list[Any]] = {}
-    for row in raw_bars:
+    for row in rows:
         if not isinstance(row, (list, tuple)) or len(row) < 5:
             continue
         date_iso = normalize_date_mmddyyyy(str(row[0]))
@@ -835,6 +870,46 @@ def parse_sina_fx(raw_text: str) -> list[list[Any]]:
             continue
         date_s, o, l, h, c = parts[0], parts[1], parts[2], parts[3], parts[4]
         out.append([date_s, o, h, l, c, 0])
+    return out
+
+
+def parse_sina_fx_quotes(raw_text: str) -> dict[str, list[Any]]:
+    """Parse Sina hq.sinajs.cn FX batch quotes into {symbol: [date_iso, o, h, l, c, 0]}.
+
+    Format: var hq_str_<sym>="HH:MM:SS,last,...,open,high,low,close,...,YYYY-MM-DD";
+    Rolls late Friday NY prints after Beijing midnight (Sat < 06:30 CST) back to
+    Friday's trading date and skips actual weekend bars.
+    """
+    out: dict[str, list[Any]] = {}
+    for match in re.finditer(r'var\s+hq_str_([A-Za-z0-9_]+)\s*=\s*"([^"]*)";?', raw_text):
+        sym, body = match.group(1), match.group(2).strip()
+        if not body:
+            continue
+        parts = [p.strip() for p in body.split(",")]
+        if len(parts) < 10:
+            continue
+        date_iso = normalize_date_mmddyyyy(parts[-1])
+        if not date_iso:
+            continue
+        try:
+            dt = datetime.strptime(date_iso, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        time_str = parts[0]
+        if dt.weekday() == 5 and re.match(r"^0[0-5]:|^06:[0-2]", time_str):
+            dt = dt - timedelta(days=1)
+            date_iso = dt.isoformat()
+        elif dt.weekday() >= 5:
+            continue
+        o = _to_float(parts[5])
+        h = _to_float(parts[6])
+        l = _to_float(parts[7])
+        c = _to_float(parts[8])
+        if o is None or h is None or l is None or c is None:
+            continue
+        if o <= 0 or h <= 0 or l <= 0 or c <= 0 or h < l:
+            continue
+        out[sym] = [date_iso, o, h, l, c, 0]
     return out
 
 
@@ -1184,7 +1259,7 @@ class RateLimitedHttpClient:
         host = urllib.parse.urlsplit(url).netloc.lower()
         if "gtimg.cn" in host or "finance.qq.com" in host:
             return "tencent"
-        if "sina.com.cn" in host:
+        if "sina.com.cn" in host or "sinajs.cn" in host:
             return "sina"
         if "cnbc.com" in host:
             return "cnbc"
@@ -1441,6 +1516,7 @@ def merge_with_stale_cache(
             bars_limit=bars_limit,
             decimals_override=spec.decimals_override,
             force_no_volume=spec.force_no_volume,
+            price_divisor_if_gt=spec.price_divisor_if_gt,
         )
         if sanitized:
             cached_prov = str(cached_entry.get("provider", "cached"))
@@ -1486,6 +1562,7 @@ class KlineFetcher:
         self._ft_cache: dict[str, list[list[Any]]] | None = None
         self._ft_index_cache: dict[str, list[list[Any]]] | None = None
         self._cnbc_quote_cache: dict[str, list[Any]] = {}
+        self._sina_fx_quote_cache: dict[str, list[Any]] = {}
         self._eastmoney_cgb_cache: str | None = None
         self._treasury_nom_cache: list[str] | None = None
         self._treasury_real_cache: list[str] | None = None
@@ -1589,6 +1666,22 @@ class KlineFetcher:
             parsed = {}
         with self._batch_lock:
             self._cnbc_quote_cache = parsed
+        return parsed
+
+    def prefetch_sina_fx_quotes(self, symbols: list[str]) -> dict[str, list[Any]]:
+        """Optional single batch hq.sinajs.cn request for T-0 live FX bar append."""
+        uniq = list(dict.fromkeys(s for s in symbols if s))
+        if not uniq:
+            return {}
+        joined = ",".join(uniq)
+        url = f"https://hq.sinajs.cn/list={urllib.parse.quote(joined, safe=',')}"
+        try:
+            raw = self.http.request_text(url, headers={"Referer": SINA_REFERER}, encoding="gbk")
+            parsed = parse_sina_fx_quotes(raw)
+        except Exception:
+            parsed = {}
+        with self._batch_lock:
+            self._sina_fx_quote_cache = parsed
         return parsed
 
     def _get_eastmoney_cgb_raw(self) -> str:
@@ -1758,6 +1851,7 @@ class KlineFetcher:
                 bars_limit=self.bars_limit,
                 decimals_override=spec.decimals_override,
                 force_no_volume=spec.force_no_volume,
+                price_divisor_if_gt=spec.price_divisor_if_gt,
             )
 
         kind = spec.kind
@@ -1948,9 +2042,13 @@ class KlineFetcher:
             )
             try:
                 raw = self.http.request_text(url, headers={"Referer": SINA_REFERER}, encoding="gbk")
-                bars = _clean(parse_sina_fx(raw))
-                if bars:
-                    return bars, "sina_forex", None
+                hist_bars = parse_sina_fx(raw)
+                if hist_bars:
+                    with self._batch_lock:
+                        q_bar = self._sina_fx_quote_cache.get(spec.provider_symbol)
+                    bars = _clean(merge_cnbc_t0_quote(hist_bars, q_bar))
+                    if bars:
+                        return bars, "sina_forex", None
                 errors.append("sina_forex:empty")
             except Exception as exc:
                 errors.append(f"sina_forex:{type(exc).__name__}")
@@ -2103,6 +2201,11 @@ def run_fetch(
     cnbc_syms = [s.provider_symbol for s in specs if s.kind == "cnbc_harmony"]
     if cnbc_syms:
         fetcher.prefetch_cnbc_quotes(cnbc_syms)
+
+    # Optional single batch hq.sinajs.cn pre-fetch for Sina FX T-0 live bars
+    sina_fx_syms = [s.provider_symbol for s in specs if s.kind == "sina_fx"]
+    if sina_fx_syms:
+        fetcher.prefetch_sina_fx_quotes(sina_fx_syms)
 
     # Batch pre-fetch Eastmoney China Government Bond yield table in a single GET
     if any(s.kind == "eastmoney_cgb" for s in specs):
