@@ -9,6 +9,30 @@
 原记录第 15 项的场外金条税负与回购条件曾作统一推定。当前口径按购入主体、标准黄金的实际出库用途、销售环节发票及回购合同逐笔核对。[财政部、税务总局黄金税收公告](https://fgk.chinatax.gov.cn/zcfgk/c102416/c5244740/content.html)
 
 <!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-28_1800",
+  "as_of_short": "2026-11-28 22:25",
+  "note": "完成 2026-11-28 18:00 周末专项晚报四重交叉核验与独立核对闭环：补录 UKMTO 第 225-26 号正式警报（载明船长报告北京时间 11/28 14:30 也门巴勒哈夫西南 64 海里货船遭武装登船）；明确法国 10 年期国债 11/27 4.705% 为行情平台 Investing.com 市场收盘参考值（同源同盘法德 +143.7bp / 法意 +38.2bp），标普官方新闻稿列表确认北京时间 11/28 05:11 发布（删去无法稳定核实的 05:06 分钟）并附法国财长公报回应，如实披露 Kalshi 法国不信任合约周六无新成交（14/18 美分、上次成交 16 美分在 11/23）；核销 11/27 Farside 现货比特币基金净流出 -3.890 亿美元与以太坊基金净流出 -6,940 万美元（仅作高风险资产风险偏好参照、不外推美元整体流动性或黄金方向），按路透援引 Adobe 终报录得黑五线上 131 亿美元 (+11.1%) 并记录香港财经官员重申 11/11 已公布的黄金中央清算系统 2027 Q1 启用计划；逐券核实周一五券美债私营面值净融资 +815.07 亿美元及紫金/山金 11/27 回购；严守周六 XAUT $3,646.76 按周六 03:00（属周五延长交易）汇率估算 780.17 元仅系与 02:30 上金夜盘异时对比、不能断言周一无跳空，以及芝商所 COMEX 金银库存原始 XLS 再查不可读仅作挂账不按已直读官数入证；清晰界定 48 小时窗口止于周一 22:25（5-3-1-1 主观情景权重，纽约终盘与当日美债官曲归窗外周二核销）；买金维持红灯停（2/4 关，真实四关全获证据后方确认切档）与全景主报告 0/5 锁。",
+  "sources": {
+    "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"],
+    "rate_spread": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv", "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/5.json"],
+    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv", "https://www.cboe.com/data/quotes/vix/metrics"],
+    "ny_close": ["https://www.ukmto.org/-/media/ukmto/products/20261128-ukmto_warning_225_26.pdf", "https://disclosure.spglobal.com/ratings/en/regulatory/press-releases", "https://presse.economie.gouv.fr/notation-standard-amp-poors-reaction-de-roland-lescure/", "https://www.investing.com/rates-bonds/france-10-year-bond-yield", "https://farside.co.uk/btc/"]
+  },
+  "forecast_review": {
+    "status": "none_due",
+    "note": "本 2026-11-28 18:00 周末晚报时段无新增到期结案预判（累计保持 10 项计分：5 兑现 / 5 部分兑现 / 0 证伪，完全兑现率 50.0%、至少部分兑现 100.0%），新增 1 项周日产油国会议与亚丁湾登船不破买金红灯追踪，并严格落实异时对比边界、48 小时窗界、UKMTO 发生时刻口径与 COMEX 原表不可读挂账。",
+    "sources": ["https://www.ukmto.org/-/media/ukmto/products/20261128-ukmto_warning_225_26.pdf", "https://www.cmegroup.com/regulatory/reg-notices/registrar.html"]
+  }
+} -->
+
+### 2026-11-28 18:00 周末专项晚报核验记录（截点 2026-11-28 22:25）
+
+- **三大信任资产增量（累计拦谣 54 条 · 模型升级 18 项 · 细节校准 49 项 · 核心结论影响 0/49）**：① 新增拦谣 #52–#54：拆穿“央行 10 万起大额存单周一 11/30 生效须取款买金”（2027-03-21 施行）、“法国降展望叠亚丁湾登船使买金红灯失效”（法国 A+ 未降、周末事件合约无新成交且 10 年实际利率 2.79% 仍压顶）与“周一多账号申购 161226 白银基或抢 513300 吃无风险套利”（161226 限购叠 T+2 溢价坍塌及退市草案，513300 周一 09:30–10:30 停牌）；② 新增校准 #48–#49：补录 UKMTO 225-26 亚丁湾登船警报（明确 14:30 为船长报告发生时刻）、明确 11/27 法国 10 年期国债 `4.705%` 为 Investing.com 市场收盘参考值（同源法德 `+143.7 基点`、法意 `+38.2 基点`）并确认标普官方新闻稿发布时间为北京时间 `11/28 05:11`；同步严守周六 XAUT 与周六 03:00（周五延长交易）汇率估算 `780.17 元` 仅作异时对照、路透援引 Adobe 终报与重申香港 11/11 清算计划口径，且 COMEX 库存原始表格不可读仅作挂账。
+- **剩余外部滞后与不可读挂账（归周一/周二核销）**：芝商所 COMEX 金银库存原始电子表格（再查不可读，留待工作日复核）、纽约联储 11/27 有效联邦基金利率、山东黄金（`600547`）11/26 业绩说明会正式文字纪要及因感恩节顺延至 `2026-12-01 04:30 CST` 的 CFTC COT 持仓周报。
+
+---
+
+<!-- GOLD_EDITION_REVIEW {
   "edition_id": "2026-11-28_1130",
   "as_of_short": "2026-11-28 12:00",
   "note": "完成 2026-11-28 11:30 周末专项午报四重交叉验证与 7 项分歧终审仲裁：直连 Cboe 官方历史日线表核销 2026-11-27 完整行（O 24.89 / H 27.52 / L 23.81 / C 23.81，正式升级为已发布并清零暂定滞后项）；直连 SSGA 官方净值表核销 GLD 11/27 官方 NAV $332.980175 (+4.85%, AUM $120.073B, 份额 360.6M 零变动 = 0.00 吨净流，全周 -6.56 吨)、VanEck 官网核销 GDX 11/27 官方 NAV $78.89 (+7.04%, AUM $24.77B) 及双源与 7 位小数数学反验核销 LBMA 11/27 午盘定盘 $3,634.50 (+1.55%，清零午盘定盘滞后项)；直连上金所官方日表纠偏 11/27 Ag(T+D) 递延费为多付空（交收量自 11/26 256.92 吨骤降 90.8% 至 23.76 吨）；三源核实周六品牌金店提价 20-25 元至周大福 1,093 元/克（老凤祥/周生生 1,092 元，婚庆立省扩至 279 元/克 / 50 克 13,950 元 / 25.5%），并驳回工行主动积存 0 费今日到期误读（核实官网已无缝延至 2027-03-31）；核实标普下调法国展望至负面、日央行行长植田和男 11/30 09:05 CST 名古屋演讲、ICE 布油 1 月合约 11/30 到期换月、土耳其央行 11/26 暂停本土矿金优先购金权、COMEX 银库存降至 323.0M oz 及周六午间只读 XAUT $3,649.55 / PAXG $3,647.89 / BTC $59,980；买金维持红灯停（2/4 关，禁止新买）与全景主报告 0/5 锁（+0.46% < 3%、60日新高止损与尾部深熊 0/2）。",

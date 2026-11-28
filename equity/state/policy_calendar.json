@@ -1,20 +1,44 @@
 {
   "schema_version": "1.0",
-  "edition_id": "2026-11-28_1130",
-  "as_of_cst": "2026-11-28T12:00:00+08:00",
+  "edition_id": "2026-11-28_1800",
+  "as_of_cst": "2026-11-28T22:25:00+08:00",
   "horizon_days": 30,
   "policy_briefs": [
     {
+      "id": "global_ukmto_225_26_aden_boarding_20261128",
+      "date_cst": "2026-11-28",
+      "time_cst": "14:30",
+      "home_featured": true,
+      "region": "GLOBAL",
+      "category": "geopolitics_energy",
+      "impact_tier": "P0",
+      "authority": "英国海事贸易行动办公室（UKMTO）· 新华社",
+      "headline": "UKMTO 225-26 警报：船长报告 14:30 亚丁湾货船遭武装登船",
+      "summary": "英国海事贸易行动办公室第 225-26 号正式警报载明，船长报告事件发生于北京时间 11/28 14:30（世界协调时 06:30，非机构发布时刻）：一艘货船在也门巴勒哈夫西南 64 海里处遭未经授权武装人员登船控制，当局已介入核查。",
+      "affected_markets": [
+        "gold",
+        "us_stock",
+        "rates_bonds_core",
+        "a_share",
+        "hk_stock"
+      ],
+      "market_impact": "紧接周日产油国联盟部长会前增添航运与油价变数；但截至 22:25 链上只读锚 XAUT 报 3,646.76 美元，黄金仍锁 2/4 关红灯停新仓 0%，待周一外盘实盘与官方利率检验。",
+      "source_url": "https://www.ukmto.org/-/media/ukmto/products/20261128-ukmto_warning_225_26.pdf",
+      "source_urls": [
+        "https://english.news.cn/20261128/cd1c1b1c31274070be291a27e7f9a2b5/c.html"
+      ]
+    },
+    {
       "id": "global_sp_france_neg_boj_ueda_mon0905_20261128",
       "date_cst": "2026-11-28",
-      "time_cst": "05:08",
+      "time_cst": "05:11",
       "home_featured": true,
       "region": "EU",
       "category": "fiscal_policy",
       "impact_tier": "P0",
-      "authority": "标普全球评级",
-      "headline": "标普将法国主权长期评级展望调为负面，维持 A+ 评级",
-      "summary": "标普评级行动记录显示，11/27 16:08 美东时间（北京时间 11/28 05:08），法国本币和外币长期主权评级维持 A+，展望由稳定改为负面。标普新闻稿维持短期 A-1，并指出财政整顿风险。",
+      "authority": "标普全球评级 · 法国财政部 · 欧洲央行",
+      "headline": "标普 05:11 新闻稿将法国主权评级展望调为负面，维持 A+ 评级",
+      "summary": "标普官方新闻稿列表确认北京时间 11/28 05:11 发布公告，维持法国本外币长期主权评级 A+、短期 A-1，将展望由稳定调为负面，指出财政整顿与 2027 年预算分歧风险；法国财长罗兰·莱斯屈尔发表声明称此举为明确警告、力守 2027 年赤字不超 5%。行情平台 Investing.com 11/27 法国 10 年期国债市场收盘参考 4.705%（同源法德 +143.7 基点、法意 +38.2 基点），欧洲央行定档 12 月 17 日议息。",
       "affected_markets": [
         "non_us_global_satellite",
         "us_stock",
@@ -23,8 +47,13 @@
         "hk_stock",
         "a_share"
       ],
-      "market_impact": "观察法国与德国同期限国债利差，区分法国财政风险与欧洲长端利率整体波动。",
-      "source_url": "https://www.spglobal.com/ratings/en/regulatory/ratings-actions?app=sp&id=1498020"
+      "market_impact": "观察周一欧债开市法德同源利差与欧洲长端利率变化；海外事件合约 Kalshi 法国不信任案周六无新增成交，切勿用停滞盘口外推周末定价。",
+      "source_url": "https://disclosure.spglobal.com/ratings/en/regulatory/press-releases",
+      "source_urls": [
+        "https://presse.economie.gouv.fr/notation-standard-amp-poors-reaction-de-roland-lescure/",
+        "https://www.investing.com/rates-bonds/france-10-year-bond-yield",
+        "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
+      ]
     },
     {
       "id": "us_fed_reserves_breach_srf_23b_us10y_494_20261128",
@@ -36,7 +65,7 @@
       "impact_tier": "P0",
       "authority": "美联储 · 纽约联储 · 芝加哥期权交易所",
       "headline": "美联储周报显示银行准备金约 2.929 万亿美元，Cboe 历史日线收报 23.81",
-      "summary": "美联储 11/27 周报显示，11/25 存款机构准备金余额为 2.928659 万亿美元。Cboe 11/27 恐慌指数历史日线收报 23.81。美国议息会议日期为 12/08–09 美东时间，按外部沟通规则换算，北京时间 11/28 13:00 进入缄默期。",
+      "summary": "美联储 11/27 周报显示，11/25 存款机构准备金余额为 2.928659 万亿美元。Cboe 11/27 恐慌指数历史日线收报 23.81。美国议息会议日期为 12/08–09 美东时间，按外部沟通规则换算，北京时间 11/28 13:00 已进入缄默期。",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
@@ -61,19 +90,20 @@
       "region": "GLOBAL",
       "category": "market_structure",
       "impact_tier": "P0",
-      "authority": "美国道富 · VanEck · 上金所 · 路透",
+      "authority": "美国道富 · VanEck · 上金所 · 芝商所",
       "headline": "道富与 VanEck 公布黄金相关基金净值，上金所发布 11 月 27 日行情",
-      "summary": "道富公布 GLD 每份净值 332.98 美元，VanEck 公布 GDX 每份净值 78.89 美元。上海黄金交易所显示 Au99.99 收于每克 784 元，白银延期交收当日补偿费方向为多付空。",
+      "summary": "道富公布 GLD 每份净值 332.98 美元，VanEck 公布 GDX 每份净值 78.89 美元。上海黄金交易所显示 Au99.99 日盘收于每克 784 元、夜盘收 782 元，白银延期交收当日补偿费方向为多付空；芝商所金银库存原始电子表格再查不可读暂作挂账。",
       "affected_markets": [
         "gold",
         "a_share",
         "rates_bonds_core"
       ],
-      "market_impact": "净值、申赎估算和首饰零售价口径不同。黄金维持四关中的两关通过，红灯停新仓 0%。",
+      "market_impact": "净值、申赎估算和首饰零售价口径不同。黄金维持四关中的两关通过，红灯停新仓 0%，唯有真实四关全获证据后才确认切档。",
       "source_url": "https://www.sge.com.cn/sjzx/quotation_daily_new?end_date=2026-11-27&start_date=2026-11-27",
       "source_urls": [
         "https://www.ssga.com/us/en/individual/etfs/spdr-gold-shares-gld",
-        "https://www.vaneck.com/us/en/investments/gold-miners-etf-gdx/"
+        "https://www.vaneck.com/us/en/investments/gold-miners-etf-gdx/",
+        "https://www.cmegroup.com/regulatory/reg-notices/registrar.html"
       ]
     },
     {
@@ -84,7 +114,7 @@
       "region": "CN",
       "category": "central_bank",
       "impact_tier": "P0",
-      "authority": "中国人民银行（2026 金融稳定报告 · 公告第 30 号 · 令第 5 号）",
+      "authority": "中国人民银行（公告〔2026〕第 30 号 · 令〔2026〕第 5 号）",
       "headline": "央行公布大额存单规则，个人认购起点调整自 2027 年 3 月 21 日施行",
       "summary": "人民银行公布新《大额存单管理办法》，自 2027 年 3 月 21 日起施行。个人认购起点不低于 10 万元，共九档标准期限。过渡期仍按现行制度和银行产品条款执行。",
       "affected_markets": [
@@ -93,9 +123,9 @@
         "hk_stock"
       ],
       "market_impact": "购买前核对发行主体、认购起点、期限和可转让性。二手转让的收益按成交价和合同的计息、支取规则核算。",
-      "source_url": "https://www.xinhuanet.com/fortune/20261127/30d3692caed241879699201440e2eaf6/c.html",
+      "source_url": "https://www.pbc.gov.cn/tiaofasi/144941/3581332/2026112716325422180/index.html",
       "source_urls": [
-        "https://wzdig.pbc.gov.cn/search/pcRender?pageId=c177a85bd02b4114bebebd210809f691"
+        "https://www.pbc.gov.cn/goutongjiaoliu/113456/113469/2026112715482536082/index.html"
       ]
     },
     {
@@ -153,7 +183,7 @@
       "impact_tier": "P0",
       "authority": "产油国联盟（OPEC+）· 国际能源交易所",
       "headline": "产油国联盟两场会议均排在 11 月 29 日，布油周一关注换月价差",
-      "summary": "产油国联盟已公布第 42 届部长级会议日期，七个自愿减产国家也另行安排同日会议。具体时刻与产量安排以各自公告为准。布伦特原油 1 月合约周一到期，切换到 2 月合约时，比较前后两张合约的价格区分换月跳变和实际涨跌。",
+      "summary": "产油国联盟已分别发布第 42 届部长级会议公告与七个自愿调整国家同日会议公告，两场会议均排定 11 月 29 日，具体时刻与产量安排以各自会后公报为准。布伦特原油 1 月合约周一到期，切换到 2 月合约时，比较前后两张合约的价格区分换月跳变和实际涨跌。",
       "affected_markets": [
         "us_stock",
         "gold",
@@ -161,23 +191,70 @@
         "a_share",
         "hk_stock"
       ],
-      "market_impact": "比较同一时刻的 1 月与 2 月合约价格，避免把切换报价基准引起的跳变当作油价本身下跌。观察最新产量决定及执行力度。",
+      "market_impact": "比较同一时刻的 1 月与 2 月合约价格，避免把切换报价基准引起的跳变当作油价本身下跌。分别跟踪第 42 届全会与七国自愿减产会公报。",
       "source_url": "https://www.opec.org/pr-detail/605-7-june-2026.html",
       "source_urls": [
+        "https://www.opec.org/pr-detail/620-1-november-2026.html",
         "https://www.ice.com/products/219/brent-crude-futures/expiry"
+      ]
+    },
+    {
+      "id": "us_black_friday_adobe_131b_crypto_etf_flows_20261128",
+      "date_cst": "2026-11-28",
+      "time_cst": "21:30",
+      "home_featured": false,
+      "region": "US",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "authority": "路透社（援引 Adobe Analytics）· Farside",
+      "headline": "路透援引 Adobe 终报美国黑五线上消费 131 亿美元，加密基金单日流出 3.89 亿",
+      "summary": "路透社援引 Adobe Analytics 终报称 2026 年美国黑五线上消费达 131 亿美元（同比增 11.1%），高于节前 129 亿美元预期；同日补齐的 Farside 11/27 完整终表显示美国现货比特币基金净流出 3.89 亿美元（连流 8 日）、以太坊基金净流出 6,940 万美元。",
+      "affected_markets": [
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "market_impact": "消费韧性支撑主要央行偏紧定调；加密基金流出仅作海外高风险资产风险偏好参照（不能外推美元整体流动性或黄金方向，依央行银发〔2026〕42号中国大陆虚拟货币配置严格 0%）。",
+      "source_url": "https://www.devdiscourse.com/article/international/4013461-black-friday-online-shopping-rises-to-131-billion-in-the-us-adobe-analytics-data-shows",
+      "source_urls": [
+        "https://farside.co.uk/btc/",
+        "https://farside.co.uk/ethereum-etf-flow-all-data"
+      ]
+    },
+    {
+      "id": "cn_funds_advisory_t_class_hk_gold_clearing_20261128",
+      "date_cst": "2026-11-28",
+      "time_cst": "18:00",
+      "home_featured": false,
+      "region": "CN",
+      "category": "market_structure",
+      "impact_tier": "P1",
+      "authority": "招商基金 · 嘉实基金 · 香港财库局",
+      "headline": "首批公募基金投顾 T 类份额 11/30 生效，香港重申 2027 一季度黄金清算计划",
+      "summary": "招商基金（63 只）与嘉实基金（60 只）公告自 2026 年 11 月 30 日起增设个人基金投顾专属 T 类份额，免申购费、免尾佣且管理费打六折。同日香港财库局官员重申 11 月 11 日已公布的香港黄金中央清算系统 2027 年一季度上线计划（目标 2028 年储金超 2,000 吨）。",
+      "affected_markets": [
+        "a_share",
+        "hk_stock",
+        "gold",
+        "rates_bonds_core"
+      ],
+      "market_impact": "存量投顾持仓勿自行赎回以防损失费率衔接；香港清算基建属中长期实物枢纽进展，黄金短线仍严守 2/4 关红灯停新仓 0%。",
+      "source_url": "https://finance.sina.com.cn/money/fund/2026-11-28/doc-inevwtcp9784323.shtml",
+      "source_urls": [
+        "https://finance.sina.com.cn/roll/2026-11-28/doc-inevwrtt9330107.shtml"
       ]
     },
     {
       "id": "cn_qdii_513300_159980_159985_bonds_20261128",
       "date_cst": "2026-11-28",
       "time_cst": "11:40",
-      "home_featured": true,
+      "home_featured": false,
       "region": "CN",
       "category": "market_structure",
       "impact_tier": "P1",
       "authority": "上交所 · 深交所 · 基金公司官净",
       "headline": "华夏纳斯达克 100 基金公告 11 月 30 日开盘后临时停牌",
-      "summary": "华夏基金公告列明纳斯达克 100 基金（513300）的二级市场溢价风险与临时停牌安排。场内价格相对基金参考净值可能波动，复牌后的成交价和当日净值需分开核查。",
+      "summary": "华夏基金公告列明纳斯达克 100 基金（513300）的二级市场溢价风险与 11 月 30 日 09:30–10:30 临时停牌安排。场内价格相对基金参考净值可能波动，复牌后的成交价和当日净值需分开核查。",
       "affected_markets": [
         "a_share",
         "us_stock",
@@ -188,29 +265,6 @@
       "source_url": "https://www.chinaamc.com/c/2026-11-28/1018978.shtml"
     },
     {
-      "id": "eu_final_close_stagflation_sovereign_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "01:00",
-      "home_featured": false,
-      "region": "EU",
-      "category": "macro_data",
-      "impact_tier": "P1",
-      "authority": "法兰克福交易所 · 伦敦证交所 · 欧洲央行",
-      "headline": "法国评级展望改为负面，市场等待欧洲央行 12 月决议",
-      "summary": "标普将法国长期主权评级展望从稳定下调为负面，评级维持 A+。欧洲央行日程列明 12 月 17 日议息。财政风险和欧元区政策预期可能共同影响长端利率。",
-      "affected_markets": [
-        "non_us_global_satellite",
-        "us_stock",
-        "rates_bonds_core",
-        "gold"
-      ],
-      "market_impact": "分别观察法国与德国同期限国债利差和欧元区共同利率。基金报价须核对同市场同一收盘时点。",
-      "source_url": "https://www.spglobal.com/ratings/en/regulatory/ratings-actions?app=sp&id=1498020",
-      "source_urls": [
-        "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
-      ]
-    },
-    {
       "id": "us_wmt_cto_form144_nvda_mstr_btc_below60k_20261128",
       "date_cst": "2026-11-28",
       "time_cst": "11:30",
@@ -218,7 +272,7 @@
       "region": "US",
       "category": "market_structure",
       "impact_tier": "P1",
-      "authority": "美国证监会（SEC）· 明晟（MSCI）· Farside",
+      "authority": "美国证监会（SEC）· 明晟（MSCI）",
       "headline": "沃尔玛高管提交拟售披露，明晟将调出 Strategy A",
       "summary": "沃尔玛高管 11 月 27 日披露拟售 33,268 股，申报估值约 439 万美元。实售数量和成交额待后续披露。明晟公布，Strategy A 将在美东 11 月 30 日收盘后从相关指数剔除。众议院委员会公告确认英伟达管理层将赴国会接受访谈。",
       "affected_markets": [
@@ -344,12 +398,12 @@
       "impact_tier": "P2",
       "authority": "中国财政部 · 中债登 · 沪深交易所",
       "headline": "财政部公布 1,000 亿元中央国库现金管理商业银行定期存款指令",
-      "summary": "财政部国库司披露本期计划存款量 1,000 亿元，期限 2 个月，起息日为 2026 年 12 月 1 日，到期日为 2027 年 2 月 2 日。该项属于中央国库现金管理。",
+      "summary": "财政部国库司披露本期计划存款量 1,000 亿元，期限 2 个月，起息日为 2026 年 12 月 1 日，到期日为 2027 年 2 月 2 日；另 12 月 2 日将招标 550 亿 182 天贴现国债与 260 亿一般 30 年期记账式附息国债（非超长期特别国债）。",
       "affected_markets": [
         "rates_bonds_core",
         "a_share"
       ],
-      "market_impact": "结合其他资金流和利率观测判断月末流动性变化。国债招标规模、节奏和本次存款操作分开核验。",
+      "market_impact": "结合其他资金流和利率观测判断月末流动性变化。国债招标规模、品种和本次存款操作分开核验。",
       "source_url": "https://gks.mof.gov.cn/gongzuodongtai/202611/t20261126_4005436.htm"
     },
     {
@@ -360,7 +414,7 @@
       "region": "US",
       "category": "regulation_trade",
       "impact_tier": "P2",
-      "authority": "美国贸易代表署（USTR）· 万事达消费脉搏 · Adobe",
+      "authority": "美国贸易代表署（USTR）",
       "headline": "美贸易代表署提出 14 个经济体的 301 调查应对方案",
       "summary": "美国贸易代表署 11 月 25 日公布 14 个经济体的 301 调查认定与征求意见方案。商品范围、税率上限和计算办法随经济体和商品而异。中国方案公告列明 2027 年 1 月 5 日的书面意见提交日。",
       "affected_markets": [
@@ -377,6 +431,7 @@
     {
       "id": "tw_dgbas_q3_gdp_20261127",
       "date_cst": "2026-11-27",
+      "time_cst": "16:00",
       "home_featured": false,
       "region": "GLOBAL",
       "category": "macro_data",
@@ -394,6 +449,7 @@
     {
       "id": "kr_bok_rate_hike_20261126",
       "date_cst": "2026-11-26",
+      "time_cst": "10:00",
       "home_featured": false,
       "region": "GLOBAL",
       "category": "central_bank",
@@ -427,7 +483,7 @@
         "a_share",
         "hk_stock"
       ],
-      "expected_consensus": "产油国联盟公告确认第 42 届部长级会议日期为 11 月 29 日，尚未核实会议开始时刻。另有七个实施自愿调整国家的同日会议。2027 年产量基准与减产安排以各自会议结果为准。",
+      "expected_consensus": "产油国联盟官方公报确认第 42 届部长级会议日期为 11 月 29 日，具体开始时刻待定；2027 年全员产量基准与产能评估安排以会后公报为准（七个自愿减产国会议另列）。",
       "market_transmission": "油价直接锚定欧美再通胀预期与 10 年期美债（现 4.94%），传导至油气高息股盈利、美股长端估值与黄金前两关。",
       "watch_triggers": {
         "upside_bull": "有序顺延或温和微调使布油稳在 85–95 美元带，既托住油气盈利又缓解美债冲 5.0% 恐慌。",
@@ -435,6 +491,33 @@
       },
       "pre_event_stance": "雪佛龙与中海油底仓稳守现仓不赌单边；黄金维持 2/4 关红灯停新仓 0%，静待周一早盘外盘消化。",
       "source_url": "https://www.opec.org/pr-detail/605-7-june-2026.html",
+      "monitor_window_min": 0
+    },
+    {
+      "event_id": "opec_plus_7countries_voluntary_20261129",
+      "date_cst": "2026-11-29",
+      "end_date_cst": "2026-11-29",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
+      "region": "GLOBAL",
+      "category": "geopolitics_energy",
+      "impact_tier": "P0",
+      "title": "产油国联盟七个自愿减产国线上会议（沙特、俄、伊拉克等七国）",
+      "affected_markets": [
+        "us_stock",
+        "rates_bonds_core",
+        "gold",
+        "a_share",
+        "hk_stock"
+      ],
+      "expected_consensus": "七个实施自愿产量调整国家（沙特、俄罗斯、伊拉克、科威特、哈萨克斯坦、阿尔及利亚、阿曼）于 11 月 1 日官方公报排定 11 月 29 日召开下一次会议，具体时刻与自愿减产节奏以会后声明为准。",
+      "market_transmission": "自愿减产组实际配额执行与顺延节奏直接决定 2027 年一季度边际原油供给弹性，并叠合亚丁湾 225-26 警报与布油周一换月影响短端油价与美债通胀预期。",
+      "watch_triggers": {
+        "upside_bull": "七国延续稳健产量节奏避免供给冲击，令布油换月后稳守合理区间、不加剧长债抛压。",
+        "downside_bear": "自愿减产组出现内部分歧或超预期增/减产，放大布油换月日波动并传导至美债与能源股。"
+      },
+      "pre_event_stance": "与第 42 届全会分别核对官方公报；能源底仓不赌单边、黄金严守 2/4 关红灯停新仓 0%。",
+      "source_url": "https://www.opec.org/pr-detail/620-1-november-2026.html",
       "monitor_window_min": 0
     },
     {
@@ -525,21 +608,21 @@
       "region": "US",
       "category": "liquidity_treasury",
       "impact_tier": "P0",
-      "title": "美国财政部多期限国债月末集中交割",
+      "title": "美国财政部五笔附息国债月末集中交割",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
         "gold",
         "hk_stock"
       ],
-      "expected_consensus": "美国财政部发行日程列出 11/30 的多期限国债交割。该日程只确认日期。私营净融资需根据实际发行及到期金额计算，隔夜回购到期另以纽约联储数据核对。",
+      "expected_consensus": "逐券核实五笔私营发行（20Y 160 亿 + 10Y TIPS 190 亿 + 2Y 690 亿 + 5Y 700 亿 + 7Y 440 亿 = 2,180.00 亿美元），扣除官方到期私营持仓 1,364.93 亿美元（美联储公开市场账户 224.72 亿全额滚续中性），面值口径私营净融资为 +815.1 亿美元；实际准备金净变动另受半年期国债付息返还与黑五 231.5 亿常备回购到期对冲。",
       "market_transmission": "跨月抽水直接考验隔夜融资利率 4.00% 顶与常备回购回落节奏，若流动性再度收紧将同步施压高估科技、加密链条与黄金。",
       "watch_triggers": {
         "upside_bull": "常备回购余额快速回落、隔夜利率平稳且 10 年期美债守在 4.95% 下方，管道平稳渡劫。",
         "downside_bear": "回购需求再飙叠 10 年期美债冲破 5.0%，触发科技股回撤与全资产流动性挤兑。"
       },
       "pre_event_stance": "观察月末回购利率和常备回购操作结果，黄金维持红灯新仓 0%。",
-      "source_url": "https://home.treasury.gov/system/files/221/Tentative-Auction-Schedule.pdf",
+      "source_url": "https://www.treasurydirect.gov/auctions/announcements-data-results/",
       "monitor_window_min": 120
     },
     {
@@ -940,7 +1023,7 @@
         "downside_bear": "政策表述偏克制低于市场博弈预期，引发会前抢跑资金兑现并令长债利率再探低位。"
       },
       "pre_event_stance": "不博弈小作文与会前单日情绪脉冲，以红利底仓 + 6 成债盾均衡应对，等待官方通稿落地后按纪律再评估。",
-      "source_url": "https://www.gov.cn/",
+      "source_url": "https://www.gov.cn/yaowen/",
       "monitor_window_min": 180
     },
     {
@@ -1011,7 +1094,7 @@
         "a_share",
         "non_us_global_satellite"
       ],
-      "expected_consensus": "全球四大央行 10 天密集议息首枪，市场隐含加息概率高达 94%–97.5%（期货 97%–97.5% / 预测市场 94%–94.5%）；核心焦点在 2027 年利率点阵图终值与主席 03:30 发布会鹰鸽基调。",
+      "expected_consensus": "全球四大央行 10 天密集议息首枪，市场对 12 月偏紧加息维持高度一致预期；核心焦点在 2027 年利率点阵图终值与主席 03:30 发布会鹰鸽基调。",
       "market_transmission": "直接定锚 2 年/10 年美债、真实利率与港美利差，是美股估值承压与黄金前两关（真实利息与加息利差）能否松动的头号变盘窗。",
       "watch_triggers": {
         "upside_bull": "加息靴子落地且点阵图未进一步上修，推动 2 年美债回落、10 年实际利率跌破 2.72% 打开跨年喘息窗。",
@@ -1248,7 +1331,7 @@
         "downside_bear": "单边超预期非对称下调压制银行盈利，引发金融权重承压拖累大盘。"
       },
       "pre_event_stance": "境内资产延续股债均衡，闲钱与债盾依托短融及中短国债稳守，关注重定价窗口前后银行股息率变化。",
-      "source_url": "https://www.pbc.gov.cn/",
+      "source_url": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125440/index.html",
       "monitor_window_min": 45
     },
     {

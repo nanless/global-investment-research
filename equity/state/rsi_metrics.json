@@ -1166,6 +1166,289 @@
         "【周一 07:30 / 11:30 四重催化与余下滞后表清零】封账周日 19:00 产油国会议决议，清零 11/27 SOFR/TGA/FRED OAS/完整币基流与深北两融；置顶周一 09:05 日央行植田演讲、09:30 中国 11 月 PMI、降保 80%、15:00 明晟调仓、大成 000834 砍半、513300 停牌、159985 重点监控、布油 1 月到期换月及 21:30 美债 815.1 亿净抽水",
         "【守稳 first_pass_clean=true 与 ≥28/30 高分带】延续四联动全联扫并新增实时锚点公式重算自检，确保零阻断、零算术近似误差"
       ]
+    },
+    {
+      "run_id": "2026-11-28_1800",
+      "edition_type": "weekend_evening_unified",
+      "reports": [
+        "daily/2026-11-27_1800_a_share_r2.md",
+        "daily/2026-11-27_1800_hk_stock_r2.md",
+        "daily/2026-11-28_0730_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-28T22:25:00+08:00",
+      "first_pass_clean": true,
+      "lint_retries": 0,
+      "visual_retries": 0,
+      "lint_errors_fixed": [
+        "首轮原子合并 equity/state/_edition_patch.json 与 equity/lint_equity.py --strict（Gates 0–5 + SVG + SSOT + Cross-Project）均一次 0 errors / 0 warnings 通过（first_pass_clean=true, lint_retries=0）；同步落地外部复核 3 项证据升级（人民银行公告与答问主辅直链、标普新闻稿列表 05:11 + 法国财长公报 + Investing.com 原页合并单条、两场 OPEC+ 分列 605/620 公报、IB01 精准税务核对表述与 SOFR 11/25 观察日）；Stage 4 独立对抗式盲审检出 2 处轻度微瑕（E-01 multi_asset_channels/etf_universe as_of_label 与 macro_anchors 12:00 残留、E-02 a-share:600547 午间与 11/26 回购旧述），全部发前热修并复过 --strict（0/0），终审评定 29/30（0 阻断 / 0 微瑕）"
+      ],
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 5,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 29,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/28 12:00 追踪：【外部滞后表核销与周六突发风险/证据链清零】清零 Farside 11/27 完整币基流、黑五零售终报并核对周一美债交割净额",
+          "outcome": "hit",
+          "evidence": "核销 Farside 11/27 完整终表（BTC ETF -$3.890 亿 / ETH -$6,940 万，严限海外风险偏好参照且同步 us-stock:MSTR 浮亏至 -$135.51 亿 / -21.10%）、路透援引 Adobe 黑五线上 131 亿美元（+11.1%）、UKMTO 225-26 亚丁湾登船警报（船长报告 14:30）与五券美债私营面值净融资 +815.1 亿美元"
+        },
+        {
+          "claim": "11/28 12:00 追踪：【12 大多元渠道与政策日历一手证据加固】纠偏境内国债/投顾/转债细节并清除政策日历裸首页与重复条",
+          "outcome": "hit",
+          "evidence": "纠偏财政部 12/02 260 亿系一般 30 年记账式附息国债（财办债〔2026〕253号，非超长期特别国债），新增招商 63 只与嘉实 60 只基金投顾 T 类份额 11/30 生效，校准 GLDM/IGLN 规模与 600547 回购；政策日历合并删旧 01:00 法国条统一 05:11 标普列表/法国财长/Investing 原页、换央行大额存单主辅直链、分列两场 OPEC+ 公报并修复 2 条裸首页"
+        },
+        {
+          "claim": "11/28 12:00 追踪：【守稳 first_pass_clean=true 与 ≥28/30 高分带】延续五联动全联扫实现零阻断、零算术近似误差",
+          "outcome": "hit",
+          "evidence": "首轮合库与 lint_equity.py --strict 一次 0/0 通过（first_pass_clean=true），热修盲审 2 处微瑕后独立终审评定 29/30（0 阻断 / 0 微瑕）"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "candidate_sha256": "87a40eaaebdc42646228f077a436e083ba18a041a5e0e500677e472d9abfdcb3",
+        "checks": {
+          "cross_track": {
+            "evidence": "逐字段复核 gold/data_snapshot.json、equity/state/market_state.json、equity/state/policy_calendar.json 及四大扩展库：edition_id=2026-11-28_1800、截点 2026-11-28 22:25 / 2026-11-28T22:25:00+08:00、multi_asset_channels.json 与 etf_universe.json 的 as_of_label 均已热修为 2026年11月28日（周六）22:25 周末晚刊（macro_anchors 同步清除 12:00 午间残留）；黄金红灯锁（Tier 0 / 2/4 关 / new_buy_allowed=false / 新仓 0%）、BTC 59,528（-0.6%）与银发〔2026〕42号 0% 禁入仓、SOFR 3.95%（观察日 2026-11-25）全站严丝合缝；policy_calendar.json 法国合并单条 05:11、大额存单主辅直链央行公告与答问、两场 OPEC+ 分列 605/620 公报、UKMTO 225-26 写明船长报告 14:30 并直链 PDF、零裸首页链接及零午间残留。",
+            "files": [
+              "gold/data_snapshot.json",
+              "equity/state/market_state.json",
+              "equity/state/policy_calendar.json",
+              "equity/state/multi_asset_channels.json",
+              "equity/state/etf_universe.json",
+              "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+              "equity/daily/INDEX.md"
+            ]
+          },
+          "calculations": {
+            "evidence": "独立脚本逐笔复算全部硬算术且零误差：周六 22:25 至周一 09:00 = 34 小时 35 分钟；48h 窗界止于周一 22:25 且主观情景权重全篇严格 5-3-1-1（合 10 点）；XAUT $3,646.76 × 6.6541 ÷ 31.1034768 = 780.17 元/克（严守异时对照不推断周一无跳空）；us-stock:MSTR 851,305 × ($59,528 − $75,446) = -$13.5511B（-135.51 亿美元 / -21.10%）；法债 4.705% − 德债 3.268% = +143.7bp、4.705% − 意债 4.323% = +38.2bp；五券美债私营发行 160+190+690+700+440 = 2,180.00 − 1,364.93 = +815.07 亿美元（+815.1 亿）并区隔实际准备金受半年期付息与 231.5 亿回购到期对冲；第 1 关 +7bp、第 2 关 +81bp（超线 +26bp）、婚庆省 279 元/克（50g 13,950 元 / 25.5%）；L265 中国 7,830 万盎司已热修为精确值约 2,435.40 吨。",
+            "files": [
+              "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+              "gold/data_snapshot.json",
+              "equity/state/market_state.json",
+              "equity/state/deep_dossiers.json",
+              "equity/daily/INDEX.md",
+              "equity/daily/SCORECARD.md",
+              "equity/daily/CHANGELOG.md"
+            ]
+          },
+          "editorial": {
+            "evidence": "逐行复核确认 0 阻断 0 微瑕：L327 零 11/27 倒推 11/25 信用利差；Kalshi 诚实披露周六无新成交（14/18 美分、上次 16 美分在 11/23）且清除 15% 与 14%–16% 当前定价；加密基金流出严格限定海外风险偏好参照且不外推美元流动性或黄金方向；消除联储 93%–94% vs 94%–97.5% 冲突并坚持真实四关全获证据后切档；香港 2027 Q1 写明重申 11/11 已公布计划；12/02 260 亿纠偏为一般 30 年记账式附息国债（财办债〔2026〕253号，非超长期特别国债）；market_state.json L647 IB01 角色精确匹配；deep_dossiers.json a-share:600547 已热修至 11/27 回购 5 万股（117.13 万）及周六晚间截点；正文零禁用内部词。",
+            "files": [
+              "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+              "gold/daily/SCORECARD.md",
+              "gold/daily/CHANGELOG.md",
+              "equity/state/market_state.json",
+              "equity/state/policy_calendar.json",
+              "equity/state/multi_asset_channels.json",
+              "equity/state/deep_dossiers.json",
+              "equity/daily/INDEX.md",
+              "equity/daily/CHANGELOG.md",
+              "equity/daily/SCORECARD.md"
+            ]
+          },
+          "charts_and_fees": {
+            "evidence": "逐项比对黄金晚报 5 张矢量图载荷与快照 100% 吻合（图 1 轨迹、图 2 15 项严格降序、图 3 欧美中 10Y 与 2.72% 阈值线、图 4 五重因果链、图 5 四关体检仪），热修后重跑 gold/lint_readability.py --strict 达成 0 errors / 0 warnings（含 SVG 零碰撞）。核验费率与合规红线：518660/518850（0.20%）、008142/008143（2026 费改）、GLDM（0.10% / $278.34B / 官净 $71.88）、IGLN（0.12% / 约 $335.5B / 官净 $70.47 / 非 UCITS 债务证券结构）、511380（0.20%）vs 511180（0.30%）、02840.HK（红灯期零主动买进词）全部达标。",
+            "files": [
+              "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+              "gold/data_snapshot.json",
+              "equity/state/etf_universe.json",
+              "equity/state/multi_asset_channels.json"
+            ]
+          },
+          "primary_sources": {
+            "evidence": "逐条复验全部一手直链与透明挂账边界：黄金晚报 L193 已热修为 GLD 官页直链、L195 补挂 GLDM 与 IGLN 官页直链；gold/data_snapshot.json L266 comex_vault_silver_m_oz 已回退至前值 326.35 并与 L356 挂账说明对称闭环；UKMTO 225-26 PDF、标普新闻稿列表与法国财长公报、Investing.com 法国 10Y 原页、美国财政部拍卖与实际利率曲线、路透援引 Adobe 黑五 131 亿报道、Farside 11/27 完整币基流、人民银行大额存单公告及两场 OPEC+ 独立公报均按字面落盘且零裸首页链接。",
+            "files": [
+              "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+              "gold/data_snapshot.json",
+              "gold/daily/AUDIT_LOG.md",
+              "equity/state/policy_calendar.json",
+              "equity/state/audit_ledger.md"
+            ],
+            "source_urls": [
+              "https://www.ukmto.org/-/media/ukmto/products/20261128-ukmto_warning_225_26.pdf",
+              "https://disclosure.spglobal.com/ratings/en/regulatory/press-releases",
+              "https://presse.economie.gouv.fr/notation-standard-amp-poors-reaction-de-roland-lescure/",
+              "https://www.investing.com/rates-bonds/france-10-year-bond-yield",
+              "https://www.devdiscourse.com/article/international/4013461-black-friday-online-shopping-rises-to-131-billion-in-the-us-adobe-analytics-data-shows",
+              "https://farside.co.uk/btc/",
+              "https://www.cmegroup.com/regulatory/reg-notices/registrar.html",
+              "https://www.treasurydirect.gov/auctions/announcements-data-results/",
+              "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?field_tdr_date_value=2026&type=daily_treasury_real_yield_curve",
+              "https://www.ssga.com/us/en/intermediary/etfs/funds/spdr-gold-minishares-trust-gldm",
+              "https://www.ishares.com/uk/individual/en/products/258441/ishares-physical-gold-etc-fund",
+              "https://www.pbc.gov.cn/tiaofasi/144941/3581332/2026112716325422180/index.html",
+              "https://www.opec.org/pr-detail/605-7-june-2026.html",
+              "https://www.opec.org/pr-detail/620-1-november-2026.html"
+            ],
+            "claims": [
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "fact",
+                "excerpt": "英国海事贸易行动办公室（UKMTO）第 225-26 号正式警报载明，船长报告事件发生于世界协调时 11 月 28 日 06:30（北京时间 14:30）：一艘货船在也门巴勒哈夫（Balhaf）西南 64 海里处遭未经授权武装人员登船控制，当局已介入核查。",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://www.ukmto.org/-/media/ukmto/products/20261128-ukmto_warning_225_26.pdf",
+                "verification": "已核对正文 L157 与 policy_calendar.json L8-29 一致，明确 14:30 BJT（06:30 UTC）为船长报告事件发生时刻而非机构发布时刻，且直接引用 UKMTO 225-26 PDF 原件。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "fact",
+                "excerpt": "标普官方新闻稿列表确认北京时间 11 月 28 日 **05:11** 发布完整行动公告，维持法国长期主权评级 A+、短期 A-1 并将展望由稳定调为负面。",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://disclosure.spglobal.com/ratings/en/regulatory/press-releases",
+                "verification": "已核对正文 L234 与 policy_calendar.json L32-57 一致，统一采用 05:11 BJT 与标普新闻稿官方列表直链，彻底清除旧 05:06/05:08 与重复 01:00 条目。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "fact",
+                "excerpt": "法国财长罗兰·莱斯屈尔随后发布新闻公报称此举是明确“警告”，强调尽快通过负责任的 2027 年预算、把赤字压回 5% 以内",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://presse.economie.gouv.fr/notation-standard-amp-poors-reaction-de-roland-lescure/",
+                "verification": "已核对正文 L234 与 policy_calendar.json L41/53 直链法国财政部官方新闻公报，准确引述财长对 5% 赤字目标的表态。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "calculation",
+                "excerpt": "11/27 法国 10 年期国债市场收盘参考值为 **4.705%**；同源同盘比对德债（3.268%）与意债（4.323%），法德利差为 **+143.7 基点**、法意利差倒挂 **+38.2 基点**",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://www.investing.com/rates-bonds/france-10-year-bond-yield",
+                "verification": "独立验算 4.705% − 3.268% = +143.7bp、4.705% − 4.323% = +38.2bp 精确吻合，且严格标注 Investing.com 同源市场收盘参考口径。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "inference",
+                "excerpt": "路透社援引 Adobe Analytics 终报数据显示，2026 年美国黑五线上零售额达 **131 亿美元（同比增 11.1%）**，高于节前 129 亿美元预期，支撑联储在 12 月议息前维持偏紧定调。",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://www.devdiscourse.com/article/international/4013461-black-friday-online-shopping-rises-to-131-billion-in-the-us-adobe-analytics-data-shows",
+                "verification": "已核对 L238 精准标注路透社援引 Adobe 终报（131 亿美元 / +11.1%），由消费韧性推论联储偏紧定调逻辑链克制合理，且消除旧 93%–94% vs 94%–97.5% 数值冲突。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "inference",
+                "excerpt": "该流向仅反映加密高风险资产局部风险偏好，不能据此验证美元整体流动性或外推黄金方向。",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://farside.co.uk/btc/",
+                "verification": "已核对 L197 基于 Farside 11/27 完整终表（BTC ETF 净流出 -3.890 亿美元）严格限定推论边界，仅作海外高风险偏好参照且遵守银发〔2026〕42号 0% 禁入仓红线。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "fact",
+                "excerpt": "周六晚间再查芝商所官网金属库存原始电子表格（`Gold_Stocks.xls` 与 `Silver_stocks.xls`）返回不可读；二次行情页转引的 11/27 金库约 2,261 万盎司与银库约 3.23 亿盎司均属未核对原表的转引口径，本刊不按已直读官数列入核心论证，先作挂账留待工作日原表恢复可读后复查。",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://www.cmegroup.com/regulatory/reg-notices/registrar.html",
+                "verification": "已核对 L199 与 gold/data_snapshot.json L265-266/L351-359 透明挂账边界完全对称（金库保留 22.72M oz、银库回退保留 326.35M oz），不将未核原表的二次库存数充作已直读官数。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "calculation",
+                "excerpt": "私营发行 **2,180.00 亿美元**；扣除官方公告到期私营持仓 1,364.93 亿美元（美联储公开市场账户到期 224.72 亿全额滚续、对准备金中性），**面值口径私营净融资为 +815.07 亿美元**。",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://www.treasurydirect.gov/auctions/announcements-data-results/",
+                "verification": "逐券复算 160+190+690+700+440 = 2,180.00 亿，扣除私营到期 1,364.93 亿精确得 +815.07 亿美元，且在 L292 客观区隔实际准备金受半年期付息与 231.5 亿回购到期对冲。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "fact",
+                "excerpt": "11/27 美国财政部名义 10 年 4.94%、2 年 4.69%、实际利率 2.79% 与芝加哥期权交易所官方历史日线 23.81 均已完整落定",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?field_tdr_date_value=2026&type=daily_treasury_real_yield_curve",
+                "verification": "已核对 L391、gold/data_snapshot.json 与 equity/state/market_state.json 完全一致，10 年实际利率 2.79% 超第 1 关线 2.72% 达 +7bp，严格锁死买金 2/4 关红灯停。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "fact",
+                "excerpt": "迷你金基 `GLDM` 官宣规模校准为 278.34 亿美元（11/27 官方净值 71.88 美元）",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://www.ssga.com/us/en/intermediary/etfs/funds/spdr-gold-minishares-trust-gldm",
+                "verification": "已核对 L195 热修后精准挂载道富 GLDM 官页（并与 etf_universe.json 规模 278.34 亿美元、11/27 官净 $71.88 及红灯新仓 0% 一致）。"
+              },
+              {
+                "file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "kind": "fact",
+                "excerpt": "爱尔兰 `IGLN` 校准为 335.5 亿美元（11/27 官方净值 70.47 美元），全线服从黄金红灯新仓 0% 约束。",
+                "source_file": "gold/daily/2026-11-28_1800_晚报_黄金深度研报.md",
+                "source_url": "https://www.ishares.com/uk/individual/en/products/258441/ishares-physical-gold-etc-fund",
+                "verification": "已核对 L195 热修后挂载贝莱德 IGLN 官页直链，并与 etf_universe.json 约 335.5 亿美元、官净 $70.47 及非 UCITS 债务证券结构说明一致。"
+              },
+              {
+                "file": "equity/state/policy_calendar.json",
+                "kind": "fact",
+                "excerpt": "人民银行公布新《大额存单管理办法》，自 2027 年 3 月 21 日起施行。个人认购起点不低于 10 万元，共九档标准期限。",
+                "source_file": "equity/state/policy_calendar.json",
+                "source_url": "https://www.pbc.gov.cn/tiaofasi/144941/3581332/2026112716325422180/index.html",
+                "verification": "已核对 policy_calendar.json L110-130 主证据为人民银行公告直链、辅证为答记者问直链，准确区分公告日与 2027-03-21 施行日。"
+              },
+              {
+                "file": "equity/state/policy_calendar.json",
+                "kind": "fact",
+                "excerpt": "产油国联盟官方公报确认第 42 届部长级会议日期为 11 月 29 日，具体开始时刻待定；2027 年全员产量基准与产能评估安排以会后公报为准（七个自愿减产国会议另列）。",
+                "source_file": "equity/state/policy_calendar.json",
+                "source_url": "https://www.opec.org/pr-detail/605-7-june-2026.html",
+                "verification": "已核对 policy_calendar.json L470-495 将第 42 届全会单独列示并直链 605 号官方公报，时间标为时间待定零臆测。"
+              },
+              {
+                "file": "equity/state/policy_calendar.json",
+                "kind": "fact",
+                "excerpt": "七个实施自愿产量调整国家（沙特、俄罗斯、伊拉克、科威特、哈萨克斯坦、阿尔及利亚、阿曼）于 11 月 1 日官方公报排定 11 月 29 日召开下一次会议，具体时刻与自愿减产节奏以会后声明为准。",
+                "source_file": "equity/state/policy_calendar.json",
+                "source_url": "https://www.opec.org/pr-detail/620-1-november-2026.html",
+                "verification": "已核对 policy_calendar.json L497-522 将七国自愿减产会独立拆出并直链 620 号官方公报，与第 42 届全会清晰分轨。"
+              }
+            ]
+          }
+        },
+        "findings": [
+          {
+            "description": "E-01 [MINOR]: equity/state/multi_asset_channels.json L5 与 etf_universe.json L6 的 as_of_label 仍留 12:00 周末午刊，且 multi_asset_channels.json L38 仍写截至周六12:00",
+            "status": "resolved",
+            "evidence": "已通过 equity/state/_edition_patch.json 与 patch_state_dbs.py --apply 将两库 as_of_label 统一更新为 2026年11月28日（周六）22:25 周末晚刊，同步刷新 macro_anchors 三处晚间口径，独立盲审复验通过且复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-02 [MINOR]: equity/state/deep_dossiers.json a-share:600547 shareholder_flow 仍留周六午间时态与 11/26 回购旧述",
+            "status": "resolved",
+            "evidence": "已同步更新至 11/27 仅回购 5 万股 A 股（117.13 万元，拟注销）与截至 11/28 周六晚间截点并补齐公告栏证据，独立盲审复验通过且复过 --strict（0/0）"
+          },
+          {
+            "description": "E-CAVEAT-01 [DEFERRED_DATA]: 2026-11-27 深交所与北交所两融日终终值（上交所已核销 11,248.86 亿）及山东黄金 11/26 业绩说明会正式文字纪要截至周六 22:25 尚未披露",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.szse.cn/disclosure/margin/margin/index.html",
+              "due_edition": "2026-11-30_1130",
+              "disposition": "严守零编造，已写入 equity/state/market_state.json data_caveats 与 pending_backfills，待周一午刊核销"
+            }
+          },
+          {
+            "description": "E-CAVEAT-02 [DEFERRED_DATA]: 2026-11-27 美国 T+1 利率流动性（SOFR/EFFR、TGA、FRED HY/CCC OAS；SOFR 3.95% 保持 11/25 观察日）与芝商所 COMEX 库存原始电子表格不可读事项待下周工作日核销",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://markets.newyorkfed.org/api/rates/all/latest.json",
+              "due_edition": "2026-11-30_0730",
+              "disposition": "Farside 11/27 完整币基流与路透援引 Adobe 黑五 131 亿已清零，余下 T+1 官方利率利差与 COMEX 不可读挂账均透明留存 data_caveats 待下周核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【跨班次推进 edition_id 必同步 as_of_label 与 macro_anchors】每次通过 _edition_patch.json 推进 multi_asset_channels.json 与 etf_universe.json 至新班次时，必须同步更新顶层 as_of_label 与 macro_anchors 文本，彻底阻断旧班次时间戳透传至静态门户",
+        "【权威一手直链与税务/观察日精确表述铁律】政策日历大额存单主辅直链央行公告与答问、法国主权行动统一标普官方新闻稿列表 05:11 + 法国财长声明 + 行情原页且仅留一条、OPEC+ 两场会议分列独立官方公报 URL；IB01 等爱尔兰基金严禁笼统写免遗产税与预扣税，SOFR 须锁定精确观察日"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周日 18:00 全量周度校准与 SCORECARD 首测】集中校准 12 大渠道中低频项（大额存单、外币定存、保险、养老金、私募信托、租金对比）、全量核对 181 只 ETF 费率规模、轮换精修 231 股池 6–10 只龙头并完成 11/29 周日首周防守体验统算",
+        "【周一 07:30 / 11:30 五重催化与滞后表清零】分别封账周日第 42 届 OPEC+ 与七国自愿减产会公报，清零 11/27 SOFR/EFFR/TGA/FRED OAS 与深北两融；置顶周一 09:05 日央行植田演讲、09:30 中国 11 月 PMI、降保 80%、15:00 明晟调仓、招商/嘉实投顾 T 类份额生效、灵康 113610 末日到期兑付、大成 000834 砍半、513300 停牌、布油 1 月换月与五券美债交割",
+        "【巩固 29/30 零阻断零微瑕标准】发前必做 as_of_label/macro_anchors/焦点股公告同步 5 秒自检，维持 first_pass_clean=true"
+      ]
     }
   ]
 }

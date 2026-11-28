@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
-  "edition_id": "2026-11-28_1130",
+  "edition_id": "2026-11-28_1800",
   "as_of_date": "2026-11-28",
   "updated_at": "2026-11-28",
-  "as_of_label": "2026年11月28日（周六）12:00 周末午刊",
+  "as_of_label": "2026年11月28日（周六）22:25 周末晚刊",
   "total_etfs": 181,
   "counts_by_market": {
     "a-share": 51,
@@ -5221,14 +5221,14 @@
       "region": "global",
       "category": "黄金（红灯锁）",
       "tracking_index": "LBMA 伦敦实物金价",
-      "aum": "365.28 亿美元（2026-10-30，发行人全产品净资产）",
+      "aum": "约 335.5 亿美元（2026-11-27 官净 $70.47，发行人全产品口径）",
       "fee_total_pct": "0.12%",
       "fee_num": 0.12,
       "liquidity": "S 级（伦交所美元计价）",
-      "yield_or_pe": "11/27 伦交所美元份额收盘 70.3175 美元（+1.56%）；黄金新仓 0%",
+      "yield_or_pe": "11/27 伦交所美元份额收盘 70.3175 美元（官净 70.47 美元）；黄金新仓 0%",
       "top_holdings": "100% 分配伦敦实物金条（IE00B4ND3602）",
       "premium_status": "normal",
-      "premium_note": "实物黄金 ETC 的报价可能偏离净值，且应核对发行人法律文件中的债务证券结构。黄金红灯，新仓 0%。",
+      "premium_note": "11/27 官净 70.47 美元，实物黄金 ETC 报价可能偏离净值，且应核对发行人法律文件中的债务证券结构。黄金红灯，新仓 0%。",
       "tax_and_rules": "爱尔兰发行人 iShares Physical Metals plc 的有限追索实物金抵押债务证券，属 ETC，发行人列为 UCITS 可投资但产品本身不属 UCITS 基金。黄金红灯时新仓为 0%。",
       "thesis_deep": "通过实物黄金抵押债务证券跟踪金价。比较时核对份额法律结构、交易币种、费用及税务。",
       "risk_boundary": "严格服从黄金红灯停互斥锁：当前新仓 0%，严禁新买或加仓，仅作工具建档。",
@@ -5245,9 +5245,9 @@
         },
         {
           "field": "aum",
-          "source_url": "https://www.ishares.com/uk/professionals/en/products/258441/ishares-physical-gold-etc-fund?locale=en_GB",
-          "as_of": "2026-10-30",
-          "note": "Key Facts 列净资产 36,528,448,928 美元，产品自身并非 UCITS。"
+          "source_url": "https://www.ishares.com/uk/individual/en/products/258441/ishares-physical-gold-etc-fund",
+          "as_of": "2026-11-27",
+          "note": "贝莱德 iShares 产品页披露 2026-11-27 全产品净资产约 335.5 亿美元、官净 70.47 美元，产品自身并非 UCITS。"
         },
         {
           "field": "fee_total_pct",
@@ -7202,16 +7202,16 @@
       "region": "global",
       "category": "黄金（红灯锁）",
       "tracking_index": "LBMA 伦敦实物金价",
-      "aum": "~$285 亿美元",
+      "aum": "278.34 亿美元（2026-11-27 官净 $71.88）",
       "fee_total_pct": "0.10%",
       "fee_num": 0.1,
-      "liquidity": "S+ 级（近三百亿美元低费黄金流动性霸主，仅建档）",
-      "yield_or_pe": "实物黄金无派息（当前红灯停 2/4 关）",
+      "liquidity": "S+ 级（逾二百七十亿美元低费黄金流动性霸主，仅建档）",
+      "yield_or_pe": "实物黄金无派息（11/27 官净 $71.88，当前红灯停 2/4 关）",
       "top_holdings": "100% 伦敦金库分配实物金条",
       "premium_status": "normal",
-      "premium_note": "0.10% 费率且流动性极深，但当前严守黄金红灯停",
+      "premium_note": "11/27 官净 71.88 美元、0.10% 费率且流动性极深，但当前严守黄金红灯停",
       "tax_and_rules": "跨轨黄金红灯停硬锁；无股息派发（仍须留意离岸美股 W-8BEN 10% 股息预扣规则）；非美国公民且在美无住所者，美国所在地遗产超过 6 万美元通常触及申报门槛。符合协定条件可用 W-8BEN 申请普通股息协定预扣税率；中国税收居民须依法申报境外所得。股息和应税财产转让所得一般适用 20%，核对适用减免及合规境外已缴所得税限额抵免。",
-      "thesis_deep": "GLD 的低费迷你版（0.10% vs GLD 0.40%），规模近 285 亿美元流动性冠绝低费美版实物金，待未来黄金翻灯后再激活。",
+      "thesis_deep": "GLD 的低费迷你版（0.10% vs GLD 0.40%），11/27 校准净资产 278.34 亿美元流动性冠绝低费美版实物金，待未来真实四关获证翻灯后再激活。",
       "risk_boundary": "黄金红灯时新仓与加仓均为 0%。美国上市黄金产品的遗产税认定须核对信托法律结构与持有人身份。",
       "action_role": "红灯暂停新买",
       "otc_feeder": "当前新仓 0%，仅监测。",
@@ -7223,6 +7223,12 @@
           "source_url": "https://files.spdrgoldshares.com/spdr-cms/2026-04/2026-03-31_US%20ETF_GLDM.pdf",
           "as_of": "2026-03-31",
           "note": "发行人产品资料表列 GLDM 总费用率 0.10%。"
+        },
+        {
+          "field": "aum",
+          "source_url": "https://www.ssga.com/us/en/intermediary/etfs/funds/spdr-gold-minishares-trust-gldm",
+          "as_of": "2026-11-27",
+          "note": "道富官网披露 2026-11-27 净资产约 278.34 亿美元、每份官净 71.88 美元。"
         }
       ]
     },
