@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from datetime import date, datetime, time, timedelta
@@ -11,6 +10,8 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
+
+from chart_input import load_gold_json
 
 
 BEIJING = ZoneInfo("Asia/Shanghai")
@@ -362,7 +363,7 @@ def check_vix_period(snap: dict, as_of: datetime, observed_at: datetime | None, 
 def _load_default_exceptions() -> dict[date, VixSession]:
     cal_path = Path(__file__).with_name("market_calendar.json")
     try:
-        raw = json.loads(cal_path.read_text(encoding="utf-8"))
+        raw = load_gold_json(cal_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     rows = raw.get("vix_session_exceptions") if isinstance(raw, dict) else None
@@ -393,6 +394,80 @@ def _is_us_full_holiday(day: date, exceptions: dict[date, VixSession]) -> bool:
     return ex is not None and not ex.windows and ex.close is None
 
 
+def _is_ny_session(day: date, exceptions: dict[date, VixSession]) -> bool:
+    return day.weekday() < 5 and not _is_us_full_holiday(day, exceptions)
+
+
+def _previous_ny_session(day: date, exceptions: dict[date, VixSession]) -> date:
+    previous = day - BASE_DAY
+    while not _is_ny_session(previous, exceptions):
+        previous -= BASE_DAY
+    return previous
+
+
+def _is_ny_fed_business_day(day: date) -> bool:
+    """Apply the New York Fed holiday calendar for unsecured rates, not exchange holidays."""
+    if day.weekday() >= 5:
+        return False
+    for month, number in ((1, 1), (6, 19), (7, 4), (11, 11), (12, 25)):
+        holiday = date(day.year, month, number)
+        if holiday.weekday() == 6:
+            holiday += BASE_DAY
+        if day == holiday:
+            return False
+    nth_weekday = (day.day - 1) // 7 + 1
+    if (day.month, day.weekday(), nth_weekday) in ((1, 0, 3), (2, 0, 3), (9, 0, 1), (10, 0, 2), (11, 3, 4)):
+        return False
+    return not (day.month == 5 and day.weekday() == 0 and day.day >= 25)
+
+
+def _previous_ny_fed_business_day(day: date) -> date:
+    day -= BASE_DAY
+    while not _is_ny_fed_business_day(day):
+        day -= BASE_DAY
+    return day
+
+
+def check_effr_evidence(snap: dict, as_of: datetime, errors: list[str]) -> bool:
+    """Validate the latest release. A disclosed delay keeps the entry gate closed."""
+    observation = parse_day(snap.get("effr_observation_date"))
+    published = _parse_bjt_timestamp(snap.get("effr_published_at"))
+    source = snap.get("effr_source")
+    url = urlsplit(source) if evidence_url(source) else None
+    official_series = url is not None and (
+        (url.hostname == "fred.stlouisfed.org" and url.path.rstrip("/") in ("/series/EFFR", "/data/EFFR"))
+        or (url.hostname == "www.newyorkfed.org" and url.path.rstrip("/") == "/markets/reference-rates/effr")
+        or (url.hostname == "markets.newyorkfed.org" and url.path.startswith("/api/rates/unsecured/effr/"))
+    )
+    cutoff = as_of.replace(tzinfo=BEIJING)
+    if observation is None or published is None or published > cutoff or not official_series:
+        errors.append("[Gate 5 第二关有效基金利率证据错] 须记录观测交易日、截点前公布时间和联储 EFFR 序列")
+        return False
+    release_day = published.astimezone(NEW_YORK).date()
+    if not _is_ny_fed_business_day(release_day) or observation != _previous_ny_fed_business_day(release_day):
+        errors.append("[Gate 5 第二关有效基金利率证据错] 公布日须对应纽约联储上一个营业日的利率")
+        return False
+    # Allow an intraday delay of the morning release up to the New York close.
+    cutoff_et = cutoff.astimezone(NEW_YORK)
+    if _is_ny_fed_business_day(cutoff_et.date()) and cutoff_et.time() >= time(17):
+        latest_completed_release_day = cutoff_et.date()
+    else:
+        latest_completed_release_day = _previous_ny_fed_business_day(cutoff_et.date())
+    if release_day < latest_completed_release_day:
+        caveats = snap.get("data_caveats")
+        edition = str(snap.get("edition_id") or "").split("_r", 1)[0]
+        if not isinstance(caveats, list) or not any(
+            isinstance(caveat, dict) and caveat.get("id") == "effr_release_delayed"
+            and caveat.get("market") == "gold" and caveat.get("category") == "delayed_official"
+            and re.fullmatch(r"\d{4}-\d{2}-\d{2}_(?:0730|1130|1800)", str(caveat.get("next_review") or ""))
+            and parse_day(caveat["next_review"][:10]) is not None and caveat["next_review"] > edition
+            for caveat in caveats
+        ):
+            errors.append("[Gate 5 第二关有效基金利率证据错] 已过下一纽约联储营业日，须核对最新已公布利率或披露发布延迟")
+        return False
+    return True
+
+
 def recheck_entry_gates(
     snap: dict,
     as_of: datetime,
@@ -400,6 +475,7 @@ def recheck_entry_gates(
     errors: list[str],
     *,
     exceptions: dict[date, VixSession] | None = None,
+    effr_current: bool = True,
 ) -> None:
     gates = snap.get("tier1_gates")
     if not isinstance(gates, list) or len(gates) != 4 or any(not isinstance(gate, dict) for gate in gates):
@@ -429,13 +505,14 @@ def recheck_entry_gates(
     if (
         None in (observed_date, reference, target) or not reference < target or not reference <= observed_date <= target
         or cutoff.date() - observed_date > timedelta(days=7) or target - reference > timedelta(days=7)
-        or any(day.weekday() >= 5 or _is_us_full_holiday(day, exc_map) for day in (observed_date, reference, target))
+        or not all(_is_ny_session(day, exc_map) for day in (observed_date, reference, target))
+        or reference != _previous_ny_session(target, exc_map)
         or datetime.combine(observed_date, time(17), NEW_YORK) > cutoff
     ):
         errors.append("[Gate 5 第四关比较日期错] 已完成的纽约日收和前一有效交易日高点须对应同一次突破检验")
     else:
         breakout = observed_date == target and close > threshold
-    expected = (real_yield <= 2.72, calc_spread <= 55, vix_passed, breakout)
+    expected = (real_yield <= 2.72, effr_current and calc_spread <= 55, vix_passed, breakout)
     for number, (gate, passed) in enumerate(zip(gates, expected), 1):
         if passed is not None and gate.get("passed") is not passed:
             errors.append(f"[Gate 5 第 {number} 关复算冲突] 按结构化来源字段复算应为 {passed}")

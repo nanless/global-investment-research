@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import plistlib
 import tempfile
 import unittest
 import urllib.error
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from scripts import realtime_monitor as rm
+from scripts import realtime_monitor as rm, state_transaction
 
 
 def _cst(year: int, month: int, day: int, hour: int, minute: int = 0, second: int = 0) -> datetime:
@@ -32,7 +33,7 @@ def _tick(
     prev_close: float | None = None,
     change_bp: float | None = None,
     is_yield: bool = False,
-    timestamp: str = "2026-11-25 10:30:00",
+    timestamp: str = "",
 ) -> rm.QuoteTick:
     if prev_close is None:
         if is_yield and change_bp is not None:
@@ -221,7 +222,7 @@ class TestParsersAndPollers(unittest.TestCase):
           </channel>
         </rss>""".encode("utf-8")
 
-        items = rm.parse_rss_xml(xml_bytes, "fed_monetary", is_official=True, now_ts=self.now_ts)
+        items = rm.parse_rss_xml(xml_bytes, "fed_monetary", is_official=True)
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0].source, "fed_monetary")
         self.assertTrue(items[0].is_official)
@@ -253,16 +254,42 @@ class TestParsersAndPollers(unittest.TestCase):
           </entry>
         </feed>""".encode("utf-8")
 
-        items = rm.parse_rss_xml(atom_bytes, "ecb_rss", is_official=True, now_ts=self.now_ts)
+        items = rm.parse_rss_xml(atom_bytes, "ecb_rss", is_official=True)
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0].title, "ECB Governing Council rate decision")
         self.assertEqual(items[0].url, "https://www.ecb.europa.eu/press/pr/date/2026/html/ecb.mp261125.en.html")
         self.assertAlmostEqual(items[0].published_ts, _cst(2026, 11, 25, 9, 45).timestamp(), delta=1.0)
         self.assertAlmostEqual(items[1].published_ts, _cst(2026, 11, 25, 9, 15).timestamp(), delta=1.0)
 
-        # Malformed XML must never raise
-        self.assertEqual(rm.parse_rss_xml(b"<rss><channel><item><title>broken", "bad", is_official=False, now_ts=self.now_ts), [])
-        self.assertEqual(rm.parse_rss_xml(b"", "bad", is_official=False, now_ts=self.now_ts), [])
+        for bad_feed in (b"<rss><channel><item><title>broken", b"", b"<html><head/><body/></html>"):
+            with self.assertRaisesRegex(ValueError, "RSS/Atom"):
+                rm.parse_rss_xml(bad_feed, "bad", is_official=False)
+        self.assertEqual(rm.parse_rss_xml(b"<rss><channel/></rss>", "empty", is_official=False), [])
+
+    def test_atom_keeps_original_publication_and_skips_unverifiable_dates(self) -> None:
+        raw = b'''<feed xmlns="http://www.w3.org/2005/Atom">
+          <entry><title>Old news, updated this morning</title><published>2026-11-20T03:00:00Z</published>
+          <updated>2026-11-25T02:00:00Z</updated><link rel="self" href="https://www.ecb.europa.eu/self"/>
+          <link rel="alternate" href="https://www.ecb.europa.eu/article"/></entry>
+          <entry><title>Unverifiable release time</title><published>not a date</published></entry>
+          <entry><title>No date</title></entry>
+        </feed>'''
+        articles = rm.parse_rss_xml(raw, "ecb_rss", is_official=True)
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0].published_ts, _cst(2026, 11, 20, 11).timestamp())
+        self.assertEqual(articles[0].url, "https://www.ecb.europa.eu/article")
+        with self.assertRaisesRegex(ValueError, "no valid publication dates"):
+            rm.parse_rss_xml(b"<rss><channel><item><title>no date</title></item></channel></rss>", "bad", is_official=False)
+
+    def test_feed_distinguishes_html_error_from_valid_empty_rss(self) -> None:
+        spec = ("test_rss", "rss", "https://example.invalid/source", False, {})
+        for response, expect_error in ((b"<html><body>temporary error</body></html>", True),
+                                       (b"<rss><channel/></rss>", False)):
+            with mock.patch.object(rm, "_http_get_bytes", return_value=response):
+                src, articles, error = rm._fetch_one_feed(spec, self.now_ts, 1)
+            self.assertEqual(src, "test_rss")
+            self.assertEqual(articles, [])
+            self.assertEqual(bool(error), expect_error)
 
     def test_parse_sina_724(self) -> None:
         payload = {
@@ -469,10 +496,10 @@ class TestParsersAndPollers(unittest.TestCase):
         <html><body>
           <a href="/about.html">关于我们网站简介栏目</a>
           <a href="/short">央行公告</a>
-          <a href="/goutongjiaoliu/113456/a.html">中国人民银行公开市场业务交易公告（2026年第220号）</a>
-          <a href="/goutongjiaoliu/113456/a-dup.html">中国人民银行公开市场业务交易公告（2026年第220号）</a>
-          <a href="./202611/t20261125.html">财政部关于2026年超长期特别国债发行工作有关事宜的通知</a>
-          <a href="https://www.mof.gov.cn/news/tariff.html">关于调整部分进口商品关税税率政策的公告</a>
+          <tr><td><a href="/goutongjiaoliu/113456/a.html">中国人民银行公开市场业务交易公告（2026年第220号）</a></td><td>2026-11-25</td></tr>
+          <li><a href="/goutongjiaoliu/113456/a-dup.html">中国人民银行公开市场业务交易公告（2026年第220号）</a><span>2026-11-25</span></li>
+          <li><a href="./202611/t20261125.html">财政部关于2026年超长期特别国债发行工作有关事宜的通知</a><span>2026-11-25</span></li>
+          <li><a href="https://www.mof.gov.cn/news/tariff.html">关于调整部分进口商品关税税率政策的公告</a><span>2026-11-25</span></li>
         </body></html>
         """.encode("utf-8")
         items = rm.parse_html_anchors(html_doc, "pbc_news", "https://www.pbc.gov.cn", self.now_ts)
@@ -484,33 +511,30 @@ class TestParsersAndPollers(unittest.TestCase):
 
     def test_parse_pubdate_iso8601_and_html_anchors_nearby_date(self) -> None:
         # P1-7: ISO-8601 Z, +09:00, and -04:00 offsets
-        ts_z = rm._parse_pubdate_ts("2026-10-01T14:00:00Z", 0.0)
+        ts_z = rm._parse_pubdate_ts("2026-10-01T14:00:00Z")
         self.assertAlmostEqual(ts_z, _cst(2026, 10, 1, 22, 0, 0).timestamp(), delta=1.0)
 
-        ts_jst = rm._parse_pubdate_ts("2026-10-01T14:00:00+09:00", 0.0)
+        ts_jst = rm._parse_pubdate_ts("2026-10-01T14:00:00+09:00")
         self.assertAlmostEqual(ts_jst, _cst(2026, 10, 1, 13, 0, 0).timestamp(), delta=1.0)
 
-        ts_edt = rm._parse_pubdate_ts("2026-10-01T14:00:00-04:00", 0.0)
+        ts_edt = rm._parse_pubdate_ts("2026-10-01T14:00:00-04:00")
         self.assertAlmostEqual(ts_edt, _cst(2026, 10, 2, 2, 0, 0).timestamp(), delta=1.0)
 
         # P1-7: parse_html_anchors extracts nearby date so weeks-old notices don't look brand-new
-        pad = "<!-- " + ("x" * 160) + " -->"
-        html_with_dates = f"""
+        html_with_dates = """
         <html><body>
           <ul>
             <li><span>2026-10-05</span><a href="/old.html">中国人民银行关于开展公开市场逆回购操作的旧公告</a></li>
-            {pad}
             <li><a href="/recent.html">财政部关于超长期特别国债发行工作的新通知</a><em>2026/11/25</em></li>
-            {pad}
             <li><a href="/nodate.html">国家发展改革委关于宏观政策落地实施的专项会议通知</a></li>
           </ul>
         </body></html>
         """.encode("utf-8")
         items = rm.parse_html_anchors(html_with_dates, "pbc_news", "https://www.pbc.gov.cn", self.now_ts)
-        self.assertEqual(len(items), 3)
+        self.assertEqual(len(items), 2)
         self.assertAlmostEqual(items[0].published_ts, _cst(2026, 10, 5, 0, 0).timestamp(), delta=1.0)
         self.assertAlmostEqual(items[1].published_ts, _cst(2026, 11, 25, 0, 0).timestamp(), delta=1.0)
-        self.assertAlmostEqual(items[2].published_ts, self.now_ts - 7200, delta=1.0)
+        self.assertTrue(all(item.date_only for item in items))
 
         # Confirm weeks-old notice is filtered out by max_age_sec during classify_and_score
         sigs = rm.classify_and_score([items[0]], {}, dict(rm._DEFAULT_SIGMA_1D), now_cst=_cst(2026, 11, 25, 10, 30))
@@ -523,7 +547,10 @@ class TestParsersAndPollers(unittest.TestCase):
         gb_parts = ["标普500", "6060.00", "1.00", "2026-11-25 05:00:00", "60.00"]
         vix_parts = ["VIX恐慌指数", "18.50", "1.20", "6.94", "17.50", "19.00", "2026-11-25", "05:00:00", "0", "17.30"]
         hf_parts = ["2650.00", "", "2649.5", "2650.5", "2660.0", "2620.0", "10:30:00", "2600.00", "2605.0", "0", "0", "0", "2026-11-25", "伦敦金"]
-        fx_parts = ["10:30:00", "7.2450", "7.2455", "7.2100", "0", "7.2150", "7.2500", "7.2050", "7.2450", "离岸人民币"]
+        fx_parts = [
+            "10:30:00", "7.2450", "7.2455", "7.2100", "0", "7.2150", "7.2500", "7.2050", "7.2450", "离岸人民币",
+            "0", "0", "0", "0", "0", "0", "0", "2026-11-25",
+        ]
         dxy_parts = ["10:30:00", "106.50", "106.51", "106.00", "0", "106.10", "106.80", "105.90", "106.50", "美元指数"]
 
         lines = [
@@ -562,8 +589,10 @@ class TestParsersAndPollers(unittest.TestCase):
 
         self.assertEqual(ticks["fx_susdcnh"].name, "离岸人民币")
         self.assertAlmostEqual(ticks["fx_susdcnh"].change_pct, 0.49, places=2)
+        self.assertEqual(ticks["fx_susdcnh"].timestamp, "2026-11-25 10:30:00")
 
         self.assertEqual(ticks["DINIW"].name, "美元指数")
+        self.assertEqual(ticks["DINIW"].timestamp, "10:30:00")
         self.assertAlmostEqual(ticks["DINIW"].change_pct, 0.47, places=2)
 
     def test_parse_cnbc_batch_quotes_yields_vix_and_single_dict(self) -> None:
@@ -1207,7 +1236,8 @@ class TestMarketFirstCrisisBreakers(unittest.TestCase):
             "b_VIX": _tick("b_VIX", 46.2, 18.0, name="VIX"),
             "fx_susdjpy": _tick("fx_susdjpy", 148.0, -2.75, name="USD/JPY"),
         }
-        sigs = rm.detect_market_first_anomalies(quotes, self.vols, now_cst=self.now_cst)
+        now_usa = _cst(2026, 11, 25, 23, 0)
+        sigs = rm.detect_market_first_anomalies(quotes, self.vols, now_cst=now_usa)
         by_key = {s.cluster_key.split(":")[1]: s for s in sigs}
 
         self.assertEqual(set(by_key.keys()), {"us10y_breaker", "vix_breaker", "usdjpy_carry_breaker"})
@@ -1223,7 +1253,7 @@ class TestMarketFirstCrisisBreakers(unittest.TestCase):
             "US10Y": _tick("US10Y", 4.90, 4.0, change_bp=-19.0, is_yield=True),
             "b_VIX": _tick("b_VIX", 32.0, 24.5, name="VIX"),
         }
-        sigs_alt = rm.detect_market_first_anomalies(quotes_alt, self.vols, now_cst=self.now_cst)
+        sigs_alt = rm.detect_market_first_anomalies(quotes_alt, self.vols, now_cst=now_usa)
         by_key_alt = {s.cluster_key.split(":")[1]: s for s in sigs_alt}
         self.assertEqual(by_key_alt["us10y_breaker"].severity, "P0")
         self.assertEqual(by_key_alt["vix_breaker"].severity, "P1")
@@ -1307,6 +1337,25 @@ class TestMonitorStateStore(unittest.TestCase):
         unseen3 = store.mark_and_filter_unseen([it1], t0 + 31 * 86400)
         self.assertEqual(len(unseen3), 1)
         self.assertEqual(unseen3[0].source, "sina_724")
+
+    def test_first_seen_and_recovery_queue_are_atomic_and_expire(self) -> None:
+        store = self._new_store()
+        now_ts = _cst(2026, 11, 25, 10, 0).timestamp()
+        item = rm.NewsItem("sina_724", "央行开展买断式逆回购操作", "body", now_ts)
+        with mock.patch.object(store, "_queue_news", side_effect=RuntimeError("enqueue interrupted")):
+            with self.assertRaisesRegex(RuntimeError, "enqueue interrupted"):
+                store.mark_and_filter_unseen([item], now_ts)
+        self.assertEqual(store.seen_items_count(), 0)
+        self.assertEqual(store.pending_news(now_ts), [])
+
+        self.assertEqual(store.mark_and_filter_unseen([item], now_ts, persist=False), [item])
+        self.assertEqual(store.seen_items_count(), 0)
+        self.assertEqual(store.pending_news(now_ts), [])
+
+        self.assertEqual(store.mark_and_filter_unseen([item], now_ts), [item])
+        self.assertEqual(store.pending_news(now_ts), [item])
+        self.assertEqual(store.pending_news(now_ts + rm.NEWS_MAX_AGE_SEC + 1), [])
+        self.assertEqual(store.mark_and_filter_unseen([item], now_ts + rm.NEWS_MAX_AGE_SEC + 1), [])
 
     def test_upcoming_calendar_p0_prealert_and_24h_cooldown(self) -> None:
         # P1-9: T-60m proactive pre-alert for exact-time P0 events + 24h cooldown
@@ -1512,7 +1561,10 @@ class TestMonitorStateStore(unittest.TestCase):
         ), mock.patch.object(rm, "detect_market_first_anomalies", return_value=[]), mock.patch.object(
             rm, "detect_upcoming_calendar_alerts", return_value=[]
         ):
-            summary = rm.run_once(store=store, dry_run=True, enable_llm=False, now_cst=now_dt)
+            summary = rm.run_once(
+                store=store, dry_run=True, now_cst=now_dt,
+                notify_config_path=store.db_path.with_name("missing-notify.json"),
+            )
         self.assertGreaterEqual(summary["signals_scored"], 4)
         self.assertLessEqual(summary["dispatched_count"], 2)
         sup_reasons = [s["reason"] for s in summary["suppressed_preview"]]
@@ -1600,7 +1652,7 @@ class TestSafetyGatesAndTwoTierInterpreter(unittest.TestCase):
             self.assertIn("黄金红灯锁", memo)
             self.assertEqual(sig.interpreter_tier, "tier1_deterministic")
 
-    def test_gold_tier0_red_light_lock_sanitizes_malicious_tier2_llm(self) -> None:
+    def test_untrusted_llm_cannot_override_facts_actions_or_falsification(self) -> None:
         ssot = _sample_ssot(gold_locked=True)
         sig = _signal(region="GLOBAL", severity="P0", score=88)
 
@@ -1613,21 +1665,49 @@ class TestSafetyGatesAndTwoTierInterpreter(unittest.TestCase):
                 "falsification": "若金价跌破支撑则止损。",
             }
 
-        _title, memo = rm.interpret_and_render_memo(
-            sig, ssot, now_cst=self.now_cst, enable_llm=True, llm_fn=malicious_llm
-        )
-        self.assertEqual(sig.interpreter_tier, "tier2_llm")
-        self.assertIn("黄金红灯锁", memo)
-        self.assertIn("严禁新买黄金（黄金红灯停锁生效，新仓 0%）", memo)
+        baseline = rm.interpret_and_render_memo(sig, ssot, now_cst=self.now_cst)
+        result = rm.interpret_and_render_memo(sig, ssot, now_cst=self.now_cst, enable_llm=True, llm_fn=malicious_llm)
+        self.assertEqual(sig.interpreter_tier, "tier1_deterministic")
+        self.assertEqual(result, baseline)
+        self.assertIn("黄金红灯锁", result[1])
+        self.assertNotIn("抄底买入黄金ETF", result[1])
 
         # Every line MUST have ZERO unnegated active Gold-buy verb!
-        for line in memo.splitlines():
+        for line in result[1].splitlines():
             has_buy = bool(rm._GOLD_ACTIVE_BUY_RE.search(line))
             has_neg = bool(rm._GOLD_NEGATION_RE.search(line))
             self.assertFalse(
                 has_buy and not has_neg,
                 f"Unnegated active Gold-buy phrase survived safety gate: {line!r}",
             )
+
+    def test_llm_adds_only_allowed_hypothesis_and_source_markup_stays_text(self) -> None:
+        signal = _signal(body="资金成本待核 <img> [来源](https://example.invalid)")
+        context = _sample_ssot()
+        _, baseline = rm.interpret_and_render_memo(signal, context, now_cst=self.now_cst)
+        _, result = rm.interpret_and_render_memo(
+            signal, context, now_cst=self.now_cst, enable_llm=True,
+            llm_fn=lambda *_: {"transmission_code": "funding"},
+        )
+        hypothesis = f"\n\n- **辅助假设（待验证）**：{rm._TRANSMISSION_HYPOTHESES['funding']}"
+        self.assertEqual(result.replace(hypothesis, ""), baseline)
+        self.assertEqual(signal.interpreter_tier, "tier2_llm")
+        self.assertIn(r"&lt;img&gt; \[来源\]", result)
+        for invalid in ({"transmission_code": "yields 12%"}, {"transmission_code": "energy"},
+                        {"transmission_code": "funding", "summary": "篡改事实"}):
+            _, unchanged = rm.interpret_and_render_memo(
+                signal, context, now_cst=self.now_cst, enable_llm=True, llm_fn=lambda *_: invalid,
+            )
+            self.assertEqual(unchanged, baseline)
+            self.assertEqual(signal.interpreter_tier, "tier1_deterministic")
+
+    def test_related_feed_channels_count_as_one_evidence_family(self) -> None:
+        now = self.now_cst
+        title = "美联储 FOMC 公布政策利率安排"
+        items = [rm.NewsItem(source, title, title, now.timestamp()) for source in ("wscn_global", "wscn_us")]
+        signal = rm.classify_and_score(items, {}, {}, now_cst=now)[0]
+        self.assertEqual(signal.sources, ["wscn_global", "wscn_us"])
+        self.assertEqual(signal.k_verify, 0.6)
 
     def test_gold_lock_preserves_negated_lines_and_unlocked_behavior(self) -> None:
         negated = "当前严禁逢低买入黄金ETF 518880。"
@@ -1720,13 +1800,7 @@ class TestSafetyGatesAndTwoTierInterpreter(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(rm._call_tier2_llm(sig, ssot))
 
-        valid_json_obj = {
-            "summary": "要点一",
-            "transmission": "传导链",
-            "action_observer": "观望建议",
-            "action_holder": "持仓建议",
-            "falsification": "证伪红线",
-        }
+        valid_json_obj = {"transmission_code": "funding"}
         gemini_resp = {"candidates": [{"content": {"parts": [{"text": json.dumps(valid_json_obj, ensure_ascii=False)}]}}]}
         captured_reqs: list[urllib.request.Request] = []
 
@@ -1837,6 +1911,8 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
                 calendar_path=d / "missing_cal.json",
             )
             self.assertTrue(ctx_missing["gold_locked"])
+            self.assertIsNone(ctx_missing["a_cap_pct"])
+            self.assertIsNone(ctx_missing["a_fomo"])
 
             # Corrupt JSON -> fail closed
             corrupt = d / "corrupt.json"
@@ -1856,6 +1932,88 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
             ctx_unlocked = rm.load_ssot_context(gold_path=unlocked, market_path=d / "m.json", policy_path=d / "p.json", calendar_path=d / "c.json")
             self.assertFalse(ctx_unlocked["gold_locked"])
             self.assertEqual(ctx_unlocked["edition_id"], "2026-11-25_0730")
+
+    def test_conflicting_gold_lock_and_zero_market_caps(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            gold = Path(td) / "gold.json"
+            market = Path(td) / "market.json"
+            gold.write_text(json.dumps({"tier_code": "Tier 0", "new_buy_allowed": True}), encoding="utf-8")
+            market.write_text(json.dumps({"markets": {
+                "a_share": {"equity_cap_pct": 0},
+                "hk_stock": {"onshore_connect_cap_pct": 0},
+                "us_stock": {"equity_cap_pct": 0, "cash_tbill_pct": 0},
+            }}), encoding="utf-8")
+            snapshot = rm.load_ssot_context(gold_path=gold, market_path=market)
+        self.assertTrue(snapshot["gold_locked"])
+        self.assertEqual([snapshot[key] for key in ("a_cap_pct", "hk_onshore_cap_pct", "us_cap_pct", "us_cash_pct")], [0, 0, 0, 0])
+        self.assertIsNone(snapshot["hk_offshore_cap_pct"])
+        _, memo = rm.interpret_and_render_memo(_signal(region="HK"), snapshot, now_cst=_cst(2026, 11, 25, 10))
+        self.assertIn("离岸权益 待核、港股通 ≤0%", memo)
+        self.assertIn("黄金红灯锁", memo)
+
+    def test_dry_run_cli_does_not_create_db_or_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "nested" / "realtime.sqlite3"
+            with mock.patch.object(rm, "run_once", return_value={}) as run, contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(rm.main(["--once", "--dry-run", "--state-db", str(db)]), 0)
+            self.assertTrue(run.call_args.kwargs["dry_run"])
+            self.assertFalse(db.parent.exists())
+
+    def test_isolated_data_root_tracks_complete_release_once_and_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td)
+            selected = folder / "current"
+            editions = ("2026-11-28_1130", "2026-11-28_1800")
+            for edition in editions:
+                release = folder / edition
+                for relative, payload in (
+                    ("gold/data_snapshot.json", {"edition_id": edition, "new_buy_allowed": False}),
+                    ("gold/market_calendar.json", {"timezone": "Asia/Shanghai"}),
+                    ("equity/state/market_state.json", {"edition_id": edition}),
+                    ("equity/state/policy_calendar.json", {"edition_id": edition, "events": []}),
+                    ("equity/state/klines/core.json", {"edition_id": edition, "series": {}}),
+                ):
+                    path = release / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+
+            selected.symlink_to(folder / editions[0], target_is_directory=True)
+            before = _snapshot_tree_metadata([folder / editions[0], folder / editions[1]])
+            config = folder / "missing-notify.json"
+            state = folder / "monitor.sqlite"
+            doctor_args = [
+                "--doctor", "--data-root", str(selected), "--state-db", str(state), "--notify-config", str(config),
+            ]
+            with mock.patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(rm.main(doctor_args), 0)
+                self.assertEqual(json.loads(stdout.getvalue())["ssot"]["edition_id"], editions[0])
+
+            replacement = folder / "next"
+            replacement.symlink_to(folder / editions[1], target_is_directory=True)
+            replacement.replace(selected)
+            with mock.patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(rm.main(doctor_args), 0)
+                self.assertEqual(json.loads(stdout.getvalue())["ssot"]["edition_id"], editions[1])
+                plist = plistlib.loads(rm.render_launchd_plist(
+                    data_root=selected, state_db=state, notify_config_path=config,
+                ).encode())
+            self.assertEqual(plist["ProgramArguments"][-6:], [
+                "--data-root", str(selected), "--state-db", str(state), "--notify-config", str(config),
+            ])
+            self.assertFalse(state.exists())
+            self.assertEqual(before, _snapshot_tree_metadata([folder / editions[0], folder / editions[1]]))
+
+            bad_policy = folder / editions[1] / "equity/state/policy_calendar.json"
+            bad_policy.write_text(json.dumps({"edition_id": editions[0], "events": []}), encoding="utf-8")
+            with mock.patch.dict(os.environ, {}, clear=True), contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(rm.main(doctor_args), 2)
+                self.assertIn("same edition_id", stderr.getvalue())
+
+            unresolved = folder / editions[1] / state_transaction.JOURNAL_NAME
+            unresolved.write_text("{}", encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(rm.main(doctor_args), 2)
+                self.assertIn("state transaction needs recovery", stderr.getvalue())
 
     def test_load_ssot_context_real_repo_strictly_readonly(self) -> None:
         gold_dir = rm.REPO_ROOT / "gold"
@@ -2015,11 +2173,13 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
 
             store = rm.MonitorStateStore(db_path=d / "monitor.sqlite3")
             try:
-                with mock.patch.object(rm, "_http_get_bytes", side_effect=fake_http_get):
+                with mock.patch.object(rm, "_http_get_bytes", side_effect=fake_http_get), mock.patch.object(
+                    rm, "_call_tier2_llm", side_effect=AssertionError("dry-run must not call an LLM"),
+                ) as llm:
                     summary = rm.run_once(
                         store=store,
                         dry_run=True,
-                        enable_llm=False,
+                        enable_llm=True,
                         sources_filter={"gov_yaowen"},
                         notify_config_path=notify_cfg,
                         now_cst=now_dt,
@@ -2030,6 +2190,7 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
                     self.assertEqual(summary["dispatched"][0]["domain_id"], "cn_top_meeting")
                     self.assertEqual(summary["dispatched"][0]["action"], "dry_run_dispatch")
                     self.assertIn(summary["dispatched"][0]["severity"], ("P0", "P1"))
+                    llm.assert_not_called()
 
                     # dry_run=True MUST NOT mutate production seen_items / sent_clusters / signal_audit
                     self.assertEqual(store._conn.execute("SELECT COUNT(*) FROM seen_items").fetchone()[0], 0)
@@ -2114,6 +2275,8 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
                     )
                 self.assertEqual(s_empty["dispatched"][0]["action"], "no_provider_configured")
                 self.assertEqual(store_empty._conn.execute("SELECT COUNT(*) FROM sent_clusters").fetchone()[0], 0)
+                self.assertEqual(len(store_empty.pending_news(now_dt.timestamp())), 1)
+                self.assertFalse(store_empty.pending_news((now_dt + timedelta(hours=3)).timestamp(), persist=False))
             finally:
                 store_empty.close()
 
@@ -2137,6 +2300,31 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
                 encoding="utf-8",
             )
             os.chmod(wecom_cfg, 0o600)
+
+            restored_config = d / "restored_notify.json"
+            restored_payload = json.loads(wecom_cfg.read_text(encoding="utf-8"))
+            restored_payload["dedupe_path"] = str(d / "restored_dedupe.json")
+            restored_config.write_text(json.dumps(restored_payload), encoding="utf-8")
+            os.chmod(restored_config, 0o600)
+            def feed_after_rotation(url: str, *, headers=None, timeout=10) -> bytes:
+                if "YAOWENLIEBIAO.json" in url:
+                    return b"[]"
+                return fake_http_get(url, headers=headers, timeout=timeout)
+
+            with contextlib.closing(rm.MonitorStateStore(db_path=d / "empty.sqlite3")) as restored:
+                with mock.patch.object(rm, "_http_get_bytes", side_effect=feed_after_rotation), mock.patch(
+                    "urllib.request.urlopen",
+                    return_value=_FakeHTTPResponse({"errcode": 0, "errmsg": "ok"}, status=200),
+                ), mock.patch.dict(os.environ, {}, clear=True):
+                    recovered = rm.run_once(
+                        store=restored, sources_filter={"gov_yaowen"}, notify_config_path=restored_config,
+                        now_cst=now_dt + timedelta(minutes=2),
+                    )
+                    self.assertEqual(recovered["feeds_fetched"], 0)
+                    self.assertEqual(recovered["retry_news_count"], 1)
+                    self.assertEqual(recovered["dispatched"][0]["action"], "dispatched")
+                    self.assertFalse(restored.pending_news(now_dt.timestamp()))
+
             store_fail = rm.MonitorStateStore(db_path=d / "fail.sqlite3")
             try:
                 with mock.patch.object(rm, "_http_get_bytes", side_effect=fake_http_get), mock.patch(
@@ -2187,6 +2375,95 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
                     self.assertEqual(s_ok2["dispatched_count"], 0)
             finally:
                 store_ok.close()
+
+    def test_run_once_recovers_unscored_and_unrendered_news_after_restart(self) -> None:
+        now = _cst(2026, 11, 25, 10, 30)
+        alert = rm.NewsItem("gov_yaowen", "国务院常务会议部署财政政策", "财政政策", now.timestamp())
+        unrelated = rm.NewsItem("sina_724", "无相关信号", "", now.timestamp())
+
+        def score(items, *args, **kwargs):
+            if alert not in items:
+                return []
+            signal = _signal(title=alert.title, severity="P0", score=87)
+            signal.item_hashes = [rm._news_item_hash(alert)]
+            return [signal]
+
+        for step, expected_pending in (("classify_and_score", 2), ("interpret_and_render_memo", 1)):
+            with self.subTest(step=step), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                db = root / "monitor.sqlite3"
+                config = root / "notify.json"
+                config.write_text(json.dumps({
+                    "outbox_path": str(root / "outbox.jsonl"),
+                    "dedupe_path": str(root / "dedupe.json"),
+                    "providers": {"wecom_webhook": {
+                        "enabled": True,
+                        "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=offline-fixture",
+                    }},
+                }), encoding="utf-8")
+                config.chmod(0o600)
+                with contextlib.ExitStack() as mocks:
+                    for name, value in (
+                        ("_load_monitor_inputs", (root, _sample_ssot(), {})),
+                        ("poll_live_quotes", ({}, {})),
+                        ("detect_upcoming_calendar_alerts", []),
+                        ("detect_market_first_anomalies", []),
+                    ):
+                        mocks.enter_context(mock.patch.object(rm, name, return_value=value))
+                    mocks.enter_context(mock.patch.dict(os.environ, {}, clear=True))
+                    mocks.enter_context(mock.patch.object(rm, "classify_and_score", side_effect=score))
+                    feed = mocks.enter_context(mock.patch.object(
+                        rm, "poll_all_feeds", side_effect=[([alert, unrelated], {}), ([], {}), ([alert, unrelated], {})],
+                    ))
+                    post = mocks.enter_context(mock.patch(
+                        "urllib.request.urlopen", return_value=_FakeHTTPResponse({"errcode": 0}, status=200),
+                    ))
+                    with contextlib.closing(rm.MonitorStateStore(db)) as store:
+                        with mock.patch.object(rm, step, side_effect=RuntimeError("cycle interrupted")):
+                            with self.assertRaisesRegex(RuntimeError, "cycle interrupted"):
+                                rm.run_once(store=store, notify_config_path=config, now_cst=now)
+                        self.assertEqual(store.seen_items_count(), 2)
+                        self.assertEqual(len(store.pending_news(now.timestamp())), expected_pending)
+                    post.assert_not_called()
+
+                    with contextlib.closing(rm.MonitorStateStore(db)) as reopened:
+                        retry = rm.run_once(store=reopened, notify_config_path=config, now_cst=now + timedelta(minutes=2))
+                        self.assertEqual(retry["feeds_fetched"], 0)
+                        self.assertEqual(retry["retry_news_count"], expected_pending)
+                        self.assertEqual([d["action"] for d in retry["dispatched"]], ["dispatched"])
+                        self.assertEqual(reopened.pending_news(now.timestamp()), [])
+                        repeat = rm.run_once(store=reopened, notify_config_path=config, now_cst=now + timedelta(minutes=3))
+                        self.assertEqual(repeat["dispatched_count"], 0)
+                    self.assertEqual(feed.call_count, 3)
+                    post.assert_called_once()
+
+    def test_run_once_keeps_news_published_after_the_poll_cutoff(self) -> None:
+        now = _cst(2026, 11, 25, 18, 0)
+        news = rm.NewsItem(
+            "gov_yaowen", "国务院常务会议部署财政政策", "财政政策", now.timestamp() + 1,
+        )
+        bad_time = rm.NewsItem("sina_724", "行情资讯时间错误", "", now.timestamp() + 86400)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        store = rm.MonitorStateStore(Path(temporary.name) / "monitor.sqlite3")
+        self.addCleanup(store.close)
+
+        with (
+            mock.patch.object(rm, "_load_monitor_inputs", return_value=(store.db_path.parent, _sample_ssot(), {})),
+            mock.patch.object(rm, "poll_all_feeds", side_effect=[([news, bad_time], {}), ([], {})]),
+            mock.patch.object(rm, "poll_live_quotes", return_value=({}, {})),
+            mock.patch.object(rm, "classify_and_score", wraps=rm.classify_and_score) as scorer,
+            mock.patch.dict(os.environ, {}, clear=True),
+        ):
+            config = store.db_path.with_name("missing-notify.json")
+            rm.run_once(store=store, notify_config_path=config, now_cst=now)
+            self.assertEqual(scorer.call_args.args[0], [])
+            self.assertEqual(store.pending_news(now.timestamp()), [news])
+            self.assertEqual(store.seen_items_count(), 1)
+
+            result = rm.run_once(store=store, notify_config_path=config, now_cst=now + timedelta(minutes=3))
+            self.assertEqual(result["feeds_fetched"], 0)
+            self.assertEqual(scorer.call_args.args[0], [news])
 
 
     def test_round3_cjk_ascii_safety_gates_ascii_clauses_trim_and_live_market_calendar(self) -> None:
@@ -2279,6 +2556,57 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
 
 
 class TestWave2MonitorHardeningRegressions(unittest.TestCase):
+    def test_market_hours_use_eastern_dst_and_separate_early_closes(self) -> None:
+        calendar = rm.load_ssot_context()["market_calendar"]
+        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 11, 27, 21, 30), market_calendar=calendar))
+        self.assertTrue(rm.is_region_market_open("US", _cst(2026, 11, 27, 22, 30), market_calendar=calendar))
+        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 11, 28, 2, 0), market_calendar=calendar))
+        self.assertTrue(rm.is_region_market_open("US", _cst(2027, 3, 15, 21, 30), market_calendar=calendar))
+        self.assertFalse(rm.is_region_market_open("US", _cst(2027, 3, 16, 4, 0), market_calendar=calendar))
+        self.assertFalse(rm.is_region_market_open("HK", _cst(2026, 12, 24, 13, 0), market_calendar=calendar))
+
+        us10y = rm.QuoteTick("US10Y", "美债十年期", 5.3, 5.11, 3.7, 19, "2026-11-27 13:29 EST", True, "cnbc")
+        vix = rm.QuoteTick("b_VIX", "VIX", 45, 35, 28.6, timestamp="2026-11-27 12:59 EST", source="cnbc")
+        quotes = {"US10Y": us10y, "b_VIX": vix}
+        at_0230 = rm.detect_market_first_anomalies(quotes, {}, now_cst=_cst(2026, 11, 28, 2, 30), market_calendar=calendar)
+        self.assertEqual([sig.cluster_key.split(":")[1] for sig in at_0230], ["us10y_breaker"])
+        self.assertEqual(rm.detect_market_first_anomalies(
+            quotes, {}, now_cst=_cst(2026, 11, 28, 3, 0), market_calendar=calendar,
+        ), [])
+
+    def test_old_and_cross_window_vix_are_excluded_and_fresh_vendor_quote_linked(self) -> None:
+        regular = _cst(2026, 11, 25, 23, 45)
+        for raw_time, emits in (("2026-11-25 10:10 EST", False), ("2026-11-25 10:30 EST", True), ("10:30 EST", False), ("", False)):
+            vix = rm.QuoteTick("b_VIX", "VIX", 45, 35, 28.6, timestamp=raw_time, source="cnbc")
+            signals = rm.detect_market_first_anomalies({"b_VIX": vix}, {}, now_cst=regular)
+            self.assertEqual(bool(signals), emits)
+            if signals:
+                self.assertFalse(signals[0].is_official)
+                _, memo = rm.interpret_and_render_memo(signals[0], _sample_ssot(), now_cst=regular)
+                self.assertIn("行情数据", memo)
+                self.assertIn("[来源 1](https://www.cnbc.com/quotes/.VIX)", memo)
+                self.assertIn("CNBC 行情 · 2026-11-25 23:30:00 北京时间", memo)
+        prior_window = rm.QuoteTick("b_VIX", "VIX", 45, 35, 28.6, timestamp="2026-11-25 09:24 EST", source="cnbc")
+        self.assertEqual(rm.detect_market_first_anomalies(
+            {"b_VIX": prior_window}, {}, now_cst=_cst(2026, 11, 25, 22, 31),
+        ), [])
+
+    def test_time_only_vendor_quote_has_display_provenance_but_no_scoring_weight(self) -> None:
+        now = _cst(2026, 11, 25, 23, 45)
+        item = rm.NewsItem(
+            "fed_monetary", "Federal Reserve FOMC statement signals rate path shift",
+            "FOMC committee update", now.timestamp() - 60, is_official=True,
+        )
+        quote = rm.QuoteTick("US10Y", "美债十年期", 5.3, 5.11, 3.7, 19, "10:30 EST", True, "cnbc")
+        self.assertIsNone(rm._quote_observed_at(quote))
+        self.assertEqual(rm.detect_market_first_anomalies({"US10Y": quote}, {}, now_cst=now), [])
+        reference = rm.classify_and_score([item], {"US10Y": quote}, {}, now_cst=now)[0]
+        baseline = rm.classify_and_score([item], {}, {}, now_cst=now)[0]
+        self.assertEqual((reference.score, reference.max_z), (baseline.score, baseline.max_z))
+        self.assertIsNone(reference.anchor_snapshots[0]["observed_at_cst"])
+        _, memo = rm.interpret_and_render_memo(reference, _sample_ssot(), now_cst=now)
+        self.assertIn("CNBC 行情 · 原报 10:30 EST，日期未核，仅作参考", memo)
+
     def test_stale_closed_tick_suppressed_in_classify_and_score_weekend_and_holiday(self) -> None:
         vol_baselines = {"sh000001": 1.0, "US10Y": 5.0, "hf_ES": 1.0}
         # 1. Weekend (Saturday 2026-11-28 14:00 CST): stale Friday huge moves must NOT confirm news
@@ -2348,7 +2676,7 @@ class TestWave2MonitorHardeningRegressions(unittest.TestCase):
         )
 
     def test_sunday_global_is_closed_in_is_region_market_open(self) -> None:
-        self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 28, 5, 0)))   # Sat 05:00
+        self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 28, 6, 0)))   # Fri 17:00 EST
         self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 29, 12, 0)))  # Sun 12:00
         self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 29, 23, 30))) # Sun 23:30
         self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 30, 5, 30)))  # Mon 05:30
@@ -2456,6 +2784,27 @@ class TestWave2MonitorHardeningRegressions(unittest.TestCase):
         ]
         # Exact HH:MM P0 event stays active even during overnight quiet hours (02:30 CST)
         self.assertTrue(rm.is_in_calendar_p0_window(exact_ev, _cst(2026, 12, 10, 2, 30)))
+
+    def test_calendar_precision_windows_zero_and_next_event(self) -> None:
+        exact = {
+            "event_id": "known_time", "date_cst": "2026-12-10", "time_cst": "14:00",
+            "date_precision": "exact", "impact_tier": "P0", "region": "CN",
+        }
+        now = _cst(2026, 12, 10, 13, 55)
+        variants = (
+            ({**exact, "monitor_window_min": 0}, False, False),
+            ({**exact, "date_precision": "window_tbd"}, False, False),
+            ({**exact, "date_precision": "window_tbd", "time_cst": "时间待定"}, False, False),
+            ({**exact, "date_precision": "window_tbd", "time_cst": "全天"}, True, False),
+            ({**exact, "date_precision": "window_tbd", "time_cst": "全天", "monitor_window_min": 0}, False, False),
+            ({**exact, "monitor_window_min": 15}, True, True),
+        )
+        for event, high_frequency, countdown in variants:
+            with self.subTest(event=event):
+                self.assertEqual(rm.is_in_calendar_p0_window([event], now), high_frequency)
+                self.assertEqual(bool(rm.detect_upcoming_calendar_alerts([event], now_cst=now)), countdown)
+        later = {**exact, "event_id": "later", "time_cst": "15:00"}
+        self.assertEqual(rm.find_next_calendar_event([exact, later], "CN", _cst(2026, 12, 10, 14, 5)), later)
 
     def test_gold_tier0_lock_covers_shfe_sge_xau_gc_without_false_matching_gc001(self) -> None:
         ssot = {"gold_locked": True, "gold_tier_code": "Tier 0", "gold_passed_gates": 2, "gold_total_gates": 4}

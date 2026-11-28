@@ -7,9 +7,11 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import date, datetime, timedelta
 from io import StringIO
+import copy
 import json
 from pathlib import Path
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -17,7 +19,61 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts import edition_run, install_sidecars, patch_state_dbs as psd, publish_site
+from scripts import edition_run, install_sidecars, inventory_evidence, patch_state_dbs as psd, publish_site, review_evidence, state_transaction
+
+
+class InventoryEvidenceTests(unittest.TestCase):
+    def test_citation_is_limited_to_a_populated_field_and_the_edition(self):
+        citation = {"field": "fee_total_pct", "source_url": "https://www.sse.com.cn/funds/example.pdf",
+                    "as_of": "2026-11-27", "note": "基金产品概要第二节的费率表"}
+        inventory = {"fee_total_pct": "0.20%", "evidence": [citation]}
+        cutoff = date(2026, 11, 28)
+        self.assertEqual(inventory_evidence.inventory_evidence(inventory, inventory_evidence.ETF_FIELDS, cutoff), [citation])
+        for bad in (
+            dict(citation, source_url="https://example.com/prospectus"),
+            dict(citation, as_of="2026-11-29"), dict(citation, field="aum"), dict(citation, note="核验"),
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                inventory_evidence.inventory_evidence(dict(inventory, evidence=[bad]), inventory_evidence.ETF_FIELDS, cutoff)
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            inventory_evidence.inventory_evidence(dict(inventory, evidence=[citation, citation]), inventory_evidence.ETF_FIELDS, cutoff)
+        revised = dict(inventory, fee_total_pct="0.60%")
+        inventory_evidence.retain_inventory_evidence(inventory, revised, {"fee_total_pct": "0.60%"})
+        self.assertEqual(revised["evidence"], [])
+        same_fee = dict(inventory, aum="规模待核")
+        inventory_evidence.retain_inventory_evidence(inventory, same_fee, {"aum": "规模待核"})
+        self.assertEqual(same_fee["evidence"], [citation])
+
+    def test_research_json_rejects_duplicate_and_nonfinite_values(self):
+        for payload in ('{"price": 13, "price": 12}', '{"price": NaN}', '{"price": 1e1000}'):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                inventory_evidence.load_research_json(payload)
+
+    def test_sse_quote_feed_is_limited_to_matching_stock_and_baseline(self):
+        citation = {
+            "field": "baseline_note",
+            "source_url": "https://yunhq.sse.com.cn:32042/v1/sh1/dayk/600919?select=date,close&begin=2499&end=2500",
+            "as_of": "2026-11-27",
+            "note": "上交所记录列明该交易日收盘。",
+        }
+        stock = {
+            "market": "a-share", "code": "600919", "baseline_note": "收盘 13.46 元",
+            "financials": "营业收入待查", "evidence": [citation],
+        }
+        fields = inventory_evidence.STOCK_FIELDS
+        self.assertEqual(inventory_evidence.inventory_evidence(stock, fields), [citation])
+        for invalid in (
+            dict(stock, code="600001"),
+            dict(stock, market="hk-stock"),
+            dict(stock, evidence=[dict(citation, field="financials")]),
+            dict(stock, evidence=[dict(citation, source_url=citation["source_url"].replace(":32042", ":32043"))]),
+            dict(stock, evidence=[dict(citation, source_url=citation["source_url"].split("?")[0])]),
+            dict(stock, evidence=[dict(citation, source_url=citation["source_url"].replace("2499", "-2"))]),
+            dict(stock, evidence=[dict(citation, source_url=citation["source_url"] + "&begin=2499")]),
+            dict(stock, evidence=[dict(citation, source_url=citation["source_url"].replace("date,close", "close"))]),
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "specific HTTPS"):
+                inventory_evidence.inventory_evidence(invalid, fields)
 
 
 def _make_channel(cid: str, order: int) -> dict:
@@ -250,6 +306,28 @@ def _build_clean_fixture(
 
 
 class PatchStateDbsGuardsTests(unittest.TestCase):
+    def test_live_production_etf_floor_preserves_historical_and_small_pools(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_clean_fixture(root)
+            state_dir = root / "equity/state"
+            ma = json.loads((state_dir / "multi_asset_channels.json").read_text(encoding="utf-8"))
+            eu = json.loads((state_dir / "etf_universe.json").read_text(encoding="utf-8"))
+            dd = json.loads((state_dir / "deep_dossiers.json").read_text(encoding="utf-8"))
+
+            for edition, pool, should_fail in (
+                ("2026-11-28_0730", 231, False),
+                ("2026-11-28_1130", 231, True),
+                ("2026-12-01_0730", 231, True),
+                ("2026-12-01_0730", 6, False),
+            ):
+                with self.subTest(edition=edition, pool=pool):
+                    errors = psd._validate_merged_equity_dbs(
+                        ma, eu, dd, edition_id=edition, gold_tier0_active=True, expected_pool=pool,
+                        as_of_date=edition[:10],
+                    )
+                    self.assertEqual(any("ETF count 141 < 181" in error for error in errors), should_fail)
+
     def test_gold_base_negation_regex_handles_compound_negations_and_rejects_positive(self):
         for negated in (
             "严禁新买或列为",
@@ -932,6 +1010,249 @@ class PatchStateDbsGuardsTests(unittest.TestCase):
 
 
 class AtomicRsiAuditAndInspectTests(unittest.TestCase):
+    def test_interrupted_multi_file_write_restores_all_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            existing = root / "first.json"
+            created = root / "second.json"
+            last = root / "last.json"
+            existing.write_bytes(b"first old")
+            last.write_bytes(b"last old")
+            real_replace = psd.os.replace
+
+            def interrupt_after_creating(src, dest):
+                real_replace(src, dest)
+                if dest == created:
+                    raise KeyboardInterrupt
+
+            with patch.object(psd.os, "replace", side_effect=interrupt_after_creating):
+                with self.assertRaises(KeyboardInterrupt):
+                    psd._atomic_write_transaction(
+                        [(existing, b"first new"), (created, b"second new"), (last, b"last new")]
+                    )
+
+            self.assertEqual(existing.read_bytes(), b"first old")
+            self.assertFalse(created.exists())
+            self.assertEqual(last.read_bytes(), b"last old")
+            self.assertEqual(set(root.iterdir()), {existing, last})
+
+    def test_killed_archive_transaction_recovers_before_retry_reads_the_patch(self):
+        child = """
+import os
+from pathlib import Path
+import signal
+import sys
+from scripts import patch_state_dbs as patcher
+
+root, mode = Path(sys.argv[1]), sys.argv[2]
+real_replace, real_unlink = os.replace, Path.unlink
+
+def replace(source, target):
+    real_replace(source, target)
+    if mode == "rename" and target.name == "CHANGELOG_2026_11.md":
+        os.kill(os.getpid(), signal.SIGKILL)
+
+def unlink(target, *args, **kwargs):
+    real_unlink(target, *args, **kwargs)
+    if mode == "unlink" and target.name == "_archive_patch.json":
+        os.kill(os.getpid(), signal.SIGKILL)
+
+os.replace, Path.unlink = replace, unlink
+patcher.archive_gold_ledgers(root)
+"""
+        for crash_point in ("rename", "unlink"):
+            with self.subTest(crash_point=crash_point), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                subprocess.run(["git", "init", "-q", str(root)], check=True)
+                daily = root / "gold" / "daily"
+                daily.mkdir(parents=True)
+                original = {
+                    "CHANGELOG.md": b'# Changes\n\n---\n\n<!-- GOLD_EDITION_CHANGELOG {"edition_id":"2026-11-27_0730"} -->\n',
+                    "AUDIT_LOG.md": b'# Audit\n\n---\n\n<!-- GOLD_EDITION_REVIEW {"edition_id":"2026-11-27_0730"} -->\n',
+                }
+                for name, data in original.items():
+                    (daily / name).write_bytes(data)
+                    (daily / name).chmod(0o600)
+                patch_file = daily / "_archive_patch.json"
+                patch_file.write_text('{"archive_period":"2026_11"}', encoding="utf-8")
+                patch_file.chmod(0o600)
+
+                result = subprocess.run(
+                    [sys.executable, "-B", "-c", child, str(root), crash_point],
+                    check=False, capture_output=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr.decode())
+                journal = root / ".git" / state_transaction.JOURNAL_NAME
+                self.assertEqual(stat.S_IMODE(journal.stat().st_mode), 0o600)
+                with self.assertRaisesRegex(RuntimeError, "needs recovery"):
+                    psd.archive_gold_ledgers(root, dry_run=True)
+                self.assertTrue(journal.exists())
+
+                if crash_point == "rename":
+                    partially_created = daily / "archive" / "CHANGELOG_2026_11.md"
+                    self.assertTrue(partially_created.exists())
+                    self.assertFalse((daily / "archive" / "AUDIT_LOG_2026_11.md").exists())
+                    self.assertTrue(patch_file.exists())
+                    partially_created.write_bytes(b"Manual edit after interruption")
+                    with self.assertRaisesRegex(ValueError, "bytes differ from the recorded transaction"):
+                        psd.archive_gold_ledgers(root)
+                    self.assertEqual(partially_created.read_bytes(), b"Manual edit after interruption")
+                    self.assertTrue(journal.exists())
+                    partially_created.write_bytes(original["CHANGELOG.md"])
+                else:
+                    self.assertFalse(patch_file.exists())
+                    with state_transaction.state_write_lock(root):
+                        self.assertEqual(patch_file.read_text(encoding="utf-8"), '{"archive_period":"2026_11"}')
+                        self.assertEqual(stat.S_IMODE(patch_file.stat().st_mode), 0o600)
+                        self.assertEqual((daily / "CHANGELOG.md").read_bytes(), original["CHANGELOG.md"])
+                        self.assertFalse(any((daily / "archive").iterdir()))
+
+                self.assertTrue(psd.archive_gold_ledgers(root)["patch_deleted"])
+                self.assertFalse(patch_file.exists())
+                self.assertFalse(journal.exists())
+                self.assertFalse(list(daily.rglob("*.tmp")))
+                for name, contents in original.items():
+                    archived = daily / "archive" / f"{Path(name).stem}_2026_11.md"
+                    self.assertEqual(archived.read_bytes(), contents)
+                    self.assertEqual(stat.S_IMODE((daily / name).stat().st_mode), 0o600)
+
+    def test_concurrent_writers_hold_the_lock_from_read_until_patch_consumption(self):
+        child = """
+from pathlib import Path
+import sys
+from scripts import patch_state_dbs as patcher
+
+root, pause = Path(sys.argv[1]), sys.argv[2] == "pause"
+if pause:
+    read = patcher._read_json_obj
+    def wait_before_read(path, label):
+        print("LOCKED", flush=True)
+        sys.stdin.readline()
+        return read(path, label)
+    patcher._read_json_obj = wait_before_read
+else:
+    print("STARTED", flush=True)
+try:
+    patcher.prepend_equity_audit(root)
+except ValueError as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(1)
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            state = root / "equity" / "state"
+            state.mkdir(parents=True)
+            ledger = state / "audit_ledger.md"
+            ledger.write_text("# Audit\n\n---\n\n## Existing entry\n", encoding="utf-8")
+            (state / "_audit_patch.json").write_text(json.dumps({
+                "edition_id": "2026-11-27_1800",
+                "entry_md": "## 2026-11-27 18:10 CST · `2026-11-27_1800`\n\n- Added entry",
+            }), encoding="utf-8")
+            command = [sys.executable, "-B", "-c", child, str(root)]
+            with subprocess.Popen(
+                [*command, "pause"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True,
+            ) as first:
+                try:
+                    self.assertEqual(first.stdout.readline().strip(), "LOCKED")
+                    with subprocess.Popen(
+                        [*command, "go"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    ) as second:
+                        try:
+                            self.assertEqual(second.stdout.readline().strip(), "STARTED")
+                            with self.assertRaises(subprocess.TimeoutExpired):
+                                second.wait(timeout=0.15)
+                            _, error = first.communicate("\n", timeout=10)
+                            self.assertEqual(first.returncode, 0, error)
+                            _, error = second.communicate(timeout=10)
+                            self.assertEqual(second.returncode, 1)
+                            self.assertIn("Missing required JSON file", error)
+                        finally:
+                            if second.poll() is None:
+                                second.kill()
+                finally:
+                    if first.poll() is None:
+                        first.kill()
+            self.assertEqual(ledger.read_text(encoding="utf-8").count("Added entry"), 1)
+            self.assertEqual(set(root.iterdir()), {root / "equity"})
+
+    def test_live_policy_calendar_validates_publication_and_schedule_times(self):
+        as_of = "2026-12-31T23:59:00+08:00"
+        edition = "2026-12-31_1800"
+        brief = {
+            "date_cst": "2026-12-31",
+            "time_cst": "23:59",
+            "region": "US",
+            "category": "macro_data",
+            "impact_tier": "P1",
+            "authority": "美国劳工统计局",
+            "headline": "公布就业数据",
+            "summary": "初值较上期改善。",
+            "market_impact": "关注债券利率。",
+            "affected_markets": ["us_stock"],
+            "source_url": "https://www.bls.gov/news.release/empsit.htm",
+            "home_featured": True,
+        }
+        event = {
+            "event_id": "employment",
+            "date_cst": "2027-01-15",
+            "end_date_cst": "2027-01-15",
+            "date_precision": "exact",
+            "time_cst": "21:30",
+            "region": "US",
+            "category": "macro_data",
+            "impact_tier": "P1",
+            "title": "公布就业数据",
+            "affected_markets": ["us_stock"],
+            "expected_consensus": "增速保持稳定。",
+            "market_transmission": "就业影响债券利率。",
+            "watch_triggers": {"upside_bull": "就业改善。", "downside_bear": "就业回落。"},
+            "pre_event_stance": "保持当前风险上限。",
+            "source_url": "https://www.bls.gov/schedule/news_release/empsit.htm",
+            "monitor_window_min": 60,
+        }
+        calendar = {
+            "schema_version": "1.0",
+            "edition_id": edition,
+            "as_of_cst": as_of,
+            "horizon_days": 30,
+            "policy_briefs": [dict(brief, id=f"brief_{idx}") for idx in range(6)],
+            "events": [event],
+        }
+
+        def validate(data, market_as_of=as_of, *, live=True):
+            return psd._validate_policy_calendar(
+                data,
+                edition_id=edition,
+                as_of_date="2026-12-31",
+                gold_tier0_active=True,
+                market_as_of_cst=market_as_of,
+                enforce_live_contract=live,
+            )
+
+        self.assertEqual(validate(calendar, "2026-12-31T23:59+08:00"), [])
+        self.assertIn("as_of_cst must match", "\n".join(validate(calendar, "2026-12-31T23:58:00+08:00")))
+        before_brief_time = copy.deepcopy(calendar)
+        before_brief_time["as_of_cst"] = "2026-12-31T23:58:00+08:00"
+        self.assertIn("is later than as_of_cst", "\n".join(validate(before_brief_time, before_brief_time["as_of_cst"])))
+
+        bad_calendar = copy.deepcopy(calendar)
+        first, second, third = bad_calendar["policy_briefs"][:3]
+        first.pop("source_url")
+        first["home_featured"] = False
+        second.update(source_url="https://example.invalid/official", date_cst="2027-01-01")
+        third["time_cst"] = "明日"
+        bad_calendar["events"][0].update(end_date_cst="2027-01-16", time_cst="25:08")
+        errors = "\n".join(validate(bad_calendar))
+        for detail in ("6–9 home_featured", "invalid https source_url None", "example.invalid",
+                       "is later than as_of_cst", "time_cst must use HH:MM", "exact requires one date"):
+            self.assertIn(detail, errors)
+        self.assertEqual(validate(bad_calendar, live=False), [])
+
+        bad_calendar = copy.deepcopy(calendar)
+        bad_calendar["events"][0]["date_precision"] = "window_tbd"
+        self.assertIn("window_tbd requires a time window", "\n".join(validate(bad_calendar)))
+
     def _valid_rsi_entry(self, run_id: str) -> dict:
         return {
             "run_id": run_id,
@@ -1969,19 +2290,48 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                 "max_score": 30,
                 "review_closure": {"reviewer_completed": True, "findings": []},
             }
-            (sandbox / "gold/daily/_rsi_patch.json").write_text(json.dumps(rsi_run, ensure_ascii=False), encoding="utf-8")
-            (sandbox / "equity/state/_rsi_patch.json").write_text(json.dumps(rsi_run, ensure_ascii=False), encoding="utf-8")
-
+            gold_daily = f"gold/daily/{mid_ed}_午报_黄金深度研报.md"
             with patch.object(psd, "REPO_ROOT", sandbox):
                 for flag in (
                     "--apply",
                     "--prepend-gold-ledgers",
                     "--prepend-equity-audit",
-                    "--append-gold-rsi",
-                    "--append-equity-rsi",
                 ):
                     with self.subTest(flag=flag):
                         self.assertEqual(psd.main([flag]), 0)
+                for rel in (
+                    *review_evidence.FIXED_PATHS, gold_daily,
+                    *(f"equity/{ms_obj['markets'][market]['latest_daily']}" for market in review_evidence.MARKETS),
+                ):
+                    target = sandbox / rel
+                    if not target.is_file():
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text("Fixture manuscript or source data\n", encoding="utf-8")
+                source = review["sources"]["real_yield"][0]
+                fact = "财政部发布的实际利率按当日交易口径核验。"
+                inference = "如果实际利率继续上行，久期风险可能扩大。"
+                (sandbox / gold_daily).write_text(f"{fact} [实际利率原始数据]({source})\n{inference}\n", encoding="utf-8")
+                candidate = psd.inspect_state_dbs(sandbox, "review-candidate")
+                rsi_run["review_closure"].update(
+                    candidate_sha256=candidate["candidate_sha256"],
+                    checks={
+                        check_id: {"evidence": f"Fixture verified {check_id}", "files": [gold_daily]}
+                        for check_id in review_evidence.CHECK_IDS
+                    },
+                )
+                checks = rsi_run["review_closure"]["checks"]
+                checks["cross_track"]["files"] = ["gold/data_snapshot.json", review_evidence.STATE_PATH]
+                checks["primary_sources"]["source_urls"] = review["sources"]["real_yield"]
+                checks["primary_sources"]["claims"] = [{
+                    "file": gold_daily, "excerpt": excerpt, "kind": kind, "source_file": gold_daily,
+                    "source_url": source, "verification": "核查实际利率表的当日数据。",
+                } for excerpt, kind in ((fact, "fact"), (inference, "inference"))]
+                for track, patch_path in (
+                    ("gold", "gold/daily/_rsi_patch.json"), ("equity", "equity/state/_rsi_patch.json"),
+                ):
+                    (sandbox / patch_path).write_text(json.dumps(rsi_run, ensure_ascii=False), encoding="utf-8")
+                    with self.subTest(track=track):
+                        self.assertEqual(psd.main([f"--append-{track}-rsi"]), 0)
 
             for rel in (
                 "equity/state/multi_asset_channels.json",

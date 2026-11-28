@@ -9,6 +9,8 @@ from collections import Counter
 import html
 import json
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,6 +22,32 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import build_site  # noqa: E402
 import lint_site  # noqa: E402
+
+
+class TestQdiiQueueCalculator(unittest.TestCase):
+    def test_discrete_installments_and_fundable_same_day(self):
+        if not shutil.which("node"):
+            self.skipTest("Node.js is needed for the JavaScript runtime check")
+        asset = ROOT / "scripts" / "web_assets" / "app.js"
+        source = asset.read_text(encoding="utf-8")
+        start = source.index("  function qdiiQueueBreakeven(")
+        stop = source.index("  const qdiiCalc =", start)
+        harness = source[start:stop] + """
+        const trials = [
+          [10000, 10000, 5], [10000, 9500, 10], [10000, 5000, 10],
+          [23000, 10000, 10], [10000, 100, -2], [5000000000, 1000, 5],
+        ];
+        console.log(JSON.stringify(trials.map(args => qdiiQueueBreakeven(...args))));
+        """
+        output = subprocess.run(["node", "-e", harness], check=True, capture_output=True, text=True)
+        same_day, large_first, equal, uneven, discount, long_queue = json.loads(output.stdout)
+        self.assertIsNone(same_day)
+        self.assertIsNone(large_first)
+        self.assertAlmostEqual(equal, 100 * (11.0 / 9.0 - 1), places=8)
+        nav_growth = 1 + uneven / 100
+        self.assertAlmostEqual(10000 + 10000 / nav_growth**0.5 + 3000 / nav_growth, 23000 / 1.1, places=6)
+        self.assertEqual(discount, 0)
+        self.assertGreater(long_queue, 10)
 
 
 class TestThreeSlotSiteSupport(unittest.TestCase):
@@ -107,6 +135,26 @@ class TestThreeSlotSiteSupport(unittest.TestCase):
 
 
 class TestMultiIndexPriorityAndCharts(unittest.TestCase):
+    def _run_kline_js(self, script):
+        if not shutil.which("node"):
+            self.skipTest("Node.js is needed for the JavaScript runtime check")
+        harness = """
+const fs = require('node:fs');
+const vm = require('node:vm');
+const window = {};
+const document = {documentElement: {}, readyState: 'loading', addEventListener() {}};
+let fetchMock;
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
+  window, document, MutationObserver: class {observe() {}},
+  fetch: (...args) => fetchMock(...args)
+});
+"""
+        run = subprocess.run(
+            ["node", "-e", harness + script, str(ROOT / "scripts" / "web_assets" / "kline.js")],
+            capture_output=True, text=True, check=True,
+        )
+        return json.loads(run.stdout)
+
     def test_a_share_priority_leads_with_sse_composite(self):
         fake_manifest = {
             "catalog": [
@@ -156,7 +204,13 @@ class TestMultiIndexPriorityAndCharts(unittest.TestCase):
         eq = {"as_of_cst": "2026-11-27T07:30:00+08:00", "markets": {"a_share": {"benchmark_sse": 3910.0, "benchmark_csi300": 4570.0}}}
         cockpit = build_site.build_cockpit_page(gold, eq, {}, {"a-share": 76}, kline_manifest=None, kline_core=None)
         self.assertIn("crisis-ribbon", cockpit)
-        self.assertIn("vix-spark-svg", cockpit)
+        self.assertNotIn("vix-spark-svg", cockpit)
+        self.assertIn("vix-spark-svg", build_site._render_vix_sparkline_svg({
+            "vix_10d_session_closes": [
+                {"date": "2026-11-24", "close": 26.36},
+                {"date": "2026-11-25", "close": 28.29},
+            ],
+        }))
         self.assertIn("sec-kline-deck", cockpit)
         self.assertIn("wcalc-card", cockpit)
         # SSE must appear before CSI 300 inside the A-share card matrix
@@ -173,6 +227,106 @@ class TestMultiIndexPriorityAndCharts(unittest.TestCase):
         self.assertIn("kline-meta-bridge", charts_body)
         self.assertIn("红灯观察期", charts_body)
         self.assertGreater(len(charts_body), 3000)
+
+    def test_quotes_keep_price_change_and_attribution_in_one_observation(self):
+        equity = {"as_of_cst": "2026-11-28T12:00:00+08:00", "markets": {"a_share": {"index_matrix": [
+            {"id": "idx_sh000001", "value": 3901, "as_of": "2026-11-27 官收", "source_label": "上交所"},
+            {"id": "idx_sh000300", "value": None, "change_pct": 55, "as_of": "2026-11-27 盘中"},
+        ]}}}
+        manifest = {"catalog": [
+            {"id": "idx_sh000001", "latest_close": 3800, "change_pct": 9, "latest_date": "2026-11-26", "provider": "tencent_newfqkline"},
+            {"id": "idx_sh000300", "latest_close": 4200, "change_pct": -1, "latest_date": "2026-11-26", "stale": True, "provider": "tencent_newfqkline"},
+        ]}
+        groups = build_site._resolve_multi_index_groups({}, equity, manifest)
+        sse, csi, *_ = groups["a_share"]
+        self.assertEqual((sse["value"], sse["change_pct"]), (3901, None))
+        self.assertEqual((csi["value"], csi["change_pct"]), (4200, -1))
+        self.assertIn("2026-11-27 · 官收 · 上交所", build_site._render_idx_tile(sse, "a_share"))
+        self.assertIn("涨跌待核", build_site._render_idx_tile(sse, "a_share"))
+        deck = build_site._render_daily_kline_strip("a-share", groups)
+        self.assertIn("2026-11-26 · 沿用报价 · 腾讯行情", deck)
+        self.assertNotIn("2026-11-28", deck)
+
+    def test_kline_quote_change_uses_signed_closes_and_discloses_cache(self):
+        result = self._run_kline_js("""
+const {catalogQuoteChange, catalogQuoteAttribution} = window.GIRKline;
+console.log(JSON.stringify([
+  catalogQuoteChange({id:'rate_DFII10', prev_close:-0.5, latest_close:0, unit:'%', bars_count:2}).text,
+  catalogQuoteChange({id:'rate_DFII10', prev_close:0, latest_close:0.6, unit:'%', bars_count:3}).text,
+  catalogQuoteChange({id:'spread_test', prev_close:-20, latest_close:-14, unit:'bp', bars_count:2}).text,
+  catalogQuoteChange({id:'rate_DFII10', prev_close:0, latest_close:0.6, unit:'%', bars_count:1}).text,
+  catalogQuoteChange({id:'idx_SPX', prev_close:100, latest_close:102, unit:'点'}).text,
+  catalogQuoteAttribution({latest_date:'2026-11-27', stale:true, provider:'us_treasury_csv'})
+]));
+""")
+        self.assertEqual(result, [
+            "+50.00 bp", "+60.00 bp", "+6.00 bp", "涨跌待核", "+2.00%",
+            "行情日 2026-11-27 · 沿用旧缓存 · 美国财政部官曲",
+        ])
+
+    def test_kline_fetch_revalidates_manifest_and_reloads_a_mismatched_shard(self):
+        result = self._run_kline_js("""
+const id = 'idx_sh000001';
+const current = {edition_id:'2026-11-28_1130', generated_at_cst:'2026-11-28T12:33:25+08:00'};
+const old = {...current, generated_at_cst:'2026-11-28T12:31:25+08:00'};
+const manifest = {...current, catalog:[{id, shard:'core'}], shards:{core:{file:'core.json'}}};
+const shard = (version, price) => ({...version, shard:'core', series:{[id]:{bars:[['2026-11-27',price,price,price,price]]}}});
+const calls = [];
+const responses = [null, manifest, shard(old, 1), shard(current, 2)];
+fetchMock = async (url, {cache}) => {
+  const data = responses.shift();
+  calls.push([url, cache]);
+  return {ok: data != null, json: async () => data};
+};
+(async () => {
+  const first = await window.GIRKline.loadSeries(id, './');
+  const second = await window.GIRKline.loadSeries(id, './');
+  const third = await window.GIRKline.loadSeries(id, './');
+  console.log(JSON.stringify({statuses:[first.status, second.status, third.status], close:second.bars[0].c, calls}));
+})();
+""")
+        self.assertEqual(result["statuses"], ["no_manifest", "ok", "ok"])
+        self.assertEqual(result["close"], 2)
+        self.assertEqual([call[1] for call in result["calls"]], ["no-cache", "no-cache", "default", "reload"])
+        self.assertEqual(result["calls"][2][0], result["calls"][3][0])
+        self.assertIn("core.json?v=2026-11-28_1130", result["calls"][2][0])
+        self.assertIn("12%3A33%3A25", result["calls"][2][0])
+
+    def test_kline_fetch_discards_wrong_publication_and_retries_transient_failures(self):
+        result = self._run_kline_js("""
+const id = 'idx_sh000001';
+const previous = {edition_id:'2026-11-28_0730', generated_at_cst:'2026-11-28T08:30:00+08:00'};
+const newest = {edition_id:'2026-11-28_1130', generated_at_cst:'2026-11-28T12:33:25+08:00'};
+const bare = {catalog:[{id, shard:'core'}], shards:{core:'core.json'}};
+const legacy = {series:{[id]:{bars:[['2026-11-27',2,2,2,2]]}}};
+const newestShard = {...legacy, ...newest, shard:'core'};
+const responses = [
+  {...bare, ...previous}, newestShard, newestShard,
+  {...bare, ...newest}, null, newestShard,
+  bare, legacy,
+];
+const calls = [];
+fetchMock = async (url, {cache}) => {
+  const data = responses.shift();
+  calls.push([url, cache]);
+  return {ok: data != null, json: async () => data};
+};
+(async () => {
+  const results = [];
+  for (const base of ['./', './', './', '../']) {
+    const result = await window.GIRKline.loadSeries(id, base);
+    results.push([result.status, result.bars.length]);
+  }
+  console.log(JSON.stringify({results, calls}));
+})();
+""")
+        self.assertEqual(result["results"], [["missing_series", 0], ["missing_series", 0], ["ok", 1], ["ok", 1]])
+        self.assertEqual([call[1] for call in result["calls"]], [
+            "no-cache", "default", "reload", "no-cache", "default", "default", "no-cache", "default",
+        ])
+        self.assertIn("core.json?v=2026-11-28_0730", result["calls"][1][0])
+        self.assertIn("core.json?v=2026-11-28_1130", result["calls"][5][0])
+        self.assertEqual(result["calls"][-1][0], "../assets/klines/core.json")
 
 
 class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
@@ -199,7 +353,18 @@ class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
         self.assertEqual(cfg2["eq_cap_pct"], 55)
         self.assertIn("黄金允许按档分批", unlocked_html)
 
-    def test_ah_after_tax_dividend_matrix_distinguishes_20_vs_28_red_chip(self):
+    def test_wallet_calculator_keeps_zero_cap_and_uses_price_for_one_lot(self):
+        html = build_site._render_wallet_calculator(
+            {"new_buy_allowed": False, "tier_code": "Tier 0"},
+            {"markets": {"a_share": {"equity_cap_pct": 0}}},
+            {"catalog": [{"id": "etf_511360", "latest_close": 122.505, "latest_date": "2026-11-27"}]},
+        )
+        config = json.loads(re.search(r'id="wallet-calc-data" type="application/json">(.*?)</script>', html)[1])
+        self.assertEqual(config["eq_cap_pct"], 0)
+        self.assertEqual(config["short_bond_lot_rmb"], 12250.50)
+        self.assertEqual(config["short_bond_quote_date"], "2026-11-27")
+
+    def test_ah_after_tax_dividend_matrix_does_not_reuse_dossier_estimates(self):
         benchmarks = [
             {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.2, "preferred_channel": "offshore_hk_check_withholding"},
             {"name": "中国石油", "a": "601857", "h": "00857.HK", "ah_premium_pct": 51.0, "preferred_channel": "offshore_hk"},
@@ -213,23 +378,184 @@ class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
             {"market": "a-share", "code": "300750", "price": "260.00元", "div_pct": 2.0, "color": "b"},
             {"market": "hk-stock", "code": "03750.HK", "price": "350.00港元", "div_pct": 1.6, "color": "b"},
         ]
-        rows = build_site._build_ah_matrix_payload(benchmarks, stocks)
+        rows = build_site._build_ah_matrix_payload(
+            benchmarks, stocks,
+            kline_manifest={"catalog": [
+                {"id": "stk_300750", "code": "300750", "market": "a-share", "currency": "CNY", "stale": False,
+                 "latest_date": "2026-11-27", "latest_close": 260},
+                {"id": "stk_03750.HK", "code": "03750.HK", "market": "hk-stock", "currency": "HKD", "stale": False,
+                 "latest_date": "2026-11-27", "latest_close": 350},
+            ]},
+            hkd_cny_mid=0.8558, fx_date="2026-11-27",
+        )
         by_h = {r["h_code"]: r for r in rows}
-        # CNOOC is red-chip -> 28% tax: 8.0 * 0.72 = 5.76%
-        self.assertEqual(by_h["00883.HK"]["h_tax_rate_pct"], 28)
-        self.assertAlmostEqual(by_h["00883.HK"]["h_connect_after_tax_div"], 5.76, places=2)
-        self.assertAlmostEqual(by_h["00883.HK"]["net_div_spread"], 0.76, places=2)
-        # PetroChina is H-share -> 20% tax: 7.5 * 0.80 = 6.00%
-        self.assertEqual(by_h["00857.HK"]["h_tax_rate_pct"], 20)
-        self.assertAlmostEqual(by_h["00857.HK"]["h_connect_after_tax_div"], 6.00, places=2)
+        self.assertIsNone(by_h["00883.HK"]["h_tax_rate_pct"])
+        self.assertIsNone(by_h["00883.HK"]["h_connect_after_tax_div"])
+        self.assertIsNone(by_h["00883.HK"]["net_div_spread"])
+        self.assertEqual(by_h["00883.HK"]["dividend_basis"], "股息公告待核")
+        self.assertEqual(by_h["00883.HK"]["verdict_label"], "等待同日比价")
+        self.assertIsNone(by_h["00857.HK"]["h_tax_rate_pct"])
+        self.assertIsNone(by_h["00857.HK"]["h_connect_after_tax_div"])
         # CATL inverted -> A-share cheaper verdict
         self.assertEqual(by_h["03750.HK"]["verdict_label"], "A 股倒挂占优")
+
+    def test_ah_dividend_ranking_requires_same_period_cash_and_source(self):
+        prices = {"catalog": [
+            {"id": "stk_600030", "code": "600030", "market": "a-share", "stale": False,
+             "latest_date": "2026-11-27", "currency": "CNY", "latest_close": 20, "provider": "tencent_newfqkline"},
+            {"id": "stk_06030.HK", "code": "06030.HK", "market": "hk-stock", "stale": False,
+             "latest_date": "2026-11-27", "currency": "HKD", "latest_close": 22, "provider": "tencent_hkfqkline"},
+        ]}
+        period = {"period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-01"}
+        a = dict(period, currency="CNY", ordinary_cash_per_share=0.4, source_url="https://www.sse.com.cn/a/dividends")
+        h = dict(period, currency="HKD", ordinary_cash_per_share=1.1, source_url="https://www.hkexnews.hk/h/dividends")
+        stocks = [{"code": "600030", "div_pct": 7}, {"code": "06030.HK", "div_pct": 11}]
+        def row_with_h(h_dividend, a_dividend=a, **settings):
+            pair = {"name": "中信证券", "a": "600030", "h": "06030.HK", "cash_dividends": {"a": a_dividend, "h": h_dividend}, **settings}
+            row, = build_site._build_ah_matrix_payload(
+                [pair], stocks, kline_manifest=prices, hkd_cny_mid=0.90, fx_date="2026-11-27",
+            )
+            return row
+        row = row_with_h(h)
+        self.assertEqual((row["a_div_pct"], row["h_div_pct"], row["h_connect_after_tax_div"], row["net_div_spread"]),
+                         (2, 5, None, None))
+        self.assertEqual(row["verdict_label"], "港股通分派待核")
+        self.assertIn("香港登记股东口径", row["dividend_basis"])
+        self.assertIn("2025-01-01 至 2025-12-31", row["dividend_basis"])
+        self.assertEqual(row["dividend_sources"], {"a": [a["source_url"]], "h": [h["source_url"]]})
+        source_urls = ["https://www.hkexnews.hk/h/interim", "https://www.hkexnews.hk/h/final"]
+        h_cny = dict(period, ordinary_cash_per_share=1.1, currency="CNY", cash_basis="southbound_cny",
+                     source_urls=source_urls)
+        southbound = row_with_h(h_cny)
+        self.assertEqual((southbound["h_connect_after_tax_div"], southbound["net_div_spread"]), (4.44, 2.44))
+        self.assertEqual(southbound["dividend_sources"]["h"], source_urls)
+        self.assertEqual(southbound["verdict_label"], "港股通税后占优")
+        self.assertIn("港股通人民币分派", southbound["dividend_basis"])
+        pending_tax = row_with_h(h_cny, requires_withholding_check=True)
+        self.assertEqual(pending_tax["h_div_pct"], southbound["h_div_pct"])
+        self.assertTrue(pending_tax["h_tax_pending"])
+        self.assertIsNone(pending_tax["h_tax_rate_pct"])
+        self.assertIsNone(pending_tax["net_div_spread"])
+        uppercase = row_with_h(dict(h_cny, source_urls=[url.replace("https:", "HTTPS:") for url in source_urls]))
+        self.assertEqual(uppercase["dividend_sources"]["h"], source_urls)
+        no_cash = row_with_h(dict(h, ordinary_cash_per_share=0), dict(a, ordinary_cash_per_share=0))
+        self.assertEqual((no_cash["a_div_pct"], no_cash["h_div_pct"], no_cash["net_div_spread"]),
+                         (0, 0, None))
+        self.assertIn("均未派普通现金股息", no_cash["dividend_basis"])
+        self.assertFalse(no_cash["h_local_cash"])
+        listed_after = dict(
+            period, status="listed_after_record_date", listed_date="2026-07-30",
+            last_record_date="2026-04-29", published_date="2026-07-30",
+            source_url="https://www.hkexnews.hk/h/listing",
+        )
+        excluded = row_with_h(listed_after)
+        self.assertEqual((excluded["a_div_pct"], excluded["h_div_pct"], excluded["net_div_spread"]),
+                         (2, None, None))
+        self.assertIn("H 股上市晚于", excluded["dividend_basis"])
+        self.assertTrue(excluded["h_not_eligible"])
+        excluded_from_distribution = row_with_h(dict(
+            period, status="excluded_from_distribution", source_url="https://www.hkexnews.hk/h/notice",
+        ))
+        self.assertIsNone(excluded_from_distribution["net_div_spread"])
+        self.assertIn("分派范围不含 H 股", excluded_from_distribution["dividend_basis"])
+        overflow = row_with_h(dict(h_cny, ordinary_cash_per_share=1e308))
+        self.assertIsNone(overflow["h_connect_after_tax_div"])
+        self.assertIsNone(overflow["net_div_spread"])
+        self.assertIn("收益率待核", overflow["dividend_basis"])
+        for incomplete in (
+            dict(h, period_end="2025-09-30"), dict(h, currency="CNY"), dict(h, source_url=""),
+            dict(h_cny, source_urls=["https://www.hkexnews.hk/h/final", "http://www.hkexnews.hk/h/interim"]),
+            dict(h_cny, source_urls=["https://www.example.org/not-a-filing"]),
+            dict(h_cny, source_urls=["https://www.reuters.com/markets/"]),
+            dict(h_cny, source_urls=[source_urls[0], source_urls[0].replace("https:", "HTTPS:")]),
+            dict(h, source_url="https://www.hkexnews.hk/"),
+            dict(h, published_date="2025-12-30"), dict(h, ordinary_cash_per_share=True),
+            dict(listed_after, last_record_date="2026-08-01"),
+            dict(h, published_date="2026-11-28"), dict(h, ordinary_cash_per_share=None, special_cash_per_share=1.1),
+        ):
+            with self.subTest(incomplete=incomplete):
+                estimated = row_with_h(incomplete)
+                self.assertIsNone(estimated["net_div_spread"])
+                self.assertEqual(estimated["verdict_label"], "股息口径待核")
+                self.assertEqual((estimated["a_div_pct"], estimated["h_connect_after_tax_div"]), (None, None))
+                self.assertEqual(estimated["dividend_basis"], "股息公告待核")
+
+        no_prices, = build_site._build_ah_matrix_payload(
+            [{"name": "中信证券", "a": "600030", "h": "06030.HK", "cash_dividends": {"a": a, "h": h_cny}}],
+            stocks, as_of_date="2026-11-28",
+        )
+        self.assertEqual(no_prices["dividend_sources"], {"a": [a["source_url"]], "h": source_urls})
+        self.assertIsNone(no_prices["a_div_pct"])
+        self.assertIsNone(no_prices["net_div_spread"])
+        self.assertIn("收益率待核", no_prices["dividend_basis"])
+
+    def test_ah_compare_uses_displayed_same_day_quotes_and_fx(self):
+        benchmarks = [{"name": "中信证券", "a": "600030", "h": "06030.HK", "ah_premium_pct": 91.0}]
+        stocks = [{"code": "600030", "price": "24.0元"}]
+        a_quote = {"id": "stk_600030", "code": "600030", "market": "a-share", "currency": "CNY", "stale": False,
+                   "latest_date": "2026-11-27", "latest_close": 26.19}
+        h_quote = {"id": "stk_06030.HK", "code": "06030.HK", "market": "hk-stock", "currency": "HKD", "stale": False,
+                   "latest_date": "2026-11-27", "latest_close": 20.26}
+        manifest = {"catalog": [a_quote, h_quote]}
+        row, = build_site._build_ah_matrix_payload(
+            benchmarks, stocks, kline_manifest=manifest, hkd_cny_mid=0.8558, fx_date="2026-11-27",
+        )
+        self.assertEqual((row["a_price"], row["h_price"], row["ah_premium_pct"]), ("26.19 元", "20.26 港元", 51.1))
+        self.assertEqual(row["quote_date"], "2026-11-27")
+
+        for invalid_h in (dict(h_quote, latest_date="2026-11-26"), dict(h_quote, stale=True), dict(h_quote, currency="CNY")):
+            row, = build_site._build_ah_matrix_payload(
+                benchmarks, stocks, kline_manifest={"catalog": [a_quote, invalid_h]},
+                hkd_cny_mid=0.8558, fx_date="2026-11-27",
+            )
+            self.assertIsNone(row["ah_premium_pct"])
+            self.assertEqual(row["a_price"], "—")
+            self.assertEqual(row["verdict_label"], "等待同日比价")
+
+        source = (
+            "https://query.sse.com.cn/commonQuery.do?sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_CJGK_MRGK_C"
+            "&SEC_CODE=600030&TX_DATE=20261127"
+        )
+        benchmarks[0]["exchange_closes"] = {
+            "a": {"code": "600030", "date": "2026-11-27", "close": 26.19, "currency": "CNY", "source_url": source},
+        }
+        row, = build_site._build_ah_matrix_payload(
+            benchmarks, stocks, kline_manifest={"catalog": [h_quote]},
+            hkd_cny_mid=0.8558, fx_date="2026-11-27",
+        )
+        self.assertEqual(row["quote_urls"], {"a": source})
+        self.assertEqual(row["ah_premium_pct"], 51.1)
+        self.assertEqual(row["a_sym_id"], "")
+        data = {"catalog": [h_quote]}
+        early, = build_site._build_ah_matrix_payload(
+            benchmarks, stocks, kline_manifest=data, hkd_cny_mid=0.8558, fx_date="2026-11-27",
+            as_of_cst="2026-11-27T11:30:00+08:00",
+        )
+        self.assertIsNone(early["ah_premium_pct"])
+        replay = "https://yunhq.sse.com.cn:32042/v1/sh1/dayk/600030?select=date,close&begin=2499&end=2500"
+        benchmarks[0]["exchange_closes"]["a"]["replay_url"] = replay
+        linked, = build_site._build_ah_matrix_payload(
+            benchmarks, stocks, kline_manifest=data, hkd_cny_mid=0.8558, fx_date="2026-11-27",
+        )
+        self.assertEqual(linked["quote_urls"], {"a": source})
+        self.assertEqual(linked["quote_replay_urls"], {"a": replay})
+        benchmarks[0]["exchange_closes"]["a"]["source_url"] = source.replace("20261127", "20261126")
+        with self.assertRaisesRegex(ValueError, "交易日不对应"):
+            build_site._build_ah_matrix_payload(benchmarks, stocks, kline_manifest=data, fx_date="2026-11-27")
+
+    def test_screener_close_respects_half_day_and_market_timezone(self):
+        calendar = [{"type": "half_day", "date_cst": "2026-11-27", "markets_affected": ["us_stock"]}]
+        cutoff = "2026-11-28T02:30:00+08:00"
+        self.assertTrue(build_site._closing_quote_available("2026-11-27", "us-stock", cutoff, calendar))
+        self.assertFalse(build_site._closing_quote_available("2026-11-27", "us-stock", cutoff))
+        self.assertFalse(build_site._closing_quote_available("2026-11-27", "us-stock", "2026-11-28T01:59:00+08:00", calendar))
 
     def test_qdii_comparison_section_supports_default_and_custom_payload(self):
         default_html = build_site._render_qdii_comparison_section(None, compact=False)
         self.assertIn("sec-qdii-compare", default_html)
         self.assertIn("data-qdii-calc", default_html)
-        self.assertIn("纳斯达克 100", default_html)
+        self.assertIn("本期分渠道限额待核", default_html)
+        self.assertNotIn("513100", default_html)
 
         custom = {
             "channels": [
@@ -242,10 +568,13 @@ class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
                             "on_exchange_code": "513100",
                             "on_exchange_fee": "0.60%",
                             "on_exchange_premium_pct": 4.25,
+                            "on_exchange_premium_note": "假设净值下的情景估算 +4.25%",
                             "otc_codes": "270042(A)",
                             "direct_app_limit_rmb": 1000,
+                            "direct_app_limit": "12/1 起 A 类限 1,000 元/日",
                             "alipay_limit_rmb": 100,
-                            "direct_vs_alipay_ratio": "10x",
+                            "alipay_limit": "该渠道暂停售卖 A 类",
+                            "source_url": "https://www.csrc.gov.cn/releases/example-fund",
                             "risk_note": "优先官方直销按净值申购",
                         }
                     ],
@@ -254,9 +583,11 @@ class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
         }
         custom_html = build_site._render_qdii_comparison_section(custom, compact=False)
         self.assertIn("测试纳指100", custom_html)
-        self.assertIn("+4.25%", custom_html)
-        self.assertIn("¥1,000/日", custom_html)
-        self.assertIn("¥100/日", custom_html)
+        self.assertIn("情景估算 +4.25%", custom_html)
+        self.assertIn("12/1 起 A 类限 1,000 元/日", custom_html)
+        self.assertIn("该渠道暂停售卖 A 类", custom_html)
+        self.assertNotIn("¥100/日", custom_html)
+        self.assertIn('href="https://www.csrc.gov.cn/releases/example-fund"', custom_html)
 
 
 class TestGateS7AndBundling(unittest.TestCase):
@@ -281,13 +612,17 @@ class TestGateS7AndBundling(unittest.TestCase):
                 "idx_sh000001": {
                     "id": "idx_sh000001",
                     "bars": [["2026-11-26", 3880.0, 3910.0, 3870.0, 3900.0, 123456.0]],
-                }
+                },
+                "idx_sh000300": {
+                    "id": "idx_sh000300",
+                    "bars": [["2026-11-26", 4400.0, 4420.0, 4390.0, 4410.0, 123456.0]],
+                },
             },
         }
         (root / "assets" / "klines" / "core.json").write_text(json.dumps(shard_obj), encoding="utf-8")
         manifest = {
             "schema_version": "1.0",
-            "shards": {"core": {"file": "core.json", "count": 1, "bytes": 120}} if dict_shards else {"core": "core.json"},
+            "shards": {"core": {"file": "core.json", "count": 2}} if dict_shards else {"core": "core.json"},
             "catalog": [
                 {"id": "idx_sh000001", "code": "000001", "name": "上证指数", "group": "a_index", "shard": "core"},
                 {"id": "idx_sh000300", "code": "000300", "name": "沪深300", "group": "a_index", "shard": "core"},
@@ -361,6 +696,27 @@ class TestGateS7AndBundling(unittest.TestCase):
             lint_site.run_gate_s7(root, docs, errors, warnings)
             self.assertTrue(any("forbidden" in e.lower() for e in errors), errors)
 
+    def test_gate_s7_rejects_missing_manifest_unmatched_series_and_old_edition(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs = self._make_minimal_s7_site(root)
+            mf_path = root / "assets" / "klines" / "manifest.json"
+            mf_path.unlink()
+            errors = []
+            lint_site.run_gate_s7(root, docs, errors, [])
+            self.assertTrue(any("Missing K-line manifest" in e for e in errors), errors)
+
+            self._make_minimal_s7_site(root)
+            shard_path = mf_path.with_name("core.json")
+            shard = json.loads(shard_path.read_text())
+            del shard["series"]["idx_sh000300"]
+            shard_path.write_text(json.dumps(shard))
+            errors = []
+            lint_site.run_gate_s7(root, docs, errors, [], expected_edition="2026-11-28_1130")
+            self.assertTrue(any("catalog/series differ" in e and "idx_sh000300" in e for e in errors), errors)
+            self.assertTrue(any("manifest edition" in e for e in errors), errors)
+            self.assertTrue(any("shard identity, edition" in e for e in errors), errors)
+
     def test_gate_s3_blocks_fetch_kline_data_py_leak(self):
         self.assertIsNotNone(lint_site.S3_INTERNAL_ENG_LEAK_RE.search("请运行 fetch_kline_data.py 刷新"))
         self.assertIsNotNone(build_site._HARD_INFRA_RE.search("脚本 fetch_kline_data.py"))
@@ -375,8 +731,44 @@ class TestGateS7AndBundling(unittest.TestCase):
                 self.assertTrue((out_dir / "assets" / "klines" / "manifest.json").is_file())
                 self.assertTrue((out_dir / "assets" / "klines" / "core.json").is_file())
             self.assertGreaterEqual(summary["html_files"], 10)
+            live_policy = json.loads((ROOT / "equity/state/policy_calendar.json").read_text(encoding="utf-8"))
+            for market in ("gold", "a-share", "hk-stock", "us-stock"):
+                daily = (out_dir / "daily" / f"{market}-latest.html").read_text(encoding="utf-8")
+                with self.subTest(market=market):
+                    self.assertIn(f'data-calendar-edition="{live_policy["edition_id"]}"', daily)
+                    rendered_ids = set(re.findall(r'data-event-id="([^"]+)"', daily))
+                    allowed_ids = {
+                        item["event_id"] for item in live_policy["events"]
+                        if market.replace("-", "_") in item["affected_markets"]
+                    }
+                    self.assertTrue(rendered_ids)
+                    self.assertLessEqual(rendered_ids, allowed_ids)
             rc = lint_site.main([str(out_dir), "--strict"])
             self.assertEqual(rc, 0)
+
+            screener = out_dir / "screener.html"
+            etfs = out_dir / "etfs.html"
+            stock_html = screener.read_text(encoding="utf-8")
+            etf_html = etfs.read_text(encoding="utf-8")
+            stock = lint_site.parse_html_file("screener.html", screener, stock_html)
+            etf = lint_site.parse_html_file("etfs.html", etfs, etf_html)
+            stock_inventory = json.loads(stock.screener_json_raw)
+            stock_inventory[0].update(price="999,999 元", price_source="交易所已认证")
+            stock.screener_json_raw = json.dumps(stock_inventory)
+            inventory = json.loads(etf.etf_json_raw)
+            row = next(item for item in inventory if item["evidence"])
+            row[row["evidence"][0]["field"]] = "篡改后仍保留同一引文"
+            etf.etf_json_raw = json.dumps(inventory)
+            stock.raw_text = re.sub(
+                r'(<script id="ah-matrix-data" type="application/json">).*?(</script>)',
+                r"\g<1>[]\2", stock_html, flags=re.S,
+            )
+            market = json.loads((ROOT / "equity/state/market_state.json").read_text(encoding="utf-8"))
+            errors = []
+            lint_site._check_published_inventory(out_dir, {"screener.html": stock, "etfs.html": etf}, market, errors)
+            self.assertTrue(any("rendered cited field" in error for error in errors), errors)
+            self.assertTrue(any("A/H matrix differs" in error for error in errors), errors)
+            self.assertTrue(any("disagrees with the dated catalog" in error for error in errors), errors)
 
 
 class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
@@ -567,7 +959,7 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
         pft_home = lint_site._inspect_element_by_id(cockpit, "ch-private_funds_trust")
         self.assertIsNotNone(pft_home)
         self.assertIn("ch-hnw", pft_home.classes)
-        self.assertIn("300万门槛", pft_home.inner_text)
+        self.assertIn("合格投资者", pft_home.inner_text)
 
     def test_etfs_orthogonal_filters_and_charts_expanded_groups(self):
         gold_snap, eq_state, ch_data, etf_data, kline_manifest = self._load_live_ssots()
@@ -603,7 +995,7 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
             "CRYPTO_ASSET_RE" in kline_js or "crypto_" in kline_js,
             "kline.js missing CRYPTO_ASSET_RE / crypto_ identifier for read-only crypto guard",
         )
-        self.assertIn("境内严禁虚拟货币交易", kline_js)
+        self.assertIn("境内禁止开展虚拟货币相关业务", kline_js)
 
         # Row 2: Orthogonal region filter pills (all 7 canonical values)
         rg_vals = set(re.findall(r'data-etf-region="([^"]+)"', etfs_html))
@@ -754,7 +1146,7 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
                 "中美债市与REITs",
                 'data-chart-group="non_us_global"',
                 'data-chart-group="bonds_reits"',
-                *lint_site.S7_REQUIRED_GLOBAL_BENCHMARKS,
+                *(symbol for symbol in lint_site.REQUIRED_PUBLISHED_SERIES if symbol != "idx_sh000001"),
             ):
                 self.assertIn(expected_tok, s7_joined, f"Gate S7 failed to catch missing {expected_tok!r}")
 
@@ -829,12 +1221,18 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
             catalog = [{"id": "idx_sh000001", "name": "上证指数", "group": "a_index", "shard": "core", "priority": 1}]
             catalog.extend(
                 {"id": sym_id, "name": sym_id, "group": "global_index", "shard": "core"}
-                for sym_id in lint_site.S7_REQUIRED_GLOBAL_BENCHMARKS
+                for sym_id in lint_site.REQUIRED_PUBLISHED_SERIES if sym_id != "idx_sh000001"
             )
             catalog.extend(
                 {"id": f"stk_{i:06d}", "name": f"样本{i}", "group": "stocks", "shard": "core"}
                 for i in range(90)
             )
+            for entry in catalog:
+                shard_obj["series"].setdefault(entry["id"], {
+                    "id": entry["id"],
+                    "bars": [["2026-11-26", 10.0, 11.0, 9.0, 10.5, 100.0]],
+                })
+            (root / "assets" / "klines" / "core.json").write_text(json.dumps(shard_obj), encoding="utf-8")
             manifest = {"schema_version": "1.0", "shards": {"core": "core.json"}, "catalog": catalog}
             (root / "assets" / "klines" / "manifest.json").write_text(
                 json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
@@ -845,11 +1243,11 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
             }
             bad_errs, bad_warns = [], []
             lint_site.run_gate_s7(root, docs, bad_errs, bad_warns)
-            self.assertTrue(any("assets/kline.js" in e and "境内严禁虚拟货币交易" in e for e in bad_errs), bad_errs)
+            self.assertTrue(any("assets/kline.js" in e and "境内禁止开展虚拟货币相关业务" in e for e in bad_errs), bad_errs)
 
-            # Adding CRYPTO_ASSET_RE + 境内严禁虚拟货币交易 clears Gate S7 cleanly
+            # Adding CRYPTO_ASSET_RE + 境内禁止开展虚拟货币相关业务 clears Gate S7 cleanly
             (root / "assets" / "kline.js").write_text(
-                'const CRYPTO_ASSET_RE = /^crypto_/i; const MSG = "境内严禁虚拟货币交易";\n',
+                'const CRYPTO_ASSET_RE = /^crypto_/i; const MSG = "境内禁止开展虚拟货币相关业务";\n',
                 encoding="utf-8",
             )
             ok_errs, ok_warns = [], []
@@ -859,6 +1257,82 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
 
 
 class TestPolicyCalendarSectionAndGates(unittest.TestCase):
+    def test_policy_source_links_are_bound_to_the_same_brief_and_displayed_on_both_pages(self):
+        original = "https://www.federalreserve.gov/releases/h41/20261127/"
+        extra = "https://www.newyorkfed.org/markets/desk-operations/repo?date=2026-11-27&view=results"
+        case = {"policy_briefs": [{
+            "id": "fed-funding", "headline": "联储资金水位核验", "home_featured": True, "affected_markets": ["us_stock"],
+            "source_url": original, "source_urls": [extra],
+        }]}
+        snippets = {
+            "index.html": build_site._render_policy_calendar_section(case, {}, gold_blocked=False),
+            "daily/us-stock-latest.html": build_site._render_market_news_radar("us-stock", case, {}, False)[0],
+        }
+        docs = {name: lint_site.parse_html_file(name, ROOT / name, raw) for name, raw in snippets.items()}
+        issues = []
+        lint_site._check_published_policy_links(docs, case, issues)
+        self.assertEqual(issues, [])
+        name = "daily/us-stock-latest.html"
+        wrong = snippets[name].replace('data-pcal-brief-id="fed-funding"', 'data-pcal-brief-id="other-brief"')
+        docs[name] = lint_site.parse_html_file(name, ROOT / name, wrong)
+        lint_site._check_published_policy_links(docs, case, issues)
+        self.assertEqual(len(issues), 2)
+        self.assertTrue(any("fed-funding" in issue for issue in issues))
+        self.assertTrue(any("other-brief" in issue for issue in issues))
+
+    def test_daily_calendar_filters_markets_dates_and_windows_by_event_id(self):
+        ed = "2026-11-28_1130"
+        def event(event_id, start, end, time, markets=("gold",), precision="exact"):
+            return {
+                "event_id": event_id, "date_cst": start, "end_date_cst": end, "time_cst": time,
+                "affected_markets": list(markets), "date_precision": precision,
+                "title": event_id, "impact_tier": "P0",
+                "market_transmission": "传导内容", "pre_event_stance": "纪律内容",
+                "source_url": "https://example.org/calendar",
+            }
+        policy = {"edition_id": ed, "as_of_cst": "2026-11-28T12:00:00+08:00", "events": [
+            event("past", "2026-11-28", "2026-11-28", "02:00"),
+            event("late", "2026-12-13", "2026-12-13", "09:00"),
+            event("equity-only", "2026-12-03", "2026-12-03", "09:00", ("a_share",)),
+            event("ongoing", "2026-11-27", "2026-11-29", "时刻待核", precision="window_tbd"),
+            event("exact", "2026-11-28", "2026-11-28", "13:00"),
+            event("exact", "2026-11-28", "2026-11-28", "13:00"),
+            event("horizon-edge", "2026-12-12", "2026-12-12", "09:00"),
+        ]}
+        calendar = build_site._render_market_forward_calendar("gold", policy, ed)
+        self.assertEqual(re.findall(r'data-event-id="([^"]+)"', calendar), ["ongoing", "exact", "horizon-edge"])
+        self.assertEqual(calendar.count('<th scope="col">'), 4)
+        self.assertIn("时刻待核", calendar)
+        self.assertIn("2026-11-27 至 2026-11-29", calendar)
+        self.assertIn("2026-11-28 12:00", calendar)
+        self.assertIn("2026-12-12", calendar)
+        self.assertNotIn(">P0<", calendar)
+        self.assertEqual(build_site._render_market_forward_calendar("gold", policy, "2026-11-28_0730"), "")
+
+    def test_daily_calendar_replaces_only_the_matching_current_manuscript_table(self):
+        hand_table = (
+            '<h3 id="old-calendar">4. 未来 7–14 天全北京时间财经与政策日历</h3>'
+            '<div class="mobile-scroll-cue" aria-hidden="true">← 左右滑动查看完整列 →</div>'
+            '<div class="table-wrap"><table><thead>'
+            '<tr><th>北京时间</th><th>核心事件与级别</th><th>跨资产传导要点</th><th>事前钱包纪律</th></tr>'
+            '</thead><tbody><tr><td>原稿日期</td><td>手工复合事件</td><td>往期传导</td><td>往期纪律</td></tr></tbody>'
+            '</table></div>'
+        )
+        unrelated = hand_table.replace("事前钱包纪律", "非日历专项说明")
+        current = '<section id="sec-market-calendar"><table><tr data-event-id="structured"><td>当班</td></tr></table></section>'
+        revised = build_site._place_daily_calendar(
+            "<p>前文</p>" + hand_table + "<p>后文</p>", current,
+            reused=False, original_issue="本班", original_url="gold-2026-11-28-1130.html",
+        )
+        self.assertEqual(revised.count("<table>"), 1)
+        self.assertIn('href="gold-2026-11-28-1130.html#old-calendar"', revised)
+        self.assertNotIn("手工复合事件", revised)
+        self.assertIn("<p>后文</p>", revised)
+        unmodified = build_site._place_daily_calendar(
+            unrelated, current, reused=False, original_issue="本班", original_url="dated.html",
+        )
+        self.assertIn(unrelated, unmodified)
+
     def _sample_policy_cal(self) -> dict:
         return {
             "schema_version": "1.0",
@@ -1815,6 +2289,10 @@ class TestWave2VisualWidgetsCockpitAndSiteLinters(unittest.TestCase):
             }
             fri_md.write_text(
                 "# A 股周五收盘深度研报\n\n周五正文内容。\n\n"
+                "## 未来 14 天全北京时间财经与政策日历\n\n"
+                "| 北京时间 | 核心事件与级别 | 对 A 股传导要点 | 事前操作纪律 |\n"
+                "| :--- | :--- | :--- | :--- |\n"
+                "| 11/28 02:00 | 周五原稿黑五事件 | 原稿传导 | 原稿边界 |\n\n"
                 f"<!-- DAILY_META_JSON {json.dumps(fri_meta, ensure_ascii=False)} -->\n",
                 encoding="utf-8",
             )
@@ -1841,6 +2319,13 @@ class TestWave2VisualWidgetsCockpitAndSiteLinters(unittest.TestCase):
                 if st_child.name in ("market_state.json", "policy_calendar.json"):
                     data = json.loads(st_child.read_text(encoding="utf-8"))
                     data["edition_id"] = "2026-11-28_1130"
+                    data["as_of_cst"] = "2026-11-28T12:00:00+08:00"
+                    if st_child.name == "policy_calendar.json":
+                        data["events"] = [{
+                            "event_id": "weekend_calendar_fixture", "title": "周六新增事件",
+                            "date_cst": "2026-11-29", "end_date_cst": "2026-11-29", "time_cst": "08:00",
+                            "date_precision": "exact", "affected_markets": ["a_share"], "impact_tier": "P1",
+                        }]
                     (tmp_state_dir / st_child.name).write_text(
                         json.dumps(data, ensure_ascii=False), encoding="utf-8"
                     )
@@ -1858,8 +2343,16 @@ class TestWave2VisualWidgetsCockpitAndSiteLinters(unittest.TestCase):
             dated_html = (out_dir / "daily" / "a-share-2026-11-27-1800.html").read_text(encoding="utf-8")
             self.assertIn("daily-visual-cockpit", latest_html)
             self.assertIn('id="sec-market-news"', latest_html)
+            self.assertIn('data-kline-deck="daily-a-share"', latest_html)
+            self.assertIn('data-calendar-edition="2026-11-28_1130"', latest_html)
+            self.assertIn('data-event-id="weekend_calendar_fixture"', latest_html)
+            self.assertRegex(latest_html, r'(?s)<details><summary>原稿日历 · 2026-11-27.*?周五原稿黑五事件.*?</details>')
             self.assertNotIn("daily-visual-cockpit", dated_html)
             self.assertNotIn('id="sec-market-news"', dated_html)
+            self.assertNotIn('data-kline-deck="daily-a-share"', dated_html)
+            self.assertNotIn('id="sec-market-calendar"', dated_html)
+            self.assertNotIn("原稿日历 · 2026-11-27", dated_html)
+            self.assertIn("周五原稿黑五事件", dated_html)
 
     def test_lint_site_s3_s6_s7_bare_tier_wrapped_svg_gold_crypto_cockpit_and_dfii10(self):
         # 1. Gate S3: bare P0/P1/P2 caught in visible HTML & SVG <text>, while data-priority="P0" & P10 pass

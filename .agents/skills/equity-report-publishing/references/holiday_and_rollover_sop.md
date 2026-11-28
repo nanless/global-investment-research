@@ -26,7 +26,7 @@
   - **周一 `07:30 CST` 美股特例**：升级为**周度全维前瞻主刊（`main`，≥2 图）**，封账上周五 09:00/08:00 盘后终盘与周五现货比特币 ETF 官流（BTC 遵照央行 `银发〔2026〕42号` 中国大陆 0% 严禁配仓，仅作只读全球流动性观察），覆盖本周完整宏观/央行/财报/债市日历与周末加密/大宗映射（严禁将周末加密波动写成美股官收）。
   - **工作日 `11:30 CST` 午报重点**：A 股锁定 `11:30` 官方早盘收盘（12 大优先指数且上证 #1、沪深半日成交、中金所午盘基差、`10:30` 停牌 QDII 复牌溢价、逆回购/10 年国债及 09:15–09:30 官方宏观）；港股锁定 `11:30–11:45` 午盘前实盘与 `11:15` 官方 HIBOR（南向半日流待 12:00 后披露记入 `data_caveats`）；美股因对应美东前一日 `22:30 EST` / `23:30 EDT` 按 `day - 1` 判定（常规日封账今早盘后终盘 + 亚盘期货；前一日美股法定假日按计划发 `holiday_watch`）。
 - **周六 `07:30 CST`（`_0730_`）**：**仅美股承接周五收盘发刊**——常规周五收盘发完整主刊（`main`）；黑五半日市发升级版守望刊（`holiday_watch`，建议 ≥1 图）。A 股与港股双休沿用旧稿；周五滞后美股盘后终盘与 BTC ETF 官流 `pending_backfills` 挂至下周一 `0730` 美股周度前瞻主刊。
-- **周六 `11:30` / `18:00` & 周日三班（`07:30` / `11:30` / `18:00`）**：无 P0/P1 突发默认模式 3 双休沿用旧稿（仅记 `INDEX.md` + `CHANGELOG.md` 不生冗余日报）；**每周日执行全量周度校准**：刷新 `SCORECARD.md` 周频对照、轮换精修 231 股池中的 **6–10 只核心龙头 7 维深研档案**（更新 `deep_dossiers.json`）、集中校准按 4 大执行角色分层的 12 大渠道中低频项（`multi_asset_channels.json`）及全量 181+ 正交标注 ETF 费率与规模（`etf_universe.json`），同步刷新 14–30 天前瞻 `policy_calendar.json`，命中旗舰 5 条阈值时同步刷新旗舰。
+- **周六 `11:30` / `18:00` & 周日三班（`07:30` / `11:30` / `18:00`）**：无 P0/P1 突发默认模式 3 双休沿用旧稿（仅记 `INDEX.md` + `CHANGELOG.md` 不生冗余日报）；**仅周日 `18:00` 班执行全量周度校准**：刷新 `SCORECARD.md` 周频对照、轮换精修 231 股池中的 **6–10 只核心龙头 7 维深研档案**（更新 `deep_dossiers.json`）、集中校准按 4 大执行角色分层的 12 大渠道中低频项（`multi_asset_channels.json`）及全量 181+ 正交标注 ETF 费率与规模（`etf_universe.json`），同步刷新 14–30 天前瞻 `policy_calendar.json`，命中旗舰 5 条阈值时同步刷新旗舰。
 
 ---
 
@@ -62,7 +62,7 @@
 
 - **模式 1（三市均正常开市）**：执行全时段完整主刊标准（周一至周五 `07:30` / `11:30` / `18:00` 三市均发 `main` 主刊，必含 ≥2 张矢量图）。
 - **模式 2（局部休市或半日市）**：正常开市市场发 `main` 主刊；休市/半日市市场使用 `resources/daily_light_or_holiday_template.md` 出版升级版 `holiday_watch` 守望刊（建议 ≥1 张矢量图；沿用 `YYYY-MM-DD_{0730,1130,1800}_{market}.md`）。
-- **模式 3（三市齐休）**：无 P0/P1 突发重磅时不发冗余新日报，三市沿用旧稿，仅更新 `daily/INDEX.md` 与 `daily/CHANGELOG.md` 顶部休市守望行（周日同步刷新 `SCORECARD.md` 与三大深研库周度校准）。
+- **模式 3（三市齐休）**：无 P0/P1 突发重磅时不发冗余新日报，三市沿用旧稿，仅更新 `daily/INDEX.md` 与 `daily/CHANGELOG.md` 顶部休市守望行（周日 `18:00` 班同步刷新 `SCORECARD.md` 与三大深研库周度校准）。
 - **`gold_event_id` 跨轨强校验（`edition_plan.py` 实装）**：
   1. 当权益 `calendar_overrides` 条目填写 `gold_event_id`（如 `us_thanksgiving_2026`、`global_new_year_2027`、`us_good_friday_2027`）时，引擎自动交叉核对 `gold/market_calendar.json` 中同名 `id` 事件；
   2. 强制要求：① 起止日期 `date_cst` / `end_date_cst` 与黄金 `date` / `end_date` 完全一致；② `markets_affected` 中所有市场均映射到黄金 `markets`（`a_share -> CN_A_SHARE`、`hk_stock -> HK_EQUITY`、`us_stock -> US_EQUITY`）；③ 单市美股声明 `affected_sessions` 时必须与黄金 `affected_editions` 完全一致；

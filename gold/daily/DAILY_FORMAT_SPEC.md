@@ -17,7 +17,7 @@
    - **Layer 0（首屏决策区）**：封面支持 **4 张高密度核心 KPI 卡**（`.kpi-strip.cols-4`，兼容 4–6 张）+ 静默牌 + 唯一买金红绿灯 + 1 句白话核心结论与底线风险（≤80 字，**0 感叹号、0 内部版本号、0 内部工程词/文件名**，优先报人民币元/克）。
    - **Layer 1（核心行动与钱包实算区）**：`.sn-grid` 信号/噪音双栏 + 买金四步红绿灯（满足 X/4 项）+ 历史水位尺 + **10 万元与 1 万元双刻度人民币钱包实算（6 周内锚定现行汇率，跨年显式标注汇率联动区间）+ A（空仓，统一 `30% + 45% + 25%` 配比与三步怎么买，严格落实 `008142` / `008143` 统一费率与 2026 销售费改口径）/ B（B1 轻仓套牢 · B2 重仓焦虑 · B3 早年浮盈）/ D（宏观原理）与 C（婚庆/实体省钱实算）紧凑操作卡**。
    - **Layer 2（精炼深度专题）**：**必须以 `# 第二部分` / `## 专题一` / `## 周末专题` 或 `DAILY_LAYER_BADGE`（`tone: "deep"`）起头以触发门禁分层**；每日 07:30 早报、11:30 午报与 18:00 晚报均发布精炼收敛主刊，内嵌 3 张 640px 标准矢量图 + 建议 1–2 张定制 `<!-- DAILY_VISUAL {...} -->` 通用信息图（如 7 渠道金价阶梯 `bar_compare`、驱动瀑布 `waterfall` 或传导链 `flow_chain`，杜绝纯文字墙），聚焦核心驱动、**重要一手官源政策/地缘财经要闻全量覆盖**（取消旧 1–2 条上限：全部重要黄金相关新闻同步入库 `equity/state/policy_calendar.json`，首页 `#sec-policy-calendar` 精选 6–9 条、黄金单页 `#sec-market-news` 无上限全量呈现，正文核心政策走完 5 环传导链）、关键情景与 **4 列未来 7–14 天全北京时间财经与政策排雷日历表**（使用纯中文级别徽章如「重磅/重要」，严禁裸露 `P0`/`P1`、严守黄金红灯锁）；全景主报告保持百科深度并内嵌 7 张 640px 矢量图；**严格分工不互抄**；`DAILY_GLOSSARY`（「关键词白话速查」）为可选（0–1 次，亦可交由站内术语白话浮窗自动释义）。
-   - **Layer 3（可选进阶复核区）**：顶部标明轻量眉批 `DAILY_LAYER_BADGE`（`tone: "pro"`），保留精确口径、Tier 0–3 阈值、高门槛工具（明标 50 万门槛）与免费官方数据自查路径；`DAILY_TRUST_BAR` 为可选（0–1 次）；版本演进 Diff、子代理核验与人名勘误**物理分离**至 `daily/AUDIT_LOG.md` 与 `daily/CHANGELOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）。
+   - **Layer 3（可选进阶复核区）**：顶部标明轻量眉批 `DAILY_LAYER_BADGE`（`tone: "pro"`），保留精确口径、Tier 0–3 阈值、高风险工具（区分普通商品期货、特定品种及期权，按各自现行适当性规则注明权限）与免费官方数据自查路径；`DAILY_TRUST_BAR` 为可选（0–1 次）；版本演进 Diff、子代理核验与人名勘误**物理分离**至 `daily/AUDIT_LOG.md` 与 `daily/CHANGELOG.md`（支持按月归档至 `daily/archive/{AUDIT_LOG,CHANGELOG}_YYYY_MM.md`）。
    - **统一 5 模块收敛主刊映射**：**Layer 0 → ① 3 分钟速读结论与 4 卡摘要**；**Layer 1 信号/噪音与水位 → ② 隔夜/日内主线、政策地缘精读与跨市传导**；**Layer 2 专题与 3 图 → ③ 深度专题与矢量图**；**Layer 1 双刻度钱包账与 A/B/D/C 行动卡 → ④ 实操配置与风控边界**；**Layer 2 4 列 7–14 天全北京时间财经/政策日历 + Layer 3 → ⑤ 关键日历与官方数据溯源**。
 3. **单一真相刻度（废除正文平行打分与部分过关误导）**：
    - 正文 Layer 0–1 彻底废除 `六灯 X.X/6`（含整数 `X/6` 及全角 `／6`）平行分制；全篇严禁出现「通过 0–3 关即可转黄/开新仓」等与四关全过原则冲突的错误表述（Gate 5 强制拦截），统一只用 **【历史水位尺】+【买金四步红绿灯（红灯停 Tier 0 / 黄灯试买 Tier 1 [30%] / 绿灯主买 Tier 2 [+45%→75%] / 满格配齐 Tier 3 [+25%→100%]，显示满足 X/4 项，四关全过方开新仓）】**。
@@ -81,9 +81,9 @@
 | `id` | 结构化证据与过关条件（`edition_validation.py` 强制复算） |
 | --- | --- |
 | `real_yield` | 官方 `dfii10_fred_official_pct ≤ 2.72`。盘中估算另行标注。 |
-| `rate_spread` | `(us2y_pct - effr_pct) × 100 ≤ 55` 基点。显示使用的 `spread_2y_ff_bp` 须和精确差值相差不超过 0.5 基点。 |
+| `rate_spread` | `(us2y_pct - effr_pct) × 100 ≤ 55` 基点。用截止前最后公布的有效联邦基金利率，记录 `effr_observation_date`、公布时间 `effr_published_at`（北京时间）和联储原始链接 `effr_source`。两个利率若属不同观察日，在正文说明。过了最近一个纽约联储营业日的收市时间仍缺新值时，保留上一次核实的数据作为参考，在 `data_caveats` 登记 `id=effr_release_delayed`、`market=gold`、`category=delayed_official` 和复核安排，第二关暂不通过。显示使用的 `spread_2y_ff_bp` 须和精确差值相差不超过 0.5 基点。 |
 | `vix` | 使用截点前最近十个已核实的 **Cboe 现货指数**日收（存于 `vix_10d_session_closes` 10 条 `{"date", "close"}`）。过关条件为当前可用读数 `< 30` 或较十日收盘峰回落 `≥ 10%`。普通交易日遇 Cboe 官方 CSV 尚未批量更新当日行或暂不可取时**不阻塞发刊**：可在 `vix_daily_row_checks` 标 `provisional_close`（须在 **3 个自然日**内以官方 CSV 终值核销，次日班次在 6h 窗口内重查）或 `pending`（暂沿用最近十条官方行并披露缺口）。美国假日按日历 `daily_row_check_after_et` 核查：半日市（如黑五 `11/27`、平安夜 `12/24`，有 `windows_et`）亦支持 `provisional_close`；`pending` 复查间隔 **4 小时**；`no_row_confirmed` 支持 Cboe 官方域公告 `confirmation_source` 或官方 CSV 自证 `next_published_date > day`。仅可用与截点处在同一连续发布窗口、距截点 ≤30 分钟的盘中现货指数作为比较读数；休市或无合格盘口时 `vix_live` 与 `vix_live_as_of` 同时留空。 |
-| `ny_close` | `spot_gold_ny_close_date` 是同口径已完成纽约 17:00 现货日线的交易日，`tier1_gate4_threshold_date` 是目标日之前有效交易日，`tier1_gate4_target_date` 是本次突破检验日。只有已完成日线的交易日等于目标日，且 `spot_gold_ny_close_usd > tier1_gate4_threshold_usd`（未舍入前高），才算通过。 |
+| `ny_close` | `spot_gold_ny_close_date` 是同口径已完成纽约 17:00 现货日线的交易日，`tier1_gate4_threshold_date` 是目标日前一个有效交易日（跳过周末与全休），`tier1_gate4_target_date` 是本次突破检验日。只有已完成日线的交易日等于目标日，且 `spot_gold_ny_close_usd > tier1_gate4_threshold_usd`（未舍入前高），才算通过。 |
 
 快照核心新增与对称字段（详见[黄金快照契约](../../.agents/skills/gold-research-publishing/references/directives-and-snapshot-schema.md)）：
 - **`etf_cn`**：国内黄金 ETF 标准无日期键（含 `as_of_date` 及 `518880`/`159937`/`518660` 的 `close`/`chg_pct`/`nav`/`flow_100m`）；

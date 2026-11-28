@@ -28,11 +28,23 @@ import tempfile
 import urllib.parse
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from difflib import SequenceMatcher
 from math import isfinite
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
+
+if __package__:
+    from .ah_dividends import parse_exchange_closes, parse_pair
+    from .inventory_evidence import ETF_FIELDS, STOCK_FIELDS, inventory_evidence, load_research_json
+    from .source_links import is_https_source, policy_brief_links
+    from .state_transaction import state_read_lock
+else:
+    from ah_dividends import parse_exchange_closes, parse_pair
+    from inventory_evidence import ETF_FIELDS, STOCK_FIELDS, inventory_evidence, load_research_json
+    from source_links import is_https_source, policy_brief_links
+    from state_transaction import state_read_lock
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -2168,7 +2180,7 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "term": "A/H 溢价与倒挂",
         "cat": "大盘信号",
         "plain": "同一家公司在 A 股和港股同时上市时的价格差。正值代表 A 股比港股贵；负值（倒挂）代表 A 股反而比港股便宜。",
-        "avoid": "避坑提醒：别只看表面便宜就换港股，用内地港股通买标准 H 股分红扣 20% 红利税（仅特定内地居民企业红筹股依发行人公告最高扣至约 28%），务必算税后净股息。",
+        "avoid": "避坑提醒：别只看表面便宜就换港股，用内地港股通买标准 H 股分红扣 20% 红利税（个别发行人的源头代扣须查当期分派公告），务必算税后净股息。",
     },
     {
         "key": "etf_vs_feeder",
@@ -2203,7 +2215,7 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "term": "银行理财破净与真净值化",
         "cat": "债券与固收",
         "plain": "资管新规后银行理财不再保本，每天按底层债券和股票市价算净值；「破净」就是净值跌破 1 元本金线。",
-        "avoid": "避坑提醒：「业绩比较基准」只是目标不是承诺保底，追求本金绝对安全应选储蓄国债或 50 万以内银行存款。",
+        "avoid": "避坑提醒：业绩比较基准不是保本承诺。比较储蓄国债的提前兑取规则，以及同一存款人在同一家投保机构的被保险存款本息合计 50 万元偿付上限。",
     },
     {
         "key": "t0_t1",
@@ -2223,7 +2235,7 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "key": "dividend_tax",
         "term": "红利税与通道税费差异",
         "cat": "税费与跨境",
-        "plain": "A 股持股超 1 年免红利税；港股通收标准 H 股息直扣 20%（仅特定内地居民企业红筹依公告最高约 28%）；个人直买交易所公司债付息扣 20%，交易所公司债/科创债 ETF（551500/159600）底层债券付息环节仍扣 20% 税（区别于银行间短融 ETF 511360 等银行间标的）。",
+        "plain": "A 股持股超 1 年免红利税；港股通收标准 H 股息直扣 20%（非 H 股的源头代扣须另查当期分派公告）；个人直买交易所公司债付息扣 20%，交易所公司债/科创债 ETF（551500/159600）底层债券付息环节仍扣 20% 税（区别于银行间短融 ETF 511360 等银行间标的）。",
         "avoid": "避坑提醒：买港股高股息前先按税后折算真实到手率，买交易所信用债 ETF 勿误当作免税债基；境外账户投资收益须依法履行年度全球纳税申报义务。",
     },
     {
@@ -2280,7 +2292,7 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "term": "非美居民税务表（W-8BEN）",
         "cat": "税费与跨境",
         "plain": "中国大陆等非美国税务居民在合规离岸券商开户时签署的税务身份声明表，用于享受中美税收协定优惠，把美股股息预扣税从 30% 降至 10%。",
-        "avoid": "避坑提醒：W-8BEN 通常每 3 年过期，忘记及时续签会被自动按 30% 扣美股股息税；且美股直投仍须留意 6 万美元非美居民美国遗产税免税额上限。",
+        "avoid": "避坑提醒：W-8BEN 通常有效至签署年后的第三个日历年末，个人情况改变时应更新。美股直投还须按美国所在地资产和适用赠与合计核对非美国公民、非美国住所者的 6 万美元遗产税申报门槛。",
     },
     {
         "key": "crs",
@@ -2308,7 +2320,7 @@ GLOSSARY_TERMS: tuple[dict[str, str], ...] = (
         "term": "除净（除权除息）",
         "cat": "基础入门",
         "plain": "港股把上市公司分红或送股后、股价按派息金额等额下调的交易日称为「除净日」。除净当天买入不再享有本次分红，参考价会直接扣除每股派息额。",
-        "avoid": "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收标准 H 股息须扣 20% 红利税（特定内地居民企业红筹依公告最高约 28%）。",
+        "avoid": "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收标准 H 股息须扣 20% 红利税（非 H 股的源头代扣须查当期分派公告）。",
     },
     {
         "key": "discount_ex_div",
@@ -3194,8 +3206,8 @@ def render_page_shell(
   {cmd_palette_html}
   {toc_drawer_html}
   {chart_modal_html}
-  <script src="{base_prefix}assets/app.js"></script>
   <script src="{base_prefix}assets/kline.js" defer></script>
+  <script src="{base_prefix}assets/app.js" defer></script>
 </body>
 </html>
 """
@@ -3214,7 +3226,14 @@ def render_doc_with_toc(
     visual_cockpit_html: str = "",
     market_news_html: str = "",
 ) -> str:
+    footer_note = footer_note.replace("本每日研报数据均经多源官方数据库核验，仅供参考", "本文按所标日期记录行情和研究判断")
     footer_div = f'<div class="footer-note">{esc(footer_note)}</div>' if footer_note else ""
+    cited_urls = re.findall(r'<a\b[^>]*\bhref="(https://[^"\s]+)"', body_html, flags=re.I)
+    external_citations = any(
+        is_https_source(url, direct=True) and urllib.parse.urlsplit(url).hostname != "nanless.github.io"
+        for url in cited_urls
+    )
+    citation_notice = "" if external_citations else '<p class="footer-note">这篇正文暂未附可直接打开的外部出处。</p>'
     mobile_strip = ""
     if toc_items:
         sidebar = (
@@ -3255,6 +3274,7 @@ def render_doc_with_toc(
         f"{mobile_strip}"
         f'<article class="article-card {art_cls}">'
         f"{cover_html}"
+        f"{citation_notice}"
         f"{visual_cockpit_html}"
         f"{disclosure_html}"
         f"{kline_wrapped_html}"
@@ -3503,13 +3523,13 @@ _DEFAULT_CHANNEL_BEGINNER: dict[str, dict[str, Any]] = {
         "worst_case": "债市回调或股市下跌时，银行理财和固收+可能跌破 1 元本金线（破净），部分含权较高的固收+回撤可达 3%–8%。",
         "steps": [
             ("1. 选对入口 App", "在官方手机银行、天天基金、蚂蚁财富或持牌券商 App 选购，优先查看 2026 销售费改后的透明低费份额。"),
-            ("2. 核对关键参数", "先看底层资产是否混入股票或超长债，再核对近 3 年最大回撤、C 类销售服务费及满 1 年免收条款。"),
+            ("2. 核对关键参数", "先看底层持仓和历史回撤，再核对本份额、持有期和渠道对应的实际费用。"),
             ("3. 避开 7 天惩罚费", "无论 A 类还是 C 类公募基金，持有不满 7 天赎回通常硬扣 1.5% 惩罚费；选产品按用钱周期匹配，不盲追榜单短期冠军。"),
         ],
         "picks": ["头部低费同业存单 AAA 与高等级短债基金", "费率透明的多资产平衡型 ETF-FOF 或持牌稳健投顾"],
         "avoids": ["把近期宣传高业绩基准的银行固收+理财当保本存款买", "买入公募基金不满 7 天就频繁赎回白交 1.5% 惩罚费"],
         "faq": [
-            ("基金 A 类和 C 类到底怎么选？", "长期持有（通常 1 年以上）仍优先选 1 折申购费的 A 类；几个月内波段选 C 类。注意 2026 公募销售费改中 C 类满 1 年免收销服费不含货币基金，且旧合同过渡期至 2026-12-31、自 2027-01-01 起全面生效，下单前务必核对合同。"),
+            ("基金 A 类和 C 类怎样比较？", "合计申购费、运营费、销售服务费与赎回费。适用份额持有超过一年后，停止继续收取销售服务费。前一年费用看基金合同和购买渠道。"),
             ("理财显示 R2 中低风险为什么还会亏钱？", "R2 代表波动较小而非保本。债市利率突然反弹或底层信用债估值调整时，净值化理财同样会出现阶段性浮亏。"),
         ],
     },
@@ -3556,7 +3576,7 @@ _DEFAULT_CHANNEL_BEGINNER: dict[str, dict[str, Any]] = {
     "qdii_mrf": {
         "risk_stars": 3,
         "one_liner": "合法不出境就能配置全球股债的合规桥梁，核心纪律是「避开高溢价、选对冲累计」。",
-        "today_alert": "严禁在场内追买溢价超 3% 或停牌提示的跨境基；MRF 必选「人民币对冲+累计」避汇损与 20% 派息税。",
+        "today_alert": "严禁在场内追买溢价超 3% 或停牌提示的跨境基；香港互认基金需分别核对留在基金内的累计收益、实际分配的代扣和份额转让差价的暂免条件，也要核算汇率与对冲成本。",
         "short_threshold": "10–100 元起（理财通 2.0 需大湾区资格）",
         "what_it_is": "包括场内外 QDII 基金、香港北向互认基金（MRF）以及粤港澳大湾区跨境理财通，全部在国家合规框架内投资海外股票或债券。",
         "how_it_earns": "分享海外优质企业盈利或高评级美元债票息，降低单一市场波动对家庭资产的冲击。",
@@ -3636,7 +3656,7 @@ _DEFAULT_CHANNEL_BEGINNER: dict[str, dict[str, Any]] = {
     "private_funds_trust": {
         "risk_stars": 4,
         "one_liner": "面向 300 万金融资产合格投资者的进阶对冲工具，门槛高、锁定期长、新手无须碰。",
-        "today_alert": "严守 300 万门槛与单笔 100 万底线，下单前必核中基协/中国信登备案与独立托管专户。",
+        "today_alert": "按产品规则核验合格投资者身份、单只产品最低认购金额、备案和托管安排。",
         "short_threshold": "300 万资产认证 · 单笔 100 万起",
         "what_it_is": "面向法定合格投资者的合规私募证券基金（如多核量化 CTA、股票多头/指增）与净值化标品信托，提供公募无法实现的危机负相关对冲策略。",
         "how_it_earns": "依赖管理人投研与多策略量化模型获取超额收益或危机期趋势保护，通常收固定管理费加业绩提成。",
@@ -3965,7 +3985,7 @@ _CHANNEL_ROLE_GROUPS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     ),
     (
         "alt_hnw",
-        "第四层 · 税优养老、非金大宗与 300 万专享",
+        "第四层 · 税优养老、非金大宗与合格投资者渠道",
         "节税规划 · 滞胀战术仓 · 合格投资者门槛（个人养老金 / 非金商品排雷 / 私募信托）",
         ("tax_advantaged_accounts", "commodity_etfs", "private_funds_trust"),
     ),
@@ -4003,7 +4023,7 @@ def _render_channel_overview_cards(
 
         prods = [p for p in (ch.get("products") or []) if isinstance(p, dict)]
         rules = [r for r in (ch.get("rules_and_redlines") or []) if isinstance(r, str) and r.strip()]
-        hnw_badge = '<span class="ch-hnw-badge">300万门槛</span>' if is_hnw else ""
+        hnw_badge = '<span class="ch-hnw-badge">合格投资者</span>' if is_hnw else ""
         hnw_cls = " ch-hnw" if is_hnw else ""
 
         if compact:
@@ -4366,7 +4386,7 @@ def build_channel_detail_page(
         if cid == "qdii_mrf"
         else ""
     )
-    hnw_hero_badge = '<span class="ch-hnw-badge">300万合格投资者专享</span>' if is_hnw else ""
+    hnw_hero_badge = '<span class="ch-hnw-badge">合格投资者</span>' if is_hnw else ""
     raw_summary = str(ch.get("summary") or "").strip()
     if len(raw_summary) > 180:
         sent_m = re.search(r"[。！？]", raw_summary[:180])
@@ -4602,7 +4622,7 @@ def _render_home_etf_showcase(etf_data: dict[str, Any] | None, total_pool: int) 
     groups = [
         ("cn-eq", "🇨🇳 A 股权益 ETF", cn_eq, "宽基 A500 · 沪深300 · 自由现金流 · 红利低波与行业地板费", "etfs.html#asset_class=equity&region=cn"),
         ("hk-eq", "🇭🇰 港股权益 ETF", hk_eq, "离岸免印花税 · 境内非 QDII 港股通 · 港股高息与恒科", "etfs.html#asset_class=equity&region=hk"),
-        ("us-eq", "🇺🇸 美股权益 ETF", us_eq, "0.02%–0.08% 地板费美股宽基 · 爱尔兰免遗产税 · 境内 QDII", "etfs.html#asset_class=equity&region=us"),
+        ("us-eq", "🇺🇸 美股权益 ETF", us_eq, "美股、爱尔兰 UCITS 与境内 QDII · 费用和跨境税务核对", "etfs.html#asset_class=equity&region=us"),
         ("nonus-eq", "🌏 日欧亚太与全球权益", nonus_eq, "513800 东证平价 · 159561 德国直投 · VWRA / VXUS / IEMG", "etfs.html#asset_class=equity&region=non_us"),
         ("fi-cash", "🏦 债券 / 现金盾 / 转债 / REITs", fi_cash, "中债短融/十年/三十年 · 美元短债 SGOV / IB01 · 投资级转债", "etfs.html#asset_class=fixed_income_plus"),
         ("qdii", "⚡ 境内 QDII 溢价与限购专窗", qdii_etfs, f"{len(qdii_etfs)} 只场内 QDII 实时溢价排雷 · 对比官方直销 App 限额", "etfs.html#preset=qdii"),
@@ -4766,8 +4786,8 @@ _MULTI_INDEX_SPECS: dict[str, tuple[dict[str, Any], ...]] = {
         {"id": "idx_IXIC", "code": "IXIC", "name": "纳斯达克综合", "short": "纳斯达克", "tier": "核心双璧", "prefix": "", "suffix": "", "fmt": ",.2f"},
         {"id": "idx_NDX", "code": "NDX", "name": "纳斯达克100", "short": "纳指100", "tier": "核心双璧", "prefix": "", "suffix": "", "fmt": ",.2f"},
         {"id": "idx_DJI", "code": "DJI", "name": "道琼斯工业", "short": "道琼斯", "tier": "核心双璧", "prefix": "", "suffix": "", "fmt": ",.2f"},
-        {"id": "idx_RUT", "code": "IWM", "name": "罗素2000", "short": "罗素2000", "tier": "小盘广度", "prefix": "$", "suffix": "", "fmt": ",.2f"},
-        {"id": "idx_SPXEW", "code": "RSP", "name": "标普500等权", "short": "标普等权", "tier": "市场广度", "prefix": "$", "suffix": "", "fmt": ",.2f"},
+        {"id": "idx_RUT", "code": "IWM", "name": "罗素2000 ETF", "short": "罗素2000 ETF", "tier": "小盘广度", "prefix": "$", "suffix": "", "fmt": ",.2f"},
+        {"id": "idx_SPXEW", "code": "RSP", "name": "标普500等权 ETF", "short": "标普等权 ETF", "tier": "市场广度", "prefix": "$", "suffix": "", "fmt": ",.2f"},
         {"id": "idx_SOX", "code": "SOX", "name": "费城半导体", "short": "费城半导体", "tier": "算力芯片", "prefix": "", "suffix": "", "fmt": ",.2f"},
         {"id": "idx_VIX", "code": "VIX", "name": "VIX恐慌指数", "short": "VIX恐慌", "tier": "情绪熔断", "prefix": "", "suffix": "", "fmt": ".2f"},
     ),
@@ -4826,7 +4846,46 @@ _MULTI_INDEX_SPECS: dict[str, tuple[dict[str, Any], ...]] = {
     ),
 }
 
-_RED_CHIP_28_CODES: frozenset[str] = frozenset({"00883.HK", "00941.HK", "00836.HK", "00291.HK", "00992.HK", "00267.HK"})
+_SPECIAL_WITHHOLDING_CODES: frozenset[str] = frozenset({"00883.HK", "00941.HK", "00836.HK", "00291.HK", "00992.HK", "00267.HK"})
+
+
+def _valid_iso_date(raw: Any) -> str:
+    if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return ""
+    try:
+        return date.fromisoformat(raw).isoformat()
+    except ValueError:
+        return ""
+
+
+def _kline_source_label(provider: Any) -> str:
+    family = str(provider or "").lower().split("_", 1)[0]
+    return {
+        "tencent": "腾讯行情", "sina": "新浪行情", "sge": "上海黄金交易所",
+        "cboe": "芝加哥期权交易所", "us": "美国财政部", "chinabond": "中债",
+        "csindex": "中证指数", "eastmoney": "东方财富", "ft": "金融时报",
+        "justetf": "justETF", "cnbc": "CNBC 行情", "coinbase": "境外公开报价",
+        "exchange": "交易所原表",
+    }.get(family, "日线来源待核")
+
+
+def _quote_status(stamp: str) -> str:
+    for pattern, label in (
+        (r"沿用|缓存", "沿用报价"), (r"官结|官方结算", "官结"),
+        (r"官收|官方收盘|官方终盘", "官收"), (r"盘中|实盘", "盘中"),
+        (r"前收|收盘", "收盘参考"),
+    ):
+        if re.search(pattern, stamp):
+            return label
+    return "盘口待核"
+
+
+def _quote_provenance(row: dict[str, Any]) -> str:
+    return " · ".join((
+        row.get("quote_date") or "行情日待核",
+        row.get("quote_status") or "盘口待核",
+        row.get("quote_source") or "来源待核",
+    ))
 
 
 def _resolve_multi_index_groups(
@@ -4834,13 +4893,11 @@ def _resolve_multi_index_groups(
     eq_state: dict[str, Any],
     kline_manifest: dict[str, Any] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Merge priority-ordered global multi-index quotes from index_matrix -> kline manifest -> scalar SSOT fallbacks."""
-    cat_by_id: dict[str, dict[str, Any]] = {}
-    if isinstance(kline_manifest, dict):
-        for c in kline_manifest.get("catalog") or []:
-            if isinstance(c, dict) and c.get("id"):
-                cat_by_id[str(c["id"])] = c
-
+    """Choose a single observation for each index, keeping its move and attribution together."""
+    cat_by_id = {
+        row["id"]: row for row in ((kline_manifest or {}).get("catalog") or [])
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    }
     markets = eq_state.get("markets") or {}
     a_m = markets.get("a_share") or {}
     hk_m = markets.get("hk_stock") or {}
@@ -4849,144 +4906,131 @@ def _resolve_multi_index_groups(
     rates = linkages.get("rates_fx_chain") or {}
     comm = linkages.get("commodity_mirror") or {}
     brake = linkages.get("crisis_correlation_brake") or {}
+    cn_rates = (eq_state.get("rates_bonds_core") or {}).get("cn_rates") or {}
+    nonus_sat = eq_state.get("non_us_global_satellite") or {}
+    nonus_benchmarks = [
+        benchmark for market in (nonus_sat.get("markets") or []) if isinstance(market, dict)
+        for benchmark in (market.get("benchmarks") or [])
+    ] if isinstance(nonus_sat, dict) else []
 
-    override_by_key: dict[str, dict[str, Any]] = {}
-    nonus_sat = eq_state.get("non_us_global_satellite") if isinstance(eq_state.get("non_us_global_satellite"), dict) else {}
-    nonus_bms: list[dict[str, Any]] = []
-    for m_obj in (nonus_sat.get("markets") or []):
-        if isinstance(m_obj, dict) and isinstance(m_obj.get("benchmarks"), list):
-            for bm in m_obj["benchmarks"]:
-                if isinstance(bm, dict):
-                    nonus_bms.append(bm)
-
-    for raw_list in (
-        a_m.get("index_matrix"),
-        hk_m.get("index_matrix"),
-        us_m.get("index_matrix"),
-        (markets.get("gold_mirror_readonly") or {}).get("index_matrix"),
-        gold_snap.get("index_matrix"),
-        linkages.get("macro_index_matrix"),
-        nonus_bms,
+    eq_source, gold_source = "权益研报快照", "黄金研报快照"
+    overrides: dict[str, tuple[dict, str]] = {}
+    for source, rows in (
+        (eq_source, a_m.get("index_matrix")),
+        (eq_source, hk_m.get("index_matrix")),
+        (eq_source, us_m.get("index_matrix")),
+        (gold_source, (markets.get("gold_mirror_readonly") or {}).get("index_matrix")),
+        (gold_source, gold_snap.get("index_matrix")),
+        (eq_source, linkages.get("macro_index_matrix")),
+        (eq_source, nonus_benchmarks),
     ):
-        if isinstance(raw_list, list):
-            for row in raw_list:
-                if not isinstance(row, dict):
-                    continue
-                for rk in ("id", "kline_id", "code", "name"):
-                    rv = str(row.get(rk) or "").strip()
-                    if rv:
-                        override_by_key[rv] = row
-                        override_by_key[rv.upper()] = row
-                code_v = str(row.get("code") or "").strip()
-                if code_v and not code_v.startswith("idx_"):
-                    idx_alias = f"idx_{code_v}"
-                    override_by_key[idx_alias] = row
-                    override_by_key[idx_alias.upper()] = row
+        for row in rows if isinstance(rows, list) else ():
+            if not isinstance(row, dict):
+                continue
+            for field in ("id", "kline_id", "code", "name"):
+                key = str(row.get(field) or "").strip().upper()
+                if key:
+                    overrides[key] = row, source
 
-    scalar_fallback: dict[str, tuple[float | None, float | None]] = {
-        "idx_sh000001": (_safe_float(a_m.get("benchmark_sse")), None),
-        "idx_sh000300": (_safe_float(a_m.get("benchmark_csi300")), None),
-        "idx_sh000922": (_safe_float(a_m.get("benchmark_csi_dividend")), None),
-        "idx_hkHSI": (_safe_float(hk_m.get("benchmark_hsi")), None),
-        "idx_hkHSTECH": (_safe_float(hk_m.get("benchmark_hstech")), None),
-        "idx_hkHSCEI": (_safe_float(hk_m.get("benchmark_hscei")), None),
-        "idx_HSAHP": (_safe_float(hk_m.get("hsahp_index")), None),
-        "rate_CN10Y": (_safe_float((eq_state.get("rates_bonds_core") or {}).get("cn_rates", {}).get("cgb10y_pct")) or _safe_float(rates.get("cgb10y_pct")) or _safe_float(a_m.get("cgb10y_pct")), None),
-        "rate_CN30Y": (_safe_float((eq_state.get("rates_bonds_core") or {}).get("cn_rates", {}).get("cgb30y_pct")), None),
-        "rate_CN2Y": (_safe_float((eq_state.get("rates_bonds_core") or {}).get("cn_rates", {}).get("cgb2y_pct")), None),
-        "rate_US2Y": (_safe_float(rates.get("us2y_pct")) or _safe_float(gold_snap.get("us2y_pct")), None),
-        "rate_US30Y": (_safe_float(rates.get("us30y_pct")) or _safe_float(gold_snap.get("us30y_pct")), None),
-        "rate_DFII10": (_safe_float(rates.get("dfii10_pct")) or _safe_float(gold_snap.get("dfii10_live_pct")), None),
-        "idx_SPX": (_safe_float(us_m.get("benchmark_sp500")), _safe_float(gold_snap.get("spx_change_pct"))),
-        "idx_NDX": (_safe_float(gold_snap.get("ndx_close")), _safe_float(gold_snap.get("ndx_change_pct"))),
-        "idx_DJI": (_safe_float(gold_snap.get("dow_close")), _safe_float(gold_snap.get("dow_change_pct"))),
-        "idx_VIX": (_safe_float(brake.get("vix_close")) or _safe_float(gold_snap.get("vix_close")), _safe_float(gold_snap.get("vix_change_pct"))),
-        "cmd_XAU": (_safe_float(gold_snap.get("spot_gold_ny_close_usd")), _safe_float(gold_snap.get("spot_gold_ny_change_pct"))),
-        "cmd_GC": (_safe_float(gold_snap.get("comex_front_settle_usd")), None),
-        "cmd_AU0": (_safe_float(gold_snap.get("shfe_gold_day_rmb")) or _safe_float(gold_snap.get("shfe_gold_night_rmb")), None),
-        "cmd_Au9999": (_safe_float(gold_snap.get("sge_au9999_day_rmb")), _safe_float(gold_snap.get("sge_au9999_day_change_pct"))),
-        "cmd_XAG": (_safe_float(gold_snap.get("spot_silver_ny_close_usd")) or _safe_float(gold_snap.get("spot_silver_usd")), None),
-        "cmd_AG0": (_safe_float(gold_snap.get("shfe_silver_day_rmb_kg")) or _safe_float(gold_snap.get("shfe_silver_night_rmb_kg")), _safe_float(gold_snap.get("shfe_silver_day_change_pct"))),
-        "cmd_OIL": (_safe_float(comm.get("brent_usd")) or _safe_float(gold_snap.get("brent_settle_usd")), _safe_float(comm.get("brent_chg_pct")) or _safe_float(gold_snap.get("brent_change_pct"))),
-        "cmd_CL": (_safe_float(comm.get("wti_usd")) or _safe_float(gold_snap.get("wti_settle_usd")), _safe_float(gold_snap.get("wti_change_pct"))),
-        "cmd_HG": (_safe_float(comm.get("comex_copper_usd_lb")), _safe_float(comm.get("comex_copper_chg_pct"))),
-        "fx_DXY": (_safe_float(rates.get("dxy")) or _safe_float(gold_snap.get("dxy")), _safe_float(gold_snap.get("dxy_change_pct"))),
-        "rate_US10Y": (_safe_float(rates.get("us10y_pct")) or _safe_float(us_m.get("us10y_pct")), None),
-        "fx_USDCNH": (_safe_float(rates.get("usd_cnh")) or _safe_float(rates.get("usd_cny_1630")), None),
-        "fx_USDJPY": (_safe_float(rates.get("usd_jpy")) or _safe_float(brake.get("usdjpy_level")), None),
-        "crypto_BTC": (_safe_float(comm.get("btc_usd")) or _safe_float(gold_snap.get("btc_usd")), _safe_float(comm.get("btc_chg_pct")) or _safe_float(gold_snap.get("btc_change_pct"))),
+    # These are per-source alternatives, with optional change and date fields from that same observation.
+    scalar_fields = {
+        "idx_sh000001": ((a_m, "benchmark_sse"),),
+        "idx_sh000300": ((a_m, "benchmark_csi300"),),
+        "idx_sh000922": ((a_m, "benchmark_csi_dividend"),),
+        "idx_hkHSI": ((hk_m, "benchmark_hsi"),),
+        "idx_hkHSTECH": ((hk_m, "benchmark_hstech"),),
+        "idx_hkHSCEI": ((hk_m, "benchmark_hscei"),),
+        "idx_HSAHP": ((hk_m, "hsahp_index"),),
+        "rate_CN10Y": ((cn_rates, "cgb10y_pct", "", "cgb10y_official_curve_date"), (rates, "cgb10y_pct"), (a_m, "cgb10y_pct")),
+        "rate_CN30Y": ((cn_rates, "cgb30y_pct", "", "cgb30y_official_curve_date"), (rates, "cgb30y_pct")),
+        "rate_CN2Y": ((cn_rates, "cgb2y_pct", "", "cgb2y_official_curve_date"), (rates, "cgb2y_pct")),
+        "rate_US2Y": ((rates, "us2y_pct"), (gold_snap, "us2y_pct")),
+        "rate_US30Y": ((rates, "us30y_pct"), (gold_snap, "us30y_pct")),
+        "rate_DFII10": ((rates, "dfii10_pct"), (gold_snap, "dfii10_live_pct")),
+        "idx_SPX": ((us_m, "benchmark_sp500"),),
+        "idx_NDX": ((gold_snap, "ndx_close", "ndx_change_pct"),),
+        "idx_DJI": ((gold_snap, "dow_close", "dow_change_pct"),),
+        "idx_VIX": ((gold_snap, "vix_close", "vix_change_pct"), (brake, "vix_close")),
+        "cmd_XAU": ((gold_snap, "spot_gold_ny_close_usd", "spot_gold_ny_change_pct", "spot_gold_ny_close_date"),),
+        "cmd_GC": ((gold_snap, "comex_front_settle_usd"),),
+        "cmd_AU0": ((gold_snap, "shfe_gold_day_rmb"), (gold_snap, "shfe_gold_night_rmb")),
+        "cmd_Au9999": ((gold_snap, "sge_au9999_day_rmb", "sge_au9999_day_change_pct"),),
+        "cmd_XAG": ((gold_snap, "spot_silver_ny_close_usd"), (gold_snap, "spot_silver_usd")),
+        "cmd_AG0": ((gold_snap, "shfe_silver_day_rmb_kg", "shfe_silver_day_change_pct"), (gold_snap, "shfe_silver_night_rmb_kg")),
+        "cmd_OIL": ((comm, "brent_usd", "brent_chg_pct"), (gold_snap, "brent_settle_usd", "brent_change_pct")),
+        "cmd_CL": ((comm, "wti_usd"), (gold_snap, "wti_settle_usd", "wti_change_pct")),
+        "cmd_HG": ((comm, "comex_copper_usd_lb", "comex_copper_chg_pct"),),
+        "fx_DXY": ((rates, "dxy"), (gold_snap, "dxy", "dxy_change_pct")),
+        "rate_US10Y": ((rates, "us10y_pct"), (us_m, "us10y_pct")),
+        "fx_USDCNH": ((rates, "usd_cnh"),),
+        "fx_USDJPY": ((rates, "usd_jpy"), (brake, "usdjpy_level")),
+        "crypto_BTC": ((comm, "btc_usd", "btc_chg_pct"), (gold_snap, "btc_usd", "btc_change_pct")),
     }
 
     result: dict[str, list[dict[str, Any]]] = {}
-    for grp, specs in _MULTI_INDEX_SPECS.items():
-        rows: list[dict[str, Any]] = []
+    for group, specs in _MULTI_INDEX_SPECS.items():
+        rows = []
         for rank, spec in enumerate(specs, start=1):
             sid = spec["id"]
-            ov = override_by_key.get(sid) or override_by_key.get(spec["code"].upper()) or override_by_key.get(spec["name"])
-            cat = cat_by_id.get(sid)
-            fb_val, fb_chg = scalar_fallback.get(sid, (None, None))
-
-            val = _safe_float((ov or {}).get("value")) if isinstance(ov, dict) else None
-            if val is None and isinstance(ov, dict):
-                val = _safe_float(ov.get("close"))
-            chg = _safe_float((ov or {}).get("change_pct")) if isinstance(ov, dict) else None
-            if chg is None and isinstance(ov, dict):
-                chg = _safe_float(ov.get("chg_pct"))
-
-            if val is None and sid in ("rate_CN10Y", "rate_CN30Y", "idx_HSAHP") and fb_val is not None:
-                val = fb_val
-                if chg is None:
-                    chg = fb_chg
-
-            if val is None and isinstance(cat, dict):
-                val = _safe_float(cat.get("latest_close"))
-            if chg is None and isinstance(cat, dict) and not (sid in ("rate_CN10Y", "rate_CN30Y", "idx_HSAHP") and fb_val is not None):
-                chg = _safe_float(cat.get("change_pct"))
-
-            if val is None:
-                val = fb_val
-            if chg is None:
-                chg = fb_chg
-
-            val_disp = _fmt_num(val, spec["fmt"], prefix=spec["prefix"], suffix=spec["suffix"])
-            rows.append(
-                {
-                    "rank": rank,
-                    "id": sid,
-                    "code": spec["code"],
-                    "name": spec["name"],
-                    "short": spec["short"],
-                    "tier": spec["tier"],
-                    "value": val,
-                    "value_disp": val_disp,
-                    "change_pct": chg,
-                    "has_kline": bool(cat),
-                }
+            override, source = (
+                overrides.get(sid.upper()) or overrides.get(spec["code"].upper())
+                or overrides.get(spec["name"].upper()) or ({}, "")
             )
-        result[grp] = rows
+            value = _safe_float(override.get("value"))
+            if value is None:
+                value = _safe_float(override.get("close"))
+            observation = None
+            if value is not None:
+                change = _safe_float(override.get("change_pct"))
+                if change is None:
+                    change = _safe_float(override.get("chg_pct"))
+                stamp = str(override.get("as_of") or override.get("quote_date") or "")
+                observed_day = _valid_iso_date(_extract_iso_date(stamp))
+                status = "沿用报价" if override.get("stale") is True else _quote_status(str(override.get("quote_status") or stamp))
+                observation = value, change, observed_day, status, str(override.get("source_label") or source)
+
+            catalog = cat_by_id.get(sid, {})
+            catalog_value = _safe_float(catalog.get("latest_close"))
+            series_observation = None
+            if catalog_value is not None:
+                series_observation = (
+                    catalog_value, _safe_float(catalog.get("change_pct")), _valid_iso_date(catalog.get("latest_date")),
+                    "沿用报价" if catalog.get("stale") is True else "日线参考", _kline_source_label(catalog.get("provider")),
+                )
+            if observation is None and sid not in ("rate_CN10Y", "rate_CN30Y", "idx_HSAHP"):
+                observation = series_observation
+            if observation is None:
+                for record, key, *fields in scalar_fields.get(sid, ()):
+                    value = _safe_float(record.get(key))
+                    if value is None:
+                        continue
+                    change = _safe_float(record.get(fields[0])) if fields else None
+                    observed_day = _valid_iso_date(record.get(fields[1])) if len(fields) > 1 else ""
+                    status = "收盘参考" if key == "spot_gold_ny_close_usd" else "盘口待核"
+                    observation = value, change, observed_day, status, gold_source if record is gold_snap else eq_source
+                    break
+            value, change, observed_day, status, source = observation or series_observation or (None, None, "", "报价待核", "来源待核")
+            rows.append({
+                "rank": rank, "id": sid, "code": spec["code"], "name": spec["name"], "short": spec["short"],
+                "tier": spec["tier"], "value": value,
+                "value_disp": _fmt_num(value, spec["fmt"], prefix=spec["prefix"], suffix=spec["suffix"]),
+                "change_pct": change, "has_kline": bool(catalog),
+                "quote_date": observed_day, "quote_status": status, "quote_source": source,
+            })
+        result[group] = rows
     return result
 
 
-def _render_vix_sparkline_svg(gold_snap: dict[str, Any], kline_core: dict[str, Any] | None = None) -> str:
-    """Render compact non-empty decorative 10-day VIX sparkline SVG (viewBox W=84 < 100, Gate S4 safe)."""
+def _render_vix_sparkline_svg(gold_snap: dict[str, Any]) -> str:
+    """Use the same VIX session closes as the gold entry gates."""
     pts: list[float] = []
-    if isinstance(kline_core, dict):
-        vix_bars = ((kline_core.get("series") or {}).get("idx_VIX") or {}).get("bars") or []
-        for b in vix_bars[-10:]:
-            if isinstance(b, list) and len(b) >= 5:
-                v = _safe_float(b[4])
-                if v is not None and v > 0:
-                    pts.append(v)
-    if len(pts) < 3:
-        pts = []
-        for row in gold_snap.get("vix_10d_session_closes") or []:
-            if isinstance(row, dict):
-                v = _safe_float(row.get("close"))
-                if v is not None and v > 0:
-                    pts.append(v)
+    for row in gold_snap.get("vix_10d_session_closes") or []:
+        if isinstance(row, dict):
+            v = _safe_float(row.get("close"))
+            if v is not None and v > 0:
+                pts.append(v)
     if len(pts) < 2:
-        cur = _safe_float(gold_snap.get("vix_close")) or 20.0
-        pts = [cur, cur]
+        return ""
 
     w, h = 84.0, 22.0
     lo = min(min(pts), 18.0) - 1.5
@@ -5014,7 +5058,6 @@ def _render_vix_sparkline_svg(gold_snap: dict[str, Any], kline_core: dict[str, A
 def _render_crisis_ribbon(
     gold_snap: dict[str, Any],
     eq_state: dict[str, Any],
-    kline_core: dict[str, Any] | None,
     gold_blocked: bool,
 ) -> str:
     """Render top-of-page 7-pill 3-second Macro Weather & Crisis Brake Ribbon right under homepage hero."""
@@ -5026,7 +5069,7 @@ def _render_crisis_ribbon(
     rb_cn = rb_core.get("cn_rates") if isinstance(rb_core.get("cn_rates"), dict) else {}
     rb_us = rb_core.get("us_rates") if isinstance(rb_core.get("us_rates"), dict) else {}
 
-    vix_val = _safe_float(brake.get("vix_close")) or _safe_float(gold_snap.get("vix_close"))
+    vix_val = _safe_float(gold_snap.get("vix_close"))
     us10y_val = _safe_float(rb_us.get("us10y_pct")) or _safe_float(rates.get("us10y_pct"))
     us10y_live = _safe_float(rb_us.get("us10y_asia_live_pct")) or _safe_float(rates.get("us10y_live_pct"))
     cgb10y_val = _safe_float(rb_cn.get("cgb10y_pct")) or _safe_float(rates.get("cgb10y_pct")) or _safe_float((eq_state.get("markets") or {}).get("a_share", {}).get("cgb10y_pct"))
@@ -5041,9 +5084,11 @@ def _render_crisis_ribbon(
     jpy_3d = _safe_float(brake.get("usdjpy_3d_change_pct"))
     jpy_3d_txt = f" · 3日{jpy_3d:+.1f}%" if jpy_3d is not None else ""
     btc_val = _safe_float(comm.get("btc_usd")) or _safe_float(gold_snap.get("btc_usd"))
-    spark_svg = _render_vix_sparkline_svg(gold_snap, kline_core)
+    spark_svg = _render_vix_sparkline_svg(gold_snap)
 
-    vix_cls = "cr-danger" if (vix_val is not None and vix_val >= 30.0) else ("cr-warn" if (vix_val is not None and vix_val >= 24.0) else "cr-ok")
+    vix_cls = "cr-neutral"
+    if vix_val is not None:
+        vix_cls = "cr-danger" if vix_val >= 30.0 else "cr-warn" if vix_val >= 24.0 else "cr-ok"
     us10y_cls = "cr-danger" if (us10y_val is not None and us10y_val >= 5.25) else ("cr-warn" if (us10y_val is not None and us10y_val >= 4.7) else "cr-ok")
     us10y_sub = (
         f"实盘 {us10y_live:.2f}% · 红线 5.25%"
@@ -5116,14 +5161,25 @@ def _render_idx_tile(row: dict[str, Any], tab_key: str) -> str:
         c_cls = "chg-up" if chg >= 0 else "chg-dn"
         chg_html = f'<span class="idx-tile-chg {c_cls}">{arrow} {chg:+.2f}%</span>'
     else:
-        chg_html = '<span class="idx-tile-chg">K线 →</span>'
+        chg_html = '<span class="idx-tile-chg">涨跌待核</span>'
     return (
         f'<button type="button" class="idx-tile" data-kline-jump="{esc(row["id"])}" '
         f'data-kline-tab="{esc(tab_key)}" title="点击查看 {esc(row["name"])} 交互 K 线">'
         f'<span class="idx-tile-top"><span class="idx-tile-name">{esc(row["short"])}</span>'
         f'<span class="idx-tile-code">{esc(row["code"])}</span></span>'
         f'<span class="idx-tile-bot"><span class="idx-tile-val">{esc(row["value_disp"])}</span>{chg_html}</span>'
+        f'<span class="sec-sub">{esc(_quote_provenance(row))}</span>'
         "</button>"
+    )
+
+
+def _render_kline_quote_pill(row: dict[str, Any], *, active: bool) -> str:
+    provenance = esc(_quote_provenance(row))
+    return (
+        f'<button type="button" class="kline-sym-pill{" active" if active else ""}" '
+        f'data-deck-sym="{esc(row["id"])}">'
+        f'{esc(row["short"])} <span class="kline-pill-val">{esc(row["value_disp"])}</span>'
+        f'<span class="sec-sub"><br>{provenance}</span></button>'
     )
 
 
@@ -5169,8 +5225,7 @@ def _render_home_kline_deck(multi_idx: dict[str, list[dict[str, Any]]], total_kl
     panels = []
     for i, (k, _, rows) in enumerate(tabs):
         pills = "".join(
-            f'<button type="button" class="kline-sym-pill{" active" if (i == 0 and j == 0) else ""}" data-deck-sym="{esc(r["id"])}">'
-            f'{esc(r["short"])} <span class="kline-pill-val">{esc(r["value_disp"])}</span></button>'
+            _render_kline_quote_pill(r, active=(i == 0 and j == 0))
             for j, r in enumerate(rows)
         )
         panels.append(f'<div class="kline-pill-strip" data-deck-panel="{esc(k)}"{"" if i == 0 else " hidden"}>{pills}</div>')
@@ -5199,9 +5254,9 @@ def _render_daily_kline_strip(
 ) -> str:
     """Render compact Multi-Index Overview Strip + Interactive K-Line Panel at top of daily/*.html."""
     mkt_map = {
-        "a-share": ("a_share", "🇨🇳 A 股多指数实时矩阵与交互 K 线（上证先导）", "idx_sh000001"),
-        "hk-stock": ("hk_stock", "🇭🇰 港股多指数实时矩阵与交互 K 线", "idx_hkHSI"),
-        "us-stock": ("us_stock", "🇺🇸 美股多指数实时矩阵与交互 K 线", "idx_SPX"),
+        "a-share": ("a_share", "🇨🇳 A 股多指数参考行情与交互 K 线（上证先导）", "idx_sh000001"),
+        "hk-stock": ("hk_stock", "🇭🇰 港股多指数参考行情与交互 K 线", "idx_hkHSI"),
+        "us-stock": ("us_stock", "🇺🇸 美股多指数参考行情与交互 K 线", "idx_SPX"),
         "gold": ("gold", "🥇 黄金与贵金属多基准交互 K 线", "cmd_XAU"),
     }
     grp_key, heading, default_sym = mkt_map.get(market, ("a_share", "多指数交互 K 线", "idx_sh000001"))
@@ -5210,8 +5265,7 @@ def _render_daily_kline_strip(
         return ""
     init_sym = rows[0]["id"] if rows else default_sym
     pills = "".join(
-        f'<button type="button" class="kline-sym-pill{" active" if j == 0 else ""}" data-deck-sym="{esc(r["id"])}">'
-        f'{esc(r["short"])} <span class="kline-pill-val">{esc(r["value_disp"])}</span></button>'
+        _render_kline_quote_pill(r, active=(j == 0))
         for j, r in enumerate(rows)
     )
     return (
@@ -5226,17 +5280,28 @@ def _render_daily_kline_strip(
     )
 
 
-def _render_wallet_calculator(gold_snap: dict[str, Any], eq_state: dict[str, Any]) -> str:
-    """Render Interactive Personal Wallet Calculator respecting Gold red-light lock, 511360 1.2w, 50w CD & 8% single-stock rules."""
-    gold_new_buy = bool((gold_snap or {}).get("new_buy_allowed", False))
+def _render_wallet_calculator(
+    gold_snap: dict[str, Any], eq_state: dict[str, Any], kline_manifest: dict[str, Any] | None = None,
+) -> str:
+    """Render the wallet calculator with the current equity and gold limits."""
+    gold_new_buy = (gold_snap or {}).get("new_buy_allowed") is True
     gold_tier = str((gold_snap or {}).get("tier_code") or "").strip()
     gold_allowed = gold_new_buy and (gold_tier != "Tier 0")
     markets = (eq_state or {}).get("markets") or {}
-    a_cap = _safe_float((markets.get("a_share") or {}).get("equity_cap_pct")) or 35.0
+    a_cap = _safe_float((markets.get("a_share") or {}).get("equity_cap_pct"))
+    short_bond_quote = next(
+        (row for row in (kline_manifest or {}).get("catalog", [])
+         if isinstance(row, dict) and row.get("id") == "etf_511360"),
+        {},
+    )
+    short_bond_close = _safe_float(short_bond_quote.get("latest_close"))
+    has_quote = short_bond_close is not None and short_bond_close > 0 and not short_bond_quote.get("stale")
     payload = {
         "gold_new_buy_allowed": gold_allowed,
-        "eq_cap_pct": int(round(a_cap)),
+        "eq_cap_pct": a_cap,
         "gold_cap_pct": 10,
+        "short_bond_lot_rmb": round(short_bond_close * 100, 2) if has_quote else None,
+        "short_bond_quote_date": short_bond_quote.get("latest_date") if has_quote else None,
     }
     safe_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     gold_status_pill = (
@@ -5288,21 +5353,33 @@ def _build_ah_matrix_payload(
     stocks: list[dict[str, Any]],
     *,
     kline_manifest: dict[str, Any] | None = None,
+    hkd_cny_mid: float | None = None,
+    fx_date: str = "",
+    as_of_date: str = "",
+    as_of_cst: str = "",
+    edition_id: str | None = None,
+    calendar_overrides: list[dict] | None = None,
 ) -> list[dict[str, Any]]:
-    """Left-join all A/H dual-listed benchmarks with the 231-stock pool and compute after-tax dividend spread."""
+    """Calculate same-day premiums and compare dividends only on a documented common basis."""
     by_code: dict[str, dict[str, Any]] = {}
     for st in stocks:
         cd = str(st.get("code") or "").strip().upper()
         if cd:
             by_code[cd] = st
 
-    kline_ids: set[str] | None = None
-    if isinstance(kline_manifest, dict) and isinstance(kline_manifest.get("catalog"), list):
-        kline_ids = {
-            str(c.get("id") or "").strip()
-            for c in kline_manifest["catalog"]
-            if isinstance(c, dict) and str(c.get("id") or "").strip()
-        }
+    fx_date = _valid_iso_date(fx_date)
+    quote_day = date.fromisoformat(fx_date) if fx_date else None
+    cutoff_iso = _valid_iso_date(as_of_date)
+    evidence_day = date.fromisoformat(cutoff_iso) if cutoff_iso else quote_day
+    fx_rate = _positive_quote(hkd_cny_mid)
+    manifest = kline_manifest or {}
+    catalog = (manifest.get("catalog") or []) if edition_id is None or manifest.get("edition_id") == edition_id else []
+    by_kline_id = {
+        item["id"]: item for item in catalog
+        if isinstance(item, dict) and isinstance(item.get("code"), str)
+        and item.get("id") == f'stk_{item["code"]}'
+        and (item.get("market"), item.get("currency")) in {("a-share", "CNY"), ("hk-stock", "HKD")}
+    }
 
     rows: list[dict[str, Any]] = []
     seen_pairs: set[tuple[str, str]] = set()
@@ -5321,17 +5398,92 @@ def _build_ah_matrix_payload(
 
         a_st = by_code.get(a_cd)
         h_st = by_code.get(h_cd)
-        prem = _safe_float(bm.get("ah_premium_pct"))
-        a_div = _safe_float(a_st.get("div_pct")) if isinstance(a_st, dict) else None
-        h_div = _safe_float(h_st.get("div_pct")) if isinstance(h_st, dict) else None
-        is_red_chip = (
-            bool(bm.get("is_red_chip_28"))
-            or (h_cd in _RED_CHIP_28_CODES)
+        cand_a_sym = f"stk_{a_cd}"
+        cand_h_sym = f"stk_{h_cd}"
+        a_quote = by_kline_id.get(cand_a_sym, {})
+        h_quote = by_kline_id.get(cand_h_sym, {})
+        exchange_quotes = parse_exchange_closes(bm, evidence_day)
+        if exchange_quotes.get("a", {}).get("latest_date") == fx_date:
+            a_quote = exchange_quotes["a"]
+        if exchange_quotes.get("h", {}).get("latest_date") == fx_date:
+            h_quote = exchange_quotes["h"]
+        a_close = _safe_float(a_quote.get("latest_close"))
+        h_close = _safe_float(h_quote.get("latest_close"))
+        h_cny = _safe_float(h_close * fx_rate) if h_close is not None and fx_rate is not None else None
+        paired_quotes = (
+            bool(fx_date) and (not cutoff_iso or fx_date <= cutoff_iso)
+            and (not as_of_cst or all(
+                _closing_quote_available(fx_date, market, as_of_cst, calendar_overrides)
+                for market in ("a-share", "hk-stock")
+            ))
+            and fx_date == a_quote.get("latest_date") == h_quote.get("latest_date")
+            and a_quote.get("stale") is False and h_quote.get("stale") is False
+            and a_close is not None and a_close > 0
+            and h_close is not None and h_close > 0
+            and h_cny is not None and h_cny > 0
+            and a_quote.get("currency") == "CNY" and h_quote.get("currency") == "HKD"
+        )
+        prem = _safe_float((a_close / h_cny - 1) * 100) if paired_quotes else None
+        a_div = h_div = None
+        dividend_sources: dict[str, list[str]] = {}
+        dividend_basis = "股息公告待核"
+        dividend_period = ""
+        h_local_cash = False
+        no_cash = False
+        h_not_eligible = False
+        cash = bm.get("cash_dividends")
+        if evidence_day is not None and cash is not None:
+            try:
+                a_cash, h_cash = parse_pair(cash)
+            except ValueError:
+                pass  # Source preflight reports the validation error.
+            else:
+                last_publication = max(a_cash.published, h_cash.published)
+                if last_publication <= evidence_day:
+                    a_div = h_div = None
+                    dividend_period = f"{a_cash.start} 至 {a_cash.end}"
+                    dividend_sources = {"a": list(a_cash.sources), "h": list(h_cash.sources)}
+                    no_cash = a_cash.amount == h_cash.amount == 0
+                    h_not_eligible = h_cash.unavailable_status is not None
+                    h_local_cash = not (h_cash.southbound_cny or no_cash or h_not_eligible)
+                    if h_not_eligible:
+                        reason = (
+                            "H 股上市晚于该期间最后分红登记日"
+                            if h_cash.unavailable_status == "listed_after_record_date"
+                            else "发行人本期分派范围不含 H 股"
+                        )
+                        dividend_basis = f"普通现金股息 · {dividend_period} · {reason}"
+                    elif no_cash:
+                        dividend_basis = f"两地均未派普通现金股息 · {dividend_period}"
+                    elif h_local_cash:
+                        dividend_basis = f"普通现金股息 · {dividend_period} · H 股为香港登记股东口径，港股通待核"
+                    else:
+                        dividend_basis = f"普通现金股息 · {dividend_period} · H 股按港股通人民币分派"
+                    if no_cash:
+                        a_div = h_div = 0.0
+                    elif paired_quotes and last_publication <= quote_day <= evidence_day:
+                        h_reference_price = h_cny if h_cash.southbound_cny else h_close
+                        a_div = _safe_float(a_cash.amount / a_close * 100)
+                        if h_cash.amount is not None:
+                            h_div = _safe_float(h_cash.amount / h_reference_price * 100)
+                    if a_div is None or (h_div is None and not h_not_eligible):
+                        dividend_basis += " · 收益率待核"
+        withholding_needs_review = (
+            bm.get("requires_withholding_check") is True
+            or bm.get("is_red_chip_28") is True
+            or h_cd in _SPECIAL_WITHHOLDING_CODES
             or ("check_withholding" in str(bm.get("preferred_channel") or "").lower())
         )
-        h_tax = 28 if is_red_chip else 20
-        h_net = round(h_div * (1.0 - h_tax / 100.0), 2) if h_div is not None else None
-        spread = round(h_net - a_div, 2) if (h_net is not None and a_div is not None) else None
+        h_tax = 20 if dividend_sources and not (withholding_needs_review or h_local_cash or no_cash or h_not_eligible) else None
+        h_tax_pending = bool(withholding_needs_review and dividend_sources and not (h_local_cash or no_cash or h_not_eligible))
+        if h_tax_pending:
+            dividend_basis += " · 源头代扣待核"
+        h_net = h_div * (1.0 - h_tax / 100.0) if h_div is not None and h_tax is not None else None
+        spread = (
+            round(h_net - a_div, 2)
+            if dividend_sources and a_div is not None and h_net is not None and not no_cash
+            else None
+        )
 
         is_warn = bool((a_st and a_st.get("color") == "r") or (h_st and h_st.get("color") == "r"))
         if is_warn:
@@ -5342,19 +5494,20 @@ def _build_ah_matrix_payload(
             v_lbl, v_tone = "港股通税后占优", "blue"
         elif prem is not None and prem >= 50:
             v_lbl, v_tone = "离岸 H 股显著折价", "amber"
-        elif spread is not None and spread <= 0:
+        elif spread is not None and spread < 0:
             v_lbl, v_tone = "A 股免税股息更佳", "green"
-        else:
+        elif prem is None:
+            v_lbl, v_tone = "等待同日比价", "neutral"
+        elif no_cash:
+            v_lbl, v_tone = "两地本期均未派息", "neutral"
+        elif h_not_eligible:
+            v_lbl, v_tone = "H 股本期未参与分派", "neutral"
+        elif h_local_cash:
+            v_lbl, v_tone = "港股通分派待核", "neutral"
+        elif spread is not None:
             v_lbl, v_tone = "双地均衡比选", "neutral"
-
-        cand_a_sym = f"stk_{a_cd}" if a_cd else ""
-        cand_h_sym = f"stk_{h_cd}" if h_cd else ""
-        if kline_ids is not None:
-            a_sym_id = cand_a_sym if cand_a_sym in kline_ids else ""
-            h_sym_id = cand_h_sym if cand_h_sym in kline_ids else ""
         else:
-            a_sym_id = cand_a_sym if a_st else ""
-            h_sym_id = cand_h_sym if h_st else ""
+            v_lbl, v_tone = "股息口径待核", "neutral"
 
         rows.append(
             {
@@ -5363,98 +5516,42 @@ def _build_ah_matrix_payload(
                 "h_code": h_cd,
                 "a_key": f"a-share:{a_cd}" if a_st else "",
                 "h_key": f"hk-stock:{h_cd}" if h_st else "",
-                "a_sym_id": a_sym_id,
-                "h_sym_id": h_sym_id,
-                "a_price": str(a_st.get("price") or "—") if a_st else "—",
-                "h_price": str(h_st.get("price") or "—") if h_st else "—",
+                "a_sym_id": cand_a_sym if cand_a_sym in by_kline_id else "",
+                "h_sym_id": cand_h_sym if cand_h_sym in by_kline_id else "",
+                "a_price": f"{a_close:g} 元" if paired_quotes else "—",
+                "h_price": f"{h_close:g} 港元" if paired_quotes else "—",
+                "quote_date": fx_date if paired_quotes else "",
+                "quote_urls": {
+                    side: quote["source_url"] for side, quote in exchange_quotes.items()
+                    if paired_quotes and quote["latest_date"] == fx_date
+                },
+                "quote_replay_urls": {
+                    side: quote["replay_url"] for side, quote in exchange_quotes.items()
+                    if paired_quotes and quote["latest_date"] == fx_date and quote["replay_url"]
+                },
+                "quote_source": (
+                    f"A {_kline_source_label(a_quote.get('provider'))} · H {_kline_source_label(h_quote.get('provider'))}"
+                    if paired_quotes else ""
+                ),
                 "ah_premium_pct": round(prem, 1) if prem is not None else None,
                 "a_div_pct": round(a_div, 2) if a_div is not None else None,
                 "h_div_pct": round(h_div, 2) if h_div is not None else None,
                 "h_tax_rate_pct": h_tax,
-                "h_connect_after_tax_div": h_net,
+                "h_connect_after_tax_div": round(h_net, 2) if h_net is not None else None,
+                "h_local_cash": h_local_cash,
+                "h_tax_pending": h_tax_pending,
+                "no_cash_dividend": no_cash,
+                "h_not_eligible": h_not_eligible,
                 "net_div_spread": spread,
+                "dividend_period": dividend_period,
+                "dividend_sources": dividend_sources,
+                "dividend_basis": dividend_basis,
                 "verdict_label": v_lbl,
                 "verdict_tone": v_tone,
             }
         )
     rows.sort(key=lambda r: (r["ah_premium_pct"] is None, -(r["ah_premium_pct"] or 0.0)))
     return rows
-
-
-_DEFAULT_QDII_COMPARISON: tuple[dict[str, Any], ...] = (
-    {
-        "track": "纳斯达克 100",
-        "fund_company": "国泰 / 广发 / 华安 / 博时",
-        "on_exchange_code": "513100 / 159501",
-        "on_exchange_fee": "0.60%–0.80%",
-        "on_exchange_premium_note": "高溢价频发（常 >3% 伴停牌）",
-        "otc_codes": "270042(A) / 006479(C) / 040046(A)",
-        "direct_app_limit": "官方直销 App 限额常高于三方 2x–10x（下单前实核）",
-        "alipay_limit": "支付宝/天天常限 10–100 元/日",
-        "direct_vs_alipay_ratio": "2x–10x",
-        "risk_note": "场内溢价 >3% 坚决不追，严防情绪回落双杀",
-    },
-    {
-        "track": "标普 500 宽基",
-        "fund_company": "博时 / 华夏 / 易方达 / 摩根",
-        "on_exchange_code": "513500 / 159655",
-        "on_exchange_fee": "0.60%–0.80%",
-        "on_exchange_premium_note": "易现偏高溢价与盘中停牌",
-        "otc_codes": "050025(A) / 006075(C) / 017641(A)",
-        "direct_app_limit": "官方直销 App 优先核对当日放宽额度",
-        "alipay_limit": "三方平台常限 10–100 元/日",
-        "direct_vs_alipay_ratio": "2x–5x",
-        "risk_note": "场外联接按净值 0 溢价申购，忌买高费旧 C 类长持",
-    },
-    {
-        "track": "标普 500 等权 / 美股行业",
-        "fund_company": "景顺长城 / 天弘 / 易方达",
-        "on_exchange_code": "159509（科技高危）",
-        "on_exchange_fee": "0.80%–1.00%",
-        "on_exchange_premium_note": "部分科技 QDII 溢价极高且联接停申",
-        "otc_codes": "017091(暂闭留意公告) / 标普等权场外观察",
-        "direct_app_limit": "停申期直销与三方同步关闭，切忌场内盲追",
-        "alipay_limit": "停申或极低额限购",
-        "direct_vs_alipay_ratio": "视额度公告",
-        "risk_note": "严防两位数溢价接盘，静待扩容或改配非美分散",
-    },
-    {
-        "track": "日本（日经225 / 东证TOPIX）",
-        "fund_company": "南方 / 易方达 / 华夏 / 工银",
-        "on_exchange_code": "513800 / 513520 / 513880",
-        "on_exchange_fee": "0.25%–0.35%",
-        "on_exchange_premium_note": "中日互通费率低，偶发 2%–4% 溢价",
-        "otc_codes": "007345(A) / 019448(A) 等场外联接",
-        "direct_app_limit": "官方直销通道常态更宽松",
-        "alipay_limit": "三方代销按日浮动限购",
-        "direct_vs_alipay_ratio": "1x–5x",
-        "risk_note": "留意日元汇率波动（未锁汇需承担日元贬值折损）",
-    },
-    {
-        "track": "欧洲（德国DAX / 法国CAC40）",
-        "fund_company": "华安 / 华泰柏瑞",
-        "on_exchange_code": "513030 / 513080",
-        "on_exchange_fee": "0.65%–1.00%",
-        "on_exchange_premium_note": "买前必核实时参考净值（IOPV）",
-        "otc_codes": "000614(德国联接A) / 014965(法国联接)",
-        "direct_app_limit": "官方直销与三方限额以公告为准",
-        "alipay_limit": "常态小额分批定投",
-        "direct_vs_alipay_ratio": "1x–3x",
-        "risk_note": "场内成交深度不如美股宽基，切忌市价大单扫货",
-    },
-    {
-        "track": "全球 / 印度 / 沙特 / 新兴亚洲",
-        "fund_company": "工银 / 华泰柏瑞 / 南方 / 招商",
-        "on_exchange_code": "520580 / 520830 / 164824(LOF)",
-        "on_exchange_fee": "0.50%–1.20%",
-        "on_exchange_premium_note": "LOF 与稀缺赛道溢价波动剧烈",
-        "otc_codes": "164824(印度LOF留意限额) / 沙特联接",
-        "direct_app_limit": "LOF 与互挂 ETF 优先核对申购状态",
-        "alipay_limit": "常受限购或暂停大额申购",
-        "direct_vs_alipay_ratio": "视公告",
-        "risk_note": "严格警惕 LOF 限期退市及高溢价归零风险",
-    },
-)
 
 
 def _render_qdii_comparison_section(
@@ -5471,7 +5568,7 @@ def _render_qdii_comparison_section(
                 if isinstance(ch, dict) and ch.get("id") == "qdii_mrf" and ch.get("qdii_channel_comparison"):
                     raw = ch.get("qdii_channel_comparison")
                     break
-    rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) and raw else list(_DEFAULT_QDII_COMPARISON)
+    rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
 
     if compact:
         _track_buckets = (
@@ -5502,11 +5599,15 @@ def _render_qdii_comparison_section(
                 if len(picked_tracks) >= 5:
                     break
         sample_tracks = " · ".join(picked_tracks[:5])
+        summary = (
+            f"{sample_tracks}等 {len(rows)} 项赛道。比较同一份额、同一生效日的申购额度。"
+            if rows else "本期分渠道限额待核。可按基金公告打开计算器试算。"
+        )
         return (
             '<div class="qdii-summary-panel qdii-panel-slim" id="etf-qdii-panel">'
             '<div class="qdii-sum-main">'
             '<strong>🛡️ 境内 QDII 避坑提示：场内高溢价 vs 场外官方直销 App / 支付宝限额比价</strong>'
-            f'<div class="sec-sub">覆盖 {esc(sample_tracks)} 等 {len(rows)} 项跨境赛道对照：同一只 QDII 基金公司官方直销 App 单日限额常为支付宝的 2–20 倍，买前先算清溢价盈亏平衡天数再下单。</div>'
+            f'<div class="sec-sub">{esc(summary)}</div>'
             "</div>"
             '<a class="btn btn-sm btn-primary" href="channels/qdii_mrf.html#sec-qdii-compare">打开完整 QDII 分渠道限额表与计算器 →</a>'
             "</div>"
@@ -5514,25 +5615,12 @@ def _render_qdii_comparison_section(
 
     tr_html = []
     for r in rows:
-        prem_v = _safe_float(r.get("on_exchange_premium_pct"))
-        prem_disp = (
-            f"{prem_v:+.2f}%"
-            if prem_v is not None
-            else str(r.get("on_exchange_premium_note") or "买前核参考净值")
-        )
-        direct_v = r.get("direct_app_limit_rmb")
-        direct_disp = (
-            f"¥{int(direct_v):,}/日"
-            if isinstance(direct_v, (int, float))
-            else str(r.get("direct_app_limit") or "查官方直销 App")
-        )
-        ali_v = r.get("alipay_limit_rmb")
-        ali_disp = (
-            f"¥{int(ali_v):,}/日"
-            if isinstance(ali_v, (int, float))
-            else str(r.get("alipay_limit") or "查三方限额")
-        )
+        prem_disp = str(r.get("on_exchange_premium_note") or "折溢价请核成交价及对应净值")
+        direct_disp = str(r.get("direct_app_limit") or "以直销渠道当日公告为准")
+        ali_disp = str(r.get("alipay_limit") or "以代销渠道当日公告为准")
         ratio_disp = str(r.get("direct_vs_alipay_ratio") or "—")
+        verification_note = str(r.get("verification_note") or "").strip()
+        verification_html = f'<div class="sec-sub">{esc(verification_note)}</div>' if verification_note else ""
         tr_html.append(
             "<tr>"
             f'<td><strong>{esc(r.get("track", ""))}</strong><div class="sec-sub">{esc(r.get("fund_company", ""))}</div></td>'
@@ -5541,14 +5629,16 @@ def _render_qdii_comparison_section(
             f'<td><strong>{esc(direct_disp)}</strong></td>'
             f'<td>{esc(ali_disp)}</td>'
             f'<td class="nw"><span class="qdii-ratio-pill">{esc(ratio_disp)}</span></td>'
-            f'<td>{esc(r.get("risk_note", ""))}</td>'
+            f'<td>{esc(r.get("risk_note", ""))}{verification_html} {_policy_brief_source_links(r)}</td>'
             "</tr>"
         )
+    if not tr_html:
+        tr_html.append('<tr><td colspan="7">本期分渠道限额待核。</td></tr>')
 
     return (
         '<div class="sec-head" id="sec-qdii-compare">'
         "<h2>🧭 QDII 场内溢价 vs 场外官方直销 App / 支付宝分渠道限购全景对比</h2>"
-        '<span class="sec-sub">很多投资者只看支付宝限购 10–100 元就被迫去场内硬追高溢价；官方直销 App 往往保留更高申购额度</span>'
+        '<span class="sec-sub">各渠道限额以基金公告为准。先确认申购是否开放，再比较可用额度与场内折溢价。</span>'
         "</div>"
         '<div class="mobile-scroll-cue" aria-hidden="true">← 左右滑动查看完整对比 →</div>'
         '<div class="table-wrap"><table class="data-table qdii-compare-table">'
@@ -5565,21 +5655,21 @@ def _render_qdii_comparison_section(
         '<div class="qdii-calc-card" data-qdii-calc="1">'
         '<div class="qdii-calc-head">'
         '<strong>🧮 场内溢价 vs 场外排队盈亏平衡计算器</strong>'
-        '<span class="sec-sub">输入当前场内溢价率、拟投金额与场外单日限额，3 秒判断值不值得硬吃溢价</span>'
+        '<span class="sec-sub">假设当天开始按限额逐日申购、同一底层净值每天等比例上涨，比较两种买法最终买到的份额。试算忽略费用、汇率变化和闲置资金利息。</span>'
         "</div>"
         '<div class="qdii-calc-inputs">'
         '<div class="qdii-in-group">'
-        '<label class="wcalc-lbl" for="qcalc-prem">当前场内溢价率 (%)</label>'
-        '<input type="number" id="qcalc-prem" class="wcalc-input" data-qcalc-prem="1" min="0" max="80" step="0.5" value="5.0">'
+        '<label class="wcalc-lbl" for="qcalc-prem">当前场内折溢价率（%，折价填负数）</label>'
+        '<input type="number" id="qcalc-prem" class="wcalc-input" data-qcalc-prem="1" step="any" value="5.0">'
         "</div>"
         '<div class="qdii-in-group">'
         '<label class="wcalc-lbl" for="qcalc-amt">计划投入金额（万元）</label>'
-        '<input type="number" id="qcalc-amt" class="wcalc-input" data-qcalc-amt="1" min="0.1" max="5000" step="0.5" value="5">'
+        '<input type="number" id="qcalc-amt" class="wcalc-input" data-qcalc-amt="1" min="0.000001" step="any" value="5">'
         "</div>"
         '<div class="qdii-in-group">'
-        '<label class="wcalc-lbl" for="qcalc-lim">场外单日限额（元）</label>'
+        '<label class="wcalc-lbl" for="qcalc-lim">场外单日限额（元，暂停申购填 0）</label>'
         '<div class="wcalc-amt-row">'
-        '<input type="number" id="qcalc-lim" class="wcalc-input" data-qcalc-lim="1" min="10" max="1000000" step="10" value="1000">'
+        '<input type="number" id="qcalc-lim" class="wcalc-input" data-qcalc-lim="1" min="0" step="any" value="1000">'
         '<button type="button" class="filter-pill" data-qcalc-lim-preset="10">10元</button>'
         '<button type="button" class="filter-pill" data-qcalc-lim-preset="100">100元</button>'
         '<button type="button" class="filter-pill" data-qcalc-lim-preset="200">200元</button>'
@@ -5589,7 +5679,7 @@ def _render_qdii_comparison_section(
         "</div>"
         "</div>"
         "</div>"
-        '<div class="qcalc-output" data-qcalc-out="1"></div>'
+        '<div class="qcalc-output" data-qcalc-out="1" aria-live="polite"></div>'
         "</div>"
     )
 
@@ -5682,7 +5772,7 @@ def build_charts_page(
             static_rows.append(
                 f'<div class="kline-sym-row" data-sym-id="{esc(sid)}" role="button" tabindex="0">'
                 f'<div class="kline-sym-main"><div class="kline-sym-name">{esc(r["name"])}</div>'
-                f'<div class="kline-sym-code">{esc(r["code"])}</div></div>'
+                f'<div class="kline-sym-code">{esc(r["code"])} · {esc(_quote_provenance(r))}</div></div>'
                 f'<div class="kline-sym-right"><div class="kline-sym-price">{esc(r["value_disp"])}</div>'
                 f'<div class="kline-sym-chg{chg_cls_attr}">{esc(chg_txt)}</div></div>'
                 "</div>"
@@ -5788,6 +5878,15 @@ def _pcal_pick(obj: dict[str, Any], *keys: str, default: str = "") -> str:
         if isinstance(v, str) and v.strip():
             return clean_md_inline_plain(v)
     return default
+
+
+def _policy_brief_source_links(brief: dict[str, Any]) -> str:
+    links = policy_brief_links(brief)
+    return " ".join(
+        f'<a class="mnews-src-link" href="{esc(url)}" target="_blank" rel="noopener noreferrer">'
+        f'原始来源{f" {index}" if len(links) > 1 else ""} ↗</a>'
+        for index, url in enumerate(links, start=1)
+    )
 
 
 def _pcal_parse_base_date(policy_cal: dict[str, Any] | None, eq_state: dict[str, Any]) -> date:
@@ -6119,21 +6218,16 @@ def _render_policy_calendar_section(
             )
         if not guard:
             guard = default_guard
-        src_url = str(b.get("source_url") or "").strip()
-        src_link_html = (
-            f'<a class="mnews-src-link" href="{esc(src_url)}" target="_blank" rel="noopener noreferrer">官源 ↗</a>'
-            if src_url.startswith("https://")
-            else ""
-        )
+        brief_id = esc(str(b.get("id") or b.get("brief_id") or ""))
         cat_pill_html = f'<span class="mnews-cat-pill">{esc(cat_lbl)}</span>' if cat_lbl else ""
         brief_cards.append(
-            f'<article class="pcal-brief-card" data-pcal-brief-region="{esc(reg_code)}" data-pcal-brief-tier="{esc(b_tier_code)}">'
+            f'<article class="pcal-brief-card" data-pcal-brief-id="{brief_id}" data-pcal-brief-region="{esc(reg_code)}" data-pcal-brief-tier="{esc(b_tier_code)}">'
             '<div class="pcal-brief-meta">'
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
             f'<span class="pcal-tier-pill {tier_cls}">{_pcal_meter_html(b_tier_code)}{esc(tier_lbl)}</span>'
             f"{cat_pill_html}"
             f'<span class="pcal-src">{esc(src_disp)}</span>'
-            f"{src_link_html}"
+            f"{_policy_brief_source_links(b)}"
             "</div>"
             f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
             f'<div class="pcal-brief-row"><strong>白话看懂：</strong>{esc(plain)}</div>'
@@ -6441,6 +6535,113 @@ def _render_policy_calendar_section(
     """
 
 
+def _render_market_forward_calendar(
+    market_slug: str,
+    policy_cal: dict[str, Any] | None,
+    current_edition: str,
+) -> str:
+    """Render the current publication's in-scope events by identity."""
+    if not isinstance(policy_cal, dict) or policy_cal.get("edition_id") != current_edition or not current_edition:
+        return ""
+    stamp = fmt_cst_compact(str(policy_cal.get("as_of_cst") or "")).removesuffix(" CST")
+    start_iso = _valid_iso_date(stamp[:10])
+    if not start_iso:
+        return ""
+    horizon = (date.fromisoformat(start_iso) + timedelta(days=14)).isoformat()
+    cutoff_time = stamp[11:16]
+    market = market_slug.replace("-", "_")
+    events: dict[str, tuple[str, str, dict[str, Any]]] = {}
+    for row in policy_cal.get("events") or []:
+        if not isinstance(row, dict):
+            continue
+        affected = row.get("affected_markets")
+        if not isinstance(affected, list) or market not in affected:
+            continue
+        event_id = _pcal_pick(row, "event_id")
+        first = _valid_iso_date(row.get("date_cst"))
+        last = _valid_iso_date(row.get("end_date_cst"))
+        if not event_id or not first or not last or first > last or first > horizon or last < start_iso:
+            continue
+        time = _pcal_pick(row, "time_cst", default="时刻待核")
+        if row.get("date_precision") == "exact" and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time):
+            if first == last == start_iso and time < cutoff_time:
+                continue
+            clock = time
+        else:
+            clock = "99:99"
+        events.setdefault(event_id, (first, clock, row))
+    rows = []
+    for event_id, (first, _, event) in sorted(events.items(), key=lambda item: (*item[1][:2], item[0])):
+        last = event["end_date_cst"]
+        span = first if first == last else f"{first} 至 {last}"
+        time = _pcal_pick(event, "time_cst", default="时刻待核")
+        _, tier_cls, tier_name = _pcal_norm_tier(event.get("impact_tier"))
+        title = esc(_pcal_pick(event, "title"))
+        source = _pcal_pick(event, "source_url")
+        source_link = f' <a href="{esc(source)}">原始来源</a>' if source.startswith("https://") else ""
+        rows.append(
+            f'<tr data-event-id="{esc(event_id)}"><td>{esc(span)} · {esc(time)}</td>'
+            f'<td><strong>{title}</strong> <span class="pcal-tier-pill {tier_cls}">{esc(tier_name)}</span>{source_link}</td>'
+            f'<td>{esc(_pcal_pick(event, "market_transmission", default="传导待核"))}</td>'
+            f'<td>{esc(_pcal_pick(event, "pre_event_stance", default="事前纪律待核"))}</td></tr>'
+        )
+    table = (
+        '<div class="mobile-scroll-cue" aria-hidden="true">← 左右滑动查看完整列 →</div>'
+        '<div class="table-wrap"><table class="data-table">'
+        '<thead><tr><th scope="col">北京时间</th><th scope="col">事件与级别</th>'
+        '<th scope="col">市场传导</th><th scope="col">事前纪律</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
+        if rows else '<p class="sec-sub">共享日历在此窗口无本市场条目。</p>'
+    )
+    return (
+        f'<section id="sec-market-calendar" data-calendar-edition="{esc(current_edition)}">'
+        '<h3>本班更新 · 未来 14 天财经与政策日历</h3>'
+        f'<p class="sec-sub">日历期号 {esc(current_edition)} · 截至北京时间 {esc(stamp)}'
+        f' · 覆盖至 {horizon} · {len(rows)} 项</p>{table}</section>'
+    )
+
+
+_DAILY_CALENDAR_BLOCK_RE = re.compile(
+    r'(?P<heading><h([1-4])\b[^>]*>(?P<title>[^<]+)</h\2>)\s*'
+    r'(?P<table>(?:<div class="mobile-scroll-cue"[^>]*>[^<]*</div>)?\s*'
+    r'<div class="table-wrap(?: [^"]*)?"[^>]*><table\b[^>]*>\s*<thead>(?P<columns>.*?)</thead>.*?</table></div>)',
+    re.DOTALL,
+)
+
+
+def _place_daily_calendar(
+    body_html: str, calendar_html: str, *, reused: bool, original_issue: str, original_url: str,
+) -> str:
+    """Replace only an unambiguous calendar table, retaining the historical text on reused pages."""
+    if not calendar_html:
+        return body_html
+    if "<tr data-event-id" not in calendar_html:
+        return body_html + calendar_html
+    matches = []
+    for block in _DAILY_CALENDAR_BLOCK_RE.finditer(body_html):
+        title = block["title"]
+        if "北京时间" not in title or "日历" not in title or not re.search(r"(?:7\s*[–—-]\s*)?14\s*天", title):
+            continue
+        headers = [strip_tags(cell) for cell in re.findall(r"<th\b[^>]*>(.*?)</th>", block["columns"], re.DOTALL)]
+        if (len(headers) == 4 and "北京时间" in headers[0] and "事件" in headers[1]
+                and "级别" in (headers[1] + headers[2]) and "传导" in (headers[2] + headers[3])
+                and "纪律" in headers[3]):
+            matches.append(block)
+    if len(matches) != 1:
+        return body_html + calendar_html
+    block = matches[0]
+    if reused:
+        original = (
+            f'<details><summary>原稿日历 · {esc(original_issue)}</summary>'
+            f'<p class="sec-sub">以下为原稿时点的日程，当前观察请以上表为准。</p>{block["table"]}</details>'
+        )
+    else:
+        anchor = re.search(r'\bid="([^"]+)"', block["heading"])
+        href = original_url + (f"#{anchor[1]}" if anchor else "")
+        original = f'<p class="sec-sub"><a href="{esc(href)}">查看存档中的原稿日历</a></p>'
+    return body_html[:block.start("table")] + calendar_html + original + body_html[block.end("table"):]
+
+
 def _render_market_news_radar(
     market_slug: str,
     policy_cal: dict[str, Any] | None,
@@ -6552,20 +6753,15 @@ def _render_market_news_radar(
                 if gold_blocked
                 else "严守仓位纪律与风控锚点，不追单日情绪脉冲。"
             )
-        src_url = str(b.get("source_url") or "").strip()
-        src_link = (
-            f'<a class="mnews-src-link" href="{esc(src_url)}" target="_blank" rel="noopener noreferrer">官源 ↗</a>'
-            if src_url.startswith("https://")
-            else ""
-        )
+        brief_id = esc(str(b.get("id") or b.get("brief_id") or ""))
         cards.append(
-            f'<article class="pcal-brief-card mnews-card" data-mnews-cat="{esc(cat_k)}" data-mnews-tier="{esc(b_tier_code)}">'
+            f'<article class="pcal-brief-card mnews-card" data-pcal-brief-id="{brief_id}" data-mnews-cat="{esc(cat_k)}" data-mnews-tier="{esc(b_tier_code)}">'
             '<div class="pcal-brief-meta">'
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
             f'<span class="pcal-tier-pill {tier_cls}">{_meter(b_tier_code)}{esc(tier_lbl)}</span>'
             f'<span class="mnews-cat-pill">{esc(cat_lbl)}</span>'
             f'<span class="pcal-src">{esc(auth)} · {esc(ts_disp)}</span>'
-            f"{src_link}"
+            f"{_policy_brief_source_links(b)}"
             "</div>"
             f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
             f'<div class="pcal-brief-row"><strong>白话看懂：</strong>{esc(plain)}</div>'
@@ -6609,6 +6805,8 @@ def _render_daily_visual_cockpit(
     eq_state: dict[str, Any],
     gold_snap: dict[str, Any],
     body_html: str,
+    *,
+    reused_body: bool = False,
 ) -> str:
     """Render an instant visual dashboard (scorecard bars, wallet allocation ribbon, crisis gauges) at top of latest daily."""
     markets = eq_state.get("markets") or {}
@@ -6653,6 +6851,8 @@ def _render_daily_visual_cockpit(
                 "</div>"
             )
     else:
+        if reused_body:
+            left_title = "📊 沿用研报的 6 维大盘评分"
         dim_matches: list[tuple[str, float, float]] = []
         for m in re.finditer(
             r"<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>",
@@ -6697,40 +6897,38 @@ def _render_daily_visual_cockpit(
                 "</div>"
             )
 
-    alloc_segments: list[tuple[str, int, str]] = []
-    alloc_note = ""
+    alloc_segments: list[tuple[str, float, str]] = []
+    alloc_note = "仓位数据待核"
     if market_slug == "a-share":
-        cap = int((markets.get("a_share") or {}).get("equity_cap_pct") or 40)
-        alloc_segments = [("A股权益上限", cap, "#1d4ed8"), ("短融/国债防盾", 100 - cap, "#0f766e")]
-        alloc_note = (
-            f"10 万池：股票 ≤ {cap}k ｜ 债现 ≥ {100 - cap}k ｜ 黄金新仓 0%"
-            if gold_blocked
-            else f"10 万池：股票 ≤ {cap}k ｜ 债现与多元 ≥ {100 - cap}k"
-        )
+        cap = _safe_float((markets.get("a_share") or {}).get("equity_cap_pct"))
+        if cap is not None and 0 <= cap <= 100:
+            alloc_segments = [("A股权益上限", cap, "#1d4ed8"), ("短融/国债防盾", 100 - cap, "#0f766e")]
+            alloc_note = f"股票 ≤ {cap:g}% ｜ 债现与多元 ≥ {100 - cap:g}%"
+            if gold_blocked:
+                alloc_note += " ｜ 黄金新仓 0%"
     elif market_slug == "hk-stock":
-        cap_off = int((markets.get("hk_stock") or {}).get("offshore_equity_cap_pct") or 35)
-        cap_con = int((markets.get("hk_stock") or {}).get("onshore_connect_cap_pct") or 25)
-        alloc_segments = [("港股离岸上限", cap_off, "#1d4ed8"), ("港元货基/短债盾", 100 - cap_off, "#0f766e")]
-        alloc_note = (
-            f"离岸 ≤ {cap_off}% / 港股通 ≤ {cap_con}% ｜ 零金新手金槽位暂泊债现（新仓 0%）"
-            if gold_blocked
-            else f"离岸 ≤ {cap_off}% / 港股通 ≤ {cap_con}% ｜ 余额配置港元货基/短债防盾"
-        )
+        hk_market = markets.get("hk_stock") or {}
+        cap_off = _safe_float(hk_market.get("offshore_equity_cap_pct"))
+        cap_con = _safe_float(hk_market.get("onshore_connect_cap_pct"))
+        if cap_off is not None and 0 <= cap_off <= 100:
+            alloc_segments = [("港股离岸上限", cap_off, "#1d4ed8"), ("港元货基/短债盾", 100 - cap_off, "#0f766e")]
+        alloc_note = f"离岸上限 {_fmt_num(cap_off, 'g', suffix='%')} ｜ 港股通上限 {_fmt_num(cap_con, 'g', suffix='%')}"
+        if gold_blocked:
+            alloc_note += " ｜ 黄金新仓 0%"
     elif market_slug == "us-stock":
         us_m = markets.get("us_stock") or {}
-        eq_p = int(us_m.get("equity_cap_pct") or 28)
-        cash_p = int(us_m.get("cash_tbill_pct") or 62)
-        gold_p = int(us_m.get("gold_hold_pct") or 10)
-        alloc_segments = [
-            ("防弹衣价值股", eq_p, "#1d4ed8"),
-            ("超短美债盾", cash_p, "#0f766e"),
-            ("存量金", gold_p, "#b45309"),
-        ]
-        alloc_note = (
-            f"美股 {eq_p}% + 超短债 {cash_p}% + 存量金 {gold_p}%（零金新手转债）= 100%（科技与黄金新仓均 0%）"
-            if gold_blocked
-            else f"美股 {eq_p}% + 超短债 {cash_p}% + 黄金 {gold_p}% = 100%"
-        )
+        eq_p = _safe_float(us_m.get("equity_cap_pct"))
+        cash_p = _safe_float(us_m.get("cash_tbill_pct"))
+        gold_p = _safe_float(us_m.get("gold_hold_pct"))
+        if all(pct is not None and 0 <= pct <= 100 for pct in (eq_p, cash_p, gold_p)):
+            alloc_segments = [
+                ("防弹衣价值股", eq_p, "#1d4ed8"),
+                ("超短美债盾", cash_p, "#0f766e"),
+                ("存量金", gold_p, "#b45309"),
+            ]
+            alloc_note = f"美股 {eq_p:g}% ｜ 超短债 {cash_p:g}% ｜ 存量金 {gold_p:g}%"
+        if gold_blocked:
+            alloc_note += " ｜ 黄金新仓 0%"
     else:
         alloc_segments = [("黄金上限", 15, "#b45309"), ("待命债现与非金主池", 85, "#0f766e")]
         if gold_blocked:
@@ -6739,8 +6937,8 @@ def _render_daily_visual_cockpit(
             alloc_note = f"黄金占家庭资产上限 10%–15% ｜ 当前{gold_tier_short}（已解锁 {t1_pass}/{t1_tot} 关），按档位上限控制新仓"
 
     alloc_bar_html = "".join(
-        f'<div class="dvc-alloc-seg" style="width:{pct}%;background:{col}" title="{esc(lbl)} {pct}%">'
-        f'<span>{esc(f"{pct}%" if pct <= 18 else f"{lbl} {pct}%")}</span></div>'
+        f'<div class="dvc-alloc-seg" style="width:{pct:g}%;background:{col}" title="{esc(lbl)} {pct:g}%">'
+        f'<span>{esc(f"{pct:g}%" if pct <= 18 else f"{lbl} {pct:g}%")}</span></div>'
         for lbl, pct, col in alloc_segments
         if pct > 0
     )
@@ -6833,6 +7031,9 @@ def _render_daily_visual_cockpit(
         else ""
     )
     grid_cls = "dvc-grid" if left_card else "dvc-grid dvc-grid-single"
+    snapshot_time = str(eq_state.get("as_of_cst") or gold_snap.get("as_of_short") or "")
+    snapshot_time = snapshot_time.replace("T", " ").removesuffix("+08:00")[:16]
+    snapshot_label = f'<div class="dvc-alloc-note">本班状态 · 北京时间 {esc(snapshot_time)}</div>' if snapshot_time else ""
 
     return (
         '<section class="daily-visual-cockpit no-print" aria-label="10秒可视化快读仪表盘">'
@@ -6840,6 +7041,7 @@ def _render_daily_visual_cockpit(
         f"{left_card}"
         '<div class="dvc-card">'
         '<div class="dvc-card-head">💼 钱包仓位配比条 &amp; 全球 4 阀熔断邻近仪</div>'
+        f"{snapshot_label}"
         f'<div class="dvc-alloc-bar">{alloc_bar_html}</div>'
         f'<div class="dvc-alloc-note">{esc(alloc_note)}</div>'
         f'<div class="dvc-brake-grid">{gauge_html}</div>'
@@ -7715,7 +7917,7 @@ def build_cockpit_page(
         <button type="button" class="bucket-card" data-jump-bucket="liquid">
           <div class="bucket-top"><span class="bucket-icon">💧</span><span class="bucket-horizon">0–6 个月随时用</span></div>
           <div class="bucket-title">第一笔：活钱应急池</div>
-          <div class="bucket-desc">留 3–6 个月生活费与待机弹药，绝不亏本、随时调用、跑赢传统活期。</div>
+          <div class="bucket-desc">留出 3–6 个月生活费。核对到账时间和净值波动，短融 ETF 与同业存单基金均有本金波动风险。</div>
           <div class="bucket-tags"><span class="bucket-tag">短融 ETF</span><span class="bucket-tag">国债逆回购</span><span class="bucket-tag">同业存单 AAA</span></div>
           <div class="bucket-foot">筛选对应渠道 ↓</div>
         </button>
@@ -7741,7 +7943,7 @@ def build_cockpit_page(
           <div class="bucket-foot">筛选对应渠道 ↓</div>
         </button>
       </div>
-      {_render_wallet_calculator(gold_snap, eq_state)}
+      {_render_wallet_calculator(gold_snap, eq_state, kline_manifest)}
     </section>
     """
 
@@ -7802,7 +8004,7 @@ def build_cockpit_page(
         if isinstance(kline_manifest, dict) and kline_manifest.get("total_instruments")
         else 0
     )
-    crisis_ribbon_html = _render_crisis_ribbon(gold_snap, eq_state, kline_core, gold_blocked)
+    crisis_ribbon_html = _render_crisis_ribbon(gold_snap, eq_state, gold_blocked)
     home_kline_deck_html = _render_home_kline_deck(multi_idx, total_kline_cnt)
 
     a_matrix_html = _render_market_index_matrix(multi_idx["a_share"], "a_share", visible_count=6)
@@ -7824,6 +8026,7 @@ def build_cockpit_page(
             "name": str(st.get("name") or ""),
             "code": str(st.get("code") or ""),
             "price": str(st.get("price") or ""),
+            "price_date": _valid_iso_date(_extract_iso_date(st.get("price_updated_at"))),
             "role": str(st.get("action_label") or ""),
         }
     for etf in etf_list:
@@ -7832,7 +8035,6 @@ def build_cockpit_page(
             watch_idx_map[cd] = {
                 "name": _clean_etf_display_text(etf.get("name", "")),
                 "code": cd,
-                "price": str(etf.get("fee_total_pct") or ""),
                 "role": str(etf.get("action_role") or ""),
             }
     safe_watch_idx_json = json.dumps(watch_idx_map, ensure_ascii=False).replace("</", "<\\/")
@@ -7862,7 +8064,7 @@ def build_cockpit_page(
             ref_part = f"官结 ${brent_usd:.2f}"
         elif rid == "cmd_CL" and wti_usd is not None and rv is not None and abs(rv - wti_usd) >= 0.05:
             ref_part = f"官结 ${wti_usd:.2f}"
-        parts = [p for p in (ref_part, chg_part, esc(row["tier"]), "📈 K线") if p]
+        parts = [p for p in (ref_part, chg_part, esc(_quote_provenance(row)), "📈 K线") if p]
         return " · ".join(parts)
 
     rmb_code_tag = "USD/CNH" if usd_cnh is not None else "USD/CNY"
@@ -7884,15 +8086,8 @@ def build_cockpit_page(
     def _mirror_name_lbl(row: dict[str, Any]) -> str:
         rid = str(row.get("id") or "")
         nm = str(row.get("name") or "")
-        rv = _safe_float(row.get("value"))
         if rid in ("crypto_BTC", "crypto_ETH") and "禁交易" not in nm:
             nm = re.sub(r"[（(]只读[）)]", "", nm).strip() + "（只读·禁交易）"
-        elif rid == "rate_US10Y" and us10y is not None and rv is not None and abs(rv - us10y) >= 0.01:
-            nm = "美债10Y（盘中实盘）"
-        elif rid == "cmd_OIL" and brent_usd is not None and rv is not None and abs(rv - brent_usd) >= 0.05:
-            nm = "布伦特原油（盘中实盘）"
-        elif rid == "cmd_CL" and wti_usd is not None and rv is not None and abs(rv - wti_usd) >= 0.05:
-            nm = "WTI原油（盘中实盘）"
         return nm
 
     mirror_rows = [r for r in multi_idx["macro"] if r.get("id") not in ("fx_USDCNH", "fx_USDHKD")]
@@ -8653,12 +8848,14 @@ def _render_static_screener_row(stock: dict[str, Any]) -> str:
         if stock.get("dossier")
         else ""
     )
+    quote_meta = " · ".join(v for v in (stock.get("price_updated_at"), stock.get("price_source")) if v)
+    quote_html = f'<div class="sec-sub">{esc(quote_meta)}</div>' if quote_meta else ""
     return (
         f'<tr class="row-{esc(col)}" data-market="{esc(stock["market"])}">'
         f'<td class="col-sticky"><span class="mkt-badge mkt-{esc(stock["market"])}">{esc(stock["market_label"])}</span></td>'
         f'<td>{star_btn} <strong>{esc(stock["name"])}</strong> <span class="code-tag">{esc(stock["code"])}</span></td>'
         f'<td class="nw">{esc(stock["sector"])}</td>'
-        f'<td><div><strong>{esc(stock["price"])}</strong></div>{val_chips_html}</td>'
+        f'<td><div><strong>{esc(stock["price"])}</strong></div>{quote_html}{val_chips_html}</td>'
         f"<td>{div_ah_html}</td>"
         f'<td><span class="act-pill act-{esc(col)}">{mark} {esc(stock["action_label"])}</span></td>'
         f'<td>{anchor_html}{esc(stock["summary"])}{d_btn} <a href="{esc(stock["report_url"])}" class="nw">手册 →</a></td>'
@@ -8864,6 +9061,24 @@ def _truncate_clean_summary(text: str, max_len: int = 78) -> str:
     return cut.rstrip(" ·，,；;：:-—") + "…"
 
 
+def _dossier_quote_day(price: str, record_day: str) -> str:
+    """Resolve the quote's own month and day relative to the dossier edit date."""
+    match = re.match(r"^(\d{1,2})/(\d{1,2})\b", price)
+    if not match or not _valid_iso_date(record_day):
+        return ""
+    reference = date.fromisoformat(record_day)
+    month, day = map(int, match.groups())
+    year = reference.year
+    # A New Year dossier may still quote the last trading day of December.
+    if reference.month == 1 and month == 12:
+        year -= 1
+    try:
+        observed = date(year, month, day)
+    except ValueError:
+        return ""
+    return observed.isoformat() if observed <= reference else ""
+
+
 def _overlay_fresher_dossier_on_stock(
     stock: dict[str, Any],
     dossier: dict[str, Any],
@@ -8944,15 +9159,16 @@ def _overlay_fresher_dossier_on_stock(
             old_price_num = _parse_price_num(str(stock.get("price") or ""))
         if fresh_price:
             new_price_num = _parse_price_num(fresh_price)
+            quote_day = _dossier_quote_day(fresh_price, updated_at)
             # Update quote when fresher dossier carries a newer price or explicit dated close
             has_date_tag = bool(re.match(r"^\d{1,2}/\d{1,2}\b", fresh_price))
             price_changed = (
                 new_price_num is not None
                 and (old_price_num is None or abs(new_price_num - old_price_num) > 1e-6)
             )
-            if price_changed or has_date_tag:
+            if quote_day and quote_day >= flagship_dt and (price_changed or has_date_tag):
                 stock["price"] = fresh_price
-                stock["price_updated_at"] = updated_at
+                stock["price_updated_at"] = quote_day
                 if new_price_num is not None:
                     stock["price_num"] = new_price_num
 
@@ -9037,6 +9253,8 @@ def merge_stock_dossiers(
     dmap = dossiers_payload.get("dossiers")
     if not isinstance(dmap, dict):
         return stocks
+    snapshot_day = _valid_iso_date(dossiers_payload.get("as_of_date"))
+    cutoff = date.fromisoformat(snapshot_day) if snapshot_day else None
     ah_lookup: dict[str, float] = {}
     for row in ah_benchmarks or []:
         if not isinstance(row, dict):
@@ -9065,6 +9283,7 @@ def merge_stock_dossiers(
                 "bear_case": str(d.get("bear_case", "")),
                 "action_etf": str(d.get("action_etf", "")),
                 "updated_at": str(d.get("updated_at", "")),
+                "evidence": inventory_evidence(d, STOCK_FIELDS, cutoff),
             }
             st["dossier"] = dossier_obj
             if flagship_dates is not None or ("color" in st or "price" in st):
@@ -9077,6 +9296,60 @@ def merge_stock_dossiers(
                     ah_lookup=ah_lookup,
                 )
     return stocks
+
+
+def _closing_quote_available(
+    observed: str, market: str, cutoff: str, calendar_overrides: list[dict] | None = None,
+) -> bool:
+    try:
+        day = date.fromisoformat(observed)
+        if cutoff == cutoff[:10]:
+            return day <= date.fromisoformat(cutoff)
+        stamp = datetime.fromisoformat(cutoff)
+    except (TypeError, ValueError):
+        return False
+    beijing = ZoneInfo("Asia/Shanghai")
+    zone = ZoneInfo("America/New_York") if market == "us-stock" else beijing
+    closes = {"a-share": time(15), "hk-stock": time(16, 10), "us-stock": time(16)}
+    half_day_closes = {"hk-stock": time(12, 10), "us-stock": time(13)}
+    half_day = any(
+        isinstance(entry, dict) and entry.get("type") == "half_day" and entry.get("date_cst") == observed
+        and isinstance(entry.get("markets_affected"), list) and market.replace("-", "_") in entry["markets_affected"]
+        for entry in calendar_overrides or []
+    )
+    close = half_day_closes.get(market, closes[market]) if half_day else closes[market]
+    cutoff_at = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=beijing)
+    return datetime.combine(day, close, zone) <= cutoff_at
+
+
+def _align_screener_quotes(
+    stocks: list[dict[str, Any]], manifest: dict[str, Any], cutoff: str, calendar_overrides: list[dict] | None = None,
+) -> None:
+    """Use the edition's dated candles for prices shared with the chart and watchlist."""
+    series = {row["id"]: row for row in (manifest.get("catalog") or []) if isinstance(row, dict) and isinstance(row.get("id"), str)}
+    currencies = {"a-share": ("CNY", "元"), "hk-stock": ("HKD", "港元"), "us-stock": ("USD", "美元")}
+    for stock in stocks:
+        row = series.get(f"stk_{stock['code']}", {})
+        observed = _valid_iso_date(row.get("latest_date"))
+        currency, unit = currencies[stock["market"]]
+        value = _safe_float(row.get("latest_close"))
+        if (
+            not observed or not _closing_quote_available(observed, stock["market"], cutoff, calendar_overrides)
+            or row.get("stale") is not False
+            or row.get("currency") != currency or row.get("market") != stock["market"]
+            or row.get("code") != stock["code"] or value is None or value <= 0
+        ):
+            stock.update(price="同口径行情待核", price_num=None, price_updated_at="", price_source="", anchor_gap_pct=None)
+            continue
+        change = _safe_float(row.get("change_pct"))
+        label = format(value, ",.3f").rstrip("0").rstrip(".")
+        move = f" ({change:+.2f}%)" if change is not None else ""
+        stock.update(price=f"{label} {unit}{move}", price_num=value, price_updated_at=observed,
+                     price_source=_kline_source_label(row.get("provider")))
+        lo, hi = _safe_float(stock.get("anchor_low")), _safe_float(stock.get("anchor_high"))
+        reference = (lo + hi) / 2 if lo and hi and lo > 0 and hi > 0 else None
+        gap = round(100 * (value - reference) / reference, 1) if reference else None
+        stock["anchor_gap_pct"] = gap if gap is not None and -80 <= gap <= 250 else None
 
 
 _OFFICIAL_VERIFY_PORTALS: tuple[dict[str, str], ...] = (
@@ -9246,7 +9519,7 @@ def _render_dual_warning_wall(data: dict[str, Any], cgb10y_disp: str) -> str:
 
     if not caution_items:
         caution_items = [
-            {"title": "高溢价跨境 QDII 与临期退市商品 LOF", "detail": "合法挂牌但情绪溢价可达两位数，叠加 LOF 限期退市回归净值机制，高位接盘极易本金与溢价双杀。"},
+            {"title": "高溢价跨境 QDII 与商品 LOF", "detail": "净值下跌和溢价收窄均可能造成亏损。涉及交易安排时，核对交易所正式规则与该基金公告。"},
             {"title": "银行理财“低波幻觉”与超长债重仓", "detail": "全面真净值化后银行理财同样会阶段性破净；30 年超长国债久期近 20 年，绝非保本稳钱替代品。"},
             {"title": "问题低评级转债、融资融券与复杂场外期权", "detail": "合法交易工具但杠杆或违约风险极高，普通新手切勿因高表面收益率贸然涉足。"},
         ]
@@ -9354,7 +9627,7 @@ def build_channels_page(
         bk = _normalize_money_bucket(ch)
         _, bk_short = _BUCKET_META[bk]
         stars_str, stars_lbl = _fmt_stars(_channel_risk_stars(ch))
-        hnw_tag = ' <span class="ch-hnw-badge">300万门槛</span>' if _is_hnw_channel(ch) else ""
+        hnw_tag = ' <span class="ch-hnw-badge">合格投资者</span>' if _is_hnw_channel(ch) else ""
         compare_rows.append(
             f"<tr>"
             f'<td class="nw"><span class="ch-num">{esc(num)}</span> <a href="channels/{esc(cid)}.html"><strong>{esc(ch.get("short_name") or ch.get("name", ""))}</strong></a>{hnw_tag}</td>'
@@ -9501,12 +9774,15 @@ def build_etfs_page(
     cnt_reg = defaultdict(int)
     cnt_qdii = 0
     enriched_etfs: list[dict[str, Any]] = []
+    snapshot_day = _valid_iso_date(data.get("as_of_date"))
+    cutoff = date.fromisoformat(snapshot_day) if snapshot_day else None
     for it in etfs:
         if isinstance(it, dict):
             ac, reg = _infer_etf_ortho(it)
             row_copy = dict(it)
             row_copy["asset_class"] = ac
             row_copy["region"] = reg
+            row_copy["evidence"] = inventory_evidence(it, ETF_FIELDS, cutoff)
             enriched_etfs.append(row_copy)
             cnt_m[str(it.get("market", ""))] += 1
             cnt_ac[ac] += 1
@@ -9553,7 +9829,7 @@ def build_etfs_page(
             '<span class="disclosure-summary-main">'
             '<span class="disclosure-icon" aria-hidden="true">📐</span>'
             '<span class="disclosure-heading">'
-            '<span class="disclosure-title">2026 全球 ETF 5 条核心铁律（费改 · 港股税差 · 爱尔兰免遗产税 · 溢价死线）</span>'
+            '<span class="disclosure-title">全球 ETF 费用、税务和折溢价规则</span>'
             "</span>"
             "</span>"
             '<span class="disclosure-summary-meta">'
@@ -9569,7 +9845,7 @@ def build_etfs_page(
     <div class="sec-head" style="margin-top:4px;">
       <div>
         <h1>全球 {total} 只重点 ETF 多通道深度雷达</h1>
-        <span class="sec-sub">覆盖 A/港/美/日欧亚太、爱尔兰 UCITS、境内 QDII 与债现商品 · 基准 {esc(as_of)}</span>
+        <span class="sec-sub">档案期号 {esc(as_of)} · 规模、费用与行情各有统计口径和日期。已列明的原始出处见各产品详情。</span>
       </div>
       {f'<span class="compact-alert-pill">🛑 {esc(lock_notice)}</span>' if lock_notice else ''}
     </div>
@@ -9659,7 +9935,7 @@ def build_etfs_page(
           <button type="button" class="filter-pill" data-etf-channel="境内QDII">境内QDII ({cnt_qdii})</button>
           <button type="button" class="filter-pill" data-etf-channel="离岸港交所">离岸港交所</button>
           <button type="button" class="filter-pill" data-etf-channel="离岸美股">离岸美股</button>
-          <button type="button" class="filter-pill" data-etf-channel="爱尔兰UCITS">爱尔兰UCITS</button>
+          <button type="button" class="filter-pill" data-etf-channel="爱尔兰UCITS">爱尔兰 UCITS／ETC</button>
         </div>
       </div>
     </section>
@@ -9726,25 +10002,35 @@ def build_screener_page(
     ah_matrix: list[dict[str, Any]] | None = None,
     hsahp_index: float | None = None,
     hkd_cny_mid: float | None = None,
+    hkd_cny_mid_date: str = "",
 ) -> str:
     total = len(stocks)
     cnt_m = defaultdict(int)
     cnt_c = defaultdict(int)
+    ah_by_code = {row[key]: row for row in (ah_matrix or []) for key in ("a_code", "h_code")}
     for st in stocks:
         cnt_m[st["market"]] += 1
         cnt_c[st["color"]] += 1
         st["benchmark_time"] = benchmarks[st["market"]]
+        if st["code"] in ah_by_code:
+            pair = ah_by_code[st["code"]]
+            st["ah_pct"] = pair["ah_premium_pct"]
+            st["ah_quote_date"] = pair.get("quote_date") or ""
+            parts = [part.strip() for part in str(st.get("valuation") or "").split("/")]
+            if st["market"] == "a-share" and len(parts) >= 4 and re.fullmatch(r"[+\-−]?\d+(?:\.\d+)?%", parts[3]):
+                del parts[3]
+            st["valuation"] = " / ".join(part for part in parts if not re.search(r"\bA/?H\b|A\s*折\s*H", part, re.I))
     source_labels = " · ".join(
         f"{label}（{cnt_m[slug]} 家，{esc(benchmarks[slug])}）"
         for slug, label in (("a-share", "A 股"), ("hk-stock", "港股"), ("us-stock", "美股"))
     )
 
-    safe_json = json.dumps(stocks, ensure_ascii=False).replace("</", "<\\/")
+    safe_json = json.dumps(stocks, ensure_ascii=False, allow_nan=False).replace("</", "<\\/")
     static_rows = "".join(_render_static_screener_row(stock) for stock in stocks)
     date_fallback = default_date.strip() or "最新班次"
 
     ah_rows = ah_matrix or []
-    safe_ah_json = json.dumps(ah_rows, ensure_ascii=False).replace("</", "<\\/")
+    safe_ah_json = json.dumps(ah_rows, ensure_ascii=False, allow_nan=False).replace("</", "<\\/")
     ah_cnt = len(ah_rows)
     ah_static_rows = []
     for r in ah_rows:
@@ -9752,19 +10038,50 @@ def build_screener_page(
         prem_txt = f"{prem:+.1f}%" if isinstance(prem, (int, float)) else "—"
         prem_cls = "ah-pill ah-disc" if (isinstance(prem, (int, float)) and prem < 0) else "ah-pill ah-prem"
         a_div_txt = f"{r['a_div_pct']:.2f}%" if isinstance(r.get("a_div_pct"), (int, float)) else "—"
-        h_div_txt = f"{r['h_connect_after_tax_div']:.2f}%" if isinstance(r.get("h_connect_after_tax_div"), (int, float)) else "—"
+        h_yield_key = "h_div_pct" if r.get("h_local_cash") or r.get("h_tax_pending") or r.get("no_cash_dividend") else "h_connect_after_tax_div"
+        h_value = r.get(h_yield_key)
+        h_div_txt = f"{h_value:.2f}%" if isinstance(h_value, (int, float)) else "—"
+        h_label = "H 香港登记股东税前" if r.get("h_local_cash") else "H 港股通税后"
+        if r.get("h_tax_pending"):
+            h_label = "H 港股通税前"
+        if r.get("h_not_eligible"):
+            h_label = "H 本期分派不适用"
+        elif r.get("no_cash_dividend"):
+            h_label = "H 本期现金股息"
+        tax_tag = (
+            f'（按 {r["h_tax_rate_pct"]}% 测算）'
+            if h_value is not None and r.get("h_tax_rate_pct") is not None and not (r.get("h_local_cash") or r.get("no_cash_dividend"))
+            else ""
+        )
         kline_sym = str(r.get("a_sym_id") or r.get("h_sym_id") or "").strip()
         kline_cell = (
             f'<a href="charts.html#sym={esc(kline_sym)}" class="kline-quick-btn">📈 K线</a>'
             if kline_sym
             else '<span class="sec-sub">—</span>'
         )
+        quote_date = r.get("quote_date") or "同日行情待核"
+        quote_source = r.get("quote_source")
+        quote_links = " ".join(
+            f'<a href="{esc(source)}">{side.upper()} {label}</a>'
+            for label, urls in (("收盘来源", r["quote_urls"]), ("报价原始行", r["quote_replay_urls"]))
+            for side, source in urls.items()
+        )
+        dividend_sources = r.get("dividend_sources") or {}
+        source_links = " ".join(
+            f'<a href="{esc(source)}">{side.upper()} 股息来源{f" {number}" if len(sources) > 1 else ""}</a>'
+            for side, sources in dividend_sources.items()
+            for number, source in enumerate(sources, start=1)
+        )
+        dividend_note = esc(r.get("dividend_basis") or "股息资料待核")
         ah_static_rows.append(
             "<tr>"
             f'<td><strong>{esc(r["name"])}</strong><div class="sec-sub">{esc(r["a_code"])} / {esc(r["h_code"])}</div></td>'
-            f'<td><div>A: {esc(r["a_price"])}</div><div class="sec-sub">H: {esc(r["h_price"])}</div></td>'
+            f'<td><div>A: {esc(r["a_price"])}</div><div>H: {esc(r["h_price"])}</div>'
+            f'<div class="sec-sub">{esc(quote_date)}{f" · {esc(quote_source)}" if quote_source else ""} {quote_links}</div></td>'
             f'<td><span class="{prem_cls}">{esc(prem_txt)}</span></td>'
-            f'<td><div>A 持有>1年免税: <strong>{esc(a_div_txt)}</strong></div><div class="sec-sub">H 港股通税后: <strong>{esc(h_div_txt)}</strong>（扣{r["h_tax_rate_pct"]}%税）</div></td>'
+            f'<td><div>A 持有>1年免税: <strong>{esc(a_div_txt)}</strong></div>'
+            f'<div class="sec-sub">{h_label}：<strong>{esc(h_div_txt)}</strong>{tax_tag}</div>'
+            f'<div class="sec-sub">{dividend_note} {source_links}</div></td>'
             f'<td><span class="ah-verdict-pill ah-v-{esc(r["verdict_tone"])}">{esc(r["verdict_label"])}</span></td>'
             f"<td>{kline_cell}</td>"
             "</tr>"
@@ -9776,7 +10093,7 @@ def build_screener_page(
         f"""
     <div class="sec-head" style="margin-top:4px;">
       <h1>全球 {total} 家核心龙头交互筛选器</h1>
-      <span class="sec-sub">主表基线（旗舰基准）：{source_labels} · 当班已刷新的焦点股已同步最新评级与官收价格，7 维档案刷新日见单股弹窗底部（支持筛选 A/H 倒挂与高股息）</span>
+      <span class="sec-sub">旗舰基准 {source_labels} · 行情按所列交易日期和来源展示。估值、股息与观察价来自研究档案，具体出处见详情。</span>
     </div>
     """
     )
@@ -9879,7 +10196,7 @@ def build_screener_page(
     <section id="scr-view-ah" class="ah-matrix-panel" hidden aria-label="A/H 孪生股税后股息比价矩阵">
       <div class="sec-head" style="margin-top:4px;">
         <h2>↔ {ah_cnt} 对 A/H 孪生股溢价与税后股息比价矩阵</h2>
-        <span class="sec-sub">恒生 AH 溢价指数 {hsahp_disp} · 港元中间价 {fx_disp} · 港股通个人按 20% H 股红利税（特定红筹按 28%）实算，A 股持股满 1 年免税</span>
+        <span class="sec-sub">恒生 AH 溢价指数 {hsahp_disp} · 港元中间价 {fx_disp} {esc(hkd_cny_mid_date)} · 溢价使用同日两地行情和中间价。税后排序使用可核对的港股通分派，先按统计期间分组。香港登记股东股息以税前列示。税率按 A 股持有超过 1 年、标准 H 股港股通 20% 试算。源头代扣待核的分派以税前列示。 <a href="https://fgk.chinatax.gov.cn/zcfgk/c102416/c5204006/content.html">沪港通税务政策</a></span>
       </div>
       <div class="filter-panel">
         <div class="filter-row">
@@ -9891,7 +10208,7 @@ def build_screener_page(
         </div>
         <div class="screener-bar" style="margin:0;">
           <strong id="ah-matrix-count" role="status">显示 {ah_cnt} / {ah_cnt} 对 A/H 孪生股</strong>
-          <span class="sec-sub">点击表头可按溢价率或税后息差排序</span>
+          <span class="sec-sub">点击表头按溢价率排序，或在同一统计期间内按税后息差排序</span>
         </div>
       </div>
       <div class="table-wrap">
@@ -9902,7 +10219,7 @@ def build_screener_page(
               <th>A / H 参考价</th>
               <th class="sortable" data-ah-sort="ah_premium_pct"><button type="button">A/H 溢价率 ⇅</button></th>
               <th class="sortable" data-ah-sort="net_div_spread"><button type="button">A 股免税息 vs 港通税后息 ⇅</button></th>
-              <th>实操通道裁决</th>
+              <th>价格与股息提示</th>
               <th>深度档案与 K 线</th>
             </tr>
           </thead>
@@ -9946,6 +10263,8 @@ def build_guide_page(
     channels_data: dict[str, Any] | None,
     etf_data: dict[str, Any] | None,
     total_pool: int = 0,
+    *,
+    kline_manifest: dict[str, Any] | None = None,
 ) -> str:
     """Render standalone Beginner 3-Minute Guide & Top-48 Financial Terms Page (guide.html)."""
     gs = gold_snap if isinstance(gold_snap, dict) else {}
@@ -9979,7 +10298,7 @@ def build_guide_page(
             "channels/funds_wm.html",
         ),
         (
-            "场内抢买高溢价跨境 QDII 或临期退市商品 LOF",
+            "场内抢买高溢价跨境 QDII 或商品 LOF",
             "刷热点冲进溢价两位数甚至停牌的纳指 ETF 或白银/原油 LOF，即使底层没跌，溢价回落也会造成大幅亏损。",
             "下单前必看实时参考净值（IOPV），场内溢价超过 2%–3% 坚决不追，优先改用场外联接按净值分批定投。",
             "channels/qdii_mrf.html",
@@ -9999,12 +10318,12 @@ def build_guide_page(
         (
             "A/C 类基金选反，或持有不满 7 天硬挨 1.5% 赎回费",
             "短期波段买了高申购费 A 类，或长期持有选了持续扣费的旧合同 C 类，甚至几天内频繁进出触发 1.5% 惩罚费。",
-            "短钱不动公募股债基；持有 7 天内不轻易赎回；长持 1 年以上仍优先选 1 折 A 类（2026 费改 C 类满 1 年免销服费不含货币基金，旧合同过渡期至 2026-12-31、自 2027-01-01 起全面生效）。",
+            "按预期持有期比较 A/C 的申购费、销售服务费和赎回费。适用份额持有超过一年后停止继续收取销售服务费，首年费用与短期赎回费用看合同。",
             "channels/funds_wm.html",
         ),
         (
-            "忽略港股通 20% 红利税（特定红筹最高约 28%）与未锁汇汇率损失",
-            "冲着高表面股息买港股通，或用人民币新换汇买未锁汇美元债，结果标准 H 股 20% 红利税（特定内地居民企业红筹依发行人公告最高约 28%）与人民币升值吃光全部利息。",
+            "忽略港股通 20% 红利税（个别发行人的源头代扣待核）与未锁汇汇率损失",
+            "冲着高表面股息买港股通，或用人民币新换汇买未锁汇美元债，标准 H 股 20% 红利税（个别发行人的源头代扣须查分派公告）或人民币升值会压低人民币口径收益。",
             "买港股高股息前先按税后折算真实到手率；内地买香港互认债基认准「人民币对冲 + 累计份额」合法避税锁汇。",
             "etfs.html",
         ),
@@ -10135,7 +10454,7 @@ def build_guide_page(
       <h2>② 我的钱包一键试算（直连今日红绿灯）</h2>
       <span class="sec-sub">输入可投资闲钱与风险偏好，按四笔钱与风控硬规则实时拆算落地方案</span>
     </div>
-    {_render_wallet_calculator(gs, es)}
+    {_render_wallet_calculator(gs, es, kline_manifest)}
 
     <div class="sec-head" id="sec-guide-pitfalls">
       <h2>③ 新手最常踩的 8 大真实避坑清单</h2>
@@ -10730,7 +11049,8 @@ def build_site(out_dir: Path) -> dict[str, Any]:
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{out_dir.name}-build-", dir=out_dir.parent) as scratch:
         staging = Path(scratch) / "new"
-        summary = _render_site(staging)
+        with state_read_lock(REPO_ROOT):
+            summary = _render_site(staging)
         previous = Path(scratch) / "previous"
         if out_dir.exists():
             os.replace(out_dir, previous)
@@ -10749,15 +11069,15 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
 
     # Load SSOT JSONs (read-only)
     gold_snap = json.loads((GOLD_DIR / "data_snapshot.json").read_text(encoding="utf-8"))
-    eq_state = json.loads((EQUITY_DIR / "state" / "market_state.json").read_text(encoding="utf-8"))
+    eq_state = load_research_json((EQUITY_DIR / "state" / "market_state.json").read_text(encoding="utf-8"))
     eq_as_of_disp = fmt_cst_iso(str(eq_state.get("as_of_cst", "")))
     channels_path = EQUITY_DIR / "state" / "multi_asset_channels.json"
     etf_path = EQUITY_DIR / "state" / "etf_universe.json"
     dossiers_path = EQUITY_DIR / "state" / "deep_dossiers.json"
     policy_cal_path = EQUITY_DIR / "state" / "policy_calendar.json"
-    channels_data = json.loads(channels_path.read_text(encoding="utf-8")) if channels_path.is_file() else None
-    etf_data = json.loads(etf_path.read_text(encoding="utf-8")) if etf_path.is_file() else None
-    dossiers_data = json.loads(dossiers_path.read_text(encoding="utf-8")) if dossiers_path.is_file() else None
+    channels_data = load_research_json(channels_path.read_text(encoding="utf-8")) if channels_path.is_file() else None
+    etf_data = load_research_json(etf_path.read_text(encoding="utf-8")) if etf_path.is_file() else None
+    dossiers_data = load_research_json(dossiers_path.read_text(encoding="utf-8")) if dossiers_path.is_file() else None
     policy_calendar_data: dict[str, Any] | None = None
     if policy_cal_path.is_file():
         try:
@@ -10865,6 +11185,12 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
             except Exception:
                 kline_core = None
 
+    _align_screener_quotes(
+        stocks,
+        kline_manifest if isinstance(kline_manifest, dict) and kline_manifest.get("edition_id") == eq_state.get("edition_id") else {},
+        str(eq_state.get("as_of_cst") or ""),
+        eq_state.get("calendar_overrides"),
+    )
     multi_idx = _resolve_multi_index_groups(gold_snap, eq_state, kline_manifest)
     total_kline_cnt = (
         int(kline_manifest.get("total_instruments", 0))
@@ -11059,7 +11385,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
             footer_note = str(
                 meta.get(
                     "footer_note",
-                    "本每日研报数据均经多源官方数据库核验，仅供参考；请严守家庭资产 10%–15% 黄金上限，远离杠杆。",
+                    "本文按所标日期记录行情和研究判断。",
                 )
             )
             item.title = clean_md_inline_plain(title)
@@ -11135,7 +11461,7 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 if item.rev < corrected.rev
                 else ""
             )
-            daily_kline_strip = _render_daily_kline_strip(item.market, multi_idx, base_prefix="../")
+            daily_kline_strip = _render_daily_kline_strip(item.market, multi_idx, base_prefix="../") if is_latest else ""
             enhanced_body = _enhance_daily_body_visuals(item.body_html)
 
             def _build_daily_html(apply_live_overlays: bool) -> str:
@@ -11162,16 +11488,24 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                     item.session_label,
                 )
                 v_cockpit = (
-                    _render_daily_visual_cockpit(item.market, eq_state, gold_snap, item.body_html)
+                    _render_daily_visual_cockpit(
+                        item.market, eq_state, gold_snap, item.body_html, reused_body=is_reused_latest,
+                    )
                     if apply_live_overlays
                     else ""
                 )
                 m_news_html = ""
+                page_body = enhanced_body
                 p_toc = list(item.toc)
-                if apply_live_overlays or (
-                    isinstance(policy_calendar_data, dict)
-                    and item_edition_id == policy_calendar_data.get("edition_id")
-                ):
+                if apply_live_overlays:
+                    calendar_html = _render_market_forward_calendar(item.market, policy_calendar_data, current_mk_edition)
+                    if calendar_html:
+                        page_body = _place_daily_calendar(
+                            page_body, calendar_html, reused=is_reused_latest,
+                            original_issue=f"{item.date_str} {item.session_label}",
+                            original_url=f"{item.slug}.html",
+                        )
+                        p_toc.append((2, "sec-market-calendar", "本班未来 14 天财经与政策日历"))
                     m_news_html, mnews_cnt = _render_market_news_radar(
                         item.market, policy_calendar_data, eq_state, gold_tier0_locked
                     )
@@ -11180,12 +11514,12 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                 doc_html = render_doc_with_toc(
                     toolbar_html=tb_html,
                     cover_html=item.cover_html,
-                    body_html=enhanced_body,
+                    body_html=page_body,
                     footer_note=item.footer_note,
                     toc_items=p_toc,
                     doc_kind="daily",
                     disclosure_html=disc_inline,
-                    kline_strip_html=daily_kline_strip,
+                    kline_strip_html=daily_kline_strip if apply_live_overlays else "",
                     visual_cockpit_html=v_cockpit,
                     market_news_html=m_news_html,
                 )
@@ -11208,19 +11542,12 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
                     content_html=doc_html,
                 )
 
-            if is_reused_latest:
-                # Keep historical dated archive clean without live weekend/holiday overlays
-                archive_page = _build_daily_html(apply_live_overlays=False)
-                latest_page = _build_daily_html(apply_live_overlays=True)
-                (out_dir / "daily" / f"{item.slug}.html").write_text(archive_page, encoding="utf-8")
+            archive_page = _build_daily_html(apply_live_overlays=False)
+            (out_dir / "daily" / f"{item.slug}.html").write_text(archive_page, encoding="utf-8")
+            if is_latest:
                 latest_by_market[mk] = item
+                latest_page = _build_daily_html(apply_live_overlays=True)
                 (out_dir / "daily" / f"{mk}-latest.html").write_text(latest_page, encoding="utf-8")
-            else:
-                full_page = _build_daily_html(apply_live_overlays=is_latest)
-                (out_dir / "daily" / f"{item.slug}.html").write_text(full_page, encoding="utf-8")
-                if is_latest:
-                    latest_by_market[mk] = item
-                    (out_dir / "daily" / f"{mk}-latest.html").write_text(full_page, encoding="utf-8")
 
     # ------------------------------------------------------------------
     # B2. Build Full-Screen Interactive K-Line Terminal (charts.html)
@@ -11252,9 +11579,18 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         for key, slug, *_ in eq_specs
     }
     unique_benchmarks = set(screener_benchmarks.values())
-    ah_matrix = _build_ah_matrix_payload(ah_benchmarks, stocks, kline_manifest=kline_manifest)
     ah_radar_obj = (eq_state.get("cross_market_linkages") or {}).get("ah_premium_radar") or {}
     rates_obj = (eq_state.get("cross_market_linkages") or {}).get("rates_fx_chain") or {}
+    hkd_cny_mid = _safe_float(rates_obj.get("hkd_cny_mid"))
+    hkd_cny_mid_date = _extract_iso_date(rates_obj.get("cfets_fixing_date") or "")
+    ah_matrix = _build_ah_matrix_payload(
+        ah_benchmarks, stocks, kline_manifest=kline_manifest,
+        hkd_cny_mid=hkd_cny_mid, fx_date=hkd_cny_mid_date,
+        as_of_date=_extract_iso_date(eq_state.get("as_of_cst") or ""),
+        as_of_cst=str(eq_state.get("as_of_cst") or ""),
+        edition_id=eq_state.get("edition_id"),
+        calendar_overrides=eq_state.get("calendar_overrides"),
+    )
     screener_html = render_page_shell(
         title=f"全球 {total_pool} 家核心龙头筛选器",
         active_nav="screener",
@@ -11274,7 +11610,8 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
             default_date=default_dossier_date,
             ah_matrix=ah_matrix,
             hsahp_index=_safe_float(ah_radar_obj.get("hsahp_index")),
-            hkd_cny_mid=_safe_float(rates_obj.get("hkd_cny_mid")),
+            hkd_cny_mid=hkd_cny_mid,
+            hkd_cny_mid_date=hkd_cny_mid_date,
         ),
     )
     (out_dir / "screener.html").write_text(screener_html, encoding="utf-8")
@@ -11398,7 +11735,9 @@ def _render_site(out_dir: Path) -> dict[str, Any]:
         total_kline_count=total_kline_cnt,
         footer_ts=eq_as_of_disp,
         gold_red_light=gold_tier0_locked,
-        content_html=build_guide_page(gold_snap, eq_state, channels_data, etf_data, total_pool=total_pool),
+        content_html=build_guide_page(
+            gold_snap, eq_state, channels_data, etf_data, total_pool=total_pool, kline_manifest=kline_manifest,
+        ),
     )
     (out_dir / "guide.html").write_text(guide_html, encoding="utf-8")
 

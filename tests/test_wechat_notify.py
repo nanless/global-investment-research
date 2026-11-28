@@ -174,6 +174,7 @@ class TestProviderPayloadsAndResponses(unittest.TestCase):
                     "data": [
                         {"uid": "UID_REAL_USER_1", "code": 1000, "messageContentId": 987654321},
                         {"uid": "UID_REAL_USER_2", "code": 1000, "messageId": 987654322},
+                        {"topicId": 1234, "code": 1000, "messageContentId": 987654321},
                     ],
                 },
                 status=200,
@@ -240,6 +241,43 @@ class TestProviderPayloadsAndResponses(unittest.TestCase):
         with mock.patch("scripts.wechat_notify.urllib.request.urlopen", side_effect=fake_urlopen_success_false):
             res_false = wn.Notifier(cfg, now_fn=lambda: self.daytime, sleep_fn=lambda _: None).send(msg)[0]
         self.assertEqual(res_false.status, "failed")
+
+    def test_wxpusher_topic_only_requires_receipt_and_preserves_outbox_failure(self) -> None:
+        cfg = _make_config(self.tmp_dir, {"wxpusher": {
+            "enabled": True, "app_token": "AT_TOPIC_TEST_SECRET", "topic_ids": [77],
+        }})
+        msg = wn.AlertMessage("测试公告", "测试内容", dedupe_key="topic-only")
+        notifier = wn.Notifier(cfg, now_fn=lambda: self.daytime, sleep_fn=lambda _: None)
+        self.assertTrue(notifier.has_ready_provider())
+        response = {"code": 1000, "success": True}
+        with mock.patch("scripts.wechat_notify.urllib.request.urlopen",
+                        return_value=_FakeHTTPResponse({**response, "data": []})) as opener:
+            result = notifier.send(msg)[0]
+        self.assertEqual(result.status, "failed")
+        opener.assert_called_once()
+        data = [{"topicId": 77, "code": 1000, "messageContentId": "AT_TOPIC_TEST_SECRET"}]
+        with mock.patch("scripts.wechat_notify.urllib.request.urlopen",
+                        return_value=_FakeHTTPResponse({**response, "data": data})) as opener:
+            with mock.patch.object(notifier, "_append_outbox", side_effect=OSError("outbox unavailable")):
+                result = notifier.send(msg)[0]
+        self.assertEqual(result.status, "sent")
+        self.assertIn("outbox unavailable", result.audit_error)
+        self.assertNotIn("AT_TOPIC_TEST_SECRET", result.receipt)
+        payload = json.loads(opener.call_args.args[0].data)
+        self.assertEqual((payload["uids"], payload["topicIds"]), ([], [77]))
+        self.assertEqual(notifier.send(msg)[0].status, "suppressed_dedupe")
+
+        def unavailable_on_commit(*args, commit):
+            if commit:
+                raise OSError("dedupe disk full")
+            return False
+
+        with mock.patch.object(notifier, "_check_and_update_dedupe", side_effect=unavailable_on_commit):
+            with mock.patch("scripts.wechat_notify.urllib.request.urlopen",
+                            return_value=_FakeHTTPResponse({**response, "data": data})):
+                result = notifier.send(msg)[0]
+        self.assertEqual(result.status, "sent")
+        self.assertIn("dedupe disk full", result.audit_error)
 
     def test_pushplus_success_and_payload(self) -> None:
         captured: list[tuple[str, dict]] = []
@@ -1428,7 +1466,8 @@ class TestCliSmoke(unittest.TestCase):
             self.assertEqual(res_list[0]["status"], "dry_run")
             self.assertEqual(res_list[0]["chunks"], 1)
             self.assertEqual(res_list[0]["attempts"], 0)
-            self.assertEqual(len(_read_outbox(self.outbox)), 1)
+            self.assertFalse(self.outbox.exists())
+            self.assertFalse(self.dedupe.exists())
 
             # 3. --dry-run --test
             stdout, stderr = io.StringIO(), io.StringIO()
@@ -1501,9 +1540,8 @@ class TestCliSmoke(unittest.TestCase):
         self.assertEqual(proc_dry.returncode, 0, proc_dry.stderr)
         results = json.loads(proc_dry.stdout)
         self.assertEqual({r["provider"]: r["status"] for r in results}, {"wecom_webhook": "dry_run", "serverchan": "dry_run"})
-        outbox_rows = _read_outbox(self.outbox)
-        self.assertEqual(len(outbox_rows), 2)
-        self.assertNotIn("CLI_SECRET_KEY_2026", self.outbox.read_text(encoding="utf-8"))
+        self.assertFalse(self.outbox.exists())
+        self.assertFalse(self.dedupe.exists())
 
 
     def test_wecom_and_bark_case_insensitive_non_https_refused(self) -> None:

@@ -6,11 +6,12 @@
 [![Live Portal](https://img.shields.io/badge/Live_Portal-GitHub_Pages-0f766e?style=flat-square)](https://nanless.github.io/global-investment-research/)
 [![3-Slot Cadence](https://img.shields.io/badge/Cadence-07%3A30_%C2%B7_11%3A30_%C2%B7_18%3A00_CST-b45309?style=flat-square)](#三班次节拍与-101-协同流水线--3-slot-schedule--pipeline)
 [![K-Line Terminal](https://img.shields.io/badge/K--Line_Terminal-480%2B_Instruments-0284c7?style=flat-square)](#交互式-k-线终端与核心产品亮点--interactive-terminal--highlights)
-[![Zero Dependencies](https://img.shields.io/badge/Zero_Dependencies-Python_3.9%2B_%2B_Vanilla_JS-2563eb?style=flat-square)](#本地快速上手--zero-dependency-quick-start)
+[![Zero Dependencies](https://img.shields.io/badge/Zero_Dependencies-Python_3.12%2B_%2B_Vanilla_JS-2563eb?style=flat-square)](#本地快速上手--zero-dependency-quick-start)
 [![Workflow](https://img.shields.io/badge/Workflow-10%2B1_Research_%26_Red--Team-7c3aed?style=flat-square)](#三班次节拍与-101-协同流水线--3-slot-schedule--pipeline)
 [![Quality Gates](https://img.shields.io/badge/Quality_Gates-S1--S7_%2B_Dual--Track_Linter-15803d?style=flat-square)](#三道严格质量防线--three-tier-quality-gates)
 
-> 统一覆盖 **Layer 1 7 枚宏观气象与危机熔断邻近条**（含中美 10Y 利差与遵照央行 `银发〔2026〕42号` 中国大陆 0% 严禁配仓的 BTC 只读流动性温度计）、**Layer 2 对称 `3×2` 六大市场驾驶舱**（**5 核心**：A 股【上证指数 #1 领衔全 12 优先指数】× 港股【中国离岸折价腿，非海外分散】× 美股【8 指数 + 直达 QDII 入口】× **债券/现金与中美利率 `rates_bonds_core`** × 黄金【独立货币避险】 + **1 非美全球卫星 `non_us_global_satellite`**【日/欧/台韩/印 + `164824` 退市警示 + 直达 QDII 入口】，同时保持 4 条完整日报正文轨不变）、**231 只全行业龙头零模板化 7 维深研 + 181+ 只正交标注（`asset_class` × `region` × 6 通道）重点 ETF 雷达 + 480+ 标的交互 K 线终端**与**按 4 大执行角色分层的中国大陆 12 大个人多元合规渠道**（渠道 08 显式定名「QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通」，10 元起普惠渠道），每日 **`07:30 早报 · 11:30 午报 · 18:00 晚报`（北京时间）** 经共享 `10+1` 调研红队、黄金 SSOT 红灯联防与三道零容忍门禁（含静态站 Gate S1–S7）自动发布至纯网页静态门户。  
+> 统一覆盖 **Layer 1 7 枚宏观气象与危机熔断邻近条**（含中美 10Y 利差与依据银发〔2026〕42号提示境内业务禁令、本项目配置为 0% 的 BTC 只读流动性温度计）、**Layer 2 对称 `3×2` 六大市场驾驶舱**（**5 核心**：A 股【上证指数 #1 领衔全 12 优先指数】× 港股【中国离岸折价腿，非海外分散】× 美股【8 指数 + 直达 QDII 入口】× **债券/现金与中美利率 `rates_bonds_core`** × 黄金【独立货币避险】 + **1 非美全球卫星 `non_us_global_satellite`**【日/欧/台韩/印 + `164824` 拟议退市风险提示 + 直达 QDII 入口】，同时保持 4 条完整日报正文轨不变）、**231 只全行业龙头零模板化 7 维深研 + 181+ 只正交标注（`asset_class` × `region` × 6 通道）重点 ETF 雷达 + 480+ 标的交互 K 线终端**与**按 4 大执行角色分层的中国大陆 12 大个人多元合规渠道**（渠道 08 显式定名「QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通」，10 元起普惠渠道），每日 **`07:30 早报 · 11:30 午报 · 18:00 晚报`（北京时间）** 经共享 `10+1` 调研红队、黄金 SSOT 红灯联防与三道零容忍门禁（含静态站 Gate S1–S7）自动发布至纯网页静态门户。
+>
 > *An institutional-grade, beginner-friendly, web-only multi-asset research monorepo featuring a 7-pill Macro Weather & Crisis Ribbon (incl. CN-US 10Y spread & PBOC `银发〔2026〕42号` 0%-allocation read-only BTC liquidity thermometer), a symmetric 3×2 Six-Market Cockpit (5 Core Markets: A-Share [SSE #1] / HK / US / Rates-Bonds Core / Gold + 1 Unified Non-US Global Satellite, keeping all 4 full daily prose tracks unchanged), 231 zero-template 7-dimension stock dossiers, 181+ orthogonally tagged ETFs (`asset_class` × `region` × 6 channels), 480+ interactive K-line instruments, and 12 MECE China Personal Multi-Asset Channels grouped into 4 execution-role tiers — delivered 3× daily (`07:30` / `11:30` / `18:00` CST) with zero third-party dependencies.*
 
 ---
@@ -40,14 +41,14 @@
   - **核心 3 · 美股（8 基准 + 直达 QDII CTA）**：标普 500（`SPX`）→ 纳斯达克综合（`IXIC`）→ 纳斯达克 100（`NDX`）→ 道琼斯（`DJI`）→ 罗素 2000（`IWM`）→ 标普等权（`RSP`）→ 费城半导体（`SOX`）→ VIX 恐慌指数；
   - **核心 4 · 债券/现金与中美利率（`rates_bonds_core`）**：中国国债 2Y/10Y/30Y、美债 2Y/10Y/30Y/TIPS、中美 10Y 利差、`GC001`/`DR001` 与中证 REITs（`932047`/`932006`）；
   - **核心 5 · 黄金与全球宏观（独立货币避险）**：伦敦现货金（`XAU`）→ COMEX 金（`GC`）→ 沪金（`AU0`）→ 上金所 `Au99.99`/`Au(T+D)` → 白银/原油/铜/DXY/`EURUSD`·`GBPUSD`·`USDHKD`·人民币·日元；
-  - **卫星 6 · 非美全球卫星市场（`non_us_global_satellite` + 直达 QDII CTA）**：日本 #1（`513800`）、欧洲 #2（`159561`）、台湾/韩国 AI 晴雨表、印度场外观察清单及 `164824` LOF 退市警示（覆盖 9 大非美全球指数）。
+  - **卫星 6 · 非美全球卫星市场（`non_us_global_satellite` + 直达 QDII CTA）**：日本 #1（`513800`）、欧洲 #2（`159561`）、台湾/韩国 AI 晴雨表、印度场外观察清单及 `164824` LOF 拟议退市风险提示（覆盖 9 大非美全球指数）。
 - **③ 四大高价值交互工具：7 枚宏观气象条 × 钱包试算 × 统一自选 `★` × 27 对 A/H 税后矩阵**
-  - **Layer 1 7 枚宏观气象与危机熔断邻近条**：将全球危机总熔断阀（VIX 连 2 日 >30、日元 3 日急升 >3%、10 年美债 >5.25%、港银总结余 <400 亿港元）、**中美 10Y 利差** 与遵照央行 **`银发〔2026〕42号`** 中国大陆 0% 严禁配仓的 **BTC 只读流动性温度计** 置顶可视化；
+  - **Layer 1 7 枚宏观气象与危机熔断邻近条**：将全球危机总熔断阀（VIX 连 2 日 >30、日元 3 日急升 >3%、10 年美债 >5.25%、港银总结余 <400 亿港元）、**中美 10Y 利差** 与标明境内业务禁令与项目配置为 0% 的 **BTC 只读流动性温度计** 置顶可视化；
   - **「我的钱包一键试算器」**：直连实时红绿灯与黄金零新仓规则，输入任意闲钱金额与账户条件（有无存量黄金、是否含离岸港美户、个税税档），纯本地零上传秒算四笔钱金额、单股 8% 上限、50 万存保拆分与小额门槛替代；
   - **全站统一自选清单 `★`**：跨首页、`screener.html`、`etfs.html`、`charts.html` 共享 `localStorage` 自选并支持 URL 哈希跨设备一键分享；
-  - **27 对 A/H 溢价与税后股息交互比价矩阵**：实时扣减港股通 20% 股息税并对比 A/H 双边到手股息率与套利/路由方向。
+  - **27 对 A/H 溢价与税后股息交互比价矩阵**：用同日行情和汇率计算溢价。已核公告口径且适用港股通个人股息税的记录按 20% 测算，待确认的分派和源头扣缴单独标明。
 - **④ 小白三层漏斗 × 黄金 SSOT 跨轨互斥锁 × 100% 零第三方依赖**
-  全站落实 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据」** 与 **48 词全站术语浮窗 + WCAG 深浅色模式**；`gold/data_snapshot.json` 拥有全仓库唯一写入权，红灯期由 Gate C2 + Gate S6/S7 跨轨阻断全站任何新买黄金指令与金矿标绿；所有构建、几何防撞、K 线抓取与质检脚本 100% 仅用 **Python 3.9+ 标准库** 与原生 JS/CSS，零离线二进制附件。
+  全站落实 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据」** 与 **48 词全站术语浮窗 + WCAG 深浅色模式**；`gold/data_snapshot.json` 拥有全仓库唯一写入权，红灯期由 Gate C2 + Gate S6/S7 跨轨阻断全站任何新买黄金指令与金矿标绿；所有构建、几何防撞、K 线抓取与质检脚本 100% 仅用 **Python 3.12+ 标准库** 与原生 JS/CSS，零离线二进制附件。
 
 ---
 
@@ -73,13 +74,15 @@
 | 5 | 公募基金、银行理财与投顾 | `funds_wm` | 真净值理财（终结估值平滑）、纯债/固收+、多资产 ETF-FOF、持牌基金投顾与 2026 销售费改 |
 | 6 | 储蓄型商业保险 | `savings_insurance` | 增额终身寿险、养老年金、分红险（退保现金价值真实 IRR、实现率与前期退保损失穿透） |
 | 7 | 个人养老金与税优账户 | `tax_advantaged_accounts` | 1.2 万/年缴费抵税上限与领取 3% 税率边际盈亏线（边际税率 ≥20% 显著合算）、Y 份额与税优健康险 |
-| 8 | QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通 | `qdii_mrf` | **10 元起普惠跨境渠道（非高净值专属）**：场内高溢价临停预警与溢价-排队盈亏平衡；TA 账户按身份证跨三方合并 vs 官方直销 App/支付宝分轨；互挂 ETF 穿透双层费；美元现汇同占 SAFE 额度；MRF 累计份额避 20% 税（禁推停申 `968118`、警示派息份额 `968001` 改选累计份额）；理财通 2.0；2026-08-07 LOF `2027-12-31` 退市线 |
-| 9 | 可转债 | `convertible_bonds` | 零门槛 T+0 全市场 `511380`（综合费率 0.20%/年）vs 投资级 AA+ `511180`（综合费率 0.30%/年）、个券权限、去刚兑违约排雷、强赎 Z 标识与到期税后净兑付比对 |
+| 8 | QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通 | `qdii_mrf` | **10 元起普惠跨境渠道（非高净值专属）**：场内高溢价临停预警与溢价-排队盈亏平衡；TA 账户按身份证跨三方合并 vs 官方直销 App/支付宝分轨；互挂 ETF 穿透双层费；美元现汇同占 SAFE 额度；香港互认基金（MRF）分开核对转让差价与分配收益的税制、申赎状态与份额特点；理财通 2.0；2026-08-07 LOF 征求意见稿拟设 `2027-12-31` 退出期限，具体安排查交易所及基金公告 |
+| 9 | 可转债 | `convertible_bonds` | 零门槛 T+0 全市场 `511380`（管理与托管合计 0.20%/年）vs 主体 AA 及以上且评级展望非负面 `511180`（管理与托管合计 0.30%/年）、个券权限、去刚兑违约排雷、强赎 Z 标识与到期税后净兑付比对 |
 | 10 | 公募 REITs 与不动产租金对比 | `c_reits` | 产权类（NOI/出租率/资本化率）vs 特许经营权类（含还本须看中债 IRR）、薄量限价与住宅租售比 |
-| 11 | 非黄金大宗商品与白银/铂钯 | `commodity_etfs` | 豆粕 `159985`（贴水正展期）/有色/能化期货 ETF、白银原油 LOF 溢价磨损与 2027 退市警报、铂钯合规渠道 |
-| 12 | 合规私募与标品信托 300 万专享 | `private_funds_trust` | 合格投资者 300 万门槛、双层费率、锁定期/冷静期、净值化标品尽调与远离非标资金池 |
+| 11 | 非黄金大宗商品与白银/铂钯 | `commodity_etfs` | 豆粕 `159985`（贴水正展期）/有色/能化期货 ETF、白银原油 LOF 溢价磨损与拟议退市风险、铂钯合规渠道 |
+| 12 | 合规私募与标品信托（合格投资者） | `private_funds_trust` | 按产品规则核验合格投资者和起投门槛、双层费率、锁定期/冷静期、净值化标品尽调与远离非标资金池 |
 
 </details>
+
+内地个人通过基金互认取得的份额转让差价暂免个税至 2027 年 12 月 31 日。香港基金分配收益适用 20% 代扣，实际税后到账以本次分配构成和公告为准。累计份额将收益留在基金内再投资。比较份额时同时看现金流、费率和对冲成本。 [差价暂免公告](https://www.mof.gov.cn/jrttts/202308/t20230822_3903656.htm) · [分配收益代扣规定](https://m.mof.gov.cn/zcfb/201512/t20151218_1620646.htm) · [基金分配公告示例](https://www.cifm.com/fund/968000/announce/202605/P020260513320069775402.pdf)
 
 ---
 
@@ -107,7 +110,7 @@ flowchart TD
 | **每日 `07:30` 早报**<br>（`07:25–13:30`） | `daily-global-investment-research` | 黄金早报优先写 SSOT → A/港/美全发主刊（≥2 图；休市切 `holiday_watch` ≥1 图）；推进三大扩展库至当班 `edition_id`，聚焦隔夜美盘/美债/汇率、美股与爱尔兰 UCITS 官收、美股 QDII 溢价停牌、外币存理、港股夜期校正、盘前逆回购/打新/转债及 4–6 只焦点股 7 维 → RSI 盲审 + `fetch_kline_data.py` + 单次发布 |
 | **每日 `11:30` 午报**<br>（`11:25–17:30`） | `daily-global-investment-research-midday` | 黄金午报锁定 `11:30` 上金所/沪金早盘与同刻平价溢价、四大行金条/金店牌价、09:15–09:30 官方宏观 → **A 股 11:30 官方早盘收盘**（全 12 优先指数、半日成交、中金所午盘基差、`10:30` 停牌 QDII 复牌溢价、逆回购与债市午盘）、**港股 11:30–11:45 午盘前**（`11:15` 官方 HIBOR、5 基准、除权配售与新股招股；南向午盘 12:00 后披露入 `data_caveats`）、**美股隔夜盘后终盘封账或休市守望** + 亚盘期货 → RSI 盲审 + `fetch_kline_data.py` + 单次发布 |
 | **每日 `18:00` 晚报**<br>（`17:55–次日 00:00`） | `daily-global-investment-research-evening` | 黄金晚报优先写 SSOT → A/港/美全发主刊（≥2 图）；封账 A/港日终官收、中金所席位、南向、16:30 汇率与美股盘前及滞后盘后终盘，聚焦债券 ETF/逆回购日终利率、可转债/REITs 估值、非金商品收盘、场内 QDII 日终溢价停牌及 4–6 只焦点股 7 维 → RSI 盲审 + `fetch_kline_data.py` + 单次发布 |
-| **周六 / 周日** | 周末专项 / 周度校准 | 周六 `07:30` 黄金周末专项 + 美股周五复盘（半日市发 `holiday_watch`，全休沿用）；**周六 `11:30`/`18:00` 与周日三班三市沿用旧稿**，**周日执行全量周度校准**：更新 12 大渠道中低频项、全量核对 181+ 正交标注 ETF 费率规模、轮换精修 231 股池中 **6–10 只核心龙头 7 维档案**并推进 `SCORECARD.md` 周频复盘 |
+| **周六 / 周日** | 周末专项 / 周度校准 | 周六 `07:30` 黄金周末专项 + 美股周五复盘（半日市发 `holiday_watch`，全休沿用）；**周六 `11:30`/`18:00` 与周日三班三市沿用旧稿**，**仅周日 `18:00` 班执行全量周度校准**：更新 12 大渠道中低频项、全量核对 181+ 正交标注 ETF 费率规模、轮换精修 231 股池中 **6–10 只核心龙头 7 维档案**并推进 `SCORECARD.md` 周频复盘 |
 
 ---
 
@@ -123,7 +126,11 @@ flowchart TD
 
 ## 本地快速上手 · Zero-Dependency Quick Start
 
-仅需 **Python 3.9+** 标准库，无需安装任何第三方包或浏览器二进制：
+本地构建使用 **Python 3.12+** 标准库。其中站点构建、门禁和定时模板不依赖第三方 Python 包。
+
+历史日报的日期地址保留原刊正文与原刊图表。当前 K 线、市场仪表和市场新闻跟随各市场的 `latest` 页面。A/H 溢价以同一交易日的两地行情与港元中间价复算。股息排序使用同一财年的原始分派公告，源头代扣待核的分派以税前列示。
+
+站点验收要求 K 线清单、分片和研报状态同一期。清单按至少 480 条目标序列对账，包含以 ETF 报价展示的指数代理及按用途复用的交易档位。取数失败须有对应记录，缺少必需基准时保留上一版。局部刷新可用于排查，发布以全量刷新生成的分片为准。
 
 ```bash
 # 1. 运行全链路零依赖回归测试
@@ -147,6 +154,7 @@ python3 scripts/publish_site.py --check-manuscripts
 
 # 5. 大文件、增长型账本与月初跨月滚存原子命令（防 300s 超时）与纯网页发布
 python3 scripts/patch_state_dbs.py --inspect channels
+python3 scripts/patch_state_dbs.py --inspect review-candidate
 python3 scripts/patch_state_dbs.py --apply --dry-run
 python3 scripts/patch_state_dbs.py --prepend-gold-ledgers --dry-run
 python3 scripts/patch_state_dbs.py --prepend-equity-audit --dry-run
@@ -166,6 +174,24 @@ python3 scripts/install_sidecars.py --check
 python3 scripts/install_sidecars.py --check-runtime
 python3 scripts/edition_run.py status
 ```
+
+状态补丁和 K 线刷新在替换文件前把回滚记录写入 Git 工作区管理目录。进程异常结束后，构建、发布和监测会等待恢复。重新执行中断的写命令，先恢复上一份完整数据，再继续更新。K 线刷新覆盖不足时保留上次完整分片。
+
+定时发布按期号单向推进。同一期可发布代码或内容勘误，较早的现行快照会被拦截。新版部署由 CI 生成 `assets/release.json`，`edition_run.py complete` 核对对应 Actions 作业、公开首页、四市最新日报和关键资源的提交与摘要。公网仍提供旧版或混合资源时，班次进入等待验收状态。
+
+独立审稿回执将稿件原句、事实或推论类型、原始证据链接和复核结果绑定到候选版本。政策简报可用 `source_urls` 补充主链接 `source_url`；首页和四市最新日报显示同一组证据链接。改稿后重新生成摘要、完成复核并再发布。
+
+暂停班次的模板可通过 `--check` 核对。准备运行的班次用 `--check-runtime` 核查注册权限和终端沙箱。已启用班次的终端沙箱未能确认开启时，运行态核验失败。Turbo 预设也会导致核验失败，即使沙箱字段显示开启。
+
+ETF 和个股档案可在 `evidence` 中记录已核字段。每条填写 `field`、原始文档的 `source_url`、对应的统计日 `as_of` 和核对范围 `note`。字段更新时随更新提交该记录的完整有效证据列表，漏交时清掉被改字段的旧链接，保留其他字段的证据。弹窗展示逐条出处，报价使用同一期 K 线的交易日期和币种。档案编辑日独立显示，复权历史与当时成交价格可能不同。
+
+个股弹窗将缺少字段级出处的条目标为「出处待核」。单条引用覆盖其备注所指的指标、期间或事实，仍需按所列范围判断估值与研究结论的依据。
+
+日报焦点股表只用同一期、同修订号的档案库做数值对账。历史稿沿用原交易时点，使用原公告、历史行情或原始计算底表复查。正文缺少可定位的外部出处时，网页会标明。
+
+A/H 矩阵使用同日双边价格和港元中间价核算溢价。股息比较要求两地普通现金股息属于同一期间，并有当时已公开的公告。在 `market_state.json` 的 `cross_market_linkages.ah_premium_radar.benchmarks[].cash_dividends.a` 和 `.h` 填写税前 `ordinary_cash_per_share`、`currency`、`period_start`、`period_end`、`published_date` 与 `source_url` 或 `source_urls`。链接使用已登记的交易所、监管披露平台或发行人域名，并指向具体公告。全年口径合计同一会计年度的普通中期和末期现金股息，剔除特别股息和非现金权益。
+
+港股通可确认以人民币派发时，H 侧填人民币金额及 `cash_basis: "southbound_cny"`，用同日汇率将 H 股价格换算成人民币。只确认香港登记股东的港元派息时，页面展示税前估算，税后排名留空。H 股晚于当期最后分红登记日上市时，在 H 侧填 `status: "listed_after_record_date"` 和两个经公告核验的日期 `listed_date`、`last_record_date`。发行人的实际分派范围明确排除 H 股时，填 `status: "excluded_from_distribution"`。未参与分派的 H 股金额与币种留空。两地确实未派息才显示均为零。原始公告在价格待核时仍可查阅。 [沪港通股息红利税规定](https://www.mof.gov.cn/gp/xxgkml/szs/201411/t20141114_2510448.htm) · [深港通股息红利税规定](https://www.mof.gov.cn/gp/xxgkml/szs/201612/t20161201_2510630.htm)
 
 ---
 
@@ -191,7 +217,7 @@ chmod 600 ~/.config/global-investment-research/notify.json
 # 1. 环境、SSOT、红灯锁与推送通道一键体检
 python3 scripts/realtime_monitor.py --doctor
 
-# 2. 单次干跑演练（实时抓取行情/政策/日历并打印告警卡片，不真实发送微信）
+# 2. 单次干跑演练（拉取公开行情和新闻，输出预览，关闭外部模型和通知投递）
 python3 scripts/realtime_monitor.py --once --dry-run
 
 # 3. 启动本地常驻守护进程（按盘口时段轮询异动、政策新闻与临近财经日历提醒）
@@ -201,9 +227,13 @@ python3 scripts/realtime_monitor.py --daemon
 python3 scripts/realtime_monitor.py --print-launchd
 ```
 
+生产监测可以通过 `--data-root` 读取独立的已验收发布目录。该目录沿用仓库相对路径，包含黄金快照、黄金市场日历、权益市场状态、政策日历与 `equity/state/klines/core.json`，四份带期号的数据必须同班。每轮只解析一次目录入口，适合通过原子替换的目录链接切换班次。`--doctor --data-root /path/to/release-inputs` 可只读核对所选目录。`--print-launchd` 会保留指定的 `--data-root`、`--state-db` 和 `--notify-config` 参数。默认仍读取当前工作区。
+
+只有时分的行情显示为日期待核，仅供参考。监测使用带日期的近期观测评分，告警注明供应商和观测时间。日历里的 `monitor_window_min: 0` 关闭高频轮询与倒计时，时间待定的事件保留在日历中。
+
 ### 3. 可选 Tier-2 大模型突发快解与门户 `#sec-policy-calendar` 联动
 
-- **可选 Tier-2 LLM 突发深度白话解读**：默认零外部依赖，仅用本地规则引擎与结构化模板生成 5 段式微信建议卡；若在本机环境变量中配置 **`GEMINI_API_KEY`** 或 **`OPENROUTER_API_KEY`**（按需二选一，不写入仓库）并通过 **`--enable-llm`**（或设置 **`GIR_MONITOR_LLM=1`**）开启，捕获重磅央行/财政/关税/地缘突发时自动追加深度白话拆解与双类人群建议，且出站仍强制经过黄金红灯锁与 `银发〔2026〕42号` 虚拟货币防火墙二次过滤。
+- **可选 Tier-2 LLM 突发深度白话解读**：默认零外部依赖，仅用本地规则引擎与结构化模板生成 5 段式微信建议卡；若在本机环境变量中配置 **`GEMINI_API_KEY`** 或 **`OPENROUTER_API_KEY`**（按需二选一，不写入仓库）并通过 **`--enable-llm`**（或设置 **`GIR_MONITOR_LLM=1`**）开启，捕获重磅央行、财政、关税或地缘事件时，可选入一条预写的定性传导假设。原文、仓位纪律和证伪条件由本地来源与规则生成，且出站仍强制经过黄金红灯锁与 `银发〔2026〕42号` 虚拟货币防火墙二次过滤。
 - **与首页 `#sec-policy-calendar` 及三班次日报的闭环联动**：三班次（`07:30` / `11:30` / `18:00` CST）经 `equity/state/_edition_patch.json` 的可选 `policy_calendar` 键把未来 **14–30 天**全球重要财经数据与政策议程同步写入 `equity/state/policy_calendar.json`——**向上**统一驱动门户首页 **[#sec-policy-calendar](https://nanless.github.io/global-investment-research/#sec-policy-calendar)** 交互日历卡与 **首页精选 6–9 条跨市场要闻 + 单市场页 `#sec-market-news` 无上限全量重要新闻雷达与每篇黄金/A 股/港股/美股日报文内 4 列未来 7–14 天全北京时间日历表**（纯中文级别徽章，零裸 `P0`/`P1`）；**向下**实时喂给本机 `scripts/realtime_monitor.py`，在重大议息、通胀、关税、政治局/两会等窗口临近前主动微信提醒，实现「盘前日历预警 → 盘中异动推送 → 早/午/晚深度复盘」完整闭环。
 
 ---

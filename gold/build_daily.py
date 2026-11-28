@@ -13,14 +13,13 @@ Pure-web HTML & vector SVG rendering engine for daily gold research Markdown rep
 from __future__ import annotations
 
 import html
-import json
 import re
 import sys
 import unicodedata
 from math import fsum
 from pathlib import Path
 
-from chart_input import normalize_chart
+from chart_input import load_gold_json, normalize_chart
 
 BASE_DIR = Path(__file__).resolve().parent
 DAILY_DIR = BASE_DIR / "daily"
@@ -1232,8 +1231,8 @@ def extract_directives(md_text: str) -> tuple[dict, str, dict]:
         if not raw_json.startswith("{") or not raw_json.endswith("}"):
             raise ValueError(f"Malformed JSON payload in <!-- {kind} ... --> directive")
         try:
-            data = json.loads(raw_json)
-        except json.JSONDecodeError as e:
+            data = load_gold_json(raw_json)
+        except ValueError as e:
             raise ValueError(f"Invalid JSON in <!-- {kind} ... --> directive: {e}") from e
         if kind == "DAILY_META":
             meta = data

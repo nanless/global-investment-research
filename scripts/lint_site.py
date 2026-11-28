@@ -3,13 +3,14 @@
 """
 Site Forensic Linter & Security Gate Validator for Global Investment Research.
 
-Zero-dependency (Python 3 stdlib only) static site validator enforcing 6 forensic gates:
+Zero-dependency (Python 3 stdlib only) static site validator enforcing seven gates:
   - Gate S1: Completeness & Non-Empty Output
   - Gate S2: Zero Broken Internal Links, Assets & Same-Page Anchors
   - Gate S3: Zero PII, Local Path, Secret & Unresolved Directive Leaks
   - Gate S4: Vector SVG Chart Integrity
   - Gate S5: Desktop + Mobile Responsive Hygiene
   - Gate S6: Live SSOT & Full-Market Stock Screener Fidelity (全市场龙头股筛选)
+  - Gate S7: Edition-aligned K-line data and interactive terminal
 
 Usage:
   python3 scripts/lint_site.py [site_dir] [--strict]
@@ -30,6 +31,7 @@ import sys
 import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
@@ -39,6 +41,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
+from fetch_kline_data import (
+    ALL_SHARDS_ORDER, CST, MIN_PUBLISHED_INSTRUMENTS, REQUIRED_PUBLISHED_SERIES, SCHEMA_VERSION,
+    InstrumentSpec, bar_close_change, load_instrument_specs,
+)
+from source_links import policy_brief_links
+from inventory_evidence import load_research_json
+from state_transaction import state_read_lock
 try:
     from svg_geometry import check_svg_text_geometry  # type: ignore[import-not-found]
 except ImportError:
@@ -1155,6 +1164,7 @@ PCAL_RAW_TIER_RE = re.compile(r"(?<![A-Za-z0-9_])P[012](?![A-Za-z0-9_])")
 class _PolicyCalendarSnapshot:
     inner_text: str
     tier_pill_texts: list[str] = field(default_factory=list)
+    brief_links: dict[str, list[str]] = field(default_factory=dict)
 
 
 class _PolicyCalendarSectionParser(HTMLParser):
@@ -1170,6 +1180,8 @@ class _PolicyCalendarSectionParser(HTMLParser):
         self._text_chunks: list[str] = []
         self._pill_frames: list[tuple[int, list[str]]] = []
         self.tier_pill_texts: list[str] = []
+        self.brief_links: dict[str, list[str]] = {}
+        self._brief_id: str | None = None
 
     def _on_open(self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool) -> None:
         if self.done:
@@ -1195,6 +1207,13 @@ class _PolicyCalendarSectionParser(HTMLParser):
             else:
                 self._pill_frames.append((len(self._tag_stack) + 1, []))
 
+        if self._skip_depth == 0:
+            if t == "article" and (brief_id := attr_map.get("data-pcal-brief-id")):
+                self._brief_id = brief_id
+                self.brief_links.setdefault(brief_id, [])
+            elif t == "a" and self._brief_id is not None and "mnews-src-link" in classes:
+                self.brief_links[self._brief_id].append(attr_map.get("href", ""))
+
         if t in BLOCK_TEXT_TAGS and self._skip_depth == 0:
             self._text_chunks.append("\n")
 
@@ -1216,6 +1235,8 @@ class _PolicyCalendarSectionParser(HTMLParser):
         t = tag.lower()
         if t in VOID_ELEMENTS:
             return
+        if t == "article" and self._skip_depth == 0:
+            self._brief_id = None
         for idx in range(len(self._tag_stack) - 1, -1, -1):
             if self._tag_stack[idx] == t:
                 while self._pill_frames and self._pill_frames[-1][0] > idx:
@@ -1246,6 +1267,7 @@ class _PolicyCalendarSectionParser(HTMLParser):
         return _PolicyCalendarSnapshot(
             inner_text="".join(self._text_chunks),
             tier_pill_texts=self.tier_pill_texts,
+            brief_links=self.brief_links,
         )
 
 
@@ -1256,6 +1278,131 @@ def _inspect_policy_calendar_section(raw_html: str) -> _PolicyCalendarSnapshot |
     parser.feed(raw_html)
     parser.close()
     return parser.result()
+
+
+def _check_published_policy_links(
+    parsed: dict[str, ParsedHtml], policy: dict, errors: list[str],
+) -> None:
+    briefs = policy.get("policy_briefs")
+    if not isinstance(briefs, list):
+        return
+    briefs = [brief for brief in briefs if isinstance(brief, dict)]
+    groups = [("index.html", "sec-policy-calendar", [brief for brief in briefs if brief.get("home_featured") is True])]
+    for market in ("a_share", "hk_stock", "us_stock", "gold"):
+        groups.append((
+            f"daily/{market.replace('_', '-')}-latest.html", "sec-market-news",
+            [brief for brief in briefs if market in (brief.get("affected_markets") or [])],
+        ))
+    for page, section, required in groups:
+        doc = parsed.get(page)
+        if doc is None:
+            continue
+        parser = _PolicyCalendarSectionParser(section)
+        parser.feed(doc.raw_text)
+        parser.close()
+        by_id = {
+            brief_id: brief for brief in required if (brief_id := (brief.get("id") or brief.get("brief_id")))
+        }
+        if (page != "index.html" or 6 <= len(by_id) <= 9) and (extra := set(parser.brief_links) - by_id.keys()):
+            errors.append(f"[S6] {page}: #{section} includes unrelated policy briefs {sorted(extra)!r}")
+        for brief_id, brief in by_id.items():
+            links = policy_brief_links(brief)
+            if parser.brief_links.get(brief_id) != links:
+                errors.append(f"[S6] {page}: #{section} source links differ from policy brief {brief_id!r}")
+
+
+def _check_published_inventory(
+    site_dir: Path, docs: dict[str, ParsedHtml], market_state: dict, errors: list[str],
+) -> None:
+    from build_site import _align_screener_quotes
+
+    inputs = REPO_ROOT / "equity" / "state"
+    checks = (
+        ("screener.html", "screener_json_raw", inputs / "deep_dossiers.json", "dossiers"),
+        ("etfs.html", "etf_json_raw", inputs / "etf_universe.json", "etfs"),
+    )
+    manifest_path = site_dir / "assets" / "klines" / "manifest.json"
+    manifest = _load_json_if_present(manifest_path, "screener quote catalog", errors) or {}
+    if manifest.get("edition_id") != market_state.get("edition_id"):
+        manifest = {}
+    cutoff = str(market_state.get("as_of_cst") or "")
+    for page, attribute, source_path, collection in checks:
+        doc = docs.get(page)
+        if doc is None or not (raw := getattr(doc, attribute)):
+            errors.append(f"[S6] {page}: missing published inventory")
+            continue
+        try:
+            rows = load_research_json(raw)
+            source = load_research_json(source_path.read_text(encoding="utf-8"))[collection]
+        except (OSError, TypeError, ValueError, KeyError) as exc:
+            errors.append(f"[S6] {page}: cannot compare inventory evidence: {exc}")
+            continue
+        is_stock = collection == "dossiers"
+        if not is_stock and isinstance(source, list):
+            source = {str(row.get("code")): row for row in source if isinstance(row, dict)}
+        if not isinstance(rows, list) or not isinstance(source, dict):
+            errors.append(f"[S6] {page}: invalid inventory container")
+            continue
+        seen = set()
+        stock_rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                errors.append(f"[S6] {page}: invalid inventory record")
+                continue
+            code, market = row.get("code"), row.get("market")
+            key = f"{market}:{code}" if is_stock else str(code)
+            original = source.get(key)
+            current = row.get("dossier") if is_stock else row
+            if key in seen or not isinstance(original, dict) or not isinstance(current, dict):
+                errors.append(f"[S6] {page}: invalid or repeated inventory record {key}")
+                continue
+            seen.add(key)
+            citations = original.get("evidence", [])
+            if current.get("evidence") != citations:
+                errors.append(f"[S6] {page}: rendered evidence differs from the inventory for {code}")
+            if isinstance(citations, list):
+                for field in {entry.get("field") for entry in citations if isinstance(entry, dict) and isinstance(entry.get("field"), str)}:
+                    if current.get(field) != original.get(field):
+                        errors.append(f"[S6] {page}: rendered cited field {field} differs from the inventory for {code}")
+            if is_stock:
+                stock_rows.append(row)
+        if source.keys() - seen:
+            errors.append(f"[S6] {page}: missing {len(source.keys() - seen)} source inventory records")
+        if is_stock:
+            quoted = [dict(row) for row in stock_rows]
+            _align_screener_quotes(quoted, manifest, cutoff, market_state.get("calendar_overrides"))
+            quote_fields = ("price", "price_num", "price_updated_at", "price_source", "anchor_gap_pct")
+            for row, expected in zip(stock_rows, quoted):
+                if any(row.get(field) != expected[field] for field in quote_fields):
+                    errors.append(f"[S6] {page}: quote for {row['code']} disagrees with the dated catalog")
+            _check_published_ah_matrix(doc, rows, manifest, market_state, errors)
+
+
+def _check_published_ah_matrix(
+    doc: ParsedHtml, stocks: list, manifest: dict, market_state: dict, errors: list[str],
+) -> None:
+    from build_site import _build_ah_matrix_payload, _extract_iso_date, _safe_float
+
+    linkages = market_state.get("cross_market_linkages") or {}
+    pairs = (linkages.get("ah_premium_radar") or {}).get("benchmarks") or []
+    rates = linkages.get("rates_fx_chain") or {}
+    raw = re.search(r'<script id="ah-matrix-data" type="application/json">(.*?)</script>', doc.raw_text, re.S)
+    try:
+        matrix = load_research_json(raw[1]) if raw else None
+        expected = _build_ah_matrix_payload(
+            pairs, [row for row in stocks if isinstance(row, dict)], kline_manifest=manifest,
+            hkd_cny_mid=_safe_float(rates.get("hkd_cny_mid")),
+            fx_date=_extract_iso_date(rates.get("cfets_fixing_date") or ""),
+            as_of_date=_extract_iso_date(market_state.get("as_of_cst") or ""),
+            as_of_cst=str(market_state.get("as_of_cst") or ""),
+            edition_id=market_state.get("edition_id"),
+            calendar_overrides=market_state.get("calendar_overrides"),
+        )
+    except ValueError as exc:
+        errors.append(f"[S6] screener.html: cannot validate A/H matrix: {exc}")
+        return
+    if matrix != expected:
+        errors.append("[S6] screener.html: A/H matrix differs from source quotes, dividend evidence or exchange rate")
 
 
 # ---------------------------------------------------------------------------
@@ -2332,7 +2479,7 @@ def _validate_screener_json(
             f"[S6] screener.html: #screener-data length ({len(payload)}) != expected total ({expected_total})"
         )
 
-    ah_lookup: dict[str, float] = {}
+    ah_lookup: dict[str, float | None] = {}
     if isinstance(market_state, dict):
         ah_rows = (
             (market_state.get("cross_market_linkages") or {})
@@ -2350,6 +2497,29 @@ def _validate_screener_json(
                     c = str(row.get(k) or "").strip().upper()
                     if c:
                         ah_lookup[c] = float(pct)
+    raw_matrix = re.search(r'<script id="ah-matrix-data" type="application/json">(.*?)</script>', screener_doc.raw_text, re.S)
+    if raw_matrix:
+        try:
+            matrix = json.loads(raw_matrix[1])
+        except ValueError:
+            matrix = None
+        if not isinstance(matrix, list):
+            errors.append("[S6] screener.html: invalid A/H quote comparison payload")
+        elif matrix:
+            compared: dict[str, float | None] = {}
+            for row in matrix:
+                if not isinstance(row, dict) or not all(isinstance(row.get(key), str) for key in ("a_code", "h_code")):
+                    errors.append("[S6] screener.html: malformed A/H quote comparison row")
+                    continue
+                pct = row.get("ah_premium_pct")
+                if pct is not None and not _s7_number(pct):
+                    errors.append("[S6] screener.html: non-finite A/H quote comparison")
+                    continue
+                for key in ("a_code", "h_code"):
+                    compared[row[key].upper()] = pct
+            if not ah_lookup.keys() <= compared.keys():
+                errors.append("[S6] screener.html: A/H comparison is missing configured pairs")
+            ah_lookup = compared
 
     actual_by_market: dict[str, int] = {"a-share": 0, "hk-stock": 0, "us-stock": 0}
     benchmarks: dict[str, str] = {}
@@ -2422,14 +2592,16 @@ def _validate_screener_json(
             )
             bad_entries += 1
 
-        # AH parity vs market_state.ah_benchmarks (±0.6pp when present)
+        # Compare with the same-day matrix; older test/legacy artifacts can use the snapshot.
         if code in ah_lookup:
             expected_ah = ah_lookup[code]
             card_ah = entry.get("ah_pct")
-            if not isinstance(card_ah, (int, float)) or abs(float(card_ah) - expected_ah) > 0.6:
+            if (expected_ah is None and card_ah is not None) or (
+                expected_ah is not None and (not _s7_number(card_ah) or abs(float(card_ah) - expected_ah) > (0.005 if raw_matrix else 0.6))
+            ):
                 errors.append(
                     f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) ah_pct parity mismatch — "
-                    f"card ah_pct={card_ah!r} vs market_state ah_benchmarks={expected_ah:+.1f}%"
+                    f"card ah_pct={card_ah!r} vs reference={expected_ah!r}"
                 )
                 bad_entries += 1
 
@@ -3296,24 +3468,74 @@ def run_gate_s6(
 S7_FORBIDDEN_RAW_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:NaN|Infinity)(?![A-Za-z0-9_])|/Users/|C:\\",
 )
-S7_REQUIRED_GLOBAL_BENCHMARKS: tuple[str, ...] = (
-    "idx_N225",
-    "idx_TOPIX",
-    "idx_GDAXI",
-    "idx_FCHI",
-    "idx_STOXX50E",
-    "idx_FTSE",
-    "idx_NSEI",
-    "idx_TWII",
-    "idx_KS11",
-    "idx_HSCI",
-    "idx_HSAHP",
-    "rate_CN2Y",
-    "rate_CN10Y",
-    "rate_CN30Y",
-    "idx_932047",
-    "idx_932006",
-)
+def check_s7_roster(
+    specs: list[InstrumentSpec],
+    catalog: dict[str, dict],
+    failures: dict[str, dict],
+    shards: dict,
+    errors: list[str],
+) -> None:
+    expected = {spec.id: spec for spec in specs}
+    required = {spec.id for spec in specs if not spec.optional_min_bars}
+    declared = catalog.keys() | failures.keys()
+    missing = required - declared
+    unexpected = declared - expected.keys()
+    if missing or unexpected:
+        errors.append(
+            f"[S7] K-line universe differs from source data "
+            f"(missing {len(missing)} {sorted(missing)[:10]}, "
+            f"unknown {len(unexpected)} {sorted(unexpected)[:10]})"
+        )
+    if set(shards) != set(ALL_SHARDS_ORDER):
+        errors.append("[S7] K-line shards differ from the canonical full-market set")
+    ordered = [
+        spec.id for shard in ALL_SHARDS_ORDER for spec in specs
+        if spec.shard == shard and spec.id in catalog
+    ]
+    if list(catalog) != ordered:
+        errors.append("[S7] K-line catalog differs from the canonical instrument order")
+    priorities = [row.get("priority") for row in catalog.values()]
+    if any("priority" in row for row in catalog.values()) and (
+        any(value is not None and not _s7_number(value) for value in priorities)
+        or any(
+            left > right for left, right in zip(
+                (9999 if value is None else value for value in priorities[:-1]),
+                (9999 if value is None else value for value in priorities[1:]),
+            )
+        )
+    ):
+        errors.append("[S7] K-line explicit priorities would reorder the canonical catalog")
+    for symbol in sorted(declared & expected.keys()):
+        spec = expected[symbol]
+        row = catalog.get(symbol)
+        if row is not None and any(
+            row.get(field, "") != getattr(spec, field)
+            for field in ("code", "name", "shard", "group", "market", "currency", "unit", "market_label", "category", "dossier_key")
+        ):
+            errors.append(f"[S7] K-line instrument {symbol!r} has mismatched canonical metadata")
+        failure = failures.get(symbol)
+        if failure is not None and (
+            failure.get("shard") != spec.shard
+            or failure.get("code") != spec.code
+            or not isinstance(failure.get("reason"), str)
+            or not failure["reason"].strip()
+        ):
+            errors.append(f"[S7] K-line failure {symbol!r} has invalid metadata or no reason")
+
+
+def _s7_number(value: object) -> bool:
+    if type(value) is int:
+        return abs(value) <= sys.float_info.max
+    return type(value) is float and math.isfinite(value)
+
+
+def _s7_generated_at(value: object) -> datetime | None:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00", value):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def run_gate_s7(
@@ -3321,6 +3543,9 @@ def run_gate_s7(
     parsed_htmls: dict[str, ParsedHtml],
     errors: list[str],
     warnings: list[str],
+    *,
+    expected_edition: str | None = None,
+    expected_specs: list[InstrumentSpec] | None = None,
 ) -> None:
     """Gate S7: K-Line shard integrity, multi-index priority ordering & charts.html integration."""
     index_doc = parsed_htmls.get("index.html")
@@ -3350,15 +3575,16 @@ def run_gate_s7(
             errors.append(f"[S7] assets/kline.js unreadable: {exc}")
         else:
             has_crypto_pat = ("crypto_" in kline_js_txt) or ("CRYPTO_ASSET_RE" in kline_js_txt)
-            if not has_crypto_pat or "境内严禁虚拟货币交易" not in kline_js_txt:
+            if not has_crypto_pat or "境内禁止开展虚拟货币相关业务" not in kline_js_txt:
                 errors.append(
                     "[S7] assets/kline.js: missing required crypto read-only compliance guard "
-                    "('crypto_' / 'CRYPTO_ASSET_RE' and '境内严禁虚拟货币交易')"
+                    "('crypto_' / 'CRYPTO_ASSET_RE' and '境内禁止开展虚拟货币相关业务')"
                 )
 
     klines_dir = site_dir / "assets" / "klines"
     manifest_path = klines_dir / "manifest.json"
     if not manifest_path.is_file():
+        errors.append("[S7] Missing K-line manifest: assets/klines/manifest.json")
         return
 
     try:
@@ -3372,7 +3598,7 @@ def run_gate_s7(
 
     try:
         manifest = json.loads(raw_manifest)
-    except json.JSONDecodeError as exc:
+    except (ValueError, RecursionError) as exc:
         errors.append(f"[S7] assets/klines/manifest.json invalid JSON: {exc}")
         return
 
@@ -3388,6 +3614,60 @@ def run_gate_s7(
     if not isinstance(shards, dict) or not shards:
         errors.append("[S7] assets/klines/manifest.json: 'shards' must be a non-empty object")
         return
+    generated = None
+    if expected_edition is not None:
+        if manifest.get("edition_id") != expected_edition:
+            errors.append(f"[S7] K-line manifest edition must match market state {expected_edition}")
+        generated = _s7_generated_at(manifest.get("generated_at_cst"))
+        if (
+            manifest.get("schema_version") != SCHEMA_VERSION
+            or generated is None
+            or generated.date().isoformat() < expected_edition[:10]
+            or generated > datetime.now(CST) + timedelta(minutes=5)
+        ):
+            errors.append("[S7] K-line manifest must declare the supported schema and a valid Beijing-time generation timestamp")
+        failures = manifest.get("partial_failures")
+        catalog_rows = {
+            row.get("id"): row
+            for row in catalog if isinstance(row, dict) and isinstance(row.get("id"), str)
+        }
+        failure_rows: dict[str, dict] = {}
+        missing_count = 0
+        if not isinstance(failures, list):
+            errors.append("[S7] K-line manifest must contain an array of disclosed failures")
+            failures = []
+        for row in failures:
+            symbol = row.get("id") if isinstance(row, dict) else None
+            status = row.get("used_stale_cache") if isinstance(row, dict) else None
+            if not isinstance(symbol, str) or not symbol or symbol in failure_rows or type(status) is not bool:
+                errors.append(f"[S7] Invalid or duplicate K-line failure {symbol!r}")
+                continue
+            failure_rows[symbol] = row
+            item = catalog_rows.get(symbol)
+            if status:
+                if item is None or item.get("stale") is not True or item.get("shard") != row.get("shard"):
+                    errors.append(f"[S7] K-line cached failure {symbol!r} differs from catalog")
+            elif item is not None:
+                errors.append(f"[S7] Missing K-line series {symbol!r} is still listed in catalog")
+            else:
+                missing_count += 1
+        stale_count = sum(row.get("stale") is True for row in catalog_rows.values())
+        for symbol, row in catalog_rows.items():
+            if type(row.get("stale")) is not bool:
+                errors.append(f"[S7] K-line catalog instrument {symbol!r} must declare a boolean stale status")
+            elif row["stale"] and symbol not in failure_rows:
+                errors.append(f"[S7] K-line stale instrument {symbol!r} has no disclosed failure")
+        if (
+            manifest.get("ok_count") != len(catalog)
+            or manifest.get("fresh_count") != len(catalog) - stale_count
+            or manifest.get("stale_count") != stale_count
+            or manifest.get("failed_count") != missing_count
+            or manifest.get("total_instruments") != len(catalog) + missing_count
+            or len(catalog) + missing_count < MIN_PUBLISHED_INSTRUMENTS
+        ):
+            errors.append(f"[S7] K-line catalog and disclosed failures must account for at least {MIN_PUBLISHED_INSTRUMENTS} instruments")
+        if expected_specs is not None:
+            check_s7_roster(expected_specs, catalog_rows, failure_rows, shards, errors)
 
     # Verify A-share multi-index priority: idx_sh000001 (上证指数) MUST be priority #1!
     a_indices = [c for c in catalog if isinstance(c, dict) and c.get("group") == "a_index"]
@@ -3398,13 +3678,13 @@ def run_gate_s7(
         if sse_item is None:
             errors.append("[S7] assets/klines/manifest.json: missing primary A-share index idx_sh000001 (上证指数)")
         else:
-            has_explicit_prio = any(isinstance(c.get("priority"), (int, float)) for c in a_indices)
+            has_explicit_prio = any(_s7_number(c.get("priority")) for c in a_indices)
             if has_explicit_prio:
                 sse_prio = sse_item.get("priority")
                 min_prio = min(
-                    float(c["priority"]) for c in a_indices if isinstance(c.get("priority"), (int, float))
+                    c["priority"] for c in a_indices if _s7_number(c.get("priority"))
                 )
-                if not isinstance(sse_prio, (int, float)) or float(sse_prio) != min_prio or float(sse_prio) > 1:
+                if not _s7_number(sse_prio) or sse_prio != min_prio or sse_prio > 1:
                     errors.append(
                         f"[S7] assets/klines/manifest.json: idx_sh000001 must have priority #1 (got {sse_prio!r})"
                     )
@@ -3414,7 +3694,7 @@ def run_gate_s7(
                 )
 
     # Full-site 6-tab K-line deck & expanded global/rates/REITs benchmarks (preserves minimal unit-test site support).
-    if len(catalog) >= 100:
+    if expected_edition is not None or len(catalog) >= 100:
         if not kline_js_path.is_file():
             errors.append("[S7] Missing assets/kline.js for full-site crypto compliance guard verification")
         if index_doc is not None:
@@ -3430,41 +3710,46 @@ def run_gate_s7(
                         f"[S7] charts.html: missing required K-line group filter {req_grp}"
                     )
         catalog_ids = {str(c.get("id", "")).strip() for c in catalog if isinstance(c, dict)}
-        for req_sym_id in S7_REQUIRED_GLOBAL_BENCHMARKS:
-            if req_sym_id not in catalog_ids:
+        for req_sym_id in REQUIRED_PUBLISHED_SERIES:
+            if req_sym_id != "idx_sh000001" and req_sym_id not in catalog_ids:
                 errors.append(
                     f"[S7] assets/klines/manifest.json: missing required global/rates/REITs benchmark {req_sym_id!r}"
                 )
 
-    # Resolve all shard filenames (supports both string "core.json" and dict {"file": "core.json", ...})
-    shard_files: set[str] = set()
+    # Both the legacy string mapping and the metadata object use local shard filenames.
+    shard_files: dict[str, str] = {}
     for sk, sv in shards.items():
-        if isinstance(sv, str) and sv.strip():
-            shard_files.add(sv.strip())
-        elif isinstance(sv, dict) and isinstance(sv.get("file"), str) and sv["file"].strip():
-            shard_files.add(sv["file"].strip())
+        filename = sv.get("file") if isinstance(sv, dict) else sv
+        if isinstance(filename, str) and re.fullmatch(r"[\w-]+\.json", filename) and filename != "manifest.json":
+            if filename in shard_files.values():
+                errors.append(f"[S7] Shard filename {filename!r} is registered more than once")
+            shard_files[sk] = filename
         else:
             errors.append(f"[S7] assets/klines/manifest.json: invalid shards[{sk!r}] entry: {sv!r}")
 
+    catalog_by_shard: dict[str, dict[str, dict]] = {key: {} for key in shard_files}
+    registered_ids: set[str] = set()
     for c in catalog:
-        if isinstance(c, dict) and c.get("shard"):
-            skey = str(c["shard"]).strip()
-            sv = shards.get(skey)
-            if isinstance(sv, str) and sv.strip():
-                shard_files.add(sv.strip())
-            elif isinstance(sv, dict) and isinstance(sv.get("file"), str) and sv["file"].strip():
-                shard_files.add(sv["file"].strip())
-            else:
-                shard_files.add(skey if skey.endswith(".json") else f"{skey}.json")
+        symbol = c.get("id") if isinstance(c, dict) else None
+        shard_key = c.get("shard") if isinstance(c, dict) else None
+        if not isinstance(symbol, str) or not symbol or not isinstance(shard_key, str) or shard_key not in shard_files:
+            errors.append(f"[S7] K-line catalog entry {symbol!r} references an invalid shard {shard_key!r}")
+            continue
+        if symbol in registered_ids:
+            errors.append(f"[S7] Duplicate K-line catalog symbol {symbol!r}")
+        registered_ids.add(symbol)
+        catalog_by_shard[shard_key][symbol] = c
 
+    specs_by_id = {spec.id: spec for spec in expected_specs or ()}
     bar_errors = 0
-    for sfile in sorted(shard_files):
+    for shard_key, sfile in sorted(shard_files.items()):
         sp = klines_dir / sfile
         if not sp.is_file():
             errors.append(f"[S7] Missing K-line shard file referenced by manifest: assets/klines/{sfile}")
             continue
         try:
-            s_raw = sp.read_text(encoding="utf-8")
+            shard_bytes = sp.read_bytes()
+            s_raw = shard_bytes.decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             errors.append(f"[S7] assets/klines/{sfile} unreadable: {exc}")
             continue
@@ -3472,44 +3757,108 @@ def run_gate_s7(
             errors.append(f"[S7] assets/klines/{sfile}: contains forbidden NaN/Infinity/local path token")
         try:
             s_obj = json.loads(s_raw)
-        except json.JSONDecodeError as exc:
+        except (ValueError, RecursionError) as exc:
             errors.append(f"[S7] assets/klines/{sfile}: invalid JSON: {exc}")
             continue
         series = s_obj.get("series") if isinstance(s_obj, dict) else None
         if not isinstance(series, dict) or not series:
             errors.append(f"[S7] assets/klines/{sfile}: missing non-empty 'series' object")
             continue
+        expected_series = catalog_by_shard[shard_key]
+        missing = expected_series.keys() - series.keys()
+        extra = series.keys() - expected_series.keys()
+        if missing or extra:
+            errors.append(
+                f"[S7] assets/klines/{sfile}: catalog/series differ "
+                f"(missing {len(missing)} {sorted(missing)[:5]}, extra {len(extra)} {sorted(extra)[:5]})"
+            )
+        if expected_edition is not None:
+            shard_meta = shards[shard_key]
+            if (
+                s_obj.get("shard") != shard_key
+                or s_obj.get("schema_version") != SCHEMA_VERSION
+                or s_obj.get("edition_id") != expected_edition
+                or s_obj.get("generated_at_cst") != manifest.get("generated_at_cst")
+                or s_obj.get("count") != len(series)
+                or not isinstance(shard_meta, dict)
+                or shard_meta.get("count") != len(series)
+                or (expected_specs is not None and shard_meta.get("bytes") != len(shard_bytes))
+            ):
+                errors.append(f"[S7] assets/klines/{sfile}: shard identity, edition, timestamp or count/size mismatch")
         for sym_id, sdata in series.items():
-            if not isinstance(sdata, dict) or not isinstance(sdata.get("bars"), list):
-                errors.append(f"[S7] assets/klines/{sfile}: series {sym_id!r} missing bars list")
+            if not isinstance(sdata, dict) or not isinstance(sdata.get("bars"), list) or not sdata["bars"]:
+                errors.append(f"[S7] assets/klines/{sfile}: series {sym_id!r} missing non-empty bars list")
                 bar_errors += 1
                 if bar_errors >= 10:
                     break
                 continue
+            if expected_edition is not None and sym_id in expected_series:
+                entry = expected_series[sym_id]
+                if any(
+                    sdata.get(key) != entry.get(key)
+                    for key in (
+                        "id", "code", "name", "group", "market", "currency", "unit", "provider", "latest_date",
+                        "latest_close", "prev_close", "change_pct", "bars_count", "stale", "has_volume",
+                        "market_label", "category", "dossier_key",
+                    )
+                ):
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id!r} quote metadata differs from catalog")
+                last_bar = sdata["bars"][-1]
+                if (
+                    isinstance(last_bar, list) and len(last_bar) >= 5
+                    and (entry.get("latest_date") != last_bar[0]
+                         or entry.get("latest_close") != last_bar[4]
+                         or entry.get("bars_count") != len(sdata["bars"]))
+                ):
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id!r} quote metadata differs from its candles")
+            previous_day = ""
             for bidx, bar in enumerate(sdata["bars"]):
-                if not isinstance(bar, list) or len(bar) < 5:
+                if not isinstance(bar, list) or len(bar) != 6:
                     errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] malformed bar {bar!r}")
                     bar_errors += 1
                     break
-                dt, o, h, l, c = bar[0], bar[1], bar[2], bar[3], bar[4]
-                if not isinstance(dt, str) or not dt.strip():
+                dt, o, h, l, c, volume = bar
+                if not isinstance(dt, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", dt) or dt <= previous_day:
                     errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] invalid date {dt!r}")
                     bar_errors += 1
                     break
-                if any(
-                    not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(float(v))
-                    for v in (o, h, l, c)
-                ):
+                try:
+                    bar_date = date.fromisoformat(dt)
+                except ValueError:
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] invalid date {dt!r}")
+                    bar_errors += 1
+                    break
+                if generated is not None and bar_date > generated.date():
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] bar date after generation {dt!r}")
+                    bar_errors += 1
+                    break
+                previous_day = dt
+                if any(not _s7_number(v) for v in (o, h, l, c)):
                     errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] non-finite OHLC {bar!r}")
                     bar_errors += 1
                     break
-                allow_nonpositive = sym_id.startswith(("rate_", "spread_"))
-                if (not allow_nonpositive and float(c) <= 0) or float(h) < float(l):
+                spec = specs_by_id.get(sym_id)
+                if not _s7_number(volume) or volume < 0 or (spec is not None and spec.force_no_volume and volume != 0):
+                    errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] invalid volume {volume!r}")
+                    bar_errors += 1
+                    break
+                allow_nonpositive = spec.allow_nonpositive if spec is not None else sym_id.startswith(("rate_", "spread_"))
+                if (not allow_nonpositive and min(o, h, l, c) <= 0) or not (l <= min(o, c) <= max(o, c) <= h):
                     errors.append(
                         f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] invalid OHLC invariant (close={c}, high={h}, low={l})"
                     )
                     bar_errors += 1
                     break
+            else:
+                if expected_edition is not None and sym_id in expected_series:
+                    prev_close, change_pct = bar_close_change(sdata["bars"])
+                    if (
+                        not _s7_number(sdata.get("prev_close")) or sdata["prev_close"] != prev_close
+                        or not _s7_number(sdata.get("change_pct")) or sdata["change_pct"] != change_pct
+                        or not isinstance(sdata.get("has_volume"), bool)
+                        or sdata["has_volume"] != any(bar[5] > 0 for bar in sdata["bars"])
+                    ):
+                        errors.append(f"[S7] assets/klines/{sfile}: {sym_id!r} previous close, change or volume metadata differs from its candles")
             if bar_errors >= 10:
                 break
 
@@ -3546,6 +3895,15 @@ def main(argv: list[str] | None = None) -> int:
 
     site_dir = Path(positional[0]).resolve() if positional else DEFAULT_SITE_DIR.resolve()
 
+    try:
+        with state_read_lock(REPO_ROOT):
+            return _lint_site(site_dir, strict=strict)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"[FAIL] Cannot validate the site: {exc}", file=sys.stderr)
+        return 1
+
+
+def _lint_site(site_dir: Path, *, strict: bool) -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -3578,9 +3936,26 @@ def main(argv: list[str] | None = None) -> int:
             parsed_htmls, gold_snap, market_state, errors, warnings,
             already_checked_json_gold=True,
         )
+        policy = _load_required_json(POLICY_CALENDAR_PATH, "equity/state/policy_calendar.json", errors)
+        if policy is not None:
+            _check_published_policy_links(parsed_htmls, policy, errors)
+        if market_state is not None:
+            _check_published_inventory(site_dir, parsed_htmls, market_state, errors)
 
         # Gate S7: K-Line shard integrity, multi-index priority ordering & charts.html integration.
-        run_gate_s7(site_dir, parsed_htmls, errors, warnings)
+        market_edition = market_state.get("edition_id") if market_state is not None else None
+        if not isinstance(market_edition, str) or not market_edition.strip():
+            errors.append("[S7] Market state must declare an edition for K-line validation")
+            market_edition = None
+        try:
+            expected_specs = load_instrument_specs("all")
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            errors.append(f"[S7] Cannot load the canonical K-line universe from source data: {exc}")
+            expected_specs = None
+        run_gate_s7(
+            site_dir, parsed_htmls, errors, warnings,
+            expected_edition=market_edition, expected_specs=expected_specs,
+        )
 
     mode = "STRICT" if strict else "STANDARD"
     print(

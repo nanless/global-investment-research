@@ -10,9 +10,11 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import shutil
-from scripts import build_site, edition_run, fetch_kline_data, install_sidecars, lint_site, patch_state_dbs, publish_site
+from scripts import build_site, edition_run, fetch_kline_data, install_sidecars, lint_site, pages_release, patch_state_dbs, publish_site
+from scripts.state_transaction import install_locked, state_write_lock
 
 
 class EditionRunTest(unittest.TestCase):
@@ -23,7 +25,7 @@ class EditionRunTest(unittest.TestCase):
         repository = patch.object(edition_run, "ROOT", self.root)
         repository.start()
         self.addCleanup(repository.stop)
-        self.git("init", "-q")
+        self.git("init", "-q", "-b", "main")
         for relative in edition_run.GOLD_HISTORY_LEDGERS:
             ledger = self.root / relative
             ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +76,20 @@ class EditionRunTest(unittest.TestCase):
         self.git("add", "gold", "equity")
         self.git("commit", "-qm", "Current edition")
         return self.git("rev-parse", "HEAD")
+
+    def test_review_ledger_cannot_be_a_symbolic_link_in_worktree_or_commit(self):
+        metrics = self.root / "gold/daily/rsi_metrics.json"
+        target = self.root / "gold/daily/copied_metrics.json"
+        target.write_text(json.dumps({"runs": [{"run_id": self.edition, "review_closure": {
+            "reviewer_completed": True, "findings": [],
+        }}]}), encoding="utf-8")
+        metrics.symlink_to(target.name)
+        with self.assertRaisesRegex(ValueError, "ordinary path.*rsi_metrics.json"):
+            edition_run.check_edition_reviews(self.edition, root=self.root)
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Linked review ledger")
+        with self.assertRaisesRegex(ValueError, "ordinary file.*rsi_metrics.json"):
+            edition_run.check_edition_reviews(self.edition, sha=self.git("rev-parse", "HEAD"))
 
     def test_receipt_is_required_and_bound_to_edition_not_head(self):
         token = self.reach_publish()
@@ -187,6 +203,54 @@ class EditionRunTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "owns publication"):
             edition_run.assert_manual_publish_allowed()
 
+    def test_scheduled_editions_do_not_go_back_but_manual_history_is_available(self):
+        newer = "2026-11-27_1130"
+        token = edition_run.begin(self.runs, newer, "antigravity-1130")
+        with self.runs:
+            edition_run.fail(self.runs, token, "Fixture timeout")
+        with self.assertRaisesRegex(ValueError, "cannot go back before 2026-11-27_1130"):
+            edition_run.begin(self.runs, "2026-11-27_0730", "antigravity-0730", reap_stale=True)
+
+        retry = edition_run.begin(self.runs, newer, "antigravity-1130")
+        with self.runs:
+            edition_run.fail(self.runs, retry, "Fixture timeout")
+        manual = edition_run.begin(self.runs, "2026-11-26_1800_r2")
+        self.assertEqual(edition_run.active_run(self.runs, manual)["edition"], "2026-11-26_1800_r2")
+
+    def test_scheduled_entry_rejects_runtime_drift_without_creating_an_attempt(self):
+        script = self.root / "equity/lint_equity.py"
+        script.parent.mkdir()
+        script.write_text("# uncommitted runtime dependency\n", encoding="utf-8")
+        with patch.object(sys, "argv", ["edition_run.py", "begin", "--scheduled", "1800"]), patch.object(
+            edition_run, "scheduled_edition", return_value=self.edition,
+        ), redirect_stderr(StringIO()) as stderr:
+            self.assertEqual(edition_run.main(), 1)
+        self.assertIn("uncommitted workflow or research code", stderr.getvalue())
+        self.assertIn("equity/lint_equity.py", stderr.getvalue())
+        self.assertEqual(edition_run.status(self.runs), [])
+
+        self.git("add", "equity/lint_equity.py")
+        self.git("commit", "-qm", "Reviewed maintenance baseline")
+        ledger = self.root / edition_run.GOLD_HISTORY_LEDGERS[0]
+        ledger.write_text("## Previous edition\n\n- Mutated evidence\n", encoding="utf-8")
+        with patch.object(sys, "argv", ["edition_run.py", "begin", "--scheduled", "1800"]), patch.object(
+            edition_run, "scheduled_edition", return_value=self.edition,
+        ), redirect_stderr(StringIO()) as stderr:
+            self.assertEqual(edition_run.main(), 1)
+        self.assertIn("must preserve every prior nonblank line", stderr.getvalue())
+        self.assertEqual(edition_run.status(self.runs), [])
+
+    def test_committed_source_snapshot_sets_scheduled_floor_without_local_run(self):
+        snapshot = self.root / "gold/data_snapshot.json"
+        snapshot.write_text('{"edition_id":"2026-11-28_0730_r2"}')
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Already published elsewhere")
+        snapshot.write_text('{"edition_id":"2026-11-26_1800"}')
+        with self.assertRaisesRegex(ValueError, "cannot go back before 2026-11-28_0730_r2"):
+            edition_run.begin(self.runs, "2026-11-28_0730", "antigravity-0730")
+        token = edition_run.begin(self.runs, "2026-11-28_1130", "antigravity-1130")
+        self.assertEqual(edition_run.active_run(self.runs, token)["phase"], "research")
+
     def test_skip_advance_wrong_edition_and_legacy_row(self):
         with self.runs:
             self.runs.execute(
@@ -235,6 +299,52 @@ class EditionRunTest(unittest.TestCase):
         self.assertEqual(url, "https://example.invalid/pages")
         deploy.assert_called_once_with(sha, "example/project", 0)
         self.assertEqual(edition_run.status(self.runs)[0]["status"], "complete")
+
+    def test_new_actions_deployment_waits_for_public_pages_before_completing(self):
+        token = self.reach_publish()
+        sha = self.committed_edition()
+        repository = "example/project"
+        edition_run.record_push(token, sha=sha, repository=repository)
+        run = {"databaseId": 5, "headSha": sha, "headBranch": "main", "status": "completed", "url": "fixture"}
+        detail = {**run, "jobs": [{"name": edition_run.DEPLOY_JOB, "conclusion": "success"}]}
+        proof = (self.edition, {})
+        with patch.object(edition_run, "_pages_release_proof", return_value=proof), \
+             patch.object(edition_run, "_gh_json", side_effect=[[run], detail, [run], detail]), \
+             patch.object(pages_release, "verify_release", side_effect=[ValueError("cached homepage"), None]) as verify:
+            with self.assertRaisesRegex(edition_run.DeploymentPending, "cached homepage"):
+                edition_run.complete(self.runs, token, wait=0)
+            self.assertEqual(edition_run.active_run(self.runs, token)["phase"], "publish")
+            self.assertEqual(edition_run.publication_commit(token), sha)
+            with self.runs:
+                self.assertEqual(edition_run.complete(self.runs, token, wait=0), "fixture")
+        self.assertEqual(verify.call_count, 2)
+        self.assertEqual(edition_run.status(self.runs)[0]["deployed_commit"], sha)
+
+    def test_release_protocol_and_hashes_are_read_from_candidate_git_tree(self):
+        workflow = self.root / ".github/workflows/deploy-pages.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text("legacy deploy job\n")
+        self.git("add", ".github")
+        self.git("commit", "-qm", "Legacy workflow")
+        legacy = self.git("rev-parse", "HEAD")
+        self.assertIsNone(edition_run._pages_release_proof(legacy))
+
+        workflow.write_text("run: python3 scripts/pages_release.py\n")
+        for path in pages_release.EDITION_PATHS:
+            source = self.root / path
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(json.dumps({"edition_id": self.edition}))
+        for path in pages_release.COPIED_ASSETS.values():
+            source = self.root / path
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_bytes(b"committed bytes\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Stamped workflow")
+        candidate = self.git("rev-parse", "HEAD")
+        (self.root / pages_release.COPIED_ASSETS["assets/app.js"]).write_bytes(b"dirty worktree")
+        issue, hashes = edition_run._pages_release_proof(candidate)
+        self.assertEqual(issue, self.edition)
+        self.assertEqual(hashes, dict.fromkeys(pages_release.COPIED_ASSETS, pages_release.hash_bytes(b"committed bytes\n")))
 
     def test_stale_unpushed_lock_auto_reaped_but_pushed_preserved(self):
         old_edition = "2026-11-26_0730"
@@ -405,6 +515,30 @@ class EditionRunTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "AUDIT_LOG.*preserve"):
             edition_run._check_gold_ledger_history(base, tampered)
 
+    def test_already_archived_gold_ledgers_must_remain_byte_identical(self):
+        archive = self.root / "gold/daily/archive/AUDIT_LOG_2026_10.md"
+        archive.parent.mkdir(parents=True)
+        original = b"# Previous month\n\n- Audit entry\n"
+        archive.write_bytes(original)
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Previously archived ledger")
+        base = self.git("rev-parse", "HEAD")
+
+        new_archive = archive.with_name("AUDIT_LOG_2026_11.md")
+        new_archive.write_bytes(b"# Newly archived month\n")
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Add an archive without editing the old month")
+        edition_run._check_gold_ledger_history(base, self.git("rev-parse", "HEAD"))
+
+        archive.write_bytes(original.replace(b"\n", b"\r\n"))
+        with self.assertRaisesRegex(ValueError, "AUDIT_LOG_2026_10.*previously archived"):
+            edition_run._check_gold_ledger_history(base, None)
+
+        self.git("add", "gold")
+        self.git("commit", "-qm", "Rewrite historical archived line endings")
+        with self.assertRaisesRegex(ValueError, "AUDIT_LOG_2026_10.*previously archived"):
+            edition_run._check_gold_ledger_history(base, self.git("rev-parse", "HEAD"))
+
     def test_verify_pages_tolerates_transient_api_error_and_checks_all_runs(self):
         sha = "b" * 40
         failed_run = {
@@ -420,9 +554,86 @@ class EditionRunTest(unittest.TestCase):
         with patch.object(
             edition_run, "_gh_json",
             side_effect=[subprocess.CalledProcessError(1, "gh"), [failed_run, ok_run], failed_detail, ok_detail],
-        ), patch.object(edition_run.time, "sleep"):
+        ), patch.object(edition_run.time, "sleep"), patch.object(edition_run, "_pages_release_proof", return_value=None):
             url = edition_run.verify_pages(sha, "example/project", wait=10)
         self.assertEqual(url, ok_run["url"])
+
+    def test_verify_pages_keeps_malformed_actions_responses_pending(self):
+        commit = "b" * 40
+        run = {
+            "databaseId": 10, "headSha": commit, "headBranch": "main",
+            "status": "completed", "url": "https://example.invalid/runs/10",
+        }
+        repository = "example/project"
+        malformed_details = (
+            None,
+            {**run, "jobs": None},
+            {**run, "jobs": [{}]},
+            {**run, "jobs": [{"name": edition_run.DEPLOY_JOB, "conclusion": "success", "status": "in_progress"}]},
+        )
+        with patch.object(edition_run, "_gh_json", return_value=None):
+            with self.assertRaisesRegex(edition_run.DeploymentPending, "malformed workflow run list"):
+                edition_run.verify_pages(commit, repository, wait=0)
+        for details in malformed_details:
+            with self.subTest(details=details), patch.object(edition_run, "_gh_json", side_effect=[[run], details]):
+                with self.assertRaises(edition_run.DeploymentPending):
+                    edition_run.verify_pages(commit, repository, wait=0)
+        good = {**run, "jobs": [{"name": edition_run.DEPLOY_JOB, "conclusion": "success"}]}
+        with patch.object(edition_run, "_gh_json", side_effect=[[{}, run], good]), patch.object(
+            edition_run, "_pages_release_proof", return_value=None,
+        ):
+            self.assertEqual(edition_run.verify_pages(commit, repository, wait=0), run["url"])
+
+
+class PagesReleaseTest(unittest.TestCase):
+    def test_stamped_release_checks_fresh_public_bytes_and_committed_assets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            site = Path(temporary)
+            for relative in pages_release.RELEASE_FILES:
+                target = site / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                body = b"<html>\n<head>\n</head>\n</html>" if relative == "index.html" else relative.encode("ascii")
+                target.write_bytes(body)
+            sha, edition = "a" * 40, "2026-11-28_1130"
+            pages_release.write_release(site, sha, edition)
+            base = {path: (site / path).read_bytes() for path in (*pages_release.RELEASE_FILES, pages_release.MANIFEST_PATH)}
+            pages_release.write_release(site, sha, edition)
+            self.assertEqual((site / "index.html").read_bytes(), base["index.html"])
+            self.assertIn(sha.encode("ascii"), base["index.html"])
+            trusted = {path: pages_release.hash_bytes(base[path]) for path in pages_release.COPIED_ASSETS}
+            requests = []
+
+            def verify_with(responses):
+                requests.clear()
+
+                def fetch(url, timeout):
+                    uri = urlsplit(url)
+                    self.assertEqual(uri.scheme, "https")
+                    self.assertEqual(uri.netloc, "example.github.io")
+                    self.assertTrue(uri.path.startswith("/project/"))
+                    key = uri.path.removeprefix("/project/") or "index.html"
+                    query = parse_qs(uri.query)
+                    self.assertEqual(query["release"], [sha])
+                    requests.append((key, query["verify"][0]))
+                    return responses[key]
+
+                with patch.object(pages_release, "_fetch", side_effect=fetch):
+                    pages_release.verify_release(sha, edition, "example/project", trusted, timeout=15)
+
+            verify_with(base)
+            self.assertEqual([requests[0][0], requests[-1][0]], [pages_release.MANIFEST_PATH] * 2)
+            self.assertEqual(len({nonce for _, nonce in requests}), len(requests))
+
+            with self.assertRaisesRegex(ValueError, "index.html"):
+                verify_with({**base, "index.html": b"cached homepage;HTTP 200"})
+
+            changed = json.loads(base[pages_release.MANIFEST_PATH])
+            changed["files"]["assets/app.js"] = pages_release.hash_bytes(b"altered JS")
+            with self.assertRaisesRegex(ValueError, "committed static assets"):
+                verify_with({
+                    **base, "assets/app.js": b"altered JS",
+                    pages_release.MANIFEST_PATH: json.dumps(changed).encode("utf-8"),
+                })
 
 
 class OperationalRegressionTest(unittest.TestCase):
@@ -643,13 +854,28 @@ class OperationalRegressionTest(unittest.TestCase):
                     "id": project_id, "sidecar": {"sidecarId": name},
                     "projectResources": {"resources": [{"folderUri": root.as_uri()}]},
                     "permissionGrants": {"permissionGrants": {"allow": grants["access_grants"]}},
-                    "settings": {"sandboxMode": False},
+                    "settings": {"sandboxMode": True},
                 }
                 (base / "projects" / f"{project_id}.json").write_text(json.dumps(payload))
             registry.write_text(json.dumps({"sidecars": entries}))
             notes = []
             self.assertEqual(install_sidecars.check_registry(registry, rendered, notes), [])
-            self.assertEqual(len(notes), 3)
+            self.assertEqual(notes, [])
+            project_path = base / "projects" / "fixture-0.json"
+            project = json.loads(project_path.read_text())
+            project["settings"] = {"sandboxMode": False, "permissionPreset": "AGENT_PERMISSION_PRESET_TURBO"}
+            project_path.write_text(json.dumps(project))
+            self.assertTrue(any("terminal sandbox" in p for p in install_sidecars.check_registry(registry, rendered)))
+            project["settings"]["sandboxMode"] = True
+            project_path.write_text(json.dumps(project))
+
+            paused = next(iter(entries))
+            paused_entries = dict(entries)
+            paused_entries[paused] = {**entries[paused], "enabled": False, "resolvedPermissions": {}}
+            registry.write_text(json.dumps({"sidecars": paused_entries}))
+            paused_problems = install_sidecars.check_registry(registry, rendered)
+            self.assertIn(f"{paused}: disabled in Antigravity", paused_problems)
+            self.assertTrue(any("has not resolved" in p for p in paused_problems))
 
             # Retired or replay entries lingering in config.json must fail check_registry
             entries_with_zombie = dict(entries)
@@ -672,6 +898,100 @@ class OperationalRegressionTest(unittest.TestCase):
             # Policy calendar must be enforced in both edition_run and publish_site extended state files
             self.assertIn("equity/state/policy_calendar.json", edition_run.EXTENDED_EQUITY_STATE_FILES)
             self.assertIn("equity/state/policy_calendar.json", publish_site.EXTENDED_EQUITY_STATE_FILES)
+
+    def test_sidecar_installer_rejects_permission_count_or_duplicate_drift(self):
+        root = Path(install_sidecars.__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary)
+            source = root / "automations"
+            dest = fixture / "automations"
+            shutil.copytree(source, dest)
+            permissions = dest / "permissions.json"
+            grants = json.loads(permissions.read_text(encoding="utf-8"))
+            templates = dict(install_sidecars.discover_templates(dest / "sidecars"))
+            for invalid in (grants[:-1], grants + ["read_file(__REPO_ROOT__/tests)"], grants[:-1] + [grants[0]]):
+                with self.subTest(length=len(invalid)):
+                    permissions.write_text(json.dumps(invalid), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "exactly 56 distinct"):
+                        install_sidecars.render_template(next(iter(templates.values())), fixture, sys.executable)
+
+    def test_sidecar_installer_rejects_an_executable_python_with_an_old_version(self):
+        root = Path(install_sidecars.__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary)
+            python = fixture / "python3.9"
+            python.write_text("#!/bin/sh\nprintf '3.9\\n'\n", encoding="utf-8")
+            python.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, r"requires Python 3\.12 or newer.*reports 3\.9"):
+                install_sidecars.validate_paths(root, str(python))
+            with redirect_stderr(StringIO()) as failure:
+                self.assertEqual(install_sidecars.main([
+                    "--python-bin", str(python), "--target-dir", str(fixture / "sidecars"),
+                ]), 1)
+            self.assertIn("requires Python 3.12 or newer", failure.getvalue())
+            self.assertFalse((fixture / "sidecars").exists())
+            install_sidecars.validate_paths(root, sys.executable)
+
+    def test_sidecar_registry_argument_never_falls_through_to_install_mode(self):
+        with redirect_stderr(StringIO()) as failure:
+            with self.assertRaises(SystemExit) as exc:
+                install_sidecars.parse_args(["--registry", "custom-registry.json"])
+        self.assertEqual(exc.exception.code, 2)
+        self.assertIn("--registry requires --check-runtime", failure.getvalue())
+
+    def test_sidecar_install_is_reversible_and_preserves_disabled_registry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            target = root / "sidecars"
+            identifiers = sorted(install_sidecars.SCHEDULES)
+            destinations = [target / name / "sidecar.json" for name in identifiers]
+            old = {dest: dest.parent.name.encode("utf-8") for dest in destinations}
+            for dest, content in old.items():
+                dest.parent.mkdir(parents=True)
+                dest.write_bytes(content)
+                dest.chmod(0o640)
+            registry = root / "config.json"
+            settings = json.dumps({"sidecars": {name: {"enabled": False} for name in identifiers}}).encode()
+            registry.write_bytes(settings)
+            write = install_sidecars.atomic_write_bytes
+
+            def fail_second(dest, content):
+                if dest == destinations[1]:
+                    raise OSError("simulated install failure")
+                write(dest, content)
+
+            with patch.object(install_sidecars, "atomic_write_bytes", side_effect=fail_second), \
+                 redirect_stderr(StringIO()):
+                self.assertEqual(install_sidecars.main(["--target-dir", str(target)]), 1)
+            self.assertEqual({dest: dest.read_bytes() for dest in destinations}, old)
+            self.assertTrue(all(stat.S_IMODE(dest.stat().st_mode) == 0o640 for dest in destinations))
+            self.assertEqual(registry.read_bytes(), settings)
+
+            self.assertEqual(install_sidecars.main(["--target-dir", str(target)]), 0)
+            self.assertEqual(install_sidecars.main(["--target-dir", str(target), "--check"]), 0)
+            self.assertEqual(registry.read_bytes(), settings)
+
+            protected = root / "protected.json"
+            protected.write_bytes(b"do not change")
+            destinations[1].unlink()
+            destinations[1].symlink_to(protected)
+            with redirect_stderr(StringIO()) as failure:
+                self.assertEqual(install_sidecars.main(["--target-dir", str(target)]), 1)
+            self.assertIn("must not be a symbolic link", failure.getvalue())
+            self.assertEqual(protected.read_bytes(), b"do not change")
+
+    def test_state_transaction_never_follows_a_symlink_inside_the_workspace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original = root / "protected.json"
+            original.write_bytes(b"original bytes")
+            link = root / "state.json"
+            link.symlink_to(original)
+            with state_write_lock(root):
+                with self.assertRaisesRegex(ValueError, "Unsafe state transaction destination 'state.json'"):
+                    install_locked(root, [(link, b"incorrect replacement")])
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(original.read_bytes(), b"original bytes")
 
     def test_collect_data_caveats_sanitizes_internal_paths_and_filters_by_market(self):
         gold_snap = {
@@ -2315,6 +2635,9 @@ class OperationalRegressionTest(unittest.TestCase):
         self.assertIsNotNone(deploy_idx, "Missing jobs.deploy section in deploy-pages.yml")
         assert deploy_idx is not None
         deploy_block = "\n".join(lines[deploy_idx:])
+        self.assertNotIn("pages: write", "\n".join(lines[:deploy_idx]))
+        self.assertNotIn("id-token: write", "\n".join(lines[:deploy_idx]))
+        self.assertIn("    permissions:\n      contents: read\n      pages: write\n      id-token: write", deploy_block)
         self.assertIn("    concurrency:", deploy_block)
         self.assertIn('group: "pages"', deploy_block)
         self.assertIn("cancel-in-progress: false", deploy_block)

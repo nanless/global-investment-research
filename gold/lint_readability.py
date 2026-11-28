@@ -12,9 +12,9 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import html
 import importlib.util
-import json
 import math
 import re
 import statistics
@@ -25,15 +25,16 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from chart_input import normalize_chart
+from chart_input import load_gold_json, normalize_chart
 from edition_validation import (
-    BEIJING, ENTRY_GATE_IDS, LAST_LEGACY_EDITION, check_edition_time, check_vix_period, cutoff_displayed,
+    BEIJING, ENTRY_GATE_IDS, LAST_LEGACY_EDITION, check_edition_time, check_effr_evidence, check_vix_period, cutoff_displayed,
     evidence_url, recheck_entry_gates, vix_calendar,
 )
 
 CONVERGED_CUTOVER = ("2026-11-26", "1800", 1)
 INTERNAL_LEAK_CUTOVER = ("2026-11-26", "0730", 1)
 EDITORIAL_DEPTH_CUTOVER = ("2026-11-27", "0730", 1)
+EFFR_PROVENANCE_CUTOVER = ("2026-11-28", "1130", 1)
 
 _SHFE_0230_RE = re.compile(r"(?<!\d)02:30(?!\d)")
 _SHFE_NON_GOLD_METAL_RE = re.compile(
@@ -423,6 +424,14 @@ def _check_vix_snapshot(
     ):
         errors.append("[Gate 5 VIX 回看数值冲突] 末日、官收或十日收盘峰未与交易日序列对齐")
         return None
+    if "vix_change_pct" in snap:
+        previous = Decimal(str(observations[-2]["close"]))
+        last = Decimal(str(observations[-1]["close"]))
+        change = snap["vix_change_pct"]
+        expected = (last - previous) / previous * 100
+        if not _valid_number(change) or abs(Decimal(str(change)) - expected) > Decimal("0.02"):
+            errors.append(f"[Gate 5 VIX 日涨跌幅错] 按相邻两条日收复算应为 {expected:.2f}%")
+            return None
     observed_at = _parse_timestamp(snap.get("vix_live_as_of"))
     if as_of is not None and schedule is not None and not check_vix_period(snap, as_of, observed_at, schedule, errors):
         return None
@@ -459,7 +468,7 @@ def _check_institutional_snapshot(snap: dict, label: str, errors: list[str]) -> 
 
 def _read_vix_calendar(as_of: datetime, errors: list[str], *, verified_by: date) -> tuple | None:
     try:
-        calendar = json.loads(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
+        calendar = load_gold_json(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         errors.append(f"[外置日历读取失败] {exc}")
         return None
@@ -471,8 +480,8 @@ def validate_snapshot_file(
 ) -> dict | None:
     label = snap_path.name
     try:
-        snap = json.loads(snap_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        snap = load_gold_json(snap_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
         errors.append(f"[Gate 5 数据源缺失或损坏] {label}: {exc}")
         return None
     if not isinstance(snap, dict) or not snap:
@@ -533,10 +542,12 @@ def validate_snapshot_file(
             check_edition_time(edition, as_of, errors)
             if not cutoff_displayed(snap.get("as_of_bjt"), as_of):
                 errors.append("[Gate 5 快照展示时间错] as_of_bjt 须展示与 as_of_short 一致的北京时间")
+            effr_current = edition < EFFR_PROVENANCE_CUTOVER or check_effr_evidence(snap, as_of, errors)
             passed = _check_vix_snapshot(snap, as_of, errors, schedule=schedule) if schedule is not None else None
             recheck_entry_gates(
                 snap, as_of, passed, errors,
                 exceptions=schedule[1] if schedule is not None else {},
+                effr_current=effr_current,
             )
         else:
             passed = _check_vix_snapshot(snap, as_of, errors)
@@ -1075,7 +1086,7 @@ def _skip_domestic_brand_check(snap: dict, filename_key: tuple[str, str, int] | 
     day_str = filename_key[0] if filename_key else str(snap.get("as_of_short", ""))[:10]
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day_str) and MARKET_CALENDAR_PATH.exists():
         try:
-            cal = json.loads(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
+            cal = load_gold_json(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
             for ev in cal.get("calendar_overrides", []):
                 if (
                     isinstance(ev, dict)
@@ -1110,8 +1121,8 @@ def check_file(
         snap = master_snap
         try:
             if len(baseline_matches) == 1:
-                baseline_meta = json.loads(baseline_matches[0].group(1))
-        except json.JSONDecodeError as exc:
+                baseline_meta = load_gold_json(baseline_matches[0].group(1))
+        except ValueError as exc:
             errors.append(f"[Gate 0 MASTER_BASELINE JSON 错] {exc}")
         if not _parse_timestamp(baseline_meta.get("as_of_short")) or baseline_meta.get("snapshot") != MASTER_SNAPSHOT_PATH.name:
             errors.append("[Gate 5 主报告基线锁缺失或非法] 须有唯一的 MASTER_BASELINE，指定 master_snapshot.json 和合法时间")
@@ -1148,8 +1159,8 @@ def check_file(
             errors.append(f"[Gate 0 JSON 格式错] <!-- {kind} --> 载荷不是合法 JSON 对象")
             continue
         try:
-            parsed = json.loads(blob)
-        except json.JSONDecodeError as exc:
+            parsed = load_gold_json(blob)
+        except ValueError as exc:
             errors.append(f"[Gate 0 JSON 语法错] <!-- {kind} --> 解析失败: {exc}")
             continue
         _validate_directive_schema(kind, parsed, errors, warnings, is_converged=is_converged)
@@ -1763,10 +1774,10 @@ def _extract_top_ledger_block(raw_text: str, marker_prefix: str) -> tuple[tuple[
     ed_id: str | None = None
     if payload.startswith("{"):
         try:
-            obj = json.loads(payload)
+            obj = load_gold_json(payload)
             if isinstance(obj, dict) and isinstance(obj.get("edition_id"), str):
                 ed_id = obj["edition_id"]
-        except json.JSONDecodeError:
+        except ValueError:
             ed_id = None
     else:
         ed_id = payload.split()[0] if payload else None
@@ -1876,8 +1887,8 @@ def check_rsi_artifacts(errors: list[str], warnings: list[str]) -> None:
 
     if RSI_METRICS_PATH.exists():
         try:
-            data = json.loads(RSI_METRICS_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
+            data = load_gold_json(RSI_METRICS_PATH.read_text(encoding="utf-8"))
+        except ValueError as e:
             errors.append(f"[RSI 账本损坏] daily/rsi_metrics.json JSON 非法: {e}")
             return
         runs = data.get("runs") if isinstance(data, dict) else None
@@ -1997,8 +2008,8 @@ def _check_edition_ledgers(
     for audit_src in audit_texts:
         for match in EDITION_REVIEW_RE.finditer(audit_src):
             try:
-                review = json.loads(match[1])
-            except json.JSONDecodeError as exc:
+                review = load_gold_json(match[1])
+            except ValueError as exc:
                 errors.append(f"[黄金核验台账 JSON 错] GOLD_EDITION_REVIEW: {exc}")
                 continue
             if not isinstance(review, dict):
@@ -2120,8 +2131,8 @@ def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None
         errors.append("[外置日历缺失] 未找到 market_calendar.json")
     else:
         try:
-            cal = json.loads(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+            cal = load_gold_json(MARKET_CALENDAR_PATH.read_text(encoding="utf-8"))
+        except ValueError as exc:
             errors.append(f"[外置日历损坏] market_calendar.json JSON 解析失败: {exc}")
         else:
             overrides = cal.get("calendar_overrides") if isinstance(cal, dict) else None
@@ -2143,7 +2154,7 @@ def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None
         sc_as_of: datetime | None = None
         if DAILY_SNAPSHOT_PATH.exists():
             try:
-                ds = json.loads(DAILY_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+                ds = load_gold_json(DAILY_SNAPSHOT_PATH.read_text(encoding="utf-8"))
                 if isinstance(ds, dict):
                     sc_as_of = _parse_timestamp(ds.get("as_of_short"))
             except (OSError, ValueError):
@@ -2174,20 +2185,16 @@ def check_calendar_and_scorecard(errors: list[str], warnings: list[str]) -> None
             errors.extend(_check_shfe_night_close(AUDIT_LOG_PATH.name, al_top_block))
 
 
-def main():
-    args = sys.argv[1:]
-    strict = "--strict" in args
-    precheck = "--precheck" in args
-    unknown_flags = [a for a in args if a.startswith("-") and a not in ("--strict", "--precheck")]
-    if unknown_flags:
-        print(f"Unknown option(s): {', '.join(unknown_flags)}")
-        print("Usage: python3 lint_readability.py <file1.md> [file2.md ...] [--precheck] [--strict]")
-        sys.exit(2)
-    files = [Path(a) for a in args if not a.startswith("-")]
-    if not files:
-        print("Usage: python3 lint_readability.py <file1.md> [file2.md ...] [--precheck] [--strict]")
-        sys.exit(2)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Validate gold Markdown and its supporting data for web publication.")
+    parser.add_argument("--strict", action="store_true", help="Treat warnings as errors.")
+    parser.add_argument("--precheck", action="store_true", help="Compatibility flag. All web checks already run by default.")
+    parser.add_argument("files", nargs="+", type=Path, metavar="REPORT.md", help="Gold report Markdown files to check.")
+    return parser.parse_args()
 
+
+def main(args: argparse.Namespace):
+    strict = args.strict
     snap_cache: dict[Path, dict | None] = {}
     exit_code = 0
 
@@ -2231,12 +2238,12 @@ def main():
     daily_snap = snap_cache.get(DAILY_SNAPSHOT_PATH)
     master_snap = snap_cache.get(MASTER_SNAPSHOT_PATH)
 
-    for p in files:
+    for p in args.files:
         if not p.exists():
             print(f"[ERROR] File not found: {p}")
             exit_code = 1
             continue
-        errs, warns = check_file(p, daily_snap, master_snap, precheck=precheck)
+        errs, warns = check_file(p, daily_snap, master_snap, precheck=args.precheck)
         mode_label = "Web-Only Readability & Accuracy Lint (Gates 0–5)"
         print(f"=== {mode_label}: {p.name} ===")
         if not errs and not warns:
@@ -2252,4 +2259,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    arguments = parse_args()
+    scripts = BASE_DIR.parent / "scripts"
+    if (scripts / "state_transaction.py").is_file():
+        sys.path.insert(0, str(scripts))
+        from state_transaction import state_read_lock
+
+        try:
+            with state_read_lock(BASE_DIR.parent):
+                main(arguments)
+        except (OSError, RuntimeError) as exc:
+            print(f"[FAIL] {exc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        main(arguments)

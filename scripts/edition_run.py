@@ -21,11 +21,23 @@ import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+if __package__:
+    from . import pages_release, review_evidence
+    from .state_transaction import state_read_lock
+else:
+    import pages_release
+    import review_evidence
+    from state_transaction import state_read_lock
+
 ROOT = Path(__file__).resolve().parent.parent
 BEIJING = timezone(timedelta(hours=8))
 EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\d+))?")
 PHASES = ("research", "gold", "equity", "publish")
 GOLD_HISTORY_LEDGERS = ("gold/daily/AUDIT_LOG.md", "gold/daily/CHANGELOG.md")
+SCHEDULED_RUNTIME_PATHS = (
+    "scripts", "tests", ".github/workflows", "automations",
+    ":(glob)gold/**/*.py", ":(glob)equity/**/*.py",
+)
 EXTENDED_EQUITY_STATE_FILES = (
     "equity/state/multi_asset_channels.json",
     "equity/state/etf_universe.json",
@@ -344,6 +356,52 @@ def reap_stale_unpushed_run(
         return _reap_stale_unpushed_run(runs, next_edition, max_idle_hours=max_idle_hours)
 
 
+def _check_scheduled_floor(runs: sqlite3.Connection, edition: str, base_sha: str) -> None:
+    candidates = [
+        row["edition"] for row in runs.execute("""
+            SELECT runs.edition FROM runs
+            LEFT JOIN attempts USING(token)
+            LEFT JOIN publications USING(token)
+            WHERE runs.status = 'complete' OR publications.sha IS NOT NULL
+               OR attempts.source LIKE 'antigravity-%'
+        """)
+    ]
+    for file in pages_release.EDITION_PATHS:
+        reference = f"{base_sha}:{file}"
+        if _git_object_exists(reference):
+            snapshot = json.loads(git_value("show", reference))
+            if not isinstance(snapshot, dict) or _edition_key(snapshot.get("edition_id")) is None:
+                raise ValueError(f"Cannot establish the scheduled edition floor from {file}.")
+            candidates.append(snapshot["edition_id"])
+    floor = max((key for value in candidates if (key := _edition_key(value))), default=None)
+    requested = _edition_key(edition)
+    if requested is None:
+        raise ValueError(f"Invalid scheduled edition {edition}.")
+    if floor is not None and requested < floor:
+        day, slot, revision = floor
+        label = f"{day}_{slot:04d}" + (f"_r{revision}" if revision > 1 else "")
+        raise ValueError(f"Scheduled edition {edition} cannot go back before {label}.")
+
+
+def _check_scheduled_checkout(base_sha: str) -> None:
+    """Catch worktree states that publication would reject after research has started."""
+    try:
+        branch = git_value("symbolic-ref", "--quiet", "--short", "HEAD")
+    except subprocess.CalledProcessError:
+        branch = ""
+    if branch != "main":
+        raise ValueError("Scheduled editions require branch main, the branch used for publication.")
+    drift = git_value("--no-optional-locks", "status", "--short", "--untracked-files=all", "--", *SCHEDULED_RUNTIME_PATHS)
+    if drift:
+        examples = ", ".join(line.strip() for line in drift.splitlines()[:5])
+        raise ValueError(
+            "Scheduled edition cannot start with uncommitted workflow or research code. "
+            f"Publish the maintenance baseline before running the task. Local changes: {examples}"
+        )
+    with state_read_lock(ROOT):
+        _check_gold_ledger_history(base_sha, None)
+
+
 def begin(
     runs: sqlite3.Connection,
     edition: str,
@@ -354,7 +412,12 @@ def begin(
 ) -> str:
     with _idle_publish_lock(), runs:
         base_sha = git_value("rev-parse", "HEAD")
+        scheduled = source.startswith("antigravity-")
+        if scheduled:
+            _check_scheduled_checkout(base_sha)
         runs.execute("BEGIN IMMEDIATE")
+        if scheduled:
+            _check_scheduled_floor(runs, edition, base_sha)
         if reap_stale:
             _reap_stale_unpushed_run(runs, edition, max_idle_hours=max_idle_hours)
         return _begin(runs, edition, source, base_sha=base_sha)
@@ -506,9 +569,29 @@ def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = 
         raise ValueError(f"Invalid edition ID for blind review: {edition!r}.")
     if current <= LAST_EDITION_WITHOUT_REVIEW:
         return
+    commit_files: dict[str, tuple[str, str]] = {}
+    if sha:
+        for entry in git_value("ls-tree", "-r", "-z", sha, "--", "gold", "equity").split("\0"):
+            if entry:
+                metadata, filename = entry.split("\t", 1)
+                mode, _kind, object_id = metadata.split()
+                commit_files[filename] = mode, object_id
+
+    def read_candidate(path: str) -> bytes:
+        if not sha:
+            return review_evidence.read_working_file(root, path)
+        if path not in commit_files:
+            raise ValueError(f"Review candidate file {path} is missing from {sha}.")
+        mode, object_id = commit_files[path]
+        if mode not in {"100644", "100755"}:
+            raise ValueError(f"Review candidate must use an ordinary file in {sha}: {path}.")
+        return subprocess.check_output(
+            ["git", "cat-file", "blob", object_id], cwd=ROOT, env=_clean_env(), timeout=15,
+        )
+
+    candidate = None
     for file in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
-        text = git_value("show", f"{sha}:{file}") if sha else (root / file).read_text(encoding="utf-8")
-        document = json.loads(text)
+        document = json.loads(read_candidate(file))
         reviews = document.get("runs") if isinstance(document, dict) else None
         matches = [
             review for review in reviews if isinstance(review, dict) and review.get("run_id") == edition
@@ -517,6 +600,15 @@ def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = 
             raise ValueError(f"{file} requires one completed independent review for {edition}.")
         if current > LAST_EDITION_WITHOUT_REVIEW_CLOSURE:
             _check_review_closure(matches[0], file, current)
+        if current > review_evidence.LAST_LEGACY_EDITION:
+            if candidate is None:
+                if sha:
+                    prefix = "gold/daily/"
+                    names = (name.removeprefix(prefix) for name in commit_files if name.startswith(prefix))
+                    candidate = review_evidence.snapshot(edition, read_candidate, names)
+                else:
+                    candidate = review_evidence.working_snapshot(root, edition)
+            review_evidence.validate_receipt(matches[0]["review_closure"], candidate, file, read=read_candidate)
 
 
 def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
@@ -526,13 +618,14 @@ def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
         raise ValueError(f"Cannot advance from {row['phase']} to {phase}.")
     attempt = runs.execute("SELECT base_sha FROM attempts WHERE token = ?", (token,)).fetchone()
     if phase in ("equity", "publish"):
-        _check_edition_document(row["edition"], "gold/data_snapshot.json")
-    if phase == "equity" and attempt is not None:
-        _check_gold_ledger_history(attempt["base_sha"], None)
-    if phase == "publish":
-        _check_edition_document(row["edition"], "equity/state/market_state.json")
-        _check_extended_equity_documents(row["edition"])
-        check_edition_reviews(row["edition"], root=ROOT)
+        with state_read_lock(ROOT):
+            _check_edition_document(row["edition"], "gold/data_snapshot.json")
+            if phase == "equity" and attempt is not None:
+                _check_gold_ledger_history(attempt["base_sha"], None)
+            if phase == "publish":
+                _check_edition_document(row["edition"], "equity/state/market_state.json")
+                _check_extended_equity_documents(row["edition"])
+                check_edition_reviews(row["edition"], root=ROOT)
 
     runs.execute("BEGIN IMMEDIATE")
     current = active_run(runs, token)
@@ -569,24 +662,27 @@ def publication_commit(token: str) -> str | None:
         return receipt["sha"] if receipt else None
 
 
-def _ledger_indexed_lines(sha: str | None, path: str) -> list[tuple[int, bytes]]:
+def _ledger_bytes(sha: str | None, path: str) -> bytes:
     if sha is None:
         disk_path = ROOT / path
         if not disk_path.is_file():
             raise ValueError(f"Cannot verify the Gold ledger {path} in working tree.")
         try:
-            raw = disk_path.read_bytes()
+            return disk_path.read_bytes()
         except OSError as exc:
             raise ValueError(f"Cannot read the Gold ledger {path} in working tree: {exc}") from exc
-    else:
-        result = subprocess.run(
-            ["git", "cat-file", "blob", f"{sha}:{path}"],
-            cwd=ROOT, env=_clean_env(), capture_output=True, timeout=15,
-        )
-        if result.returncode:
-            raise ValueError(f"Cannot verify the Gold ledger {path} in commit {sha}.")
-        raw = result.stdout
-    normalized = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+    result = subprocess.run(
+        ["git", "cat-file", "blob", f"{sha}:{path}"],
+        cwd=ROOT, env=_clean_env(), capture_output=True, timeout=15,
+    )
+    if result.returncode:
+        raise ValueError(f"Cannot verify the Gold ledger {path} in revision {sha}.")
+    return result.stdout
+
+
+def _ledger_indexed_lines(sha: str | None, path: str) -> list[tuple[int, bytes]]:
+    normalized = _ledger_bytes(sha, path).replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     return [
         (lineno, line)
         for lineno, line in enumerate(normalized.split(b"\n"), start=1)
@@ -661,15 +757,15 @@ def _archived_ledger_paths(sha: str | None, path: str) -> list[str]:
         ]
         return sorted(matches, key=lambda entry: (Path(entry).name, entry))
     result = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", sha, "--", archive_dir],
+        ["git", "ls-tree", "-r", "-z", "--name-only", sha, "--", archive_dir],
         cwd=ROOT, env=_clean_env(), capture_output=True, text=True, timeout=15,
     )
     if result.returncode:
-        return []
+        raise ValueError(f"Cannot list the Gold ledger archives in revision {sha}.")
     matches = [
-        entry.strip()
-        for entry in result.stdout.splitlines()
-        if entry.strip().endswith(".md") and Path(entry.strip()).name.startswith(prefix)
+        entry
+        for entry in result.stdout.split("\0")
+        if entry.endswith(".md") and Path(entry).name.startswith(prefix)
     ]
     return sorted(matches, key=lambda entry: (Path(entry).name, entry))
 
@@ -760,6 +856,10 @@ def _diagnose_ledger_mismatch(
 
 def _check_gold_ledger_history(base: str, candidate: str | None) -> None:
     for path in GOLD_HISTORY_LEDGERS:
+        for archive_path in _archived_ledger_paths(base, path):
+            if _ledger_bytes(base, archive_path) != _ledger_bytes(candidate, archive_path):
+                raise ValueError(f"{archive_path} must preserve its previously archived Gold ledger bytes.")
+
         prior_indexed = _ledger_indexed_lines(base, path)
         active_indexed = _ledger_indexed_lines(candidate, path)
         prior = [line for _, line in prior_indexed]
@@ -889,15 +989,76 @@ def _gh_is_ancestor(repository: str, ancestor: str, descendant: str) -> bool:
         return False
 
 
+def _pages_release_proof(sha: str) -> tuple[str, dict[str, str]] | None:
+    """Use the deployed revision itself to distinguish legacy and stamped releases."""
+    workflow = git_value("show", f"{sha}:.github/workflows/deploy-pages.yml")
+    if "scripts/pages_release.py" not in workflow:
+        if _git_object_exists(f"{sha}:scripts/pages_release.py"):
+            raise ValueError("The deployed commit has Pages release support but its workflow does not stamp the release.")
+        return None
+
+    def source(relative: str) -> bytes:
+        return subprocess.check_output(
+            ["git", "cat-file", "blob", f"{sha}:{relative}"], cwd=ROOT, env=_clean_env(), timeout=15,
+        )
+
+    edition = pages_release.edition_from_snapshots([source(path) for path in pages_release.EDITION_PATHS])
+    hashes = {site_path: pages_release.hash_bytes(source(repo_path))
+              for site_path, repo_path in pages_release.COPIED_ASSETS.items()}
+    return edition, hashes
+
+
+def _pages_run_summaries(payload, sha: str) -> tuple[list[dict], ValueError | None]:
+    if not isinstance(payload, list):
+        raise ValueError("GitHub Actions returned a malformed workflow run list.")
+    matching = []
+    malformed = None
+    for run in payload:
+        if not isinstance(run, dict) or any(
+            not isinstance(run.get(key), str) or not run[key].strip()
+            for key in ("headSha", "headBranch", "status", "url")
+        ) or type(run.get("databaseId")) is not int or run["databaseId"] <= 0:
+            malformed = ValueError("GitHub Actions returned a malformed workflow run summary.")
+            continue
+        if run["headSha"] == sha and run["headBranch"] == "main":
+            matching.append(run)
+    return matching, malformed
+
+
+def _pages_deploy_job(details, sha: str) -> str | None:
+    if (
+        not isinstance(details, dict) or details.get("headSha") != sha or details.get("headBranch") != "main"
+        or not isinstance(details.get("url"), str) or not details["url"].strip()
+        or not isinstance(details.get("jobs"), list)
+    ):
+        raise ValueError("GitHub Actions returned malformed or mismatched workflow job details.")
+    jobs = details["jobs"]
+    if any(not isinstance(job, dict) or not isinstance(job.get("name"), str) for job in jobs):
+        raise ValueError("GitHub Actions returned a malformed workflow job.")
+    deploy_jobs = [job for job in jobs if job["name"] == DEPLOY_JOB]
+    if len(deploy_jobs) > 1:
+        raise ValueError("GitHub Actions returned more than one Pages deploy job for this run.")
+    if not deploy_jobs:
+        return None
+    job = deploy_jobs[0]
+    if not isinstance(job.get("conclusion"), str) or job.get("status", "completed") != "completed":
+        raise ValueError("GitHub Actions has not reported a completed Pages deploy job.")
+    return details["url"] if job["conclusion"] == "success" else None
+
+
 def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
-    """Require the actual main-branch deploy job for the recorded push."""
+    """Require the deploy job and, for stamped releases, verify public content bytes."""
+    if not SHA_RE.fullmatch(sha) or not REPOSITORY_RE.fullmatch(repository):
+        raise ValueError("Invalid commit or repository for Pages verification.")
     deadline = time.monotonic() + wait
+    proof: tuple[str, dict[str, str]] | None = None
     while True:
         try:
             candidates = _gh_json(
                 "run", "list", "--repo", repository, "--workflow", "deploy-pages.yml", "--branch", "main",
                 "--commit", sha, "--json", "databaseId,headSha,headBranch,status,conclusion,url", "--limit", "10",
             )
+            runs, transient_err = _pages_run_summaries(candidates, sha)
         except (subprocess.SubprocessError, ValueError, OSError) as exc:
             if time.monotonic() >= deadline:
                 raise DeploymentPending(
@@ -906,25 +1067,35 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
             time.sleep(min(5, max(0, deadline - time.monotonic())))
             continue
 
-        runs = [run for run in candidates if run["headSha"] == sha and run["headBranch"] == "main"]
         completed = [run for run in runs if run.get("status") == "completed"]
         has_pending = any(run.get("status") != "completed" for run in runs)
 
         failed_url: str | None = None
-        transient_err: Exception | None = None
         for run in completed:
             try:
                 details = _gh_json(
                     "run", "view", str(run["databaseId"]), "--repo", repository,
                     "--json", "headSha,headBranch,jobs,url",
                 )
+                success_url = _pages_deploy_job(details, sha)
             except (subprocess.SubprocessError, ValueError, OSError) as exc:
                 transient_err = exc
                 continue
-            if details["headSha"] == sha and details["headBranch"] == "main" and any(
-                job["name"] == DEPLOY_JOB and job["conclusion"] == "success" for job in details["jobs"]
-            ):
-                return details["url"]
+            if success_url is not None:
+                if proof is None:
+                    proof = _pages_release_proof(sha)
+                if proof is None:
+                    print("[NOTICE] Legacy Pages release verified by its Actions deploy job.", file=sys.stderr)
+                    return success_url
+                edition, hashes = proof
+                try:
+                    pages_release.verify_release(
+                        sha, edition, repository, hashes, timeout=15 if wait <= 0 else max(0.1, deadline - time.monotonic()),
+                    )
+                except (OSError, ValueError) as exc:
+                    transient_err = exc
+                    continue
+                return success_url
             if failed_url is None:
                 failed_url = run["url"]
 
@@ -942,7 +1113,7 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
         if time.monotonic() >= deadline:
             if transient_err is not None:
                 raise DeploymentPending(
-                    f"Pages status check failed transiently for {sha}: {transient_err}; rerun complete for this attempt."
+                    f"Pages verification is pending for {sha}: {transient_err}; rerun complete for this attempt."
                 ) from transient_err
             raise DeploymentPending(f"Pages is still pending for {sha}; rerun complete for this attempt.")
         time.sleep(min(5, max(0, deadline - time.monotonic())))

@@ -57,7 +57,7 @@ class TestScreenerFreshnessOverlay(unittest.TestCase):
         self.assertIn("+0.47%", updated["price"])
         self.assertLessEqual(len(updated["price"]), 42)
         self.assertEqual(updated["price_num"], 297.0)
-        self.assertEqual(updated["price_updated_at"], "2026-11-27")
+        self.assertEqual(updated["price_updated_at"], "2026-11-26")
         self.assertLessEqual(len(updated["summary"]), 78)
         self.assertNotIn("<br", updated["summary"])
         self.assertNotIn("**", updated["summary"])
@@ -86,7 +86,23 @@ class TestScreenerFreshnessOverlay(unittest.TestCase):
         self.assertEqual(updated["color"], "y")
         self.assertEqual(updated["price"], "11/25 官收 $149.30 (-3.91%)")
         self.assertEqual(updated["price_num"], 149.30)
-        self.assertEqual(updated["price_updated_at"], "2026-11-27")
+        self.assertEqual(updated["price_updated_at"], "2026-11-25")
+
+    def test_screener_quote_uses_the_edition_series_over_unrelated_dossier_prices(self):
+        stock = {"market": "hk-stock", "code": "06181.HK", "price": "21.05 港元", "price_num": 21.05,
+                 "anchor_low": 240, "anchor_high": 260}
+        series = {"id": "stk_06181.HK", "code": "06181.HK", "market": "hk-stock", "currency": "HKD",
+                  "latest_close": 264.2, "latest_date": "2026-11-27", "stale": False,
+                  "change_pct": 2.1, "provider": "tencent_hkfqkline"}
+        build_site._align_screener_quotes([stock], {"catalog": [series]}, "2026-11-28")
+        self.assertEqual((stock["price_num"], stock["price_updated_at"], stock["price_source"], stock["anchor_gap_pct"]),
+                         (264.2, "2026-11-27", "腾讯行情", 5.7))
+        for row in (dict(series, stale=True), dict(series, currency="USD"), dict(series, latest_date="2026-11-29")):
+            with self.subTest(row=row):
+                build_site._align_screener_quotes([stock], {"catalog": [row]}, "2026-11-28")
+                self.assertEqual(stock["price"], "同口径行情待核")
+                self.assertIsNone(stock["price_num"])
+                self.assertIsNone(stock["anchor_gap_pct"])
 
     def test_gold_locked_stock_never_becomes_green_under_tier0_lock(self):
         # Case 1: Negated wording "严禁列为当下底座" on 02899.HK

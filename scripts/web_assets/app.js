@@ -41,6 +41,34 @@
     return typeof v === "number" && isFinite(v);
   }
 
+  const RESEARCH_FIELD_LABELS = {
+    baseline_note: "基线记录", moat: "业务与竞争", financials: "财务", valuation_anchor: "估值",
+    shareholder_flow: "股东与分红", catalysts: "事件", bear_case: "风险情景", action_etf: "研究观点",
+    name: "基金身份", channel: "交易通道", category: "产品类型", tracking_index: "跟踪指数",
+    aum: "规模", fee_total_pct: "年费率", liquidity: "交易与流动性", yield_or_pe: "收益或估值",
+    top_holdings: "持仓", premium_note: "折溢价", tax_and_rules: "税费与规则", thesis_deep: "产品结构",
+    risk_boundary: "风险", action_role: "研究观点", otc_feeder: "场外联接",
+  };
+
+  function researchEvidenceHtml(entries) {
+    const sources = (Array.isArray(entries) ? entries : []).map(function (item) {
+      if (!item || !Object.hasOwn(RESEARCH_FIELD_LABELS, item.field) || typeof item.source_url !== "string") return "";
+      let url;
+      try { url = new URL(item.source_url); } catch (_) { return ""; }
+      if (url.protocol !== "https:" || url.username || url.password) return "";
+      const description = RESEARCH_FIELD_LABELS[item.field] + " · " + item.as_of + " · " + item.note;
+      return '<li>' + escHtml(description) + ' <a href="' + escHtml(url.href) +
+        '" target="_blank" rel="noopener noreferrer">查看原始出处</a></li>';
+    }).filter(Boolean);
+    if (!sources.length) return '<p class="sec-sub">该档案暂未附可定位的原始出处。</p>';
+    return '<section class="dossier-dim"><h4>原始出处</h4><p class="sec-sub">各出处仅覆盖所列资料。</p><ul>' +
+      sources.join("") + '</ul></section>';
+  }
+
+  function stockQuoteProvenance(stock) {
+    return [stock.price_updated_at, stock.price_source].filter(Boolean).join(" · ");
+  }
+
   /* ------------------------------------------------------------------------
      1. Theme Toggle (SVG-Aware — Preserves Inner <svg> Icons)
      ------------------------------------------------------------------------ */
@@ -460,19 +488,13 @@
   }
 
   function ensureCmdKlineItems() {
-    if (cmdKlineLoaded || cmdKlineLoading) return;
+    if (cmdKlineLoaded || cmdKlineLoading || !window.GIRKline) return;
     cmdKlineLoading = true;
     const basePrefix = document.body.getAttribute("data-base-prefix") || "";
-    const loader =
-      window.GIRKline && typeof window.GIRKline.loadManifest === "function"
-        ? window.GIRKline.loadManifest(basePrefix)
-        : fetch(basePrefix + "assets/klines/manifest.json", { cache: "default" })
-            .then(function (resp) { return resp.ok ? resp.json() : null; })
-            .catch(function () { return null; });
-    Promise.resolve(loader).then(function (manifest) {
+    window.GIRKline.loadManifest(basePrefix).then(function (manifest) {
       cmdKlineLoading = false;
-      cmdKlineLoaded = true;
       if (!manifest || !Array.isArray(manifest.catalog)) return;
+      cmdKlineLoaded = true;
       cmdKlineItems = manifest.catalog
         .filter(function (c) { return c && c.id && c.name; })
         .map(function (c) {
@@ -482,9 +504,8 @@
           const isEtf = idStr.startsWith("etf_");
           const isStk = idStr.startsWith("stk_");
           const kindLbl = isEtf ? "ETF K线" : isStk ? "个股 K线" : "指数/宏观 K线";
-          const chgStr = isFiniteNum(c.change_pct)
-            ? (c.change_pct >= 0 ? "+" : "") + c.change_pct.toFixed(2) + "%"
-            : "";
+          const move = window.GIRKline.catalogQuoteChange(c);
+          const chgStr = move.value == null ? "" : move.text;
           return {
             title: "📈 " + nameStr + (codeStr ? " (" + codeStr + ")" : ""),
             meta: [kindLbl, c.market || "", chgStr].filter(Boolean).join(" · "),
@@ -841,7 +862,7 @@
     ah_premium: {
       term: "A/H 溢价与倒挂",
       plain: "同一家公司在 A 股和港股同时上市时的价格差。正值代表 A 股比港股贵；负值（倒挂）代表 A 股反而比港股便宜。",
-      avoid: "避坑提醒：别只看表面便宜就换港股，用内地港股通买标准 H 股分红扣 20% 红利税（仅特定内地居民企业红筹股依发行人公告最高扣至约 28%），务必算税后净股息。",
+      avoid: "避坑提醒：别只看表面便宜就换港股，用内地港股通买标准 H 股分红扣 20% 红利税（个别发行人的源头代扣须查当期分派公告），务必算税后净股息。",
     },
     etf_vs_feeder: {
       term: "场内 ETF vs 场外联接基金",
@@ -866,7 +887,7 @@
     nav_break: {
       term: "银行理财破净与真净值化",
       plain: "资管新规后银行理财不再保本，每天按底层债券和股票市价算净值；「破净」就是净值跌破 1 元本金线。",
-      avoid: "避坑提醒：「业绩比较基准」只是目标不是承诺保底，追求本金绝对安全应选储蓄国债或 50 万以内银行存款。",
+      avoid: "避坑提醒：业绩比较基准不是保本承诺。比较储蓄国债的提前兑取规则，以及同一存款人在同一家投保机构的被保险存款本息合计 50 万元偿付上限。",
     },
     t0_t1: {
       term: "T+0 / T+1 与「可用 / 可取」",
@@ -880,7 +901,7 @@
     },
     dividend_tax: {
       term: "红利税与通道税费差异",
-      plain: "A 股持股超 1 年免红利税；港股通收标准 H 股息直扣 20%（仅特定内地居民企业红筹依公告最高约 28%）；个人直买交易所公司债付息扣 20%，交易所公司债/科创债 ETF（551500/159600）底层债券付息环节仍扣 20% 税（区别于银行间短融 ETF 511360 等银行间标的）。",
+      plain: "A 股持股超 1 年免红利税；港股通收标准 H 股息直扣 20%（非 H 股的源头代扣须另查当期分派公告）；个人直买交易所公司债付息扣 20%，交易所公司债/科创债 ETF（551500/159600）底层债券付息环节仍扣 20% 税（区别于银行间短融 ETF 511360 等银行间标的）。",
       avoid: "避坑提醒：买港股高股息前先按税后折算真实到手率，买交易所信用债 ETF 勿误当作免税债基；境外账户投资收益须依法履行年度全球纳税申报义务。",
     },
     mrf_hedged: {
@@ -921,7 +942,7 @@
     w8ben: {
       term: "非美居民税务表（W-8BEN）",
       plain: "中国大陆等非美国税务居民在合规离岸券商开户时签署的税务身份声明表，用于享受中美税收协定优惠，把美股股息预扣税从 30% 降至 10%。",
-      avoid: "避坑提醒：W-8BEN 通常每 3 年过期，忘记及时续签会被自动按 30% 扣美股股息税；且美股直投仍须留意 6 万美元非美居民美国遗产税免税额上限。",
+      avoid: "避坑提醒：W-8BEN 通常有效至签署年后的第三个日历年末，个人情况改变时应更新。美股直投还须按美国所在地资产和适用赠与合计核对非美国公民、非美国住所者的 6 万美元遗产税申报门槛。",
     },
     crs: {
       term: "金融账户涉税信息自动交换（CRS）",
@@ -941,7 +962,7 @@
     ex_div: {
       term: "除净（除权除息）",
       plain: "港股把上市公司分红或送股后、股价按派息金额等额下调的交易日称为「除净日」。除净当天买入不再享有本次分红，参考价会直接扣除每股派息额。",
-      avoid: "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收标准 H 股息须扣 20% 红利税（特定内地居民企业红筹依公告最高约 28%）。",
+      avoid: "避坑提醒：高额特别息或年度分红除净当日，软件显示的参考价低开并非暴跌打折，切勿把除净扣价误当抄底良机；内地港股通持仓收标准 H 股息须扣 20% 红利税（非 H 股的源头代扣须查当期分派公告）。",
     },
     discount_ex_div: {
       term: "贴权（除净后走弱）",
@@ -1423,28 +1444,18 @@
     return item.latest_close.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
   }
 
+  function renderWatchQuoteChange(item, cls) {
+    if (!item || !isFiniteNum(item.latest_close) || !window.GIRKline) return "";
+    const move = window.GIRKline.catalogQuoteChange(item);
+    if (move.value == null) return "";
+    return ' <span class="' + cls + (move.value >= 0 ? ' chg-up' : ' chg-dn') + '">' + escHtml(move.text) + "</span>";
+  }
+
   function ensureWatchManifest() {
-    if (watchManifestData || watchManifestPromise) return;
+    if (watchManifestData || watchManifestPromise || !window.GIRKline) return;
     const bp = document.body.getAttribute("data-base-prefix") || "";
-    const loader =
-      window.GIRKline && typeof window.GIRKline.loadManifest === "function"
-        ? window.GIRKline.loadManifest(bp)
-        : fetch(bp + "assets/klines/manifest.json", { cache: "default" })
-            .then(function (resp) { return resp.ok ? resp.json() : null; })
-            .then(function (data) {
-              if (!data || !Array.isArray(data.catalog)) return null;
-              const byId = new Map();
-              const byCode = new Map();
-              data.catalog.forEach(function (it) {
-                if (it && it.id) byId.set(String(it.id), it);
-                if (it && it.code) byCode.set(String(it.code).toUpperCase(), it);
-              });
-              data._byId = byId;
-              data._byCode = byCode;
-              return data;
-            })
-            .catch(function () { return null; });
-    watchManifestPromise = Promise.resolve(loader).then(function (manifest) {
+    watchManifestPromise = window.GIRKline.loadManifest(bp).then(function (manifest) {
+      watchManifestPromise = null;
       if (!manifest) return;
       watchManifestData = manifest;
       renderHomeWatchlistBar();
@@ -1482,13 +1493,12 @@
         const quote = lookupWatchQuote(w);
         const name = (meta && meta.name) || (quote && quote.name) || w.name || w.code || w.id;
         const code = (meta && meta.code) || (quote && quote.code) || w.code || "";
-        const livePrice = fmtWatchQuotePrice(quote);
-        const price = livePrice || (meta && meta.price) || "";
-        const chgHtml =
-          quote && isFiniteNum(quote.change_pct)
-            ? ' <span class="watch-pill-chg ' + (quote.change_pct >= 0 ? "chg-up" : "chg-dn") + '">' +
-              (quote.change_pct >= 0 ? "+" : "") + quote.change_pct.toFixed(2) + "%</span>"
-            : "";
+        const chartPrice = fmtWatchQuotePrice(quote);
+        const fallbackPrice = w.kind === "stock" && meta && meta.price;
+        const price = chartPrice || fallbackPrice || "报价待核";
+        const attribution = chartPrice && window.GIRKline
+          ? window.GIRKline.catalogQuoteAttribution(quote)
+          : fallbackPrice ? [meta.price_date || "行情日待核", "个股档案参考"].join(" · ") : "";
         const role = (meta && meta.role) || "";
         const kHref = "charts.html#sym=" + encodeURIComponent(w.klineId || w.id);
         const detailHref = w.kind === "etf"
@@ -1501,8 +1511,9 @@
           '<a class="watch-pill-main" href="' + escHtml(detailHref) + '">' +
           "<strong>" + escHtml(name) + "</strong>" +
           (code ? ' <span class="code-tag">' + escHtml(code) + "</span>" : "") +
-          (price ? ' <span class="watch-pill-meta">' + escHtml(price) + "</span>" : "") +
-          chgHtml +
+          ' <span class="watch-pill-meta">' + escHtml(price) + "</span>" +
+          renderWatchQuoteChange(quote, "watch-pill-chg") +
+          (attribution ? ' <span class="watch-pill-meta">' + escHtml(attribution) + "</span>" : "") +
           (role ? ' <span class="watch-pill-role">' + escHtml(role) + "</span>" : "") +
           "</a>" +
           '<a class="kline-quick-btn" href="' + escHtml(kHref) + '" title="查看交互 K 线">📈</a>' +
@@ -1564,18 +1575,13 @@
         const quote = lookupWatchQuote(w);
         const name = (quote && quote.name) || w.name || w.code || w.id;
         const code = (quote && quote.code) || w.code || "";
-        const livePrice = fmtWatchQuotePrice(quote);
-        const chgHtml =
-          quote && isFiniteNum(quote.change_pct)
-            ? '<span class="watch-drawer-chg ' + (quote.change_pct >= 0 ? "chg-up" : "chg-dn") + '" style="font-weight:700;">' +
-              (quote.change_pct >= 0 ? "+" : "") + quote.change_pct.toFixed(2) + "%</span>"
-            : "";
-        const quoteLineHtml = livePrice || chgHtml
+        const chartPrice = fmtWatchQuotePrice(quote);
+        const quoteLineHtml = chartPrice
           ? '<span class="watch-drawer-quote" style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-variant-numeric:tabular-nums;">' +
-            (livePrice ? '<strong>' + escHtml(livePrice) + "</strong>" : "") +
-            chgHtml +
-            "</span>"
-          : "";
+            '<strong>' + escHtml(chartPrice) + "</strong>" +
+            renderWatchQuoteChange(quote, "watch-drawer-chg") + "</span>" +
+            (window.GIRKline ? ' <span class="sec-sub">' + escHtml(window.GIRKline.catalogQuoteAttribution(quote)) + "</span>" : "")
+          : ' <span class="sec-sub">报价待核</span>';
         const kHref = basePrefix + "charts.html#sym=" + encodeURIComponent(w.klineId || w.id);
         const isEtf = w.kind === "etf";
         const isStock = w.kind === "stock";
@@ -2376,7 +2382,9 @@
                 '<td class="col-sticky"><span class="mkt-badge mkt-' + escHtml(st.market) + '">' + escHtml(st.market_label) + "</span></td>" +
                 '<td>' + starBtn + ' <strong>' + escHtml(st.name) + '</strong> <span class="code-tag">' + escHtml(st.code) + "</span></td>" +
                 '<td class="nw">' + escHtml(st.sector) + "</td>" +
-                '<td><div><strong>' + escHtml(st.price) + "</strong></div>" + formatValuationChips(st) + "</td>" +
+                '<td><div><strong>' + escHtml(st.price) + "</strong></div>" +
+                (stockQuoteProvenance(st) ? '<div class="sec-sub">' + escHtml(stockQuoteProvenance(st)) + '</div>' : '') +
+                formatValuationChips(st) + "</td>" +
                 "<td>" + formatDivAhCell(st) + "</td>" +
                 '<td><span class="act-pill act-' + escHtml(st.color) + '">' + mark + " " + escHtml(st.action_label) + "</span></td>" +
                 "<td>" + formatAnchorBadge(st) + escHtml(st.summary) + dBtn + ' <a href="' + escHtml(st.report_url) + '" class="nw">手册 →</a></td>' +
@@ -2422,7 +2430,7 @@
                 "</div>" +
                 '<div class="sc-meta">' +
                 "<span><strong>赛道：</strong>" + escHtml(st.sector) + "</span>" +
-                "<span><strong>现价：</strong>" + escHtml(st.price) + "</span>" +
+                "<span><strong>最近行情：</strong>" + escHtml([st.price, stockQuoteProvenance(st)].filter(Boolean).join(" · ")) + "</span>" +
                 formatAnchorBadge(st) +
                 "</div>" +
                 formatValuationChips(st) +
@@ -2658,13 +2666,9 @@
       if (dossierTitle) dossierTitle.textContent = st.name + " (" + st.code + ")";
       if (dossierSub) {
         const bn = String(d.baseline_note || "").trim();
-        const hasPriceInBaseline =
-          !!bn &&
-          /(?:参考价|日终收|收盘|官收|现价|收报|股价|\d+(?:\.\d+)?\s*(?:元|港元|美元|HK\$|\$|RMB))/.test(bn);
         dossierSub.textContent =
-          (bn ? bn + " ｜ " : "") +
-          "赛道：" + st.sector +
-          (hasPriceInBaseline ? "" : " ｜ 现价：" + st.price);
+          "赛道：" + st.sector + " ｜ 最近行情：" + [st.price, stockQuoteProvenance(st)].filter(Boolean).join(" · ") +
+          (bn ? " ｜ 档案参考：" + bn : "");
       }
       if (dossierBadges) {
         const isCore = d.depth_tier === "core_deep";
@@ -2681,18 +2685,22 @@
       const startTab = initialTab === "kline" ? "kline" : "dossier";
       currentDossierTab = startTab;
       if (dossierBody) {
+        const citedFields = new Set((Array.isArray(d.evidence) ? d.evidence : []).map(function (item) {
+          return item.field;
+        }));
         const dossierGridHtml =
           '<div class="dossier-grid">' +
           DOSSIER_DIMS.map(function (pair) {
             const val = d[pair[0]] || "暂无补充";
             return (
               '<div class="dossier-dim">' +
-              '<div class="dossier-dim-lbl">' + escHtml(pair[1]) + "</div>" +
+              '<div class="dossier-dim-lbl">' + escHtml(pair[1]) +
+              (d[pair[0]] && !citedFields.has(pair[0]) ? ' <span class="sec-sub">· 出处待核</span>' : "") + "</div>" +
               '<div class="dossier-dim-txt">' + escHtml(val) + "</div>" +
               "</div>"
             );
           }).join("") +
-          "</div>";
+          "</div>" + researchEvidenceHtml(d.evidence);
         dossierBody.innerHTML =
           '<div class="modal-tab-bar">' +
           '<div class="modal-tab-group" role="tablist" style="display:flex;gap:6px;flex-wrap:wrap;">' +
@@ -2748,7 +2756,7 @@
       if (dossierFootDate) {
         const fallbackDate = dossierFootDate.getAttribute("data-default-date") || "最新班次";
         const bmPrefix = st.benchmark_time ? "主表基线（旗舰基准）：" + st.benchmark_time + " ｜ " : "";
-        dossierFootDate.textContent = bmPrefix + "7 维档案刷新日：" + (d.updated_at || fallbackDate);
+        dossierFootDate.textContent = bmPrefix + "档案编辑日期：" + (d.updated_at || fallbackDate);
       }
       syncStockStepButtons();
       if (dossierBadges) dossierBadges.scrollLeft = 0;
@@ -2840,14 +2848,19 @@
       let rows = ahRowsAll.filter(function (r) {
         if (ahFilter === "a-cheaper") return isFiniteNum(r.ah_premium_pct) && r.ah_premium_pct < 0;
         if (ahFilter === "hk-connect-wins") return isFiniteNum(r.net_div_spread) && r.net_div_spread > 0;
-        if (ahFilter === "a-div-wins") return isFiniteNum(r.net_div_spread) && r.net_div_spread <= 0 && isFiniteNum(r.a_div_pct) && r.a_div_pct > 0;
+        if (ahFilter === "a-div-wins") return isFiniteNum(r.net_div_spread) && r.net_div_spread < 0;
         if (ahFilter === "high-prem") return isFiniteNum(r.ah_premium_pct) && r.ah_premium_pct >= 50;
         return true;
       });
       rows = rows.slice().sort(function (a, b) {
         const va = a[ahSortKey];
         const vb = b[ahSortKey];
-        if (isFiniteNum(va) && isFiniteNum(vb)) return (va - vb) * ahSortDir;
+        if (isFiniteNum(va) && isFiniteNum(vb)) {
+          if (ahSortKey === "net_div_spread" && a.dividend_period !== b.dividend_period) {
+            return String(b.dividend_period || "").localeCompare(String(a.dividend_period || ""));
+          }
+          return (va - vb) * ahSortDir;
+        }
         if (isFiniteNum(va)) return -1;
         if (isFiniteNum(vb)) return 1;
         return String(a.name || "").localeCompare(String(b.name || ""), "zh-Hans-CN") * ahSortDir;
@@ -2867,11 +2880,42 @@
             ? '<div class="ah-bi-track"><div class="ah-bi-left"><span class="ah-bi-fill ah-bi-disc" style="width:' + barPct + '%;"></span></div><div class="ah-bi-right"></div></div>'
             : '<div class="ah-bi-track"><div class="ah-bi-left"></div><div class="ah-bi-right"><span class="ah-bi-fill ah-bi-prem" style="width:' + barPct + '%;"></span></div></div>';
         const aDiv = isFiniteNum(r.a_div_pct) ? r.a_div_pct.toFixed(2) + "%" : "—";
-        const hDivNet = isFiniteNum(r.h_connect_after_tax_div) ? r.h_connect_after_tax_div.toFixed(2) + "%" : "—";
-        const taxTag = r.h_tax_rate_pct ? "（扣" + r.h_tax_rate_pct + "%税）" : "";
-        const spreadTxt = isFiniteNum(r.net_div_spread)
-          ? (r.net_div_spread > 0 ? "港通高 +" + r.net_div_spread.toFixed(2) + "pp" : "A股高 +" + Math.abs(r.net_div_spread).toFixed(2) + "pp")
-          : "无股息差对比";
+        const hValue = r.h_local_cash || r.h_tax_pending || r.no_cash_dividend ? r.h_div_pct : r.h_connect_after_tax_div;
+        const hDividend = isFiniteNum(hValue) ? hValue.toFixed(2) + "%" : "—";
+        let hDividendLabel = "H 港股通税后";
+        if (r.h_local_cash) hDividendLabel = "H 香港登记股东税前";
+        else if (r.h_tax_pending) hDividendLabel = "H 港股通税前";
+        else if (r.no_cash_dividend) hDividendLabel = "H 本期现金股息";
+        else if (r.h_not_eligible) hDividendLabel = "H 本期分派不适用";
+        const taxTag = isFiniteNum(hValue) && !r.h_local_cash && !r.no_cash_dividend && r.h_tax_rate_pct
+          ? "（按 " + r.h_tax_rate_pct + "% 测算）" : "";
+        let spreadTxt = r.no_cash_dividend ? "两地本期均未派息" : "同口径股息待核";
+        if (r.h_not_eligible) spreadTxt = "H 股本期未参与分派";
+        if (isFiniteNum(r.net_div_spread)) {
+          const spread = r.net_div_spread;
+          spreadTxt = spread === 0 ? "税后息差持平"
+            : (spread > 0 ? "港股通高 " : "A股高 ") + Math.abs(spread).toFixed(2) + " 个百分点";
+        }
+        const dividendSources = r.dividend_sources || {};
+        const dividendNoteHtml = escHtml(r.dividend_basis || "股息资料待核") + ["a", "h"].map(function (side) {
+          const urls = Array.isArray(dividendSources[side]) ? dividendSources[side] : [];
+          return urls.map(function (url, index) {
+            const label = side.toUpperCase() + " 股息来源" + (urls.length > 1 ? " " + (index + 1) : "");
+            return typeof url === "string" && url.startsWith("https://")
+              ? ' <a href="' + escHtml(url) + '">' + label + "</a>"
+              : "";
+          }).join("");
+        }).join("");
+        const quoteProvenance = escHtml([r.quote_date || "同日行情待核", r.quote_source].filter(Boolean).join(" · ")) +
+          [["收盘来源", r.quote_urls], ["报价原始行", r.quote_replay_urls]].map(function (entry) {
+            const urls = entry[1] || {};
+            return ["a", "h"].map(function (side) {
+              const url = urls[side];
+              return typeof url === "string" && url.startsWith("https://")
+                ? ' <a href="' + escHtml(url) + '">' + side.toUpperCase() + " " + entry[0] + "</a>"
+                : "";
+            }).join("");
+          }).join("");
         const btns = [];
         if (r.a_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.a_key) + '">A 7维</button>');
         if (r.h_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.h_key) + '">H 7维</button>');
@@ -2894,9 +2938,12 @@
           premTxt: premTxt,
           barHtml: barHtml,
           aDiv: aDiv,
-          hDivNet: hDivNet,
+          hDividend: hDividend,
+          hDividendLabel: hDividendLabel,
           taxTag: taxTag,
           spreadTxt: spreadTxt,
+          dividendNoteHtml: dividendNoteHtml,
+          quoteProvenance: quoteProvenance,
           btnsHtml: btns.join(""),
         };
       });
@@ -2915,9 +2962,9 @@
               return (
                 "<tr>" +
                 '<td><strong>' + escHtml(r.name) + '</strong><div class="sec-sub">' + escHtml(r.a_code) + " / " + escHtml(r.h_code) + "</div></td>" +
-                '<td><div>A: ' + escHtml(r.a_price || "—") + '</div><div class="sec-sub">H: ' + escHtml(r.h_price || "—") + "</div></td>" +
+                '<td><div>A: ' + escHtml(r.a_price || "—") + '</div><div>H: ' + escHtml(r.h_price || "—") + '</div><div class="sec-sub">' + x.quoteProvenance + "</div></td>" +
                 '<td><span class="' + x.premCls + '">' + escHtml(x.premTxt) + "</span>" + x.barHtml + "</td>" +
-                '<td><div>A 持有>1年免税: <strong>' + escHtml(x.aDiv) + '</strong></div><div class="sec-sub">H 港股通税后: <strong>' + escHtml(x.hDivNet) + "</strong>" + escHtml(x.taxTag) + "</div></td>" +
+                '<td><div>A 持有>1年免税: <strong>' + escHtml(x.aDiv) + '</strong></div><div class="sec-sub">' + escHtml(x.hDividendLabel) + '：<strong>' + escHtml(x.hDividend) + "</strong>" + escHtml(x.taxTag) + '</div><div class="sec-sub">' + x.dividendNoteHtml + "</div></td>" +
                 '<td><div><span class="ah-verdict-pill ah-v-' + escHtml(r.verdict_tone || "neutral") + '">' + escHtml(r.verdict_label || "均衡") + '</span></div><div class="sec-sub">' + escHtml(x.spreadTxt) + "</div></td>" +
                 '<td><div style="display:flex;gap:5px;flex-wrap:wrap;">' + x.btnsHtml + "</div></td>" +
                 "</tr>"
@@ -2945,8 +2992,8 @@
                 '<div style="text-align:right;"><span class="' + x.premCls + '">AH ' + escHtml(x.premTxt) + "</span>" + x.barHtml + "</div>" +
                 "</div>" +
                 '<div class="ah-mcard-grid">' +
-                '<div><div>A 股参考：<strong>' + escHtml(r.a_price || "—") + '</strong></div><div>H 股参考：<strong>' + escHtml(r.h_price || "—") + "</strong></div></div>" +
-                '<div><div>A 免税息：<strong>' + escHtml(x.aDiv) + '</strong></div><div>H 港通税后：<strong>' + escHtml(x.hDivNet) + "</strong>" + escHtml(x.taxTag) + "</div></div>" +
+                '<div><div>A 股参考：<strong>' + escHtml(r.a_price || "—") + '</strong></div><div>H 股参考：<strong>' + escHtml(r.h_price || "—") + '</strong></div><div class="sec-sub">' + x.quoteProvenance + "</div></div>" +
+                '<div><div>A 免税息：<strong>' + escHtml(x.aDiv) + '</strong></div><div>' + escHtml(x.hDividendLabel) + '：<strong>' + escHtml(x.hDividend) + "</strong>" + escHtml(x.taxTag) + '</div><div class="sec-sub">' + x.dividendNoteHtml + "</div></div>" +
                 "</div>" +
                 '<div class="ah-mcard-actions">' +
                 '<div><span class="ah-verdict-pill ah-v-' + escHtml(r.verdict_tone || "neutral") + '">' + escHtml(r.verdict_label || "均衡") + '</span> <span class="sec-sub">' + escHtml(x.spreadTxt) + "</span></div>" +
@@ -3628,9 +3675,9 @@
   const capTierHint = document.getElementById("cap-tier-hint");
   const CAP_TIER_HINTS = {
     all: "当前展示全部档位：建议先留足 3–6 个月活钱与基础保障，再按期限匹配稳钱与长钱。",
-    "1-5w": "1–5 万刚起步档：优先 1 元起投的活钱工具、短融/债券 ETF 与低费场外定投；已为您柔和淡化 20 万起购大额存单及 300 万门槛渠道。",
+    "1-5w": "1–5 万刚起步档：优先 1 元起投的活钱工具、短融/债券 ETF 与低费场外定投；已为您柔和淡化 20 万起购大额存单及 合格投资者渠道。",
     "10-20w": "10–20 万攒桶金档：可按四笔钱比例搭配活钱池 + 储蓄国债/债券 ETF/银行理财 + 低费宽基 ETF；已淡化 300 万合格投资者渠道。",
-    "30-50w": "30–50 万家庭配档：可全盘组合活钱、50 万单行存保线内存款、债券与跨境锁汇工具；300 万专享私募信托仍为您标示淡化提醒。",
+    "30-50w": "30–50 万家庭配档：可全盘组合活钱、50 万单行存保线内存款、债券与跨境锁汇工具；需核验资格的私募与标品信托仍为您标示淡化提醒。",
   };
 
   if (capTierBtns.length > 0) {
@@ -3821,7 +3868,7 @@
               "</div>"
             );
           }).join("") +
-          "</div>";
+          "</div>" + researchEvidenceHtml(it.evidence);
 
         etfModalBody.innerHTML =
           '<div class="modal-tab-bar">' +
@@ -4686,7 +4733,7 @@
   const walletDataEl = document.getElementById("wallet-calc-data");
   const walletBox = document.querySelector("[data-wallet-calc]");
   if (walletDataEl && walletBox) {
-    let wCfg = { gold_new_buy_allowed: false, eq_cap_pct: 35, gold_cap_pct: 10 };
+    let wCfg = { gold_new_buy_allowed: false, eq_cap_pct: null, gold_cap_pct: 10 };
     try {
       const parsed = JSON.parse(walletDataEl.textContent || "{}");
       if (parsed && typeof parsed === "object") wCfg = Object.assign(wCfg, parsed);
@@ -4721,8 +4768,8 @@
     function computeWalletPlan() {
       const total = Math.max(1000, Math.round(curWan * 10000));
       const prof = PROFILES[curProfile] || PROFILES.balanced;
-      const goldAllowed = !!wCfg.gold_new_buy_allowed;
-      const eqCap = isFiniteNum(wCfg.eq_cap_pct) ? Math.max(15, Math.min(60, wCfg.eq_cap_pct)) : 35;
+      const goldAllowed = wCfg.gold_new_buy_allowed === true;
+      const eqCap = isFiniteNum(wCfg.eq_cap_pct) ? Math.max(0, Math.min(100, wCfg.eq_cap_pct)) : 0;
 
       // Respect live market equity cap: trim aggressive equity if market is red-light capped
       let eqPct = Math.min(prof.equity, eqCap);
@@ -4749,9 +4796,11 @@
       const singleStockCap = Math.round(total * 0.08);
       const cashPlusStable = liqAmt + stabAmt;
 
-      const liqVehicle = liqAmt < 12000
-        ? "货币基金 / 周四国债逆回购（1 元起投；活钱低于 1.2 万暂不配 511360）"
-        : "短融 ETF（511360，约 1.14 万/手）+ 周四国债逆回购 + 货基";
+      const shortBondLot = isFiniteNum(wCfg.short_bond_lot_rmb) && wCfg.short_bond_lot_rmb > 0 ? wCfg.short_bond_lot_rmb : null;
+      const canCoverLot = shortBondLot != null && liqAmt >= shortBondLot;
+      const liqVehicle = canCoverLot
+        ? "短融 ETF（511360）/ 国债逆回购 / 货币基金"
+        : "货币基金（起点看产品）/ 国债逆回购（1,000 元面额起）";
       const stabVehicle = cashPlusStable > 500000
         ? "储蓄国债 / 政金债 ETF / 拆存 " + Math.ceil(cashPlusStable / 470000) + " 家银行存款（单行 ≤47万）"
         : "储蓄国债 / 债券 ETF（511260/511010）/ 单行 50 万内存款";
@@ -4772,6 +4821,8 @@
         stabVehicle: stabVehicle,
         eqVehicle: eqVehicle,
         multiVehicle: multiVehicle,
+        shortBondLot: shortBondLot,
+        canCoverLot: canCoverLot,
       };
     }
 
@@ -4833,8 +4884,15 @@
         } else {
           rules.push("🥇 黄金上限纪律：任何情形下家庭黄金总占比严控 10%–15%，不加杠杆。");
         }
-        if (p.liqAmt < 12000) {
-          rules.push("💧 511360 门槛自动切换：当前活钱 " + fmtRmb(p.liqAmt) + " 低于 12,000 元（短融 ETF 100 份约 1.14 万元起步），已自动切换为 1 元起投的货币基金 / 1,000 元起投国债逆回购。");
+        if (!isFiniteNum(wCfg.eq_cap_pct)) {
+          rules.push("权益仓位上限待核，本次权益金额暂按 0 元。");
+        }
+        if (p.shortBondLot == null) {
+          rules.push("511360 的参考价待核，请按券商盘口确认 100 份所需金额。");
+        } else {
+          const refDate = wCfg.short_bond_quote_date ? "（" + wCfg.short_bond_quote_date + "）" : "";
+          rules.push("511360 的 100 份参考金额 " + fmtRmb(Math.ceil(p.shortBondLot)) + refDate +
+            (p.canCoverLot ? "，成交金额以实际盘口为准。" : "，当前活钱未达到这个金额。"));
         }
         if (p.cashPlusStable > 500000) {
           const banks = Math.ceil(p.cashPlusStable / 470000);
@@ -4932,6 +4990,32 @@
   /* ------------------------------------------------------------------------
      17. QDII On-Exchange Premium vs OTC Queue Breakeven Calculator
      ------------------------------------------------------------------------ */
+  function qdiiQueueBreakeven(total, dailyLimit, premiumPct) {
+    const days = Math.ceil(total / dailyLimit);
+    if (premiumPct <= 0) return 0;
+
+    const targetUnits = total / (1 + premiumPct / 100);
+    if (Math.min(total, dailyLimit) >= targetUnits) return null;
+
+    const intervals = days - 1;
+    const lastPayment = total - intervals * dailyLimit;
+    function queueUnits(logGrowth) {
+      const logDaily = logGrowth / intervals;
+      const fullPayments = Math.expm1(-logGrowth) / Math.expm1(-logDaily);
+      return dailyLimit * fullPayments + lastPayment * Math.exp(-logGrowth);
+    }
+
+    let low = 0;
+    let high = 1;
+    while (queueUnits(high) > targetUnits) high *= 2;
+    for (let step = 0; step < 60; step++) {
+      const middle = (low + high) / 2;
+      if (queueUnits(middle) > targetUnits) low = middle;
+      else high = middle;
+    }
+    return Math.expm1(high) * 100;
+  }
+
   const qdiiCalc = document.querySelector("[data-qdii-calc]");
   if (qdiiCalc) {
     const premIn = qdiiCalc.querySelector("[data-qcalc-prem]");
@@ -4941,39 +5025,39 @@
     const outEl = qdiiCalc.querySelector("[data-qcalc-out]");
 
     function renderQdiiCalc() {
-      const prem = Math.max(0, Math.min(80, parseFloat(premIn && premIn.value) || 0));
-      const wan = Math.max(0.1, Math.min(5000, parseFloat(amtIn && amtIn.value) || 5));
-      const dailyLim = Math.max(10, Math.min(1000000, parseFloat(limIn && limIn.value) || 1000));
-      const totalRmb = Math.round(wan * 10000);
-      const days = Math.ceil(totalRmb / dailyLim);
-      const months = (days / 21).toFixed(1);
-      const premCost = Math.round((totalRmb * prem) / (100 + prem));
-      // Average capital enters midway through queue, so market must rally ~2x premium during queue to break even
-      const breakevenRally = (prem * 2).toFixed(1);
-
+      const prem = premIn.valueAsNumber;
+      const total = Math.round(amtIn.valueAsNumber * 1000000);
+      const dailyLimit = Math.round(limIn.valueAsNumber * 100);
       limPresets.forEach(function (b) {
-        b.classList.toggle("active", Number(b.getAttribute("data-qcalc-lim-preset")) === dailyLim);
+        b.classList.toggle("active", Number(b.getAttribute("data-qcalc-lim-preset")) * 100 === dailyLimit);
       });
-
-      let verdictCls = "qcalc-ok";
-      let verdictTxt = "溢价处于 1.5% 以内温和区间：可对比场内买卖价差与场外申购费，若急于一次性建仓成本可控。";
-      if (prem > 3.0) {
-        verdictCls = "qcalc-danger";
-        verdictTxt = "高危溢价陷阱（> 3%）：场内硬买即刻多付 " + premCost.toLocaleString("en-US") + " 元溢价；除非底层在 " + days + " 个交易日内暴涨超 " + breakevenRally + "%，否则溢价回落将造成直接实亏！强烈建议改用官方直销 App 提高单日限额，或拆分多只同赛道场外联接按净值定投。";
-      } else if (prem > 1.5) {
-        verdictCls = "qcalc-warn";
-        verdictTxt = "溢价偏高（1.5%–3.0%）：建议优先核查基金公司官方直销 App 是否给出更高限额（常为支付宝/三方的 5–10 倍），尽量按净值分批申购减少无谓磨损。";
+      if (!outEl) return;
+      if (!isFiniteNum(prem) || prem <= -100 || !Number.isSafeInteger(total) || total <= 0 ||
+          !Number.isSafeInteger(dailyLimit) || dailyLimit < 0) {
+        outEl.textContent = "请填写有效的折溢价、投入金额和场外限额。暂停申购填 0。";
+        return;
       }
-
-      if (outEl) {
-        outEl.innerHTML =
-          '<div class="qcalc-metrics">' +
-          '<div class="qcalc-m"><div class="qcalc-m-lbl">场外排队所需交易日</div><div class="qcalc-m-val">' + days + ' 日（约 ' + months + ' 个月）</div></div>' +
-          '<div class="qcalc-m"><div class="qcalc-m-lbl">场内硬追即刻溢价成本</div><div class="qcalc-m-val">¥' + premCost.toLocaleString("en-US") + '</div></div>' +
-          '<div class="qcalc-m"><div class="qcalc-m-lbl">排队期打平需标的上涨</div><div class="qcalc-m-val">约 +' + breakevenRally + '%</div></div>' +
-          "</div>" +
-          '<div class="qcalc-verdict ' + verdictCls + '">' + escHtml(verdictTxt) + "</div>";
+      const executionGap = (total - total / (1 + prem / 100)) / 100;
+      const gapLabel = prem < 0 ? "场内折价节省" : "场内溢价成本";
+      const gapText = "¥" + Math.abs(executionGap).toLocaleString("en-US", { maximumFractionDigits: 2 });
+      let daysText = "暂停申购";
+      let rallyText = "暂停申购，无法比较";
+      if (dailyLimit > 0) {
+        const days = Math.ceil(total / dailyLimit);
+        daysText = days.toLocaleString("en-US") + " 日";
+        const rally = qdiiQueueBreakeven(total, dailyLimit, prem);
+        if (rally === null) rallyText = days === 1 ? "可同日买齐，无排队收益" : "无有限涨幅可打平";
+        else if (!isFiniteNum(rally)) rallyText = "所需涨幅超出显示范围";
+        else if (rally === 0) rallyText = "0%";
+        else if (rally < 0.01) rallyText = "小于 0.01%";
+        else rallyText = "约 +" + rally.toLocaleString("en-US", { maximumFractionDigits: 2 }) + "%";
       }
+      outEl.innerHTML =
+        '<div class="qcalc-metrics">' +
+        '<div class="qcalc-m"><div class="qcalc-m-lbl">场外排队所需交易日</div><div class="qcalc-m-val">' + daysText + '</div></div>' +
+        '<div class="qcalc-m"><div class="qcalc-m-lbl">' + gapLabel + '</div><div class="qcalc-m-val">' + gapText + '</div></div>' +
+        '<div class="qcalc-m"><div class="qcalc-m-lbl">排队期打平需标的上涨</div><div class="qcalc-m-val">' + rallyText + '</div></div>' +
+        '</div>';
     }
 
     [premIn, amtIn, limIn].forEach(function (inp) {

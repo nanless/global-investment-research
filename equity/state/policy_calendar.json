@@ -7,14 +7,14 @@
     {
       "id": "global_sp_france_neg_boj_ueda_mon0905_20261128",
       "date_cst": "2026-11-28",
-      "time_cst": "11:30",
+      "time_cst": "05:08",
       "home_featured": true,
       "region": "EU",
-      "category": "central_bank",
+      "category": "fiscal_policy",
       "impact_tier": "P0",
-      "authority": "标普全球评级（S&P）· 日本央行官网",
-      "headline": "标普周六凌晨下调法国展望至负面，日本央行行长植田和男确认周一 09:05 名古屋重磅演讲",
-      "summary": "周六凌晨外围连爆两大重磅事件：标普维持法国 A+/A-1 主权评级但将展望由稳定下调至负面（三季度收缩、2027 财赤料达 5.3% 突破 5% 红线，三大评级机构全面转负，法债 10 年期 4.74% 倒挂意债 4.32%）；同日日本央行官网排定行长植田和男将于北京时间周一 11/30 09:05 在名古屋发表演讲，直撞美元兑日元 159.54 财务省干预警戒线。",
+      "authority": "标普全球评级",
+      "headline": "标普将法国主权长期评级展望调为负面，维持 A+ 评级",
+      "summary": "标普评级行动记录显示，11/27 16:08 美东时间（北京时间 11/28 05:08），法国本币和外币长期主权评级维持 A+，展望由稳定改为负面。标普新闻稿维持短期 A-1，并指出财政整顿风险。",
       "affected_markets": [
         "non_us_global_satellite",
         "us_stock",
@@ -23,8 +23,8 @@
         "hk_stock",
         "a_share"
       ],
-      "market_impact": "欧日主权债与日元套息交易将在周一早盘同步承压：切勿盲追高溢价日经基金（513520），非美卫星仅平价观察折价东证 513800 与低溢价德股 159561，黄金严守 2/4 关红灯停新仓 0%。",
-      "source_url": "https://www.boj.or.jp/en/about/press/koen_2026/index.htm"
+      "market_impact": "观察法国与德国同期限国债利差，区分法国财政风险与欧洲长端利率整体波动。",
+      "source_url": "https://www.spglobal.com/ratings/en/regulatory/ratings-actions?app=sp&id=1498020"
     },
     {
       "id": "us_fed_reserves_breach_srf_23b_us10y_494_20261128",
@@ -35,16 +35,23 @@
       "category": "liquidity_treasury",
       "impact_tier": "P0",
       "authority": "美联储 · 纽约联储 · 芝加哥期权交易所",
-      "headline": "纽约联储黑五 231.5 亿回购全在早场（午场归零），Cboe 恐慌官行 23.81 落定、13:00 进缄默期",
-      "summary": "周六午间逐项核销美盘尾数：美联储周报确认银行准备金跌破 2.98 万亿红线至 2.929 万亿，黑五纽约联储常备回购 231.5 亿美元（98.27% 美债抵押）全部集中于 08:15 早场、13:30 午场归零，将于周一到期直撞 815.1 亿美元美债私营净抽水；Cboe 已补录 11/27 恐慌官行 23.81，黑五盘后及美证监会公告零突袭，美联储将于今日 13:00 正式进入 12/10 议息缄默期。",
+      "headline": "美联储周报显示银行准备金约 2.929 万亿美元，Cboe 历史日线收报 23.81",
+      "summary": "美联储 11/27 周报显示，11/25 存款机构准备金余额为 2.928659 万亿美元。Cboe 11/27 恐慌指数历史日线收报 23.81。美国议息会议日期为 12/08–09 美东时间，按外部沟通规则换算，北京时间 11/28 13:00 进入缄默期。",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
         "gold",
         "hk_stock"
       ],
-      "market_impact": "黑五标普仅靠三成薄量收 7,297.49 仍低年线 54.5 点，叠加 4.94% 10 年美债与 2.79% 实际利率，严守美股红灯（28% 防弹衣 + 62% 超短美债）与黄金 2/4 红灯新仓 0%。",
-      "source_url": "https://www.federalreserve.gov/releases/h41/current/"
+      "market_impact": "实际利率、准备金与交易流动性分别观察。市场波动下降当天，仍需留意后续信用与流动性压力。",
+      "source_url": "https://www.federalreserve.gov/releases/h41/20261127/",
+      "source_urls": [
+        "https://www.newyorkfed.org/markets/desk-operations/repo",
+        "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+        "https://www.federalreserve.gov/newsevents/2026-December.htm",
+        "https://www.federalreserve.gov/monetarypolicy/files/FOMC_RulesAuthPamphlet_202601.pdf",
+        "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?field_tdr_date_value_month=202611&type=daily_treasury_yield_curve"
+      ]
     },
     {
       "id": "gold_sat_brand_1093_gld_zero_agtd_cbrt_20261128",
@@ -55,15 +62,19 @@
       "category": "market_structure",
       "impact_tier": "P0",
       "authority": "美国道富 · VanEck · 上金所 · 路透",
-      "headline": "周六品牌金饰涨至 1,093 元扩婚庆省幅至 279 元，GLD 单日零净申赎且土央行停购本土矿金",
-      "summary": "周六早间国内品牌金饰提价 20–25 元（周大福 1,093 元、老凤祥/周生生 1,092 元），而四大行金条锁周五均价 796 元（加打金 814 元，婚庆每克立省扩至 279 元），且工行主动积存 0 买费已无缝延至 2027-03-31；官表核销 11/27 伦敦午盘金定盘 3,634.50 美元、道富 GLD 净值 332.98 美元但单日 0.00 吨零净申赎（全周流出 6.56 吨）、GDX 净值 78.89 美元（规模 247.7 亿）、上金白银延期交收骤降九成翻回多付空，且土耳其央行 11/26 起暂停行使本土矿产金优先购金权。",
+      "headline": "道富与 VanEck 公布黄金相关基金净值，上金所发布 11 月 27 日行情",
+      "summary": "道富公布 GLD 每份净值 332.98 美元，VanEck 公布 GDX 每份净值 78.89 美元。上海黄金交易所显示 Au99.99 收于每克 784 元，白银延期交收当日补偿费方向为多付空。",
       "affected_markets": [
         "gold",
         "a_share",
         "rates_bonds_core"
       ],
-      "market_impact": "四项官方终值全齐但实际利率 2.79% 与 2 年利差 +81 基点死锁前两关，买金严格维持 2/4 关红灯停新仓 0%，拒因周六门店涨价或旧促销误导盲目买金。",
-      "source_url": "https://www.sge.com.cn/sjzx/quotation_daily_new"
+      "market_impact": "净值、申赎估算和首饰零售价口径不同。黄金维持四关中的两关通过，红灯停新仓 0%。",
+      "source_url": "https://www.sge.com.cn/sjzx/quotation_daily_new?end_date=2026-11-27&start_date=2026-11-27",
+      "source_urls": [
+        "https://www.ssga.com/us/en/individual/etfs/spdr-gold-shares-gld",
+        "https://www.vaneck.com/us/en/investments/gold-miners-etf-gdx/"
+      ]
     },
     {
       "id": "cn_pboc_stability_dual_rules_qa_20261128",
@@ -74,15 +85,18 @@
       "category": "central_bank",
       "impact_tier": "P0",
       "authority": "中国人民银行（2026 金融稳定报告 · 公告第 30 号 · 令第 5 号）",
-      "headline": "央行金融稳定报告研究非银流动性支持，并答记者问细化 10 万大额存单 9 档期限与线上同权",
-      "summary": "中国人民银行最新金融稳定报告显示约 98% 银行业资产处于安全边界，并提出研究探索面向非银金融机构的制度化流动性支持机制；同时就 11/27 晚发布的双规（2027-03-21 生效）答记者问：公告第 30 号明确 10 万起新大额存单设 9 档期限、引入 Shibor/DR 浮息基准及交易中心/上海清算所转让底座，令第 5 号重申禁违规手工补息、明确按 365 天计日息及线上展示利率与网点同权。",
+      "headline": "央行公布大额存单规则，个人认购起点调整自 2027 年 3 月 21 日施行",
+      "summary": "人民银行公布新《大额存单管理办法》，自 2027 年 3 月 21 日起施行。个人认购起点不低于 10 万元，共九档标准期限。过渡期仍按现行制度和银行产品条款执行。",
       "affected_markets": [
         "a_share",
         "rates_bonds_core",
         "hk_stock"
       ],
-      "market_impact": "中期稳固中国金融体系安全垫与存款规范，现行大额存单仍按 20 万起执行；死守单行 50 万存保红线、二手单严禁提前支取，债券端关注下周三 12/02 810 亿国债招标。",
-      "source_url": "https://www.pbc.gov.cn/"
+      "market_impact": "购买前核对发行主体、认购起点、期限和可转让性。二手转让的收益按成交价和合同的计息、支取规则核算。",
+      "source_url": "https://www.xinhuanet.com/fortune/20261127/30d3692caed241879699201440e2eaf6/c.html",
+      "source_urls": [
+        "https://wzdig.pbc.gov.cn/search/pcRender?pageId=c177a85bd02b4114bebebd210809f691"
+      ]
     },
     {
       "id": "cn_state_council_broad_etf_huahong_st_20261128",
@@ -93,15 +107,19 @@
       "category": "top_politics",
       "impact_tier": "P0",
       "authority": "国务院常务会议 · 上交所 · 深交所",
-      "headline": "国常会首提国家队后盘后资金分化，周六华虹发 75.6 亿折价定增、科创板首现市值退市",
-      "summary": "11/27 国常会首提国家队与类平准基金引爆 2 万亿行情后，资金呈现宽基净流入逾 395 亿而科创 50 反向赎回 -34.79 亿及中金所机构净空增 1.8 万手的剧烈分化；周六上交所披露华虹半导体（688347）正式发行 75.56 亿元定增（128.06 元较市价深折近四成，24 家机构锁 6 个月），同时 *ST卓然（688121）成科创板首例市值退市（12/04 摘牌），湘财股份与大智慧终止合并。",
+      "headline": "国常会研究资本市场投融资改革，上证指数收报 3,606.49 点",
+      "summary": "国务院常务会议提出加力发挥“国家队”稳市作用、优化中央汇金公司的类平准基金功能，并推动上市公司加大分红回购力度。上交所披露上证指数收报 3,606.49 点。政策工具用量及启动时间待后续披露。",
       "affected_markets": [
         "a_share",
         "hk_stock",
         "rates_bonds_core"
       ],
-      "market_impact": "周一迎 11 月制造业采购经理指数、降保 80% 与明晟剔除 22 只 A 股大考；严守 A 股红灯（3.0/6、上限 <=40%），拒追暴涨芯片、华虹定增股与问题退市股。",
-      "source_url": "https://www.sse.com.cn/"
+      "market_impact": "把会议部署与资金是否实际入市分别跟踪。观察量能和行业涨幅扩散，也核对个别公司公告。",
+      "source_url": "https://www.mee.gov.cn/ywdt/szyw/202611/t20261127_1187530.shtml",
+      "source_urls": [
+        "https://www.sse.com.cn/market/sseindex/overview/",
+        "https://www.sse.com.cn/aboutus/mediacenter/conference/c/10839279/files/48e2348d45b64de68e8cdc0c213af6e1.pdf"
+      ]
     },
     {
       "id": "hk_night_futures_22802_evergrande_delist_sfc_20261128",
@@ -112,14 +130,18 @@
       "category": "market_structure",
       "impact_tier": "P0",
       "authority": "香港交易所 · 香港金管局 · 香港证监会",
-      "headline": "恒指夜期高水 +107 点迎周一检验，港交所决定取消恒大汽车上市地位、证监会警示仿冒网站",
-      "summary": "美团业绩电话会反转带动恒指 12 月夜期收报 22,802（高水 +107 点），金管局 11/27 总结余稳守 541.14 亿港元；监管侧港交所上市委员会决定取消恒大汽车（00708.HK）上市地位（若不复核拟 12/11 末日交易、12/14 退市），同时香港证监会紧急警示仿冒钓鱼域名 wings-sfc.hk。",
+      "headline": "港交所上市委员会决定取消恒大汽车上市，香港证监会警示仿冒网站",
+      "summary": "恒大汽车公告显示，公司有权申请复核。若不复核，股票最后上市日为 12 月 11 日，12 月 14 日 09:00 起取消上市地位，期间继续停牌。香港证监会将仿冒域名列入警示名册。11 月 27 日香港金管局公布收市总结余为 541.14 亿港元。",
       "affected_markets": [
         "hk_stock",
         "a_share"
       ],
-      "market_impact": "周一迎日央行演讲、夜期高开承接检验与明晟剔除 15 港股及纳中际 H（03308.HK），随后 12/04 迎恒生合并季检；严守港股红灯上限，远离问题退市股与倒挂宁德 H 股。",
-      "source_url": "https://www.hkex.com.hk/"
+      "market_impact": "持有人应核对公司是否申请复核、何时取消上市和停牌期间安排。留意两轮指数调整前后的收市竞价流动性。",
+      "source_url": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/1127/2026112701935.pdf",
+      "source_urls": [
+        "https://www.sfc.hk/TC/alert-list/3572",
+        "https://www.hkma.gov.hk/eng/data-publications-and-research/data-and-statistics/daily-monetary-statistics/"
+      ]
     },
     {
       "id": "global_opec_42nd_brent_jan_roll_20261128",
@@ -130,8 +152,8 @@
       "category": "geopolitics_energy",
       "impact_tier": "P0",
       "authority": "产油国联盟（OPEC+）· 国际能源交易所",
-      "headline": "周日 19:00 第 42 届油盟线上会直面产能审计分歧，布油 1 月合约周一到期换月贴水 4.60 美元",
-      "summary": "周日 19:00 产油国联盟 7 国核心自愿减产组（不含已退出的阿联酋）召开部长会，敲定 2027 产油基线与 200 万桶/日减产顺延，伊拉克与哈萨克斯坦对产能初评存分歧；同时布伦特 1 月合约（黑五官收 95.44 美元）将于周一 11/30 到期摘牌，周二连续行情切至 2 月合约 90.84 美元将自然显现 -4.60 美元视觉落差。",
+      "headline": "产油国联盟两场会议均排在 11 月 29 日，布油周一关注换月价差",
+      "summary": "产油国联盟已公布第 42 届部长级会议日期，七个自愿减产国家也另行安排同日会议。具体时刻与产量安排以各自公告为准。布伦特原油 1 月合约周一到期，切换到 2 月合约时，比较前后两张合约的价格区分换月跳变和实际涨跌。",
       "affected_markets": [
         "us_stock",
         "gold",
@@ -139,8 +161,11 @@
         "a_share",
         "hk_stock"
       ],
-      "market_impact": "切勿把布油换月 4.60 美元天然贴水误判为通胀警报解除或油价崩盘；雪佛龙与中海油底仓稳守现仓不赌单边，黄金维持 2/4 红灯停新仓 0%。",
-      "source_url": "https://www.opec.org/opec_web/en/"
+      "market_impact": "比较同一时刻的 1 月与 2 月合约价格，避免把切换报价基准引起的跳变当作油价本身下跌。观察最新产量决定及执行力度。",
+      "source_url": "https://www.opec.org/pr-detail/605-7-june-2026.html",
+      "source_urls": [
+        "https://www.ice.com/products/219/brent-crude-futures/expiry"
+      ]
     },
     {
       "id": "cn_qdii_513300_159980_159985_bonds_20261128",
@@ -151,16 +176,16 @@
       "category": "market_structure",
       "impact_tier": "P1",
       "authority": "上交所 · 深交所 · 基金公司官净",
-      "headline": "豆粕 159985 列券商重点监控至 12/01，有色 159980 官净翻正溢价 +1.23%，513300 周一停牌",
-      "summary": "11/27 正式官净核销全面收紧商品与跨境排雷：华夏豆粕 159985 真实溢价 +5.06% 且已被券商列重点监控证券至 12/01；大成有色 159980 官净 1.8829 真实状态由微折翻正为溢价 +1.23%；转债基金 511380 扩至 528.54 亿（溢价 +0.71%）、511180 扩至 116.30 亿（+0.33%）；截至周六 12:00 仍仅华夏纳指 513300 公告周一停牌 1 小时，159509 周一隐含溢价仍 +42.03%，白银 161226 静态溢价 +14.96% 且 2027 底退市。",
+      "headline": "华夏纳斯达克 100 基金公告 11 月 30 日开盘后临时停牌",
+      "summary": "华夏基金公告列明纳斯达克 100 基金（513300）的二级市场溢价风险与临时停牌安排。场内价格相对基金参考净值可能波动，复牌后的成交价和当日净值需分开核查。",
       "affected_markets": [
         "a_share",
         "us_stock",
         "non_us_global_satellite",
         "rates_bonds_core"
       ],
-      "market_impact": "零溢价美股定投首选南方 App 021000（限 200 元，大成 000834 周一起砍半至 50 元），非美优选折价东证 513800（-0.79%），坚决拒买所有高溢价跨境基、重点监控豆粕与退市白银基。",
-      "source_url": "https://www.szse.cn/"
+      "market_impact": "交易前重查复牌时间和最新溢价。场内停牌、场外限购与一级市场申赎分别以交易所和管理人具体公告为准。",
+      "source_url": "https://www.chinaamc.com/c/2026-11-28/1018978.shtml"
     },
     {
       "id": "eu_final_close_stagflation_sovereign_20261128",
@@ -171,16 +196,19 @@
       "category": "macro_data",
       "impact_tier": "P1",
       "authority": "法兰克福交易所 · 伦敦证交所 · 欧洲央行",
-      "headline": "欧股周五校准全线收高（德指 25,441），但标普降法国展望叠英债 5.195% 锁死 12 月欧英加息",
-      "summary": "11/27 欧洲主要股指最终官收全面走高（德国 DAX 25,441.24 / 斯托克 50 6,089.20 / 法国 CAC40 8,156.09 / 富时 100 10,698.81），伦交所爱尔兰基金同步校准 11/27 官收（CSPX 786.42 / VUAA 141.06 / VWRA 180.98 / XDEW 121.69 / IUIT 44.45）；但英债 10 年 5.195% 与标普下调法国展望负面令 12/17 欧英加息定价维持 80%–94%。",
+      "headline": "法国评级展望改为负面，市场等待欧洲央行 12 月决议",
+      "summary": "标普将法国长期主权评级展望从稳定下调为负面，评级维持 A+。欧洲央行日程列明 12 月 17 日议息。财政风险和欧元区政策预期可能共同影响长端利率。",
       "affected_markets": [
         "non_us_global_satellite",
         "us_stock",
         "rates_bonds_core",
         "gold"
       ],
-      "market_impact": "境内嘉实德股 159561 周一隐含溢价压回约 +0.28% 温和区间，离岸可看 VGK（11/27 官收 85.91 美元，+1.13%）与 VXUS（79.52 美元，+1.92%），严守溢价 <=2%。",
-      "source_url": "https://www.ecb.europa.eu/"
+      "market_impact": "分别观察法国与德国同期限国债利差和欧元区共同利率。基金报价须核对同市场同一收盘时点。",
+      "source_url": "https://www.spglobal.com/ratings/en/regulatory/ratings-actions?app=sp&id=1498020",
+      "source_urls": [
+        "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
+      ]
     },
     {
       "id": "us_wmt_cto_form144_nvda_mstr_btc_below60k_20261128",
@@ -191,14 +219,18 @@
       "category": "market_structure",
       "impact_tier": "P1",
       "authority": "美国证监会（SEC）· 明晟（MSCI）· Farside",
-      "headline": "黑五美股盘后及美证监会文件零突袭，比特币 59,980 美元、币基部分再流 -6,180 万迎微策略剔除",
-      "summary": "逐项核验 11/27 黑五美股盘后至周六 06:00 及美国证监会披露库，英伟达、沃尔玛、甲骨文、亚马逊、伯克希尔、雪佛龙与联合健康均无突发重大公告（仅沃尔玛首席技术官披露 439 万美元减持计划，英伟达 10-Q 季报仍待下周 12/04 死线前提交）；周六午间比特币在 59,980 美元拉锯（11/27 美国现货比特币基金已披露机构再净流出 -6,180 万美元，11 月累计流出逾 54.5 亿美元；依央行银发〔2026〕42号中国大陆 0% 严禁配仓、仅只读观察），微策略直面 12/01 05:00 明晟强卖。",
+      "headline": "沃尔玛高管提交拟售披露，明晟将调出 Strategy A",
+      "summary": "沃尔玛高管 11 月 27 日披露拟售 33,268 股，申报估值约 439 万美元。实售数量和成交额待后续披露。明晟公布，Strategy A 将在美东 11 月 30 日收盘后从相关指数剔除。众议院委员会公告确认英伟达管理层将赴国会接受访谈。",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core"
       ],
-      "market_impact": "美股科技维持新仓 0%，坚决拉黑 50 倍伪防御沃尔玛、高债甲骨文与微策略，聚焦伯克希尔与雪佛龙防弹底仓。",
-      "source_url": "https://www.sec.gov/edgar/searchedgar/companysearch"
+      "market_impact": "关注指数跟踪基金的实际调仓成交量，以及英伟达访谈公开信息。证券公告提交与交易执行分别核验。",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/104169/000195917326008341/primary_doc.xml",
+      "source_urls": [
+        "https://www.msci.com/downloads/web/msci-com/indexes/quarterly-index-review/insights-from-msci-november-2026-index-review.pdf",
+        "https://intelligence.house.gov/2026/11/17/jensen-huang-and-nvidia-agree-to-appear-before-congress/"
+      ]
     },
     {
       "id": "us_credit_ccc_1417_vix_skew_20261128",
@@ -209,15 +241,19 @@
       "category": "liquidity_treasury",
       "impact_tier": "P1",
       "authority": "圣路易斯联储（FRED）· 芝加哥期权交易所（Cboe）",
-      "headline": "Cboe 正式补录 11/27 恐慌官行 23.81 仍倒挂近月且偏度 145.90，CCC 垃圾债利差扩至 1,417 基点",
-      "summary": "周六午间直连芝加哥期权交易所官方历史日线表确认已正式发布 11/27 完整行（开 24.89 / 高 27.52 / 低 23.81 / 收 23.81），正式解除暂定标记；但现货仍高于近月期货 UX1（22.8402）且尾部对冲偏度升至 145.90，叠加 11/25 CCC 级深度垃圾债利差走阔至 1,417 基点，直逼 12/02 黑石私募信贷 BCRED 季度 5% 赎回闸门。",
+      "headline": "恐慌指数 11 月 27 日日线收报 23.81，日变动随比较基准不同",
+      "summary": "Cboe 历史日线的开、高、低、收为 24.89、27.52、23.81、23.81。对比历史文件上一行 26.80，降 11.16%；报价面板对比上一个常规交易日 28.29，降 15.84%。11 月 25 日美国 CCC 及以下高收益信用利差另按圣路易斯联储所载 ICE 序列独立观察。",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
         "gold"
       ],
-      "market_impact": "底部信用与尾部保费高企，离岸美元池坚守 62% 超短美债（SGOV/VBIL/IB01）筑防弹护城河。",
-      "source_url": "https://fred.stlouisfed.org/"
+      "market_impact": "股票期权波动率和低评级债券风险溢价分别追踪，不据单日读数判断信用风险解除。",
+      "source_url": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+      "source_urls": [
+        "https://www.cboe.com/data/quotes/vix/metrics",
+        "https://fred.stlouisfed.org/data/BAMLH0A3HYC"
+      ]
     },
     {
       "id": "jp_tokyo_cpi_usdjpy_15954_boj_20261128",
@@ -227,17 +263,20 @@
       "region": "JP",
       "category": "central_bank",
       "impact_tier": "P1",
-      "authority": "日本总务省 · 日本央行",
-      "headline": "日元钉在 159.54 干预红线前迎周一 09:05 植田演讲，12/18 日央行加息定价升至 76%–80%",
-      "summary": "在 11 月东京日央行版核心通胀 2.5% 与 10 年期美债 4.94% 夹击下，美元兑日元收报 159.54 紧贴 160 财务省干预红线；日本央行官网已排定行长植田和男于周一 11/30 09:05 在名古屋发表演讲，将成为 12/18 议息前最关键的政策前瞻窗口。",
+      "authority": "日本银行 · 日本总务省统计局",
+      "headline": "日本银行确认植田和男 11/30 09:05 在名古屋演讲",
+      "summary": "日本银行公表日程列明植田和男 11/30 日本时间 10:05 面向名古屋商界领袖演讲。日本总务省统计局公布的 11 月东京区部 CPI 初值同比上涨 2.8%，剔除生鲜食品为 2.9%，剔除生鲜食品和能源为 2.5%。",
       "affected_markets": [
         "non_us_global_satellite",
         "us_stock",
         "gold",
         "rates_bonds_core"
       ],
-      "market_impact": "紧防植田放鹰或财务省干预引发日元 3 日急升超 3% 触发全球套息去杠杆；日本卫星仅平价观察折价东证 513800（-0.79%）、拒追高溢价日经 513520。",
-      "source_url": "https://www.boj.or.jp/en/about/press/koen_2026/index.htm"
+      "market_impact": "观察讲话后的日债、日元及日股反应。160 是本刊监测价位，是否介入外汇市场仍取决于日本财务省对波动的判断。",
+      "source_url": "https://www.boj.or.jp/en/about/calendar/index.htm",
+      "source_urls": [
+        "https://www.stat.go.jp/info/mail/pdf/20261127_no1921.pdf"
+      ]
     },
     {
       "id": "cn_cffex_short_huahong_midea_exdiv_20261128",
@@ -248,14 +287,14 @@
       "category": "market_structure",
       "impact_tier": "P1",
       "authority": "中金所 · 上交所 · 深交所",
-      "headline": "A 股盘后细账：沪市两融增 51.5 亿、中金所机构增空 1.8 万手、美的周一除息 92.51 元",
-      "summary": "核销 11/27 盘后数据：上交所两融余额增 +51.54 亿至 11,248.86 亿（深北待周一披露）；中金所 2612 合约前 20 机构单日净空暴增 +18,058 手（IM 独现多减空增）；美的集团（000333）周一 11/30 精确除息参考价校准为 92.51 元；灵康转债（113610）周一最后转股截止、闻泰转债（110081）18.00 元下修生效。",
+      "headline": "上交所 11 月 30 日起调整融资保证金比例",
+      "summary": "交易所通知将融资买入证券的最低保证金比例由 100% 调整为 80%，11 月 30 日施行。证券公司可根据风险和客户适当性设置更高的要求。",
       "affected_markets": [
         "a_share",
         "hk_stock"
       ],
-      "market_impact": "下周一警惕高估芯片脉冲回吐与转债误转股风险，美的开盘参考价自然调至 92.51 元切勿误判暴跌；严守 A 股红灯上限 <=40% 不借降保加杠杆。",
-      "source_url": "https://www.cffex.com.cn/"
+      "market_impact": "最低保证金比例变化会影响可用融资额度。当前防守框架仍以实际风险和资金承受能力为约束。",
+      "source_url": "https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/specific/margin/c/c_20261122_10838633.shtml"
     },
     {
       "id": "hk_southbound_shenhua_rebalance_20261127",
@@ -266,14 +305,17 @@
       "category": "market_structure",
       "impact_tier": "P1",
       "authority": "港交所沪深港通 · 明晟 · 恒生指数公司",
-      "headline": "南向翻净买 +45.87 亿（阿里居首）、神华配售首日消化 58%，下周迎 11/30 与 12/04 双重调仓窗",
-      "summary": "11/27 南向资金清零宽基抛压、转净买 +45.87 亿港元（阿里 +12.67 亿、神华 +11.09 亿、中芯 +5.11 亿）；神华 H 股 38.10 港元折价配售首日消化 58%。下周一 11/30 明晟剔除 15 港股及金沙、纳入中际 H（03308.HK），12/04 恒生合并季检逾 125 亿美元换手。",
+      "headline": "港股迎明晟和恒生两轮指数调仓",
+      "summary": "明晟季检调整以 11 月 30 日收盘后实施，恒生指数、国企指数、恒生科技和恒生综合指数的成份股调整在 12 月 4 日收市后实施，12 月 7 日起生效。恒生生物科技指数另在 12 月 11 日收市后实施。",
       "affected_markets": [
         "hk_stock",
         "a_share"
       ],
-      "market_impact": "双重指数调仓均在 16:06 收市竞价不可撤单区放大瞬时跳价；务必 15:55 前完成交易、避开剔除股与倒挂 -19.7% 宁德 H 股，同时隔离未证实红利税传闻。",
-      "source_url": "https://www.hsi.com.hk/"
+      "market_impact": "观察跟踪基金在变动实施前后的成交。指数调整的生效日和基金实际成交时点可能有差别。",
+      "source_url": "https://www.hsi.com.hk/content/dam/wpb/hsil/zh_cn/press_releases/content/20261120T174500.pdf",
+      "source_urls": [
+        "https://ir.msci.com/news-releases/news-release-details/msci-equity-indexes-november-2026-index-review"
+      ]
     },
     {
       "id": "global_5cb_sovereign_gold_accumulation_20261128",
@@ -284,13 +326,13 @@
       "category": "central_bank",
       "impact_tier": "P2",
       "authority": "中国人民银行 · 波兰/印度/土耳其央行 · 新加坡金管局",
-      "headline": "四大主权央行稳筑金价长底（人行 2,435 吨），但土耳其央行 11/26 起暂停行使本土矿金优先购",
-      "summary": "最新官方主权黄金储备汇总：中国央行 10 月末连增 24 月至 2,435.40 吨（单月 +25.82 吨）、波兰破 700 吨、印度 880.52 吨（84% 运回本土）、新加坡 203.62 吨并启 500 吨主权托管金库；但路透证实土耳其央行（532.14 吨）自 11/26 起暂停行使本土矿产金优先购买权以平抑境内溢价。",
+      "headline": "中国官方黄金储备 10 月末增至 7,830 万盎司",
+      "summary": "国家外汇管理局列明 9 月末为 7,747 万金衡盎司，10 月末为 7,830 万金衡盎司，环比增加 83 万盎司（约 25.82 吨）。",
       "affected_markets": [
         "gold"
       ],
-      "market_impact": "中波印新长线买盘夯实多年中枢底线（支撑存量底仓勿割肉），而土耳其短线暂停添一处边际反证，短期严守 2/4 红灯停新仓 0%。",
-      "source_url": "https://www.pbc.gov.cn/"
+      "market_impact": "黄金储备数据用于观察官方部门长期配置。日内价格与当期仓位仍按实际利率和风险规则独立评估。",
+      "source_url": "https://www.safe.gov.cn/en/file/file/20261107/09f1865706594d6b87bb47e39eb9b65b.pdf?n=pdf"
     },
     {
       "id": "cn_bonds_1202_auction_reits_20261128",
@@ -301,14 +343,14 @@
       "category": "fiscal_policy",
       "impact_tier": "P2",
       "authority": "中国财政部 · 中债登 · 沪深交易所",
-      "headline": "下周三 12/02 财政部招标 810 亿国债（含 260 亿 30 年期），全市场 53 只债基稳守 0.99 万亿",
-      "summary": "中国财政部排定下周三 12/02 招标发行 550 亿元 182 天贴现国债与 260 亿元 30 年期超长期特别国债续发；11/27 股债跷跷板令中债 10 年官曲微升至 1.5972%、30 年 2.0732%，全市场 53 只债券基金总规模稳守 9,878 亿元（0.99 万亿），银行间短融 511360 单日成交放量至 670 亿元。",
+      "headline": "财政部公布 1,000 亿元中央国库现金管理商业银行定期存款指令",
+      "summary": "财政部国库司披露本期计划存款量 1,000 亿元，期限 2 个月，起息日为 2026 年 12 月 1 日，到期日为 2027 年 2 月 2 日。该项属于中央国库现金管理。",
       "affected_markets": [
         "rates_bonds_core",
         "a_share"
       ],
-      "market_impact": "境内活钱与债盾继续锚定短融 511360 与中短国债，30 年超长债基金（511090）控仓应对股市波动与下周供给冲击。",
-      "source_url": "https://gks.mof.gov.cn/"
+      "market_impact": "结合其他资金流和利率观测判断月末流动性变化。国债招标规模、节奏和本次存款操作分开核验。",
+      "source_url": "https://gks.mof.gov.cn/gongzuodongtai/202611/t20261126_4005436.htm"
     },
     {
       "id": "us_ustr_301_and_black_friday_retail_20261127",
@@ -319,15 +361,52 @@
       "category": "regulation_trade",
       "impact_tier": "P2",
       "authority": "美国贸易代表署（USTR）· 万事达消费脉搏 · Adobe",
-      "headline": "美 14 国 301 关税征询（15%–35%）叠黑五消费“价硬量弱”，挤压零售毛利并堵死宽松",
-      "summary": "美国贸易代表署启动 14 经济体 301 关税征询（2027-01-05 意见截止），同期黑五线上初报增 9.2%、整体增 5.5%，但万事达明确警示近半数金额增长源自商品涨价而非实际销量扩张。",
+      "headline": "美贸易代表署提出 14 个经济体的 301 调查应对方案",
+      "summary": "美国贸易代表署 11 月 25 日公布 14 个经济体的 301 调查认定与征求意见方案。商品范围、税率上限和计算办法随经济体和商品而异。中国方案公告列明 2027 年 1 月 5 日的书面意见提交日。",
       "affected_markets": [
         "us_stock",
         "gold",
         "rates_bonds_core"
       ],
-      "market_impact": "通胀向终端零售传导强化 12/10 美联储鹰派定力并挤压高估商超利润，坚守伯克希尔、雪佛龙与等权防弹衣，坚决远离 50 倍沃尔玛。",
-      "source_url": "https://ustr.gov/"
+      "market_impact": "进口成本变化还取决于最终文本、豁免范围、传导和企业定价能力。",
+      "source_url": "https://www.ustr.gov/about/policy-offices/press-office/press-releases/2026/november/ustr-makes-determinations-and-proposes-actions-14-section-301-investigations-relating-structural",
+      "source_urls": [
+        "https://ustr.gov/sites/default/files/files/Press/Releases/2026/China%20FRN.pdf"
+      ]
+    },
+    {
+      "id": "tw_dgbas_q3_gdp_20261127",
+      "date_cst": "2026-11-27",
+      "home_featured": false,
+      "region": "GLOBAL",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "authority": "台湾主计部门",
+      "headline": "台湾第三季度实质 GDP 初值同比增长 14.39%",
+      "summary": "11/27 初值同比增长 14.39%，较概估上修 0.03 个百分点。季调后按季增长 2.86%，折合年率 11.94%。对 2026、2027 年增长预测分别为 13.28%、6.51%。",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock"
+      ],
+      "market_impact": "结合实际出口、制造业和资本形成分项，判断人工智能产业链与整体经济的贡献。",
+      "source_url": "https://eng.dgbas.gov.tw/News_Content.aspx?n=4438&s=236907"
+    },
+    {
+      "id": "kr_bok_rate_hike_20261126",
+      "date_cst": "2026-11-26",
+      "home_featured": false,
+      "region": "GLOBAL",
+      "category": "central_bank",
+      "impact_tier": "P1",
+      "authority": "韩国银行",
+      "headline": "韩国银行加息 25 个基点至 3.25%",
+      "summary": "韩国银行 11/26 以五票支持、两票反对上调政策利率。央行指出增长增强、通胀预计较长时间高于目标，并关注住房及家庭债务风险。",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "rates_bonds_core"
+      ],
+      "market_impact": "观察韩债、韩元和韩国股票的定价变化，结合半导体出口验证增长和利率传导。",
+      "source_url": "https://www.bok.or.kr/eng/bbs/E0000634/view.do?menuNo=400069&nttId=11067086"
     }
   ],
   "events": [
@@ -335,8 +414,8 @@
       "event_id": "opec_plus_42nd_ministerial_20261129",
       "date_cst": "2026-11-29",
       "end_date_cst": "2026-11-29",
-      "date_precision": "exact",
-      "time_cst": "19:00",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
       "region": "GLOBAL",
       "category": "geopolitics_energy",
       "impact_tier": "P0",
@@ -348,15 +427,15 @@
         "a_share",
         "hk_stock"
       ],
-      "expected_consensus": "北京时间 11 月 29 日 19:00 7 国核心自愿减产组（不含已退出的阿联酋）线上会议敲定 2027 产油基线（伊拉克与哈萨克斯坦对产能初评存异议）及 200 万桶/日减产顺延，布油 1 月合约黑五官收 95.44 美元（周一到期换月 2 月 90.84 美元呈 4.60 美元自然贴水）。",
+      "expected_consensus": "产油国联盟公告确认第 42 届部长级会议日期为 11 月 29 日，尚未核实会议开始时刻。另有七个实施自愿调整国家的同日会议。2027 年产量基准与减产安排以各自会议结果为准。",
       "market_transmission": "油价直接锚定欧美再通胀预期与 10 年期美债（现 4.94%），传导至油气高息股盈利、美股长端估值与黄金前两关。",
       "watch_triggers": {
         "upside_bull": "有序顺延或温和微调使布油稳在 85–95 美元带，既托住油气盈利又缓解美债冲 5.0% 恐慌。",
         "downside_bear": "布油冲破 100 美元引爆 10 年期美债破 5.0% 砸估值，或意外增产令布油击穿 80 美元重创能源股。"
       },
       "pre_event_stance": "雪佛龙与中海油底仓稳守现仓不赌单边；黄金维持 2/4 关红灯停新仓 0%，静待周一早盘外盘消化。",
-      "source_url": "https://www.opec.org/opec_web/en/",
-      "monitor_window_min": 180
+      "source_url": "https://www.opec.org/pr-detail/605-7-june-2026.html",
+      "monitor_window_min": 0
     },
     {
       "event_id": "jp_boj_ueda_nagoya_speech_20261130",
@@ -367,7 +446,7 @@
       "region": "JP",
       "category": "central_bank",
       "impact_tier": "P0",
-      "title": "日本央行行长植田和男名古屋重磅演讲（直撞美元兑日元 159.54 干预红线）",
+      "title": "日本银行行长植田和男在名古屋向商界领袖发表演讲",
       "affected_markets": [
         "non_us_global_satellite",
         "us_stock",
@@ -376,14 +455,14 @@
         "gold",
         "rates_bonds_core"
       ],
-      "expected_consensus": "日本央行官网确认行长植田和男于东京时间 10:05（北京 09:05）在名古屋对商界领袖发表演讲，紧接 11 月东京日央行版核心通胀 2.5% 与美元兑日元 159.54（距 160 仅 0.46 日元），市场高度聚焦其对 12/18 加息（当前定价 76%–80%）的鹰鸽表态。",
-      "market_transmission": "若释放明确 12 月加息信号，日元急升将立刻冲击全球日元套息交易、纳指高估科技股、日股与黄金；若措辞偏鸽则令汇价冲向 160 引发日本财务省干预剧震。",
+      "expected_consensus": "日本银行官网列明日本时间 10:05（北京时间 09:05）演讲。讲话内容与对下次议息的指引以当天公布为准。",
+      "market_transmission": "若讲话改变加息预期，日债、日元及以日元融资的科技头寸可能同时重新定价。",
       "watch_triggers": {
         "upside_bull": "措辞审慎渐进使美元兑日元温和回落至 156–158 区间，避免套息踩踏与单边干预双杀。",
         "downside_bear": "强硬放鹰触发日元 3 日急升逾 3% 踩踏科技与金价，或超预期偏鸽致汇价击穿 160 招致突发干预。"
       },
       "pre_event_stance": "日本卫星仅平价观察折价东证 513800、严避高溢价日经 513520；美股与黄金严守红灯防守上限与新仓 0%，切忌亚盘早段盲目追单。",
-      "source_url": "https://www.boj.or.jp/en/about/press/koen_2026/index.htm",
+      "source_url": "https://www.boj.or.jp/en/about/calendar/",
       "monitor_window_min": 90
     },
     {
@@ -395,73 +474,274 @@
       "region": "CN",
       "category": "macro_data",
       "impact_tier": "P0",
-      "title": "中国 11 月官方制造业采购经理指数（PMI）+ A 股降保 80% + 明晟季检生效",
+      "title": "中国 11 月官方采购经理指数（PMI）",
       "affected_markets": [
         "a_share",
         "hk_stock",
         "rates_bonds_core"
       ],
-      "expected_consensus": "紧接 09:05 日央行植田演讲后，09:30 统计局公布 11 月景气读数（市场预期 49.4–49.5，前值 49.3）；同日 A 股融资保证金降至 80%、美的精确除息（参考价 92.51）、大成 000834 限购砍半、华夏 513300 停牌至 10:30、豆粕 159985 处券商重点监控期、灵康 113610 最后转股截止与闻泰 110081 18.00 元下修生效，尾盘明晟剔除 22 A 股与 15 港股。",
+      "expected_consensus": "国家统计局日程列明 11 月 30 日 09:30 公布采购经理指数。制造业和非制造业读数以当日公布为准。",
       "market_transmission": "景气读数检验 10 月工企利润反弹成色，明晟尾盘被动调仓叠加中金所机构空头考验沪深 300 在 4,025 点上方次日承接。",
       "watch_triggers": {
         "upside_bull": "制造业景气超预期逼近或站上 50 且沪深 300 放量守稳 4,025 点、机构空头不再激增。",
         "downside_bear": "景气弱于预期叠明晟尾盘外资被动净流出，令沪深 300 跌回 4,000 下方、高估芯片获利回吐。"
       },
       "pre_event_stance": "A 股严守 <=40% 上限与红利蓝筹底座，绝不借降保盲目加杠杆，绕开 513300 复牌高溢价与明晟剔除标的。",
-      "source_url": "https://www.stats.gov.cn/",
+      "source_url": "https://www.stats.gov.cn/xxgk/sjfb/fbrcb/202512/t20251224_1962137.html",
       "monitor_window_min": 90
     },
     {
-      "event_id": "us_treasury_218b_settle_msci_20261130",
+      "event_id": "jp_mof_fx_intervention_monthly_20261130",
       "date_cst": "2026-11-30",
-      "end_date_cst": "2026-12-01",
+      "end_date_cst": "2026-11-30",
       "date_precision": "exact",
-      "time_cst": "21:30",
+      "time_cst": "18:00",
+      "region": "JP",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "日本财务省公布月度外汇干预额",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "expected_consensus": "日本财务省预计于 11/30 19:00 日本时间公布 10/29 至 11/26 期间的外汇干预总额。",
+      "market_transmission": "汇总值可用于核对覆盖期内的外汇干预传闻。具体日期、金额和币种以季度明细为准。",
+      "watch_triggers": {
+        "upside_bull": "若日元波动回落，可观察日本国债及海外科技资产传导是否减弱。",
+        "downside_bear": "若波动扩大，结合统计覆盖期和日元成交判断套息仓位压力。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.mof.go.jp/policy/international_policy/reference/feio/index.html",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_treasury_coupon_settlement_20261130",
+      "date_cst": "2026-11-30",
+      "end_date_cst": "2026-11-30",
+      "date_precision": "window_tbd",
+      "time_cst": "日内时间待核",
       "region": "US",
       "category": "liquidity_treasury",
       "impact_tier": "P0",
-      "title": "2,180 亿美元美债交割（净抽水 815.1 亿撞 231.5 亿回购到期）+ 布油 1 月合约到期换月 + 明晟剔除微策略",
+      "title": "美国财政部多期限国债月末集中交割",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
         "gold",
         "hk_stock"
       ],
-      "expected_consensus": "美国财政部集中交割 2,180.0 亿美元私营发行，减去私营到期 1,364.9 亿产生 815.1 亿美元真实净抽水，与黑五早场 231.5 亿常备回购到期撞车；同日布伦特 1 月合约（95.44 美元）到期摘牌切换至 2 月合约（90.84 美元，天然贴水 4.60 美元），12/01 05:00 明晟剔除微策略（MSTR）。",
+      "expected_consensus": "美国财政部发行日程列出 11/30 的多期限国债交割。该日程只确认日期。私营净融资需根据实际发行及到期金额计算，隔夜回购到期另以纽约联储数据核对。",
       "market_transmission": "跨月抽水直接考验隔夜融资利率 4.00% 顶与常备回购回落节奏，若流动性再度收紧将同步施压高估科技、加密链条与黄金。",
       "watch_triggers": {
         "upside_bull": "常备回购余额快速回落、隔夜利率平稳且 10 年期美债守在 4.95% 下方，管道平稳渡劫。",
         "downside_bear": "回购需求再飙叠 10 年期美债冲破 5.0%，触发科技股回撤与全资产流动性挤兑。"
       },
-      "pre_event_stance": "离岸美元池坚守 62% 超短美债吃息护本，坚决拉黑微策略，黄金严守 2/4 关红灯停新仓 0%。",
-      "source_url": "https://home.treasury.gov/policy-issues/financing-the-government/quarterly-refunding",
+      "pre_event_stance": "观察月末回购利率和常备回购操作结果，黄金维持红灯新仓 0%。",
+      "source_url": "https://home.treasury.gov/system/files/221/Tentative-Auction-Schedule.pdf",
       "monitor_window_min": 120
     },
     {
-      "event_id": "global_dec1_pmi_euro_cpi_nvda_20261201",
+      "event_id": "india_q2_fy2026_27_gdp_20261130",
+      "date_cst": "2026-11-30",
+      "end_date_cst": "2026-11-30",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
+      "region": "GLOBAL",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "印度统计部门公布 2026–27 财年第二季国内生产总值",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "rates_bonds_core"
+      ],
+      "expected_consensus": "印度统计和计划实施部预告 11/30 公布 2026–27 财年第二季（2026 年 7–9 月）国内生产总值。",
+      "market_transmission": "国内需求与投资分项会影响印度股票盈利和货币政策预期。",
+      "watch_triggers": {
+        "upside_bull": "增长由消费和投资共同拉动，支持企业盈利预期。",
+        "downside_bear": "若改善依赖一次性因素，复核增长覆盖的行业范围。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.mospi.gov.in/uploads/documents/releaseCalender/1770293210621-ADVANCE%20RELEASE%20CALENDAR%202026-27%20FINAL%2005.02.2026.pdf",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_cftc_cot_thanksgiving_release_20261201",
       "date_cst": "2026-12-01",
-      "end_date_cst": "2026-12-03",
+      "end_date_cst": "2026-12-01",
       "date_precision": "exact",
       "time_cst": "04:30",
-      "region": "GLOBAL",
-      "category": "regulation_trade",
+      "region": "US",
+      "category": "macro_data",
       "impact_tier": "P1",
-      "title": "韩国 11 月出口 + 欧元区通胀初值 + 美国制造业指数 + 英伟达参众两院听证（12/01–03）",
+      "title": "美国商品期货交易委员会持仓报告（感恩节顺延）",
       "affected_markets": [
         "us_stock",
-        "non_us_global_satellite",
         "rates_bonds_core",
         "gold"
       ],
-      "expected_consensus": "12/01 依次公布韩国 11 月出口（半导体景气晴雨表）、04:30 美国期金持仓周报（感恩节顺延）、18:00 欧元区 11 月通胀初值及 23:00 美国 11 月制造业指数；12/01–02 众议院闭门问询英伟达高管、12/03 参议院银行委员会公开听证。",
-      "market_transmission": "半导体出口与国会出口审查共振左右费城半导体与台韩科技，欧元区通胀与美国制造业景气直接检验 12 月欧/美加息路径。",
+      "expected_consensus": "美国商品期货交易委员会暂定日程列明感恩节顺延至 11/30 15:30 美东时间，即北京时间 12/01 04:30。",
+      "market_transmission": "核对持仓报告统计截点及资金净多变化，区分持仓变动和当日价格走势。",
       "watch_triggers": {
-        "upside_bull": "国会听证未释放超预期出口禁令升级且欧美通胀/制造业温和降温，缓和美债压迫。",
-        "downside_bear": "听证爆出严厉合规处罚预期或欧美通胀读数偏热，重创芯片估值并推升美欧长债。"
+        "upside_bull": "若金价走稳且管理资金净多未出现拥挤，后续回撤压力可能较小。",
+        "downside_bear": "若价格与净头寸背离，区分新增空头和主动减多。"
       },
-      "pre_event_stance": "美股科技新仓严锁 0% 等待听证与 12/04 10-Q 落地，黄金维持红灯停新仓 0%。",
-      "source_url": "https://www.ismworld.org/",
+      "pre_event_stance": "黄金仍按快照红灯约束执行，以公布后的报告日期和头寸表为准。",
+      "source_url": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/ReleaseSchedule/index.htm",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_msci_strategy_a_imi_removal_20261201",
+      "date_cst": "2026-12-01",
+      "end_date_cst": "2026-12-01",
+      "date_precision": "exact",
+      "time_cst": "05:00",
+      "region": "US",
+      "category": "market_structure",
+      "impact_tier": "P0",
+      "title": "MSCI 全球可投资市场指数剔除 Strategy A（MSTR）",
+      "affected_markets": [
+        "us_stock",
+        "non_us_global_satellite",
+        "rates_bonds_core"
+      ],
+      "expected_consensus": "MSCI 确认 Strategy A、Yellow Cake 与 Metaplanet 从 MSCI ACWI IMI 剔除。按 11/30 当地收盘实施，12/01 正式生效。对应美股常规收盘为北京时间 12/01 05:00。",
+      "market_transmission": "被动指数跟踪组合可能在实施窗口调仓，股票成交与公司比特币持仓需分别核对。",
+      "watch_triggers": {
+        "upside_bull": "若收盘竞价承接稳定，可以核对卖压是否集中在实施窗口。",
+        "downside_bear": "若失衡延续至下一交易日，关注流动性和融资风险。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.msci.com/downloads/web/msci-com/indexes/quarterly-index-review/insights-from-msci-november-2026-index-review.pdf",
       "monitor_window_min": 90
+    },
+    {
+      "event_id": "eu_nov_hicp_flash_20261201",
+      "date_cst": "2026-12-01",
+      "end_date_cst": "2026-12-01",
+      "date_precision": "exact",
+      "time_cst": "18:00",
+      "region": "EU",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "欧元区 11 月消费者物价初值",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "expected_consensus": "欧盟统计局日程列 12/01 公布。18:00 为欧元区指标常规发布时间（卢森堡 11:00），以发布页面为准。",
+      "market_transmission": "总体、核心及服务价格分项会改变欧洲央行利率预期。",
+      "watch_triggers": {
+        "upside_bull": "若核心和服务价格增速下降，长端利率上行压力可能减轻。",
+        "downside_bear": "若核心价格增幅偏高，欧元和长债利率可能重新定价。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://ec.europa.eu/eurostat/web/products-euro-indicators/w/2-18112026-ap?lang=en",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_nov_ism_manufacturing_20261201",
+      "date_cst": "2026-12-01",
+      "end_date_cst": "2026-12-01",
+      "date_precision": "exact",
+      "time_cst": "23:00",
+      "region": "US",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "美国 11 月制造业采购经理指数（ISM）",
+      "affected_markets": [
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "expected_consensus": "美国供应管理协会排定 12/01 美东 10:00。",
+      "market_transmission": "同步观察新增订单、就业与投入价格，区分需求变化和成本压力。",
+      "watch_triggers": {
+        "upside_bull": "若订单回温且投入价格放缓，增长与通胀之间的冲突减轻。",
+        "downside_bear": "若需求弱而价格强，注意盈利预期与利率方向分化。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.ismworld.org/supply-management-news-and-reports/reports/rob-report-calendar",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_oct_jolts_20261201",
+      "date_cst": "2026-12-01",
+      "end_date_cst": "2026-12-01",
+      "date_precision": "exact",
+      "time_cst": "23:00",
+      "region": "US",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "美国 10 月职位空缺与劳动力流动调查（JOLTS）",
+      "affected_markets": [
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "expected_consensus": "美国劳工统计局排定 12/01 美东 10:00。本次统计月份是 10 月。",
+      "market_transmission": "职位空缺及离职率辅助判断劳动力市场冷热，需与 11 月就业报告分月对照。",
+      "watch_triggers": {
+        "upside_bull": "若空缺温和下降而主动离职稳定，雇主端与员工端压力均可能缓和。",
+        "downside_bear": "若用工指标同时急变，利率与盈利预期可能重新定价。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.bls.gov/schedule/2026/12_sched.htm",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "kr_nov_export_release_20261201",
+      "date_cst": "2026-12-01",
+      "end_date_cst": "2026-12-01",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
+      "region": "GLOBAL",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "韩国 11 月贸易数据观察窗口",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock",
+        "rates_bonds_core"
+      ],
+      "expected_consensus": "关注韩国全月出口与半导体分项。具体发布时间以韩国产业通商部当月公告为准。",
+      "market_transmission": "半导体及设备出口反映台韩科技景气，需结合工作日数与发货节奏判断。",
+      "watch_triggers": {
+        "upside_bull": "若日均出口和半导体分项同步上升，支持相关产业景气判断。",
+        "downside_bear": "若总量与核心分项分化，先核工作日调整和基数。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.motir.go.kr/kor/article/ATCL3f49a5a8c?searchCondition=1&searchKeyword=%EC%88%98%EC%B6%9C%EC%9E%85+%EB%8F%99%ED%96%A5",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_house_nvidia_huang_20261201",
+      "date_cst": "2026-12-01",
+      "end_date_cst": "2026-12-01",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
+      "region": "US",
+      "category": "regulation_trade",
+      "impact_tier": "P1",
+      "title": "美国众议院多委员会访谈英伟达首席执行官黄仁勋",
+      "affected_markets": [
+        "us_stock",
+        "non_us_global_satellite",
+        "hk_stock",
+        "a_share"
+      ],
+      "expected_consensus": "众议院三委员会确认英伟达首席执行官黄仁勋于美东 12/01 接受有逐字记录的访谈。公开公告未列开始时刻。",
+      "market_transmission": "涉及先进芯片出口管制与合规，供应链影响以委员会记录、后续法规或公司公告为准。",
+      "watch_triggers": {
+        "upside_bull": "若后续公告明确合规安排，可收窄对受影响出口范围的估计。",
+        "downside_bear": "若后续正式措施扩大限制，复核相关收入与供应链风险。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://intelligence.house.gov/2026/11/17/jensen-huang-and-nvidia-agree-to-appear-before-congress/",
+      "monitor_window_min": 60
     },
     {
       "event_id": "us_bcred_gate_20261202",
@@ -484,8 +764,109 @@
         "downside_bear": "赎回率大幅超限引发限赎与净值减记忧虑，推升信用利差并拖累风险资产。"
       },
       "pre_event_stance": "远离高债软件与私募信贷敏感标的，离岸美元坚守 62% 公开透明超短美债（SGOV/VBIL/IB01）。",
-      "source_url": "https://www.sec.gov/edgar/searchedgar/companysearch",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1803498/000119312526442721/d178922dex99a1i.htm",
       "monitor_window_min": 60
+    },
+    {
+      "event_id": "india_rbi_mpc_20261202",
+      "date_cst": "2026-12-02",
+      "end_date_cst": "2026-12-04",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
+      "region": "GLOBAL",
+      "category": "central_bank",
+      "impact_tier": "P1",
+      "title": "印度储备银行货币政策委员会 12 月会议",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "rates_bonds_core"
+      ],
+      "expected_consensus": "印度储备银行公布会议日期为 12/02 至 12/04，所引日程未提供决议公布时刻。",
+      "market_transmission": "政策利率及通胀判断会影响印度长债、卢比和金融股。",
+      "watch_triggers": {
+        "upside_bull": "若通胀缓和且政策措辞稳定，本币计价资产贴现压力可能减轻。",
+        "downside_bear": "若政策因食品和能源涨价进一步偏紧，金融条件可能收紧。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=62422",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_house_nvidia_teter_20261202",
+      "date_cst": "2026-12-02",
+      "end_date_cst": "2026-12-02",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
+      "region": "US",
+      "category": "regulation_trade",
+      "impact_tier": "P1",
+      "title": "美国众议院多委员会访谈英伟达总法律顾问 Tim Teter",
+      "affected_markets": [
+        "us_stock",
+        "non_us_global_satellite",
+        "hk_stock",
+        "a_share"
+      ],
+      "expected_consensus": "众议院三委员会确认英伟达总法律顾问 Tim Teter于美东 12/02 接受有逐字记录的访谈。公开公告未列开始时刻。",
+      "market_transmission": "涉及先进芯片出口管制与合规，供应链影响以委员会记录、后续法规或公司公告为准。",
+      "watch_triggers": {
+        "upside_bull": "若后续公告明确合规安排，可收窄对受影响出口范围的估计。",
+        "downside_bear": "若后续正式措施扩大限制，复核相关收入与供应链风险。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://intelligence.house.gov/2026/11/17/jensen-huang-and-nvidia-agree-to-appear-before-congress/",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_nov_ism_services_20261203",
+      "date_cst": "2026-12-03",
+      "end_date_cst": "2026-12-03",
+      "date_precision": "exact",
+      "time_cst": "23:00",
+      "region": "US",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "美国 11 月服务业采购经理指数（ISM）",
+      "affected_markets": [
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "expected_consensus": "美国供应管理协会列明 12/03 10:00 美东时间发布。",
+      "market_transmission": "服务需求、就业和价格分项有助于判断通胀粘性。",
+      "watch_triggers": {
+        "upside_bull": "若需求扩张且支付价格放缓，增长和通胀之间的冲突减轻。",
+        "downside_bear": "若需求与价格均过热，可能推高利率路径预期。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.ismworld.org/supply-management-news-and-reports/reports/rob-report-calendar",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "us_senate_nvidia_export_control_hearing_20261203",
+      "date_cst": "2026-12-03",
+      "end_date_cst": "2026-12-03",
+      "date_precision": "exact",
+      "time_cst": "23:00",
+      "region": "US",
+      "category": "regulation_trade",
+      "impact_tier": "P0",
+      "title": "美国参议院银行委员会就人工智能与出口管制举行公开听证",
+      "affected_markets": [
+        "us_stock",
+        "non_us_global_satellite",
+        "hk_stock",
+        "a_share"
+      ],
+      "expected_consensus": "参议院银行委员会排定 12/03 10:00 美东时间（北京时间 23:00），证人为英伟达首席执行官黄仁勋。",
+      "market_transmission": "听证聚焦出口管制实施及监督，实际收入影响取决于法规、行政决定和公司公告。",
+      "watch_triggers": {
+        "upside_bull": "若听证厘清既有规则的适用范围，部分情景的不确定性可能降低。",
+        "downside_bear": "若后续文件列出新限制，核对受影响的地区、产品和营收。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.banking.senate.gov/hearings/protecting-americas-ai-advantage-oversight-of-us-export-controls",
+      "monitor_window_min": 90
     },
     {
       "event_id": "hk_hsi_hstech_rebalance_20261204",
@@ -501,14 +882,14 @@
         "hk_stock",
         "a_share"
       ],
-      "expected_consensus": "恒生指数权重重平衡与恒生科技由 30 只扩至 50 只合并实施，预计撬动逾 125 亿美元被动资金于 16:00–16:10 收市竞价集中换手。",
+      "expected_consensus": "恒生指数公司公布，恒指、国指、恒科和恒综成份股变更于 12/04 收市后实施并于 12/07 生效。恒生生物科技指数单独换届。",
       "market_transmission": "被动资金在 16:06 后不可撤单时段集中撮合，易令调入/调出权重股与倒挂两地上市股瞬间跳价 2%–5%。",
       "watch_triggers": {
         "upside_bull": "腾讯等核心权重承接顺畅、成交放大且恒指守住 22,200 支撑位。",
         "downside_bear": "尾盘竞价剧烈抽插叠港汇靠向 7.845，引发被动套利盘放大短线回撤。"
       },
       "pre_event_stance": "港股严守离岸 ≤35% / 港股通 ≤25% 红线，严禁在 16:06 后下市价盲单，回避 A/H 深度倒挂港股。",
-      "source_url": "https://www.hsi.com.hk/schi/newsroom/index-review",
+      "source_url": "https://www.hsi.com.hk/content/dam/wpb/hsil/zh_cn/press_releases/content/20261120T174500.pdf",
       "monitor_window_min": 60
     },
     {
@@ -527,14 +908,14 @@
         "gold",
         "hk_stock"
       ],
-      "expected_consensus": "紧接12/01–03英伟达国会闭门/公开听证、12/02黑石私募信贷5%赎回闸门与12/04英伟达季报死线之后，发布美联储12月议息前最关键就业与时薪成绩单。",
+      "expected_consensus": "紧接12/01–03英伟达国会闭门/公开听证、12/02黑石私募信贷5%赎回闸门与12/04英伟达10-Q 常规申报截止日之后，发布美联储12月议息前最关键就业与时薪成绩单。",
       "market_transmission": "通过 2 年与 10 年美债收益率及美元指数（DXY，对六大货币强弱）即时重定价美联储 2027 年利率路径，同步牵动黄金第 1 与第 2 关。",
       "watch_triggers": {
         "upside_bull": "就业温和降温且时薪放缓带动 10 年美债回落至 4.75% 下方、实际利率逼近 2.72% 门槛。",
         "downside_bear": "就业与薪资双超预期推升 2 年美债突破 4.75%，锁定更鹰派点阵图预期并压制股金。"
       },
       "pre_event_stance": "数据前美股不追高、维持 28% 防弹衣 + 62% 短债；黄金维持红灯停新仓 0%，静待官方美债曲线落定。",
-      "source_url": "https://www.bls.gov/schedule/news_release/empsit.htm",
+      "source_url": "https://www.bls.gov/schedule/2026/12_sched.htm",
       "monitor_window_min": 90
     },
     {
@@ -565,26 +946,26 @@
     {
       "event_id": "us_treasury_part851_deadline_20261207",
       "date_cst": "2026-12-07",
-      "end_date_cst": "2026-12-07",
+      "end_date_cst": "2026-12-08",
       "date_precision": "window_tbd",
-      "time_cst": "全天窗口",
+      "time_cst": "美东日期，时刻未列",
       "region": "US",
       "category": "regulation_trade",
       "impact_tier": "P1",
-      "title": "美国财政部对外投资规则（31 CFR Part 851）公众意见截止",
+      "title": "美国财政部对外投资拟议规定公众意见截止（31 CFR Parts 850 和 851）",
       "affected_markets": [
         "us_stock",
         "hk_stock",
         "a_share"
       ],
-      "expected_consensus": "美东 12 月 7 日截止针对半导体、人工智能与量子计算等敏感领域对外投资限制细则的公众意见征询，市场紧盯最终口径是否扩大受限清单或收紧跨境合资审查。",
+      "expected_consensus": "《联邦公报》规定财政部须在美国当地 12/07 收到书面评论，未列准确时刻。拟议范围包括人工智能、半导体和量子等领域。",
       "market_transmission": "规则收紧预期直接扰动港股科技与 A 股算力半导体风险偏好，同时通过供应链合规成本与在华营收敞口反噬美国芯片龙头估值。",
       "watch_triggers": {
         "upside_bull": "最终意见反馈聚焦窄口径豁免且未扩大公开二级市场交易限制，港股科技与国产算力情绪修复。",
         "downside_bear": "规则升级覆盖更广人工智能模型或设备链条，叠加美国贸易代表署关税威胁压制中美科技双边估值。"
       },
       "pre_event_stance": "美股科技维持新仓 0% 防守纪律，港股严守离岸 ≤35% / 港股通 ≤25% 上限，回避高度依赖跨境并购与敏感出口题材的高波动标的。",
-      "source_url": "https://home.treasury.gov/policy-issues/international/outbound-investment-program",
+      "source_url": "https://www.federalregister.gov/documents/2026/10/26/2026-21786/outbound-investment-security-program-regulations",
       "monitor_window_min": 120
     },
     {
@@ -596,20 +977,20 @@
       "region": "CN",
       "category": "macro_data",
       "impact_tier": "P1",
-      "title": "中国 11 月居民消费与工业品价格指数（CPI/PPI）及社融信贷窗口",
+      "title": "中国 11 月居民消费与工业品价格指数（CPI/PPI）",
       "affected_markets": [
         "a_share",
         "rates_bonds_core",
         "hk_stock"
       ],
-      "expected_consensus": "09:30统计局发布11月通胀读数（前值CPI +0.7%、PPI +5.7%），同步进入央行11月社融窗口并紧衔12月11日尾盘中证指数半年度样本调整生效。",
+      "expected_consensus": "国家统计局定于 12 月 9 日 09:30 公布 11 月居民消费价格指数和工业生产者价格指数。",
       "market_transmission": "验证上游资源涨价向中下游盈利传导与内需通缩修复节奏，牵动中债 10 年/30 年久期波动及消费/上游周期板块分化。",
       "watch_triggers": {
         "upside_bull": "核心消费通胀温和回升且企业中长期贷款改善，强化盈利修复与股市基本面支撑。",
         "downside_bear": "消费价格走弱叠信贷不及预期，压制顺周期反弹并驱动资金回流短融与国债。"
       },
       "pre_event_stance": "境内债市守短融与中短国债护本、30 年超长债控仓防股市吸金波动；A 股不押注单月数据方向。",
-      "source_url": "https://www.stats.gov.cn/",
+      "source_url": "https://www.stats.gov.cn/xxgk/sjfb/fbrcb/202512/t20251224_1962137.html",
       "monitor_window_min": 60
     },
     {
@@ -637,7 +1018,7 @@
         "downside_bear": "声明与发布会释放 2027 续加息鹰派信号，推升 10 年美债破 5.0%、压迫港汇逼近 7.85 并砸盘金股。"
       },
       "pre_event_stance": "议息前全市场严守红灯防守上限，黄金保持红灯停新仓 0%、绝不提前抢跑，等 03:30 发布会与次日美债官曲确认。",
-      "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "source_url": "https://www.federalreserve.gov/newsevents/2026-december.htm",
       "monitor_window_min": 120
     },
     {
@@ -662,7 +1043,7 @@
         "downside_bear": "核心环比冲至 0.4% 及以上，引发滞胀定价并冲击标普 7,050 与黄金 3,526 警戒线。"
       },
       "pre_event_stance": "紧接议息后的二次冲击窗不加仓长久期美债与高估科技，继续以超短美债吃息缓冲，黄金维持红灯停新仓 0%。",
-      "source_url": "https://www.bls.gov/schedule/news_release/cpi.htm",
+      "source_url": "https://www.bls.gov/schedule/2026/12_sched.htm",
       "monitor_window_min": 90
     },
     {
@@ -687,8 +1068,33 @@
         "downside_bear": "拨款谈判破裂触发联邦停摆叠加主权信用预警，推升波动率并压制长久期美债与高估科技股。"
       },
       "pre_event_stance": "美股严守 28% 防弹衣 + 62% 超短美债吃息护本，不赌短线政治博弈反弹；黄金维持红灯停新仓 0%，严禁借停摆避险情绪提前抢跑。",
-      "source_url": "https://www.congress.gov/",
+      "source_url": "https://www.govinfo.gov/content/pkg/PLAW-119publ103/html/PLAW-119publ103.htm",
       "monitor_window_min": 120
+    },
+    {
+      "event_id": "cn_nbs_property_prices_20261215",
+      "date_cst": "2026-12-15",
+      "end_date_cst": "2026-12-15",
+      "date_precision": "exact",
+      "time_cst": "09:30",
+      "region": "CN",
+      "category": "macro_data",
+      "impact_tier": "P1",
+      "title": "中国 11 月商品住宅销售价格指数",
+      "affected_markets": [
+        "a_share",
+        "hk_stock",
+        "rates_bonds_core"
+      ],
+      "expected_consensus": "国家统计局预告 12 月 15 日 09:30 公布商品住宅销售价格指数月度报告。",
+      "market_transmission": "房价与同比、环比变化可辅助判断房地产需求。与销售额、成交量及融资数据一起观察。",
+      "watch_triggers": {
+        "upside_bull": "多个城市价格环比改善时，再核对成交量是否同步回升。",
+        "downside_bear": "环比走弱城市范围扩大时，关注地产信用和按揭需求变化。"
+      },
+      "pre_event_stance": "区分新房和二手房，按城市变化核对全国性结论。",
+      "source_url": "https://www.stats.gov.cn/fbyg/202602/t20260211_1962590.html",
+      "monitor_window_min": 60
     },
     {
       "event_id": "cn_nov_activity_trio_20261215",
@@ -705,18 +1111,44 @@
         "hk_stock",
         "rates_bonds_core"
       ],
-      "expected_consensus": "紧随中央经济工作会议窗口后检验实体需求底色，重点关注消费以旧换新拉动、高技术制造业产出与房地产销售降幅变化。",
+      "expected_consensus": "国家统计局年度日程列明 12 月 15 日 10:00 公布工业生产、固定资产投资和社会消费品零售等月度数据。",
       "market_transmission": "决定年末 A 股与港股盈利预期修正方向，并影响中债 10 年期国债收益率在 1.60% 附近的波段震荡。",
       "watch_triggers": {
         "upside_bull": "社零消费与工业产出双双好于预期，验证内需接力并支撑消费蓝筹与恒指估值修复。",
         "downside_bear": "投资与消费读数转弱，强化市场对年末稳增长政策加快落地的博弈并利好短中久期利率债。"
       },
       "pre_event_stance": "围绕红利蓝筹与短中久期债盾均衡布局，不因单月宏观分项波动追涨杀跌。",
-      "source_url": "https://www.stats.gov.cn/",
+      "source_url": "https://www.stats.gov.cn/xxgk/sjfb/fbrcb/202512/t20251224_1962137.html",
       "monitor_window_min": 60
     },
     {
-      "event_id": "eu_ecb_boe_dec_decisions_20261217",
+      "event_id": "uk_boe_dec_decision_20261217",
+      "date_cst": "2026-12-17",
+      "end_date_cst": "2026-12-17",
+      "date_precision": "exact",
+      "time_cst": "20:00",
+      "region": "UK",
+      "category": "central_bank",
+      "impact_tier": "P1",
+      "title": "英国央行 12 月利率决议和纪要",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "expected_consensus": "英国央行确认 12/17 发布利率决议和纪要。按官方规则于伦敦 12:00（北京时间 20:00）公布。",
+      "market_transmission": "对工资及服务通胀的判断会影响英镑、英国国债与英股。",
+      "watch_triggers": {
+        "upside_bull": "若纪要显示服务业通胀缓和，英债风险溢价可能回落。",
+        "downside_bear": "若更多委员支持进一步收紧，关注英镑与长端利率重定价。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.bankofengland.co.uk/monetary-policy",
+      "monitor_window_min": 90
+    },
+    {
+      "event_id": "eu_ecb_dec_decision_20261217",
       "date_cst": "2026-12-17",
       "end_date_cst": "2026-12-17",
       "date_precision": "exact",
@@ -724,33 +1156,59 @@
       "region": "EU",
       "category": "central_bank",
       "impact_tier": "P1",
-      "title": "欧洲央行与英国央行 12 月利率决议",
+      "title": "欧洲央行 12 月利率决议与记者会",
       "affected_markets": [
         "non_us_global_satellite",
         "rates_bonds_core",
         "gold",
         "us_stock"
       ],
-      "expected_consensus": "北京时间 20:00 英国央行与 21:15 欧洲央行接力宣布决议，市场隐含欧央行加息概率 93%–94%、英央行 80%–86%，并关注欧洲主权债利差与人工智能举债风险警示。",
-      "market_transmission": "英欧利率决定欧元、英镑与法债/英债长端走势，并通过美元指数与全球主权债抛压外溢至美债、欧股与金价。",
+      "expected_consensus": "欧洲央行 12/16 至 12/17 开会。按官方发布规则，12/17 法兰克福 14:15（北京时间 21:15）发决议，14:45（北京时间 21:45）举行记者会。",
+      "market_transmission": "欧洲央行的通胀和增长判断直接影响欧元、欧债曲线及法德国债利差。",
       "watch_triggers": {
-        "upside_bull": "决议落地且对 2027 年紧缩节奏表述克制，欧债收益率回落利好德国 DAX 等欧股平价工具。",
-        "downside_bear": "双双释放强硬鹰派指引叠加法债/英债抛售失控，引发全球长债利率共振冲高。"
+        "upside_bull": "若对后续利率指引比市场预期温和，欧洲长债压力可能缓解。",
+        "downside_bear": "若指引比市场预期更紧，长端利率与风险资产估值可能同时承压。"
       },
       "pre_event_stance": "欧洲卫星仓严控溢价（核清盘中参考净值，溢价超 2% 绝不追买），优选直投低费德股标的观察；黄金维持红灯停新仓 0%。",
       "source_url": "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html",
       "monitor_window_min": 90
     },
     {
-      "event_id": "jp_boj_dec_decision_20261218",
+      "event_id": "jp_boj_governor_press_conference_20261218",
       "date_cst": "2026-12-18",
       "end_date_cst": "2026-12-18",
       "date_precision": "exact",
-      "time_cst": "11:00",
+      "time_cst": "14:30",
+      "region": "JP",
+      "category": "central_bank",
+      "impact_tier": "P1",
+      "title": "日本银行总裁 12 月议息记者会",
+      "affected_markets": [
+        "non_us_global_satellite",
+        "us_stock",
+        "rates_bonds_core",
+        "gold"
+      ],
+      "expected_consensus": "日本银行日文公告列明预定于 12/18 日本时间 15:30（北京时间 14:30）直播。",
+      "market_transmission": "总裁对后续加息路径和通胀的解释可使日元、日债偏离决议后的第一反应。",
+      "watch_triggers": {
+        "upside_bull": "若前瞻指引温和且日元趋稳，套息去杠杆压力可能缓和。",
+        "downside_bear": "若指引偏鹰且日元快速走强，复核海外科技与日股反应。"
+      },
+      "pre_event_stance": "等官方公布后再区分事件冲击与原有趋势，发布时段留意价格和成交联动。",
+      "source_url": "https://www.boj.or.jp/about/calendar/",
+      "monitor_window_min": 60
+    },
+    {
+      "event_id": "jp_boj_dec_decision_20261218",
+      "date_cst": "2026-12-18",
+      "end_date_cst": "2026-12-18",
+      "date_precision": "window_tbd",
+      "time_cst": "时间待定",
       "region": "JP",
       "category": "central_bank",
       "impact_tier": "P0",
-      "title": "日本央行 12 月议息会议决议（紧盯加息节奏与美元兑日元 160 套息熔断线）",
+      "title": "日本银行 12 月货币政策决议",
       "affected_markets": [
         "non_us_global_satellite",
         "us_stock",
@@ -758,14 +1216,14 @@
         "gold",
         "rates_bonds_core"
       ],
-      "expected_consensus": "市场隐含日本央行12月加息概率76%–80%，结合11月东京日央行版核心通胀2.5%及美元兑日元升至159.54（距160仅差0.46日元），同日叠加美股四巫日交割。",
-      "market_transmission": "日元急升（3 日跌幅超 3%）可能触发全球日元套息交易去杠杆冲击美股科技、日股与加密资产；若鸽派失守 160 则面临日本财务省外汇干预风险。",
+      "expected_consensus": "日本银行确认 12/17–18 开会。11/27 更新的官网日程将 12/18 货币政策声明的公布时间列为待定。",
+      "market_transmission": "政策意外可能使日债与日元急变，并通过套息交易影响海外科技股与大宗商品。",
       "watch_triggers": {
-        "upside_bull": "平稳兑现加息预期且美元兑日元有序回落至 154–158 温和区间，消除套息踩踏与干预双杀。",
-        "downside_bear": "超预期鹰派引发日元急升踩踏全球高估科技，或按兵不动致汇价冲破 160 触发干预剧震。"
+        "upside_bull": "若决议符合预期且日元有序变动，套息头寸被动减仓压力可能较小。",
+        "downside_bear": "若决议超预期偏鹰且日元短时急升，观察是否引发跨市场去杠杆。"
       },
       "pre_event_stance": "日本卫星仓避开高溢价日经基金，仅平价观察东证低费工具并防股汇双杀；全球权益严守红灯仓位上限应对四巫日与套息共振。",
-      "source_url": "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm",
+      "source_url": "https://www.boj.or.jp/en/about/calendar/",
       "monitor_window_min": 120
     },
     {
@@ -815,7 +1273,7 @@
         "downside_bear": "核心环比反弹至 0.4% 及以上，迫使圣诞薄量盘面再度重估 2027 年利率顶部。"
       },
       "pre_event_stance": "待 12/18 四大央行议息全部落地后再依官方美债曲线重评灯号，切忌圣诞薄盘前提前抢跑。",
-      "source_url": "https://www.bea.gov/news/schedule",
+      "source_url": "https://www.bea.gov/news/2026/personal-income-and-outlays-october-2026",
       "monitor_window_min": 90
     },
     {

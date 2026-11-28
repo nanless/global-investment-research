@@ -5,6 +5,7 @@ from datetime import date, datetime
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -74,6 +75,9 @@ def _fixture():
         us10y_pct=4.84,
         us2y_pct=4.604,
         effr_pct=3.88,
+        effr_observation_date="2026-11-24",
+        effr_published_at="2026-11-25 22:02",
+        effr_source="https://fred.stlouisfed.org/series/EFFR",
         spread_2y_ff_bp=72,
         dfii10_fred_official_pct=2.79,
         dfii10_live_pct=2.79,
@@ -179,6 +183,14 @@ def _daily_check(status, checked_at):
 
 
 class GoldWorkflowTests(unittest.TestCase):
+    def test_cli_help_does_not_require_a_manuscript(self):
+        command = [sys.executable, str(GOLD / "lint_readability.py")]
+        help_result = subprocess.run([*command, "--help"], capture_output=True, text=True)
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--strict", help_result.stdout)
+        missing_arguments = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(missing_arguments.returncode, 2)
+
     def setUp(self):
         temp = TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -451,11 +463,99 @@ class GoldWorkflowTests(unittest.TestCase):
         snap["tier1_gates"][0]["passed"] = True
         snap["tier1_gates"][1]["passed"] = True
         self.assertEqual(self._validate(snap), [])
+        snap["tier1_gate4_threshold_date"] = "2026-11-24"
+        self.assertTrue(any("第四关比较日期错" in e for e in self._validate(snap)))
+        snap["tier1_gate4_threshold_date"] = "2026-11-25"
         snap["us2y_pct"] = 4.431
         self.assertTrue(any("第 2 关复算冲突" in e for e in self._validate(snap)))
         snap["tier1_gates"][3]["passed"] = True
         snap["tier1_passed"] = 4
         self.assertTrue(any("第 4 关复算冲突" in e for e in self._validate(snap)))
+
+    def test_spread_requires_published_fed_evidence_from_provenance_cutover(self):
+        snap = _fixture()
+        snap.update(edition_id="2026-11-28_1130", as_of_short="2026-11-28 12:00",
+                    effr_observation_date="2026-11-25", effr_published_at="2026-11-27 22:02")
+        cases = {
+            "effr_observation_date": "2026-11-27",
+            "effr_published_at": "2026-11-30 22:00",
+            "effr_source": "https://example.com/effr",
+        }
+        evidence_error = "第二关有效基金利率证据错"
+        self.assertFalse(any(evidence_error in e for e in self._validate(snap, validated_on=date(2026, 11, 28))))
+        for key, invalid in cases.items():
+            with self.subTest(key=key):
+                invalid_snap = {**snap, key: invalid}
+                errors = self._validate(invalid_snap, validated_on=date(2026, 11, 28))
+                self.assertTrue(any(evidence_error in e for e in errors), errors)
+
+    def test_effr_rejects_an_old_release_holiday_observation_and_unrelated_fed_series(self):
+        snap = {"effr_observation_date": "2026-11-25", "effr_published_at": "2026-11-27 22:02",
+                "effr_source": "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/5.json"}
+        cutoff = datetime(2026, 11, 28, 12)
+        errors = []
+        rules.check_effr_evidence(snap, cutoff, errors)
+        self.assertEqual(errors, [])
+        for fields in (
+            {"effr_observation_date": "2026-11-24", "effr_published_at": "2026-11-25 22:02"},
+            {"effr_observation_date": "2026-11-26"},
+            {"effr_source": "https://fred.stlouisfed.org/series/SOFR"},
+        ):
+            with self.subTest(fields=fields):
+                errors = []
+                rules.check_effr_evidence({**snap, **fields}, cutoff, errors)
+                self.assertEqual(len(errors), 1)
+        errors = []
+        rules.check_effr_evidence(snap, datetime(2026, 11, 30, 21), errors)
+        self.assertEqual(errors, [])
+        self.assertTrue(rules._is_ny_fed_business_day(date(2027, 6, 18)))
+        self.assertFalse(rules._is_ny_fed_business_day(date(2027, 7, 5)))
+
+    def test_disclosed_effr_delay_preserves_publication_and_keeps_gate_closed(self):
+        snap = _fixture()
+        snap.update(edition_id="2026-11-28_1130", us2y_pct=4.40, spread_2y_ff_bp=52,
+                    data_caveats=[{"id": "effr_release_delayed", "market": "gold",
+                                   "category": "delayed_official", "next_review": "2026-11-28_1800"}])
+        cutoff = datetime(2026, 11, 28, 12)
+        errors = []
+        current = rules.check_effr_evidence(snap, cutoff, errors)
+        self.assertFalse(current)
+        self.assertEqual(errors, [])
+        rules.recheck_entry_gates(snap, cutoff, None, errors, effr_current=current)
+        self.assertEqual(errors, [])
+        snap["tier1_gates"][1]["passed"] = True
+        rules.recheck_entry_gates(snap, cutoff, None, errors, effr_current=current)
+        self.assertTrue(any("第 2 关复算冲突" in error for error in errors))
+        errors = []
+        snap["data_caveats"][0]["next_review"] = "2026-11-28_0730"
+        rules.check_effr_evidence(snap, cutoff, errors)
+        self.assertTrue(any("须核对最新已公布利率或披露发布延迟" in error for error in errors))
+
+    def test_vix_daily_return_uses_the_same_official_close_series(self):
+        snap = _fixture()
+        snap.update(vix_change_pct=-11.16, vix_10d_session_closes=[
+            *snap["vix_10d_session_closes"][:-2],
+            {"date": "2026-11-26", "close": 26.80}, {"date": "2026-11-27", "close": 23.81},
+        ], vix_10d_window_end="2026-11-27", vix_close=23.81)
+        state = snap["vix_10d_session_closes"]
+        peak = max(state, key=lambda row: row["close"])
+        snap.update(vix_10d_peak_close=peak["close"], vix_10d_peak_date=peak["date"])
+        errors = []
+        self.assertTrue(lint._check_vix_snapshot(snap, None, errors))
+        self.assertEqual(errors, [])
+        snap["vix_change_pct"] = -15.836
+        self.assertIsNone(lint._check_vix_snapshot(snap, None, errors))
+        self.assertTrue(any("VIX 日涨跌幅错" in e for e in errors), errors)
+
+    def test_snapshot_and_renderer_reject_ambiguous_or_nonfinite_json(self):
+        for invalid in ('{"value": 1, "value": 2}', '{"value": NaN}', '{"value": 1e400}'):
+            with self.subTest(invalid=invalid):
+                self.snapshot_path.write_text(invalid)
+                errors = []
+                self.assertIsNone(lint.validate_snapshot_file(self.snapshot_path, errors, []))
+                self.assertEqual(len(errors), 1)
+                with self.assertRaisesRegex(ValueError, "Invalid JSON"):
+                    build_daily.extract_directives(f"<!-- DAILY_META {invalid} -->")
 
     def test_shared_chart_inputs_match_the_renderer(self):
         raw = ARCHIVED_REPORT.read_text()
@@ -617,6 +717,8 @@ class GoldWorkflowTests(unittest.TestCase):
             edition_id="2026-11-30_1800",
             as_of_short="2026-11-30 18:00",
             as_of_bjt="2026年11月30日（周一）18:00",
+            effr_observation_date="2026-11-25",
+            effr_published_at="2026-11-27 22:02",
             cfets_fixing_date="2026-11-30",
             spot_gold_ny_close_date="2026-11-27",
             tier1_gate4_threshold_date="2026-11-25",

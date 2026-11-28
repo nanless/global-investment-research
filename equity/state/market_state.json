@@ -136,7 +136,7 @@
         {"id": "idx_RUT", "code": "IWM", "name": "罗素2000·IWM", "value": 273.79, "change_pct": 1.83},
         {"id": "idx_SPXEW", "code": "RSP", "name": "标普等权·RSP", "value": 218.38, "change_pct": 1.22},
         {"id": "idx_SOX", "code": "SOX", "name": "费城半导体", "value": 9186.71, "change_pct": 4.69},
-        {"id": "idx_VIX", "code": "VIX", "name": "VIX恐慌指数", "value": 23.81, "change_pct": -11.16}
+        {"id": "idx_VIX", "code": "VIX", "name": "VIX恐慌指数", "value": 23.81, "change_pct": -11.16, "previous_value": 26.8, "observation_date": "2026-11-27", "previous_observation_date": "2026-11-26", "source_url": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"}
       ]
     },
     "gold_mirror_readonly": {
@@ -217,33 +217,208 @@
         {"name": "宁德时代", "a_pe_ttm": 11.4, "h_pe_ttm": 14.3, "ah_premium_pct": -19.7, "preferred_channel": "onshore_a_inverted"}
       ],
       "benchmarks": [
-        {"name": "华虹半导体", "a": "688347", "h": "01347.HK", "ah_premium_pct": 217.6, "preferred_channel": "offshore_hk"},
-        {"name": "中芯国际", "a": "688981", "h": "00981.HK", "ah_premium_pct": 194.1, "preferred_channel": "offshore_hk"},
-        {"name": "三花智控", "a": "002050", "h": "02050.HK", "ah_premium_pct": 89.4, "preferred_channel": "offshore_hk"},
-        {"name": "中国人寿", "a": "601628", "h": "02628.HK", "ah_premium_pct": 80.4, "preferred_channel": "offshore_hk"},
-        {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.0, "preferred_channel": "offshore_hk_check_withholding", "is_red_chip_28": true},
-        {"name": "中广核电力", "a": "003816", "h": "01816.HK", "ah_premium_pct": 64.3, "preferred_channel": "offshore_hk"},
-        {"name": "中国移动", "a": "600941", "h": "00941.HK", "ah_premium_pct": 58.5, "preferred_channel": "offshore_hk_check_withholding", "is_red_chip_28": true},
-        {"name": "中国神华", "a": "601088", "h": "01088.HK", "ah_premium_pct": 52.0, "preferred_channel": "offshore_hk"},
-        {"name": "中信证券", "a": "600030", "h": "06030.HK", "ah_premium_pct": 51.1, "preferred_channel": "offshore_hk"},
-        {"name": "比亚迪", "a": "002594", "h": "01211.HK", "ah_premium_pct": 50.8, "preferred_channel": "offshore_hk"},
-        {"name": "中国石油", "a": "601857", "h": "00857.HK", "ah_premium_pct": 50.6, "preferred_channel": "offshore_hk"},
-        {"name": "中国铝业", "a": "601600", "h": "02600.HK", "ah_premium_pct": 46.9, "preferred_channel": "offshore_hk"},
-        {"name": "工商银行", "a": "601398", "h": "01398.HK", "ah_premium_pct": 39.5, "preferred_channel": "offshore_hk"},
-        {"name": "百济神州", "a": "688235", "h": "06160.HK", "ah_premium_pct": 32.6, "preferred_channel": "offshore_hk"},
-        {"name": "洛阳钼业", "a": "603993", "h": "03993.HK", "ah_premium_pct": 31.0, "preferred_channel": "offshore_hk"},
-        {"name": "顺丰控股", "a": "002352", "h": "06936.HK", "ah_premium_pct": 30.8, "preferred_channel": "offshore_hk"},
-        {"name": "中国平安", "a": "601318", "h": "02318.HK", "ah_premium_pct": 24.5, "preferred_channel": "offshore_hk"},
-        {"name": "恒瑞医药", "a": "600276", "h": "01276.HK", "ah_premium_pct": 24.4, "preferred_channel": "offshore_hk"},
-        {"name": "福耀玻璃", "a": "600660", "h": "03606.HK", "ah_premium_pct": 24.4, "preferred_channel": "offshore_hk"},
-        {"name": "中远海控", "a": "601919", "h": "01919.HK", "ah_premium_pct": 19.1, "preferred_channel": "neutral"},
-        {"name": "立讯精密", "a": "002475", "h": "02475.HK", "ah_premium_pct": 17.7, "preferred_channel": "offshore_hk"},
-        {"name": "紫金矿业", "a": "601899", "h": "02899.HK", "ah_premium_pct": 17.3, "preferred_channel": "neutral"},
-        {"name": "美的集团", "a": "000333", "h": "00300.HK", "ah_premium_pct": 8.4, "preferred_channel": "neutral"},
-        {"name": "中际旭创", "a": "300308", "h": "03308.HK", "ah_premium_pct": 0.9, "preferred_channel": "neutral"},
-        {"name": "招商银行", "a": "600036", "h": "03968.HK", "ah_premium_pct": -4.4, "preferred_channel": "onshore_a_inverted"},
-        {"name": "药明康德", "a": "603259", "h": "02359.HK", "ah_premium_pct": -8.1, "preferred_channel": "onshore_a_inverted"},
-        {"name": "宁德时代", "a": "300750", "h": "03750.HK", "ah_premium_pct": -19.7, "preferred_channel": "onshore_a_inverted"}
+        {"name": "华虹半导体", "a": "688347", "h": "01347.HK", "ah_premium_pct": 217.6, "preferred_channel": "offshore_hk",
+          "exchange_closes": {
+            "a": {"code": "688347", "currency": "CNY", "date": "2026-11-27", "close": 212.40,
+              "source_url": "https://query.sse.com.cn/commonQuery.do?sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_CJGK_MRGK_C&SEC_CODE=688347&TX_DATE=20261127",
+              "replay_url": "https://yunhq.sse.com.cn:32042/v1/sh1/dayk/688347?select=date,open,high,low,close,volume,amount&begin=791&end=792"},
+            "h": {"code": "01347.HK", "currency": "HKD", "date": "2026-11-27", "close": 78.15,
+              "source_url": "https://www.hkex.com.hk/eng/stat/smstat/dayquot/d261127e.htm#quotations"}
+          },
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-14",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0326/2026032602731_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0514/2026051401486.pdf"]},
+            "h": {"ordinary_cash_per_share": 0, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-14",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0326/2026032602731_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0514/2026051401486.pdf"]}
+          }},
+        {"name": "中芯国际", "a": "688981", "h": "00981.HK", "ah_premium_pct": 194.1, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-26",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0326/2026032601678_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0626/2026062602353.pdf"]},
+            "h": {"ordinary_cash_per_share": 0, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-26",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0326/2026032601678_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0626/2026062602353.pdf"]}
+          }},
+        {"name": "三花智控", "a": "002050", "h": "02050.HK", "ah_premium_pct": 89.4, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.4, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-08",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2026-01-08/1224923397.PDF", "https://disc.static.szse.cn/disc/disk03/finalpage/2026-07-08/f75eff2a-f4fc-4db5-ba19-fc688099169c.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.4541, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-29",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1217/2025121701844.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0629/2026062902571.pdf"]}
+          }},
+        {"name": "中国人寿", "a": "601628", "h": "02628.HK", "ah_premium_pct": 80.4, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.856, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-03",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-10-13/1224707185.PDF", "https://static.cninfo.com.cn/finalpage/2026-07-03/1225406295.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.856, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-25",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0925/2025092501769_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0625/2026062501614.pdf"]}
+          }},
+        {"name": "中国海油", "a": "600938", "h": "00883.HK", "ah_premium_pct": 69.0, "preferred_channel": "offshore_hk_check_withholding", "requires_withholding_check": true,
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 1.14493, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-03",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-10-10/1224703309.PDF", "https://static.cninfo.com.cn/finalpage/2026-07-03/1225406290.PDF"]},
+            "h": {"ordinary_cash_per_share": 1.28, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-03",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0827/2025082700694.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0428/2026042802716.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0603/2026060302370.pdf"]}
+          }},
+        {"name": "中广核电力", "a": "003816", "h": "01816.HK", "ah_premium_pct": 63.6, "preferred_channel": "offshore_hk",
+          "exchange_closes": {
+            "a": {"code": "003816", "currency": "CNY", "date": "2026-11-27", "close": 4.60,
+              "source_url": "https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1815_stock_snapshot&txtDMorJC=003816&txtBeginDate=2026-11-24&txtEndDate=2026-11-27&TABKEY=tab1"},
+            "h": {"code": "01816.HK", "currency": "HKD", "date": "2026-11-27", "close": 3.285,
+              "source_url": "https://www.hkex.com.hk/eng/stat/smstat/dayquot/d261127e.htm#quotations"}
+          },
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.086, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-03",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2026-07-03/1225405841.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.09846, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-20",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0520/2026052001238.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0520/2026052001250.pdf"]}
+          }},
+        {"name": "中国移动", "a": "600941", "h": "00941.HK", "ah_premium_pct": 58.5, "preferred_channel": "offshore_hk_check_withholding", "requires_withholding_check": true,
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 4.7037, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-29",
+              "source_urls": ["https://www.chinamobileltd.com/sc/ir/sse_filings/sca250826.pdf", "https://static.cninfo.com.cn/finalpage/2026-05-29/1225336294.PDF"]},
+            "h": {"ordinary_cash_per_share": 5.27, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-21",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0807/2025080700355.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0326/2026032600488.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0521/2026052101590.pdf"]}
+          }},
+        {"name": "中国神华", "a": "601088", "h": "01088.HK", "ah_premium_pct": 52.0, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 2.01, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-06",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1103/2025110303075_c.pdf", "https://static.cninfo.com.cn/finalpage/2026-07-06/1225410284.PDF"]},
+            "h": {"ordinary_cash_per_share": 2.01, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-29",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1027/2025102700791.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0829/2025082903216.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0629/2026062901096.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0330/2026033003712.pdf"]}
+          }},
+        {"name": "中信证券", "a": "600030", "h": "06030.HK", "ah_premium_pct": 51.1, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.7, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-04",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2026-06-04/1225348864.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.7, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-14",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1219/2025121901931.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0514/2026051401302.pdf"]}
+          }},
+        {"name": "比亚迪", "a": "002594", "h": "01211.HK", "ah_premium_pct": 50.8, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.358, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-24",
+              "source_urls": ["https://disc.static.szse.cn/disc/disk03/finalpage/2026-07-24/39a39d44-7007-489a-ae4e-bc77b021952d.PDF", "https://disc.static.szse.cn/download/disc/disk03/finalpage/2025-08-30/d6a27def-712b-4491-8dab-df0deacb5d16.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.358, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-09",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0609/2026060901220.pdf"]}
+          }},
+        {"name": "中国石油", "a": "601857", "h": "00857.HK", "ah_premium_pct": 50.6, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.47, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-21",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0908/2025090801098_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0621/2026062100021_c.pdf"]},
+            "h": {"ordinary_cash_per_share": 0.47, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-09",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0922/2025092201024.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0609/2026060901598.pdf"]}
+          }},
+        {"name": "中国铝业", "a": "601600", "h": "02600.HK", "ah_premium_pct": 46.9, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.27, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-08-08",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2026-08-08/1225464320.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.3038, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-26",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0827/2025082701371.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0626/2026062602883.pdf"]}
+          }},
+        {"name": "工商银行", "a": "601398", "h": "01398.HK", "ah_premium_pct": 39.5, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.3103, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-07",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-12-09/1224857717.PDF", "https://static.cninfo.com.cn/finalpage/2026-05-07/1225279750.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.3103, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-07",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-12-09/1224857717.PDF", "https://static.cninfo.com.cn/finalpage/2026-05-07/1225279750.PDF"]}
+          }},
+        {"name": "百济神州", "a": "688235", "h": "06160.HK", "ah_premium_pct": 32.6, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-11",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0415/2026041500019_c.pdf", "https://www.sec.gov/Archives/edgar/data/1651308/000165130826000017/bgne-20260611.htm"]},
+            "h": {"ordinary_cash_per_share": 0, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-11",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0415/2026041500019_c.pdf", "https://www.sec.gov/Archives/edgar/data/1651308/000165130826000017/bgne-20260611.htm"]}
+          }},
+        {"name": "洛阳钼业", "a": "603993", "h": "03993.HK", "ah_premium_pct": 31.0, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.286, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-20",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2026-05-20/1225317443.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.32643, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-28",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0428/2026042804391.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0428/2026042804305.pdf"]}
+          }},
+        {"name": "顺丰控股", "a": "002352", "h": "06936.HK", "ah_premium_pct": 30.8, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.89, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-11",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0330/2026033000530.pdf", "https://static.cninfo.com.cn/finalpage/2026-05-11/1225292903.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.9956, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-08",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0828/2025082802480.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0508/2026050801550.pdf"]}
+          }},
+        {"name": "中国平安", "a": "601318", "h": "02318.HK", "ah_premium_pct": 24.5, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 2.7, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-02",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2026-03-27/1225038263.PDF", "https://static.cninfo.com.cn/finalpage/2026-06-02/1225342200.PDF"]},
+            "h": {"ordinary_cash_per_share": 2.7, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-20",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0919/2025091900023.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0520/2026052001114.pdf"]}
+          }},
+        {"name": "恒瑞医药", "a": "600276", "h": "01276.HK", "ah_premium_pct": 24.4, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.2, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-20",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0520/2026052001188_c.pdf"]},
+            "h": {"ordinary_cash_per_share": 0.22828, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-17",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0417/2026041701651.pdf"]}
+          }},
+        {"name": "福耀玻璃", "a": "600660", "h": "03606.HK", "ah_premium_pct": 24.4, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 2.1, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-01",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2026-03-18/1225014577.PDF", "https://static.cninfo.com.cn/finalpage/2026-05-01/1225272016.PDF"]},
+            "h": {"ordinary_cash_per_share": 2.1, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-30",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0925/2025092500986.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0430/2026043002085.pdf"]}
+          }},
+        {"name": "中远海控", "a": "601919", "h": "01919.HK", "ah_premium_pct": 19.1, "preferred_channel": "neutral",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 1, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-17",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1015/2025101501208_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0617/2026061701482_c.pdf"]},
+            "h": {"ordinary_cash_per_share": 1, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-26",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0922/2025092200376.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0526/2026052602306.pdf"]}
+          }},
+        {"name": "立讯精密", "a": "002475", "h": "02475.HK", "ah_premium_pct": 17.7, "preferred_channel": "offshore_hk",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.2989961, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-11",
+              "source_urls": ["https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-02-06/83ac4e6a-1616-4a48-9c8b-bb98caf0e756.PDF", "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-07-11/f4ea4b28-8d1b-4cb3-b1bd-61d7462fe39d.PDF"]},
+            "h": {"status": "excluded_from_distribution", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-11",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-08-09/1224442643.PDF", "https://static.cninfo.com.cn/finalpage/2026-05-23/1225327597.PDF", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0630/2026063000097.pdf#page=16", "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-07-11/f4ea4b28-8d1b-4cb3-b1bd-61d7462fe39d.PDF"]}
+          }},
+        {"name": "紫金矿业", "a": "601899", "h": "02899.HK", "ah_premium_pct": 17.3, "preferred_channel": "neutral",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 0.6, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-22",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-09-24/1224676690.PDF", "https://static.cninfo.com.cn/finalpage/2026-06-22/1225379946.PDF"]},
+            "h": {"ordinary_cash_per_share": 0.6, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-10",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0905/2025090500571.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0710/2026071000660.pdf"]}
+          }},
+        {"name": "美的集团", "a": "000333", "h": "00300.HK", "ah_premium_pct": 8.4, "preferred_channel": "neutral",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 4.3, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-23",
+              "source_urls": ["https://disc.static.szse.cn/download/disc/disk03/finalpage/2025-11-12/244f0341-47b3-4fb0-a4c5-342250af4607.PDF", "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-06-23/01a4f25e-2e6b-4802-9d99-ca919cd38520.PDF"]},
+            "h": {"ordinary_cash_per_share": 4.91426, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-22",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1107/2025110700892.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0622/2026062200476.pdf"]}
+          }},
+        {"name": "中际旭创", "a": "300308", "h": "03308.HK", "ah_premium_pct": 0.9, "preferred_channel": "neutral",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 1.4, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-22",
+              "source_urls": ["https://disc.static.szse.cn/disc/disk03/finalpage/2025-09-26/8232391d-fd4e-4060-981b-8b5997140ffa.PDF", "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-04-22/614d8f79-9034-42df-bfa9-8b156e09834d.PDF"]},
+            "h": {"status": "listed_after_record_date", "listed_date": "2026-07-30", "last_record_date": "2026-04-29", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-30",
+              "source_urls": ["https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-04-22/614d8f79-9034-42df-bfa9-8b156e09834d.PDF", "https://static.cninfo.com.cn/finalpage/2026-07-30/1225449717.PDF"]}
+          }},
+        {"name": "招商银行", "a": "600036", "h": "03968.HK", "ah_premium_pct": -4.4, "preferred_channel": "onshore_a_inverted",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 2.016, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-07-04",
+              "source_urls": ["https://s3gw.cmbchina.com/lb5001-cmbweb-prd-1255000097/cmbir/20260109/4221d4a5-e284-4ea0-ad15-aa2b9bbbd1cc.pdf", "https://static.cninfo.com.cn/finalpage/2026-07-04/1225409111.PDF"]},
+            "h": {"ordinary_cash_per_share": 2.016, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-06-26",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1229/2025122901417.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0626/2026062600417.pdf"]}
+          }},
+        {"name": "药明康德", "a": "603259", "h": "02359.HK", "ah_premium_pct": -8.1, "preferred_channel": "onshore_a_inverted",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 1.92927, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-05-23",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-09-20/1224670628.PDF", "https://static.cninfo.com.cn/finalpage/2026-05-23/1225326283.PDF"]},
+            "h": {"ordinary_cash_per_share": 1.92927, "currency": "CNY", "cash_basis": "southbound_cny", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-28",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-07-28/1224317837.PDF", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0324/2026032400708.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0428/2026042804373.pdf"]}
+          }},
+        {"name": "宁德时代", "a": "300750", "h": "03750.HK", "ah_premium_pct": -19.7, "preferred_channel": "onshore_a_inverted",
+          "cash_dividends": {
+            "a": {"ordinary_cash_per_share": 3.185, "currency": "CNY", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-15",
+              "source_urls": ["https://static.cninfo.com.cn/finalpage/2025-08-13/1224474223.PDF", "https://disc.static.szse.cn/disc/disk03/finalpage/2026-03-10/202a7521-9015-4094-b180-bfa7735459ab.PDF", "https://disc.static.szse.cn/disc/disk03/finalpage/2026-04-15/a033b72d-34e0-4757-9056-3e415ac30fb9.PDF"]},
+            "h": {"ordinary_cash_per_share": 3.572, "currency": "HKD", "period_start": "2025-01-01", "period_end": "2025-12-31", "published_date": "2026-04-07",
+              "source_urls": ["https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0730/2025073001333_c.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0310/2026031000049.pdf", "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0407/2026040700105.pdf"]}
+          }}
       ]
     },
     "commodity_mirror": {
@@ -347,8 +522,8 @@
       "sector_regulation": "yellow_cms_round3_settled_1123_abbv_win_unh_35141_wmt_cto_form144",
       "next_anchors": [
         "2026-11-28 13:00 美联储进入 12/10 议息前缄默期（标普周六凌晨下调法国展望至负面）",
-        "2026-11-29 19:00 第42届OPEC+线上部长会",
-        "2026-11-30 09:05 日央行植田演讲 + 21:30 美债2180亿交割(净抽815.1亿撞SRF到期)+布油1月到期换月+MSCI剔MSTR",
+        "2026-11-29 第42届产油国联盟部长会（时间待定）",
+        "2026-11-30 09:05 日央行植田演讲 + 美债交割（具体时刻和净额待核）+布油1月到期换月+MSCI剔MSTR",
         "2026-12-01/04 NVDA听证+10-Q / 12-02 黑石BCRED赎回 / 12-04 非农",
         "2026-12-10 03:00 沃什联储议息 / 12-12 停摆大限"
       ]
@@ -392,9 +567,9 @@
       "mode": "mode_2_watch_brief",
       "note": "美国黑五半日市（北京 11/28 02:00 美股常规收盘、03:00 SIFMA 债市建议早收；A/港正常）"
     },
-    {"date_cst": "2026-11-30", "type": "rebalance_and_policy", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "四重撞车：09:05 日央行植田和男名古屋演讲 + A 股降保 80%/11 月景气指数 + MSCI 剔 22 A股/15 港股/MSTR + 2,180 亿美债集中交割（私营净抽 815.1 亿）与布油 1 月合约到期换月"},
+    {"date_cst": "2026-11-30", "type": "rebalance_and_policy", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "四重撞车：09:05 日央行植田和男名古屋演讲 + A 股降保 80%/11 月景气指数 + MSCI 剔 22 A股/15 港股/MSTR + 多笔美债交割（私营净额待核）与布油 1 月合约到期换月"},
     {"date_cst": "2026-12-01", "type": "monthly_rollover", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "rollover_2026_11_to_2026_12", "note": "三市跨月滚存（2026_11 -> 2026_12）"},
-    {"date_cst": "2026-12-04", "type": "hk_major_rebalance", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "恒生系列合并季检尾盘调仓（恒指权重 + 恒科 30→50 超 125 亿美元流，16:06 不可撤单）+ NVDA 10-Q 延期死线"},
+    {"date_cst": "2026-12-04", "type": "hk_major_rebalance", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "恒生系列合并季检尾盘调仓（恒指权重 + 恒科 30→50 超 125 亿美元流，16:06 不可撤单）+ NVDA 10-Q 常规申报截止日"},
     {"date_cst": "2026-12-07", "type": "policy_deadline", "markets_affected": ["hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "美国财政部 31 CFR Part 851 对外投资规则意见截止日 + 恒科 50 只正式生效"},
     {"date_cst": "2026-12-18", "type": "quad_witching_boj", "markets_affected": ["a_share", "hk_stock", "us_stock"], "mode": "mode_1_high_alert", "note": "日本央行议息 + 美股四巫日衍生品大交割（12/19 05:00 CST）"},
     {"date_cst": "2026-12-24", "type": "half_day", "markets_affected": ["hk_stock", "us_stock"], "gold_event_id": "christmas_eve_2026", "mode": "mode_2_watch_brief", "source_url": "https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market?sc_lang=en", "note": "港股半日市（12:00 结束持续交易）；美股半日（12/25 02:00 收、债 03:00）；A 股正常"},
@@ -443,7 +618,7 @@
       "dfii10_pct": 2.79,
       "sofr_pct": 3.95,
       "srf_usd_b": 23.15,
-      "note": "11/27 美国财政部官方曲线：2 年期 4.69%、10 年期 4.94%、30 年期 5.33%、10 年实际利率 2.79%；纽约联储常备回购 231.5 亿全部发生于 08:15 早场（98.27% 美债抵押、13:30 午场归零），周一到期直撞 815.1 亿美债私营净抽水；标普周六凌晨下调法国展望至负面（法债 10 年 4.74% 倒挂意债 4.32%）。"
+      "note": "11/27 美国财政部官方曲线：2 年期 4.69%、10 年期 4.94%、30 年期 5.33%、10 年实际利率 2.79%；纽约联储常备回购 231.5 亿全部发生于 08:15 早场（98.27% 美债抵押、13:30 午场归零），周一到期并与美债交割同日，私营净额待核；标普周六凌晨下调法国展望至负面（法债 10 年 4.74% 倒挂意债 4.32%）。"
     },
     "cn_us_10y_spread_bp": -334,
     "unhedged_usd_fx_drag": {
@@ -545,15 +720,15 @@
         "benchmarks": [
           {"name": "印度Nifty50", "code": "NSEI", "value": 25607.2, "change_pct": -1.07, "as_of": "2026-11-27 官收"}
         ],
-        "access_grade": "C 级 · 防LOF退市",
+        "access_grade": "C 级 · 关注 LOF 退市提案",
         "onshore_vehicles": [
           {"code": "006105", "name": "宏利印度股票（场外）", "fee_note": "场外按净值申购无二级市场溢价", "note": "境内场外替代工具"},
-          {"code": "520580", "name": "招商新兴亚洲ETF", "fee_note": "沪新互通间接配置含印度权重", "note": "境内场内间接分散参考"}
+          {"code": "520580", "name": "招商新兴亚洲ETF", "fee_note": "境内管理与托管合计 0.50%/年，另承担底层基金费用", "note": "沪新互通场内区域分散工具，覆盖印度、印尼、泰国和马来西亚"}
         ],
         "offshore_vehicles": [
           {"code": "IEMG", "name": "iShares 核心MSCI新兴市场ETF", "note": "11/27 官方终盘 70.84 美元（+3.00%），离岸低费分散覆盖印度及新兴市场"}
         ],
-        "warning": "严禁场内追买工银印度基金上市开放式基金（164824，收 1.342）：综合费率高达 1.40%/年且面临最晚 2027 年底强制退市高危风险！"
+        "warning": "警惕工银印度 LOF（164824，收 1.342）的双层费用与场内交易风险。深交所 2026 年 8 月征求意见稿拟令相关 QDII LOF 最晚于 2027 年底退出，生效和个别安排以正式公告为准。"
       }
     ]
   },
@@ -574,7 +749,7 @@
       "category": "delayed_official",
       "severity": "info",
       "item": "Cboe 11/27 恐慌官行（23.81）、黄金/金矿官方净值与黑五美股盘后排查已全部核销，仅余 T+1 利率与完整加密基金流待周一补齐",
-      "detail": "本午刊已清零 Cboe 11/27 官方历史日线表行（23.81）、黑五盘后与 SEC 8-K 零突袭排查、纽约联储常备回购分场明细（早场 231.5 亿 / 午场归零）、GLD/GDX 官方净值（332.98 / 78.89）、伦交所爱尔兰及三只离岸非美 ETF 11/27 终盘校准，并录得现货比特币基金部分流出 -6,180 万美元；仅余 T+1 11/27 隔夜担保融资利率、财政部一般账户、信用利差、贝莱德余下加密流及黑五零售终报待下周一核销。",
+      "detail": "本午刊已清零 Cboe 11/27 历史日线收盘 23.81（较感恩节历史行 26.80 降 11.16%，报价面板以上一常规交易日为基准）、黑五盘后与 SEC 8-K 零突袭排查、纽约联储常备回购分场明细（早场 231.5 亿 / 午场归零）、GLD/GDX 官方净值（332.98 / 78.89）、伦交所爱尔兰及三只离岸非美 ETF 11/27 终盘校准，并录得现货比特币基金部分流出 -6,180 万美元；仅余 T+1 11/27 隔夜担保融资利率、财政部一般账户、信用利差、贝莱德余下加密流及黑五零售终报待下周一核销。",
       "impact": "核心价格、利率与波动率官表已 100% 落定，严格维持美股红灯防守（1.0/6、28% 防弹衣 + 62% 短债 + 10% 存量金）与黄金 2/4 关红灯新仓 0%。",
       "next_review": "2026-11-30_0730"
     }

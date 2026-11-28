@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +17,8 @@ import build_us_stock_pdf
 import pdf_common
 from build_daily import extract_daily_meta, load_optional_charts
 from lint_equity import (
-    MARKETS, _check_playbook_retracted_claims, _check_rsi_metrics, _scan_text_for_gold_buy,
+    MARKETS, _check_ah_dividend_evidence, _check_market_state_math, _check_playbook_retracted_claims,
+    _check_rsi_metrics, _scan_text_for_gold_buy,
 )
 
 KPI_CARDS = [{"label": "数据", "val": "1", "sub": "测试"} for _ in range(4)]
@@ -28,7 +30,54 @@ def holiday(day, kind, markets, **fields):
     return {"date_cst": day, "type": kind, "markets_affected": list(markets), "mode": WATCH, **fields}
 
 
+class AhDividendPreflightTests(unittest.TestCase):
+    def test_rejects_duplicate_pairs_and_receipt_dated_after_edition_cutoff(self):
+        dividend = {
+            "ordinary_cash_per_share": 0.2, "currency": "CNY", "period_start": "2025-01-01",
+            "period_end": "2025-12-31", "published_date": "2026-04-15",
+            "source_url": "https://www.sse.com.cn/disclosure/notice",
+        }
+        row = {
+            "name": "双地标的", "a": "600030", "h": "06030.HK",
+            "cash_dividends": {"a": dividend, "h": dict(dividend, cash_basis="southbound_cny")},
+        }
+        state = {
+            "edition_id": "2026-11-28_1130",
+            "cross_market_linkages": {"ah_premium_radar": {"benchmarks": [row]}},
+        }
+        self.assertEqual(_check_ah_dividend_evidence(state), [])
+        radar = state["cross_market_linkages"]["ah_premium_radar"]
+        radar["benchmarks"].insert(0, {"a": row["a"], "h": row["h"]})
+        self.assertIn("同一 A/H 配对有重复记录", _check_ah_dividend_evidence(state)[0])
+        radar["benchmarks"].pop(0)
+        row["cash_dividends"]["h"]["published_date"] = "2026-11-29"
+        self.assertIn("公告日晚于当前数据截点", _check_ah_dividend_evidence(state)[0])
+
+
+class MarketComparisonTests(unittest.TestCase):
+    def test_close_change_uses_the_declared_previous_value(self):
+        observation = {"code": "VIX", "value": 23.81, "change_pct": -11.16, "previous_value": 26.8}
+        state = {"markets": {"us_stock": {"index_matrix": [observation]}}}
+        self.assertEqual(_check_market_state_math(state), [])
+        observation["previous_value"] = 28.29
+        self.assertIn("与所列比较基准算得的 -15.84% 不一致", _check_market_state_math(state)[0])
+        for previous in (0, float("nan"), 10**400):
+            with self.subTest(previous=previous):
+                observation["previous_value"] = previous
+                self.assertIn("需要正数现值、比较值与有限涨跌幅", _check_market_state_math(state)[0])
+
+
 class EquityWorkflowTests(unittest.TestCase):
+    def test_help_explains_modes_without_linting(self):
+        for flag in ("--help", "-h"):
+            with self.subTest(flag=flag):
+                result = self.lint(flag)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("--plan YYYY-MM-DD_HHMM", result.stdout)
+                self.assertIn("--strict", result.stdout)
+                self.assertNotIn("Summary:", result.stdout)
+        self.assertEqual(self.lint("--unexpected").returncode, 2)
+
     def setUp(self):
         workspace = tempfile.TemporaryDirectory()
         self.addCleanup(workspace.cleanup)
@@ -39,6 +88,10 @@ class EquityWorkflowTests(unittest.TestCase):
         (self.root / "gold").mkdir()
         for script in (ROOT / "equity").glob("*.py"):
             shutil.copy2(script, equity / script.name)
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        for module in ("source_links.py", "svg_geometry.py", "visual_widgets.py", "ah_dividends.py", "inventory_evidence.py"):
+            shutil.copy2(ROOT / "scripts" / module, scripts / module)
         self.state_path = equity / "state/market_state.json"
         self.gold_path = self.root / "gold/data_snapshot.json"
         for ledger in ("INDEX", "CHANGELOG", "SCORECARD"):
@@ -212,9 +265,50 @@ class EquityWorkflowTests(unittest.TestCase):
         result = self.lint("--precheck", "--strict")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("数据故障须在 pending_backfills", result.stdout)
-        self.state["pending_backfills"].append({
-            "market": "us_stock", "item": "交易所公告服务中断", "due_session": "2026-11-26_1800",
-        })
+        pending = {"market": "us_stock", "item": "待补非农数据", "due_session": "2026-11-26_1800"}
+        self.state["pending_backfills"].append(pending)
+        self.save()
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("数据故障须在 pending_backfills", result.stdout)
+        pending["item"] = "交易所公告服务中断"
+        self.save()
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_source_outage_backfill_id_tracks_the_same_item_when_review_changes(self):
+        edition = "2026-11-26_0730"
+        self.advance(edition)
+        outage = {
+            "kind": "source_outage", "reason": "交易所公告服务中断", "evidence_url": "https://www.nyse.com/",
+            "backfill_id": "nyse_notice_outage", "next_review_session": "2026-11-26_1800",
+        }
+        self.state["publication_exceptions"] = {"edition_id": edition, "markets": {"us_stock": outage}}
+        pending = {"id": "nyse_notice_outage", "market": "us_stock", "item": "复核交易所公告服务恢复时间",
+                   "due_session": "2026-11-26_1800"}
+        self.state["pending_backfills"] = [pending]
+        self.issue("a_share", "light")
+        self.issue("hk_stock", "light")
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        for changed_entry in ({"id": "other_id"}, {"due_session": "2026-11-27_0730"}):
+            with self.subTest(changed_entry=changed_entry):
+                self.state["pending_backfills"] = [{**pending, "item": outage["reason"], **changed_entry}]
+                self.save()
+                result = self.lint("--precheck", "--strict")
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn("数据故障须在 pending_backfills", result.stdout)
+
+        self.state["pending_backfills"] = [pending, {**pending, "item": "重复同一待补编号"}]
+        self.save()
+        result = self.lint("--precheck", "--strict")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("数据故障须在 pending_backfills", result.stdout)
+
+        outage.update(next_review_session="2026-11-27_0730", evidence_url="https://www.nyse.com/markets/status")
+        pending.update(due_session="2026-11-27_0730", item="新查公告服务仍在维护，改下班复核")
+        self.state["pending_backfills"] = [pending]
         self.save()
         result = self.lint("--precheck", "--strict")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1320,6 +1414,50 @@ class EquityWorkflowTests(unittest.TestCase):
         self.assertEqual(res_prose.returncode, 1, res_prose.stdout)
         self.assertIn("policy_calendar.json", res_prose.stdout)
         self.assertIn("realtime_monitor.py", res_prose.stdout)
+
+    def test_policy_brief_evidence_links_require_specific_unique_pages(self):
+        import equity.lint_equity as le
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "policy_calendar.json"
+            brief = {
+                "id": "rate", "date_cst": "2026-11-29", "region": "US",
+                "category": "central_bank", "impact_tier": "P1", "authority": "美联储",
+                "headline": "联储议息排程", "summary": "时间以联储日历为准。",
+                "affected_markets": ["us_stock"], "market_impact": "关注美元利率变化。",
+                "source_url": "https://www.federalreserve.gov/newsevents/2026-december.htm",
+                "source_urls": ["https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"],
+            }
+            calendar = {
+                "edition_id": "2026-11-29_1800", "as_of_cst": "2026-11-29T18:00:00+08:00",
+                "schema_version": "1.0", "horizon_days": 30, "policy_briefs": [brief], "events": [],
+            }
+
+            def link_errors():
+                path.write_text(json.dumps(calendar, ensure_ascii=False), encoding="utf-8")
+                with mock.patch.object(le, "POLICY_CALENDAR_PATH", path):
+                    return [
+                        error for error in le._check_policy_calendar(
+                            calendar["edition_id"], calendar["edition_id"][:10], require_horizon=False,
+                            enforce_g5_g7=False, enforce_live_contract=True, market_as_of_cst=calendar["as_of_cst"],
+                        ) if ".source_url" in error
+                    ]
+
+            self.assertEqual(link_errors(), [])
+            brief["source_urls"] = [brief["source_url"]]
+            self.assertTrue(any("重复证据" in error for error in link_errors()))
+            for bad in ([], "https://www.federalreserve.gov/news", ["https://www.federalreserve.gov/"],
+                        ["https://www.federalreserve.gov:99999/news"], ["https://www.federalreserve.gov\\@example.org/news"],
+                        ["https://example.org/press-release"]):
+                with self.subTest(bad=bad):
+                    brief["source_urls"] = bad
+                    self.assertTrue(any(".source_urls" in error for error in link_errors()))
+
+            del brief["source_urls"]
+            brief["source_url"] = "https://www.federalreserve.gov/"
+            self.assertTrue(any("须指向具体证据页面" in error for error in link_errors()))
+            calendar["edition_id"] = "2026-11-28_1130"
+            self.assertEqual(link_errors(), [])
 
     def test_numeric_ranges_currency_pe_skip_uk_region_bare_p0_and_bare_9m(self):
         import equity.lint_equity as le

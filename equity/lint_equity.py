@@ -5,11 +5,14 @@ Independent Pre-Flight & Pure-Web Forensic Quality Linter for Global Equity Rese
 (A-Share × HK-Stock × US-Stock + 12 Multi-Asset Channels + 181+ ETF Universe + 231-Stock Deep Dossiers
 + Cross-Project Gold SSOT Consistency Gate).
 
-Usage:
-  python3 lint_equity.py --plan YYYY-MM-DD_HHMM[_rN]          # Compute required reports before refreshing snapshots
-  python3 lint_equity.py --precheck --strict [file1.md ...]   # Fast Gates 0-5 + SVG Gold-Lock scan
-  python3 lint_equity.py --strict [file1.md ...]              # Full Pure-Web Gates 0-5 + SVG + SSOT + Cross-Project
-  python3 lint_equity.py --strict                             # Auto-check all 3 flagships + latest 3 dailies + workspace state
+用法
+  python3 equity/lint_equity.py --plan YYYY-MM-DD_HHMM[_rN]
+  python3 equity/lint_equity.py [--precheck] [--strict] [日报或旗舰稿.md ...]
+
+--plan 只读生成班次计划，须单独使用。省略稿件路径时检查三市旗舰和各自最近一期。
+--precheck 适用于初检。--strict 将警告也视为失败，正式发布运行 --strict。
+--skip-cross-project 仅用于单独诊断权益轨，跳过黄金交叉校验，仍执行其他门禁。
+--help 或 -h 显示用法。
 """
 
 from __future__ import annotations
@@ -22,7 +25,6 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from math import isfinite
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import edition_plan as _edition_plan_mod
 from edition_plan import MARKETS, calendar_rules, edition_plan, parse_edition_id
@@ -42,6 +44,8 @@ MAX_EDITION_LAG = timedelta(hours=6)
 EDITION_CUTOVER = ("2026-11-25", 1800, 2)
 ALL_MAIN_CUTOVER = getattr(_edition_plan_mod, "ALL_MAIN_CUTOVER", ("2026-11-26", 1800, 1))
 EDITORIAL_DEPTH_CUTOVER = ("2026-11-27", 730, 1)
+DATA_CONTRACT_CUTOVER = ("2026-11-28", 1130, 1)
+_POLICY_CLOCK_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 _REQUIRED_MULTI_ASSET_CHANNELS = (
     "reverse_repo",
     "large_cds",
@@ -110,7 +114,7 @@ _DAILY_VISUAL_STYLE_SKIP_KEYS = frozenset({
     "type", "tone", "kind", "stance", "color", "unit", "id",
     "accent", "fill", "text_color", "align", "anchor", "label_pos",
 })
-_POLICY_CAL_PROSE_SKIP_KEYS = frozenset({"impact_tier", "event_id", "brief_id", "id", "source_url"})
+_POLICY_CAL_PROSE_SKIP_KEYS = frozenset({"impact_tier", "event_id", "brief_id", "id", "source_url", "source_urls"})
 _BARE_TENOR_RE = re.compile(r"(?<![A-Za-z0-9_.$€£¥￥])(?:1M|9M|2Y|3Y|5Y|10Y)(?![A-Za-z0-9_])")
 _POLICY_CAL_ALLOWED_CATEGORIES = frozenset({
     "top_politics",
@@ -1157,7 +1161,10 @@ def _check_daily_focus_table_vs_dossiers(
         dossiers = dd_obj.get("dossiers", {}) if isinstance(dd_obj, dict) else {}
     except (OSError, ValueError):
         return []
-    if not isinstance(dossiers, dict) or not dossiers:
+    if (
+        not isinstance(dossiers, dict) or not dossiers
+        or parse_edition_id(dd_obj.get("edition_id")) != parse_daily_sort_key(Path(filename))[:3]
+    ):
         return []
 
     errs: list[str] = []
@@ -1867,6 +1874,25 @@ def _check_state_schedule(state: dict) -> list[str]:
     return errors
 
 
+def _matches_source_outage_backfill(queue: object, market: str, outage: dict) -> bool:
+    if not isinstance(queue, list):
+        return False
+    entries = [
+        entry for entry in queue
+        if isinstance(entry, dict) and entry.get("market") == market
+        and isinstance(entry.get("item"), str) and entry["item"].strip()
+    ]
+    if "backfill_id" in outage:
+        backfill_id = outage["backfill_id"]
+        if not isinstance(backfill_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", backfill_id):
+            return False
+        matches = [entry for entry in entries if entry.get("id") == backfill_id]
+    else:
+        reason = " ".join(outage["reason"].split())
+        matches = [entry for entry in entries if " ".join(entry["item"].split()) == reason]
+    return len(matches) == 1 and matches[0].get("due_session") == outage["next_review_session"]
+
+
 def _check_edition_delivery(state: dict, current: tuple[str, int, int], plan: dict) -> list[str]:
     errors = []
     if state.get("period_slug") != plan["period_slug"]:
@@ -1936,13 +1962,12 @@ def _check_edition_delivery(state: dict, current: tuple[str, int, int], plan: di
         ):
             errors.append(f"Gate 4 失败：{market} 修订复用须有同班更早版本")
         if expected["reason"] == "source_outage":
-            next_review = exceptions["markets"][market]["next_review_session"]
-            queue = state.get("pending_backfills")
-            if not isinstance(queue, list) or not any(
-                isinstance(entry, dict) and entry.get("market") == market and entry.get("due_session") == next_review
-                for entry in queue
-            ):
-                errors.append(f"Gate 4 失败：{market} 数据故障须在 pending_backfills 登记相同核验班次")
+            outage = exceptions["markets"][market]
+            if not _matches_source_outage_backfill(state.get("pending_backfills"), market, outage):
+                errors.append(
+                    f"Gate 4 失败：{market} 数据故障须在 pending_backfills 唯一对应同市场、同核验班次的记录"
+                    "（按 backfill_id 对应 id，旧记录可按相同事项文字对应）"
+                )
     return errors
 
 
@@ -2099,7 +2124,7 @@ def _check_data_caveats(state: dict | None, *, require_presence: bool) -> list[s
     return errs
 
 
-def _check_ssot_databases(state: dict | None) -> list[str]:
+def _check_ssot_databases(state: dict | None, *, require_policy_presence: bool = False) -> list[str]:
     """Validate required multi_asset_channels.json, etf_universe.json, and deep_dossiers.json SSOTs."""
     errs: list[str] = []
     expected_pool = 231
@@ -2125,10 +2150,19 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                 require_presence = expected_pool >= 100
                 is_synthetic_small_pool = expected_pool < 100
     enforce_g5_g7 = state_edition_key is not None and state_edition_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]
+    enforce_live_contract = (
+        not is_synthetic_small_pool and state_edition_key is not None and state_edition_key >= DATA_CONTRACT_CUTOVER
+    )
     state_ed_date = state_edition_key[0] if state_edition_key else None
 
+    scripts_dir = str(BASE_DIR.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from inventory_evidence import ETF_FIELDS, STOCK_FIELDS, inventory_evidence, load_research_json
+
+    evidence_cutoff = date.fromisoformat(state_ed_date) if state_ed_date else None
     req_channels = _SYNTHETIC_LEGACY_MULTI_ASSET_CHANNELS if is_synthetic_small_pool else _REQUIRED_MULTI_ASSET_CHANNELS
-    min_etf_count = 100 if is_synthetic_small_pool else 140
+    min_etf_count = 181 if enforce_live_contract else (100 if is_synthetic_small_pool else 140)
     ma_loaded: dict | None = None
     etf_fee_ssot: dict[str, tuple[str, float]] = {}
 
@@ -2138,7 +2172,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
             errs.append("Gate 4 失败：缺少 state/multi_asset_channels.json")
     else:
         try:
-            ma = json.loads(MULTI_ASSET_PATH.read_text(encoding="utf-8"))
+            ma = load_research_json(MULTI_ASSET_PATH.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             errs.append(f"Gate 4 失败：multi_asset_channels.json 解析失败: {exc}")
         else:
@@ -2263,13 +2297,13 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                                 )
                                 break
 
-    # 2. etf_universe.json (>= 140 ETFs in production; >= 100 in small synthetic test pools, self-consistent counters, valid enums, zero markup/internal leaks)
+    # 2. etf_universe.json (coverage, consistent counters, valid enums, and no internal leaks)
     if not ETF_UNIVERSE_PATH.exists():
         if require_presence:
             errs.append("Gate 4 失败：缺少 state/etf_universe.json")
     else:
         try:
-            eu = json.loads(ETF_UNIVERSE_PATH.read_text(encoding="utf-8"))
+            eu = load_research_json(ETF_UNIVERSE_PATH.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             errs.append(f"Gate 4 失败：etf_universe.json 解析失败: {exc}")
         else:
@@ -2300,6 +2334,10 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                         if not isinstance(item, dict):
                             errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}] 须为对象")
                             continue
+                        try:
+                            inventory_evidence(item, ETF_FIELDS, evidence_cutoff)
+                        except ValueError as exc:
+                            errs.append(f"Gate 4 失败：etf_universe.json etfs[{idx}]({item.get('code')}) {exc}")
                         for field in _ETF_REQUIRED_STR_FIELDS:
                             val = item.get(field)
                             if not isinstance(val, str) or not val.strip():
@@ -2514,7 +2552,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
             errs.append("Gate 4 失败：缺少 state/deep_dossiers.json")
     else:
         try:
-            dd = json.loads(DEEP_DOSSIERS_PATH.read_text(encoding="utf-8"))
+            dd = load_research_json(DEEP_DOSSIERS_PATH.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             errs.append(f"Gate 4 失败：deep_dossiers.json 解析失败: {exc}")
         else:
@@ -2573,6 +2611,10 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                         if not isinstance(entry, dict):
                             errs.append(f"Gate 4 失败：deep_dossiers.json[{key}] 须为对象")
                             continue
+                        try:
+                            inventory_evidence(entry, STOCK_FIELDS, evidence_cutoff)
+                        except ValueError as exc:
+                            errs.append(f"Gate 4 失败：deep_dossiers.json[{key}] {exc}")
                         mkt_prefix = str(key).split(":", 1)[0]
                         if enforce_g5_g7 and state_ed_date:
                             bn = entry.get("baseline_note")
@@ -2612,7 +2654,9 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                 for jpath, sval in _walk_json_strings(dd, "deep_dossiers.json"):
                     errs.extend(_scan_text_for_crypto_buy(jpath, sval))
 
-    # 4. policy_calendar.json (validated whenever present; >=14-day horizon enforced on live production state)
+    # 4. policy_calendar.json (validated whenever present; required for current editions)
+    if require_policy_presence and enforce_live_contract and not POLICY_CALENDAR_PATH.exists():
+        errs.append("Gate 4 失败：缺少 state/policy_calendar.json")
     if POLICY_CALENDAR_PATH.exists():
         errs.extend(
             _check_policy_calendar(
@@ -2620,27 +2664,11 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                 state_ed_date,
                 require_horizon=require_presence,
                 enforce_g5_g7=enforce_g5_g7,
+                market_as_of_cst=state.get("as_of_cst") if isinstance(state, dict) else None,
+                enforce_live_contract=enforce_live_contract,
             )
         )
     return errs
-
-
-def _is_strict_https_url(value: object) -> bool:
-    if not isinstance(value, str) or not value or any(c.isspace() for c in value):
-        return False
-    try:
-        parsed = urlsplit(value)
-        host = parsed.hostname or ""
-        return (
-            parsed.scheme == "https"
-            and bool(host)
-            and "." in host
-            and not host.startswith(".")
-            and not host.endswith(".")
-            and parsed.username is None
-        )
-    except ValueError:
-        return False
 
 
 def _check_policy_calendar(
@@ -2649,8 +2677,15 @@ def _check_policy_calendar(
     *,
     require_horizon: bool,
     enforce_g5_g7: bool,
+    market_as_of_cst: object = None,
+    enforce_live_contract: bool = False,
 ) -> list[str]:
     """Validate equity/state/policy_calendar.json schema, enums, edition_id parity, horizon, and hygiene."""
+    scripts_dir = str(BASE_DIR.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from source_links import is_https_source, policy_extra_source_error
+
     errs: list[str] = []
     try:
         pc = json.loads(POLICY_CALENDAR_PATH.read_text(encoding="utf-8"))
@@ -2667,22 +2702,41 @@ def _check_policy_calendar(
             f"≠ market_state.json ({state_edition_id!r})"
         )
     as_of_raw = pc.get("as_of_cst")
+    as_of_dt = None
     try:
         if not isinstance(as_of_raw, str) or not as_of_raw.strip():
             raise ValueError("missing")
         as_of_dt = datetime.fromisoformat(as_of_raw.strip())
         if as_of_dt.utcoffset() != BEIJING.utcoffset(as_of_dt):
+            as_of_dt = None
             raise ValueError("offset != +08:00")
     except ValueError:
         errs.append(f"Gate 4 失败：policy_calendar.json as_of_cst 须为有效 +08:00 时间戳 ({as_of_raw!r})")
+    if enforce_live_contract:
+        try:
+            if not isinstance(market_as_of_cst, str):
+                raise ValueError("missing market cutoff")
+            market_as_of = datetime.fromisoformat(market_as_of_cst)
+            if market_as_of.utcoffset() != BEIJING.utcoffset(market_as_of):
+                raise ValueError("offset != +08:00")
+        except ValueError:
+            errs.append("Gate 4 失败：market_state.json as_of_cst 须为有效 +08:00 时间戳")
+        else:
+            if as_of_dt is not None and as_of_dt != market_as_of:
+                errs.append("Gate 4 失败：policy_calendar.json as_of_cst 须与 market_state.json as_of_cst 一致")
     hdays = pc.get("horizon_days")
     if type(hdays) is not int or hdays < _POLICY_CAL_MIN_HORIZON_DAYS:
         errs.append(f"Gate 4 失败：policy_calendar.json horizon_days 须为 >= {_POLICY_CAL_MIN_HORIZON_DAYS} 的整数 ({hdays!r})")
 
     briefs = pc.get("policy_briefs")
+    calendar_edition = parse_edition_id(pc.get("edition_id"))
+    require_direct_brief_source = enforce_live_contract and calendar_edition is not None and calendar_edition > DATA_CONTRACT_CUTOVER
     if not isinstance(briefs, list):
         errs.append("Gate 4 失败：policy_calendar.json 须包含 policy_briefs 数组")
     else:
+        featured = sum(isinstance(brief, dict) and brief.get("home_featured") is True for brief in briefs)
+        if enforce_live_contract and not 6 <= featured <= 9:
+            errs.append(f"Gate 4 失败：policy_calendar.json 首页精选应为 6–9 条，实有 {featured} 条")
         seen_bids: set[str] = set()
         for idx, b in enumerate(briefs):
             if not isinstance(b, dict):
@@ -2704,9 +2758,16 @@ def _check_policy_calendar(
                 try:
                     if not _DATE_ISO_RE.fullmatch(bd_raw.strip()):
                         raise ValueError
-                    date.fromisoformat(bd_raw.strip())
+                    brief_day = datetime.fromisoformat(bd_raw.strip())
                 except ValueError:
                     errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).date_cst 日期非法 ({bd_raw!r})")
+                else:
+                    if enforce_live_contract and as_of_dt is not None:
+                        brief_time = b.get("time_cst")
+                        if isinstance(brief_time, str) and _POLICY_CLOCK_RE.fullmatch(brief_time):
+                            brief_day = datetime.fromisoformat(f"{bd_raw.strip()}T{brief_time}")
+                        if brief_day > as_of_dt.replace(tzinfo=None):
+                            errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}) 晚于 as_of_cst")
             if isinstance(b.get("region"), str) and b["region"].strip() and b["region"].strip() not in _POLICY_CAL_ALLOWED_REGIONS:
                 errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).region 非法枚举 ({b['region']!r})")
             if isinstance(b.get("category"), str) and b["category"].strip() and b["category"].strip() not in _POLICY_CAL_ALLOWED_CATEGORIES:
@@ -2722,12 +2783,22 @@ def _check_policy_calendar(
                     errs.append(
                         f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).affected_markets 非法枚举 ({bad_mkts})"
                     )
-            if "source_url" in b and b["source_url"] is not None and not _is_strict_https_url(b["source_url"]):
+            source = b.get("source_url")
+            if (enforce_live_contract or source is not None) and not is_https_source(source, published_source=enforce_live_contract):
                 errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).source_url 须为有效 HTTPS 链接")
+            elif require_direct_brief_source and not is_https_source(source, published_source=True, direct=True):
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).source_url 须指向具体证据页面")
+            source_error = policy_extra_source_error(b)
+            if source_error == "invalid":
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).source_urls 须为非空有效 HTTPS 证据链接列表")
+            elif source_error == "duplicate":
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).source_urls 含重复证据链接")
             if "home_featured" in b and b["home_featured"] is not None and type(b["home_featured"]) is not bool:
                 errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).home_featured 须为布尔值")
             if "time_cst" in b and b["time_cst"] is not None and (not isinstance(b["time_cst"], str) or not b["time_cst"].strip()):
                 errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).time_cst 须为非空字符串")
+            elif enforce_live_contract and b.get("time_cst") is not None and not _POLICY_CLOCK_RE.fullmatch(b["time_cst"]):
+                errs.append(f"Gate 4 失败：policy_calendar.json policy_briefs[{idx}]({bid}).time_cst 须为 HH:MM")
 
     events = pc.get("events")
     max_end_d: date | None = None
@@ -2778,6 +2849,14 @@ def _check_policy_calendar(
                     max_end_d = end_d
             if isinstance(ev.get("date_precision"), str) and ev["date_precision"].strip() and ev["date_precision"].strip() not in _POLICY_CAL_ALLOWED_PRECISIONS:
                 errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).date_precision 非法枚举 ({ev['date_precision']!r})")
+            if enforce_live_contract:
+                precision = str(ev.get("date_precision") or "").strip()
+                event_time = ev.get("time_cst")
+                has_exact_time = isinstance(event_time, str) and _POLICY_CLOCK_RE.fullmatch(event_time)
+                if precision == "exact" and (not has_exact_time or start_d != end_d):
+                    errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}) exact 须为单日并记录 HH:MM")
+                elif precision == "window_tbd" and has_exact_time:
+                    errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}) window_tbd 须为时间窗或时刻未定")
             if isinstance(ev.get("region"), str) and ev["region"].strip() and ev["region"].strip() not in _POLICY_CAL_ALLOWED_REGIONS:
                 errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).region 非法枚举 ({ev['region']!r})")
             if isinstance(ev.get("category"), str) and ev["category"].strip() and ev["category"].strip() not in _POLICY_CAL_ALLOWED_CATEGORIES:
@@ -2802,7 +2881,7 @@ def _check_policy_calendar(
                 errs.append(
                     f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).watch_triggers 须含非空 upside_bull 与 downside_bear"
                 )
-            if not _is_strict_https_url(ev.get("source_url")):
+            if not is_https_source(ev.get("source_url"), published_source=enforce_live_contract):
                 errs.append(f"Gate 4 失败：policy_calendar.json events[{idx}]({eid}).source_url 须为有效 HTTPS 链接")
             mwin = ev.get("monitor_window_min")
             if type(mwin) is not int or mwin < 0:
@@ -2939,8 +3018,67 @@ def _check_dossiers_ah_and_dividends(dossiers: dict, state: dict | None) -> list
     return errs
 
 
+def _check_ah_dividend_evidence(state: dict) -> list[str]:
+    links = state.get("cross_market_linkages")
+    radar = links.get("ah_premium_radar") if isinstance(links, dict) else None
+    benchmarks = radar.get("benchmarks") if isinstance(radar, dict) else None
+    if not isinstance(benchmarks, list):
+        return []
+    records = [
+        (index, row) for index, row in enumerate(benchmarks)
+        if isinstance(row, dict) and ("cash_dividends" in row or "exchange_closes" in row)
+    ]
+    if not records:
+        return []
+    pair_counts = Counter(
+        (str(row.get("a", "")).strip().upper(), str(row.get("h", "")).strip().upper())
+        for row in benchmarks if isinstance(row, dict)
+    )
+
+    scripts_dir = str(BASE_DIR.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    try:
+        from ah_dividends import parse_exchange_closes, parse_pair
+    except ImportError as exc:
+        return [f"Gate 4 失败：无法载入 A/H 股息公告校验器：{exc}"]
+
+    edition = parse_edition_id(state.get("edition_id"))
+    cutoff = date.fromisoformat(edition[0]) if edition else None
+    as_of = state.get("as_of_cst")
+    if isinstance(as_of, str):
+        try:
+            stamp = datetime.fromisoformat(as_of)
+            cutoff = (stamp.astimezone(BEIJING) if stamp.tzinfo else stamp).date()
+        except ValueError:
+            pass
+    errors = []
+    for index, row in records:
+        try:
+            a_code, h_code = row.get("a"), row.get("h")
+            if not isinstance(a_code, str) or re.fullmatch(r"[0-9]{6}", a_code) is None:
+                raise ValueError("A 侧须为 6 位股票代码")
+            if not isinstance(h_code, str) or re.fullmatch(r"[0-9]{5}\.HK", h_code) is None:
+                raise ValueError("H 侧须为 5 位港股代码加 .HK")
+            if pair_counts[(a_code, h_code)] > 1:
+                raise ValueError("同一 A/H 配对有重复记录")
+            parse_exchange_closes(row, cutoff)
+            if "cash_dividends" in row:
+                a, h = parse_pair(row["cash_dividends"])
+                if cutoff is not None and max(a.published, h.published) > cutoff:
+                    raise ValueError("公告日晚于当前数据截点")
+        except ValueError as exc:
+            errors.append(f"Gate 4 失败：market_state A/H benchmarks[{index}]：{exc}")
+    return errors
+
+
 def _is_num(val: object) -> bool:
-    return type(val) in (int, float) and isfinite(val)
+    if type(val) not in (int, float):
+        return False
+    try:
+        return isfinite(val)
+    except OverflowError:
+        return False
 
 
 def _check_market_state_math(state: dict) -> list[str]:
@@ -2953,6 +3091,22 @@ def _check_market_state_math(state: dict) -> list[str]:
     a_m = mkts.get("a_share") if isinstance(mkts.get("a_share"), dict) else {}
     h_m = mkts.get("hk_stock") if isinstance(mkts.get("hk_stock"), dict) else {}
     u_m = mkts.get("us_stock") if isinstance(mkts.get("us_stock"), dict) else {}
+
+    for market, market_state in (("a_share", a_m), ("hk_stock", h_m), ("us_stock", u_m)):
+        matrix = market_state.get("index_matrix")
+        if not isinstance(matrix, list):
+            continue
+        for idx, entry in enumerate(matrix):
+            if not isinstance(entry, dict) or "previous_value" not in entry:
+                continue
+            label = f"market_state {market}.index_matrix[{idx}] ({entry.get('code')})"
+            value, previous, change = (entry.get(field) for field in ("value", "previous_value", "change_pct"))
+            if not all(_is_num(number) for number in (value, previous, change)) or value <= 0 or previous <= 0:
+                errs.append(f"Gate G6 失败：{label} 需要正数现值、比较值与有限涨跌幅")
+                continue
+            calc = (value / previous - 1) * 100
+            if abs(change - calc) > 0.01:
+                errs.append(f"Gate G6 失败：{label} 涨跌幅 {change}% 与所列比较基准算得的 {calc:.2f}% 不一致")
 
     cgb10y = rates.get("cgb10y_pct") if _is_num(rates.get("cgb10y_pct")) else a_m.get("cgb10y_pct")
     us10y = rates.get("us10y_pct") if _is_num(rates.get("us10y_pct")) else u_m.get("us10y_pct")
@@ -3394,12 +3548,13 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
                         require_full_ssot = sum(counts) >= 100
                 errs.extend(_check_state_schedule(st))
                 errs.extend(_check_data_caveats(st, require_presence=require_full_ssot))
+                errs.extend(_check_ah_dividend_evidence(st))
                 errs.extend(_check_market_state_math(st))
                 errs.extend(_check_extended_cockpit_markets(st, require_presence=require_full_ssot))
         except json.JSONDecodeError as exc:
             errs.append(f"Gate 4 失败：market_state.json JSON 语法错误: {exc}")
 
-    errs.extend(_check_ssot_databases(st))
+    errs.extend(_check_ssot_databases(st, require_policy_presence=not precheck))
 
     state_ed_key = parse_edition_id(st.get("edition_id")) if isinstance(st, dict) else None
     state_as_of_dt: datetime | None = None
@@ -3496,6 +3651,9 @@ def _auto_discover_targets() -> tuple[list[Path], list[str]]:
 
 def main() -> None:
     args = sys.argv[1:]
+    if args in (["--help"], ["-h"]):
+        print(__doc__.strip())
+        return
     if args[:1] == ["--plan"]:
         if len(args) != 2:
             sys.exit("Usage: lint_equity.py --plan YYYY-MM-DD_HHMM[_rN]")
@@ -3630,4 +3788,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    scripts = BASE_DIR.parent / "scripts"
+    if (scripts / "state_transaction.py").is_file():
+        sys.path.insert(0, str(scripts))
+        from state_transaction import state_read_lock
+
+        try:
+            with state_read_lock(BASE_DIR.parent):
+                main()
+        except (OSError, RuntimeError) as exc:
+            print(f"[FAIL] {exc}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        main()

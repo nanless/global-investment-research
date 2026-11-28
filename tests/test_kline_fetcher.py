@@ -4,18 +4,271 @@
 
 from __future__ import annotations
 
+from datetime import date
 import io
 import json
 import math
 import os
 from pathlib import Path
+import shutil
+import signal
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 import urllib.error
+from unittest.mock import patch
 
 from scripts import fetch_kline_data as fk
+from scripts import lint_site, state_transaction
 
+
+class TestCanonicalKlineUniverse(unittest.TestCase):
+    def test_duplicate_id_is_rejected_before_fetch(self):
+        spec = fk.build_core_specs()[0]
+        with patch.object(fk, "load_etf_specs", return_value=[spec]):
+            with self.assertRaisesRegex(ValueError, "Duplicate K-line instrument ID"):
+                fk.load_instrument_specs("all")
+
+    def test_roster_rejects_count_preserving_replacement_and_misrouted_failure(self):
+        specs = fk.load_instrument_specs("all")
+        manifest = json.loads((fk.DEFAULT_OUT_DIR / "manifest.json").read_text(encoding="utf-8"))
+        catalog = {row["id"]: row for row in manifest["catalog"]}
+        failures = {row["id"]: row for row in manifest["partial_failures"]}
+        errors = []
+        lint_site.check_s7_roster(specs, catalog, failures, manifest["shards"], errors)
+        self.assertEqual(errors, [])
+
+        stock = next(spec for spec in specs if spec.shard == "stocks_us" and spec.id in catalog)
+        removed = catalog.pop(stock.id)
+        catalog["stk_FAKE"] = {**removed, "id": "stk_FAKE"}
+        lint_site.check_s7_roster(specs, catalog, failures, manifest["shards"], errors)
+        self.assertTrue(any(stock.id in error and "stk_FAKE" in error for error in errors), errors)
+
+        del catalog["stk_FAKE"]
+        failures[stock.id] = {
+            "id": stock.id, "code": stock.code, "shard": "stocks_a",
+            "reason": "source unavailable", "used_stale_cache": False,
+        }
+        errors.clear()
+        lint_site.check_s7_roster(specs, catalog, failures, manifest["shards"], errors)
+        self.assertTrue(any(stock.id in error and "invalid metadata" in error for error in errors), errors)
+
+        failures[stock.id]["shard"] = stock.shard
+        errors.clear()
+        lint_site.check_s7_roster(specs, catalog, failures, manifest["shards"], errors)
+        self.assertEqual(errors, [])
+
+    def test_failed_partial_refresh_keeps_the_previous_generation(self):
+        spec = fk.build_core_specs()[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = root / "manifest.json"
+            manifest.write_text('{"edition_id":"2026-11-27_0730","shards":{}}', encoding="utf-8")
+            baseline = manifest.read_bytes()
+            with (
+                patch.object(fk, "load_instrument_specs", return_value=[spec]),
+                patch.object(fk.KlineFetcher, "fetch_instrument", return_value=([], None, "offline")),
+            ):
+                summary = fk.run_fetch(
+                    scope="core", edition_id="2026-11-27_1130", out_dir=root,
+                    http_client=fk.RateLimitedHttpClient(retries=0),
+                )
+            self.assertFalse(summary["promoted"])
+            self.assertEqual(summary["failed_count"], 1)
+            self.assertEqual(manifest.read_bytes(), baseline)
+            self.assertFalse((root / "core.json").exists())
+
+    def test_canonical_partial_refresh_cannot_replace_a_complete_site_generation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "publication"
+            with patch.object(fk, "DEFAULT_OUT_DIR", root):
+                with self.assertRaisesRegex(ValueError, "publication directory needs --scope all"):
+                    fk.run_fetch(scope="core", out_dir=root)
+            self.assertFalse(root.exists())
+
+    def test_full_refresh_keeps_existing_files_when_required_series_is_missing(self):
+        specs = fk.load_instrument_specs("all")
+        missing_id = "idx_TOPIX"
+        issue = "2026-11-28_1130"
+        bars = [["2026-11-27", 10, 12, 9, 11, 100]]
+
+        def fetch_instrument(spec):
+            return ([], None, "offline") if spec.id == missing_id else (bars, "fixture", None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "manifest.json").write_bytes(b'{"edition_id":"2026-11-28_0730"}')
+            (root / "core.json").write_bytes(b'{"series":{}}')
+            previous = {p.name: p.read_bytes() for p in root.glob("*.json")}
+            with (
+                patch.object(fk, "DEFAULT_OUT_DIR", root),
+                patch.object(fk, "resolve_edition_id", return_value=issue),
+                patch.object(fk, "load_instrument_specs", return_value=specs),
+                patch.object(fk.KlineFetcher, "prefetch_ft_ucits"),
+                patch.object(fk.KlineFetcher, "prefetch_cnbc_quotes"),
+                patch.object(fk.KlineFetcher, "prefetch_sina_fx_quotes"),
+                patch.object(fk.KlineFetcher, "prefetch_eastmoney_cgb"),
+                patch.object(fk.KlineFetcher, "fetch_instrument", side_effect=fetch_instrument),
+            ):
+                summary = fk.run_fetch(out_dir=root)
+            self.assertGreater(summary["ok_count"], fk.MIN_PUBLISHED_INSTRUMENTS - 10)
+            self.assertFalse(summary["promoted"])
+            self.assertTrue(summary["retained_previous"])
+            self.assertEqual(summary["publication_blockers"], ["Missing required K-line series: idx_TOPIX"])
+            self.assertEqual({p.name: p.read_bytes() for p in root.glob("*.json")}, previous)
+
+    def test_us_etf_benchmarks_show_dollars_and_match_stored_candle_metadata(self):
+        specs = {spec.id: spec for spec in fk.build_core_specs()}
+        core = json.loads((fk.DEFAULT_OUT_DIR / "core.json").read_text(encoding="utf-8"))
+        manifest = json.loads((fk.DEFAULT_OUT_DIR / "manifest.json").read_text(encoding="utf-8"))
+        catalog = {row["id"]: row for row in manifest["catalog"]}
+        for asset_id, ticker in (("idx_RUT", "IWM"), ("idx_SPXEW", "RSP")):
+            spec = specs[asset_id]
+            self.assertIn(f"ETF（{ticker}）", spec.name)
+            self.assertEqual(spec.unit, "美元")
+            for row in (core["series"][asset_id], catalog[asset_id]):
+                self.assertEqual((row["code"], row["name"], row["unit"]), (ticker, spec.name, spec.unit))
+
+    def test_ucits_usd_quote_labels_keep_the_directory_code_and_show_the_actual_london_ticker(self):
+        specs = {spec.id: spec for spec in fk.load_etf_specs()}
+        offshore = json.loads((fk.DEFAULT_OUT_DIR / "etfs_offshore.json").read_bytes())
+        manifest = json.loads((fk.DEFAULT_OUT_DIR / "manifest.json").read_bytes())
+        catalog = {row["id"]: row for row in manifest["catalog"]}
+        for code, ticker in (("SWDA", "IWDA"), ("EQQQ", "EQQU")):
+            asset_id = f"etf_{code}"
+            spec = specs[asset_id]
+            self.assertEqual((spec.code, spec.currency), (code, "USD"))
+            self.assertIn(f"伦交所美元代码 {ticker}", spec.name)
+            for row in (offshore["series"][asset_id], catalog[asset_id]):
+                self.assertEqual((row["code"], row["name"], row["currency"]), (code, spec.name, "USD"))
+
+    def test_same_edition_outage_preserves_the_generation_and_recovers_after_sigkill(self):
+        child = """
+import os
+from pathlib import Path
+import signal
+import sys
+from unittest.mock import patch
+from scripts import fetch_kline_data as fetcher
+
+root, issue = Path(sys.argv[1]), sys.argv[2]
+spec = fetcher.build_core_specs()[0]
+replace = os.replace
+def kill_after_shard(source, target):
+    replace(source, target)
+    if target.name == "core.json":
+        os.kill(os.getpid(), signal.SIGKILL)
+
+with (
+    patch.object(os, "replace", side_effect=kill_after_shard),
+    patch.object(fetcher, "load_instrument_specs", return_value=[spec]),
+    patch.object(fetcher.KlineFetcher, "fetch_instrument", return_value=(
+        [["2026-11-27", 10, 12, 9, 12, 100]], "fixture", None,
+    )),
+):
+    fetcher.run_fetch(scope="core", edition_id=issue, out_dir=root)
+"""
+        spec = fk.build_core_specs()[0]
+        issue = "2026-11-28_1130"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(fk, "load_instrument_specs", return_value=[spec]),
+                patch.object(fk.KlineFetcher, "fetch_instrument", return_value=(
+                    [["2026-11-27", 10, 12, 9, 11, 100]], "fixture", None,
+                )),
+            ):
+                self.assertTrue(fk.run_fetch(scope="core", edition_id=issue, out_dir=root)["promoted"])
+            first = {path.name: path.read_bytes() for path in root.glob("*.json")}
+            stopped = subprocess.run(
+                [sys.executable, "-B", "-c", child, tmp, issue], capture_output=True, timeout=10,
+            )
+            self.assertEqual(stopped.returncode, -signal.SIGKILL, stopped.stderr.decode())
+            self.assertNotEqual(first["core.json"], (root / "core.json").read_bytes())
+            self.assertEqual(first["manifest.json"], (root / "manifest.json").read_bytes())
+            with self.assertRaisesRegex(RuntimeError, "needs recovery"), state_transaction.state_read_lock(root):
+                self.fail("A reader must reject a pending transaction")
+
+            with (
+                patch.object(fk, "load_instrument_specs", return_value=[spec]),
+                patch.object(fk.KlineFetcher, "fetch_instrument", return_value=([], None, "offline")),
+            ):
+                result = fk.run_fetch(scope="core", edition_id=issue, out_dir=root)
+            self.assertFalse(result["promoted"])
+            self.assertTrue(result["retained_previous"])
+            self.assertTrue(result["partial_failures"][0]["used_stale_cache"])
+            with state_transaction.state_read_lock(root):
+                self.assertEqual({path.name: path.read_bytes() for path in root.glob("*.json")}, first)
+
+    def test_during_fetch_a_changed_shard_cannot_be_overwritten_with_unchanged_manifest(self):
+        spec = fk.build_core_specs()[0]
+        bars = [["2026-11-27", 10, 12, 9, 11, 100]]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(fk, "load_instrument_specs", return_value=[spec]):
+            root = Path(tmp)
+            with patch.object(fk.KlineFetcher, "fetch_instrument", return_value=(bars, "fixture", None)):
+                fk.run_fetch(scope="core", edition_id="2026-11-28_1130", out_dir=root)
+            old_manifest = (root / "manifest.json").read_bytes()
+
+            def fetch_after_outside_write(_spec):
+                (root / "core.json").write_bytes(b"different bytes under the same manifest")
+                return bars, "fixture", None
+
+            with patch.object(fk.KlineFetcher, "fetch_instrument", side_effect=fetch_after_outside_write):
+                with self.assertRaisesRegex(RuntimeError, "K-line data changed during the fetch"):
+                    fk.run_fetch(scope="core", edition_id="2026-11-28_1130", out_dir=root)
+            self.assertEqual((root / "core.json").read_bytes(), b"different bytes under the same manifest")
+            self.assertEqual((root / "manifest.json").read_bytes(), old_manifest)
+
+    def test_s7_recomputes_previous_close_and_rejects_bad_volume_number_timestamp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            shipped = site / "assets/klines"
+            shutil.copytree(fk.DEFAULT_OUT_DIR, shipped)
+            shutil.copy2(fk.REPO_ROOT / "scripts/web_assets/kline.js", site / "assets/kline.js")
+            charts = lint_site.parse_html_file(
+                "charts.html", site / "charts.html",
+                '<button data-chart-group="non_us_global"></button><button data-chart-group="bonds_reits"></button>',
+            )
+            specs = fk.load_instrument_specs("all")
+            manifest_path = shipped / "manifest.json"
+            manifest_original = manifest_path.read_bytes()
+            edition = json.loads(manifest_original)["edition_id"]
+            shard_path = shipped / "core.json"
+            shard_original = shard_path.read_bytes()
+            symbol = "idx_sh000001"
+
+            def check() -> list[str]:
+                issues = []
+                lint_site.run_gate_s7(
+                    site, {"charts.html": charts}, issues, [], expected_edition=edition, expected_specs=specs,
+                )
+                return issues
+
+            self.assertEqual(check(), [])
+            for field, value, expected_error in (
+                ("prev_close", 0, "previous close, change or volume metadata differs"),
+                ("change_pct", 99, "previous close, change or volume metadata differs"),
+                ("volume", -1, "invalid volume"),
+                ("open", 10 ** 600, "non-finite OHLC"),
+                ("generation", None, "valid Beijing-time generation timestamp"),
+            ):
+                with self.subTest(field=field):
+                    manifest = json.loads(manifest_original)
+                    shard = json.loads(shard_original)
+                    series = shard["series"][symbol]
+                    entry = next(row for row in manifest["catalog"] if row["id"] == symbol)
+                    if field in ("prev_close", "change_pct"):
+                        entry[field] = series[field] = value
+                    elif field == "generation":
+                        shard["generated_at_cst"] = manifest["generated_at_cst"] = value
+                    else:
+                        series["bars"][0][5 if field == "volume" else 1] = value
+                    manifest["shards"]["core"]["bytes"] = fk.atomic_write_json(shard_path, shard)
+                    fk.atomic_write_json(manifest_path, manifest)
+                    errors = check()
+                    self.assertTrue(any(expected_error in error for error in errors), errors)
 
 class _FakeResponse:
     def __init__(self, body: bytes | str) -> None:
@@ -467,6 +720,16 @@ class TestParsersAndColumnReordering(unittest.TestCase):
 
 
 class TestSanityFiltersAndCacheMerge(unittest.TestCase):
+    def test_sanitize_bars_rejects_future_sessions_and_rounded_zero_prices(self) -> None:
+        cutoff = date(2026, 11, 28)
+        kept = ["2026-11-28", 1, 2, 1, 2, 0]
+        rows = [
+            ["2026-11-27", 0.00001, 0.00004, 0.00001, 0.00003, 0],
+            kept,
+            ["2026-11-29", 1, 2, 1, 2, 0],
+        ]
+        self.assertEqual(fk.sanitize_bars(rows, through_date=cutoff), [kept])
+
     def test_sanitize_bars_drops_corrupt_and_deduplicates(self) -> None:
         raw = [
             ["2026-11-20", 10.0, 11.0, 9.5, 10.5, 100],

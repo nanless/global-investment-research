@@ -10,7 +10,7 @@
   },
   "vix_session_exceptions": {
     "2026-11-26": {"windows_et": [], "official_close_et": null, "daily_row_check_after_et": "11:30"},
-    "2026-11-27": {"windows_et": [["03:15", "09:25"], ["09:31", "13:00"]], "official_close_et": null, "daily_row_check_after_et": "13:15"},
+    "2026-11-27": {"windows_et": [["03:15", "09:25"], ["09:31", "13:15"]], "official_close_et": null, "daily_row_check_after_et": "13:15"},
     "2026-12-24": {"windows_et": [["03:15", "09:25"], ["09:31", "13:00"]], "official_close_et": null, "daily_row_check_after_et": "13:15"},
     "2026-12-25": {"windows_et": [], "official_close_et": null},
     "2027-01-01": {"windows_et": [], "official_close_et": null},
@@ -101,13 +101,13 @@
       "date": "2026-11-29",
       "end_date": "2026-11-29",
       "markets": ["OIL_ENERGY", "GOLD_MACRO"],
-      "event": "第 42 届 OPEC+ 部长级会议（维也纳 · 7 国核心自愿减产组，不含已于 2026-05-01 退出的阿联酋）",
+      "event": "第 42 届 OPEC+ 部长级会议与同日另行召开的七国自愿减产会议",
       "overlay_mode": "NONE",
       "affected_editions": ["2026-11-29_1800", "2026-11-30_0730"],
       "trading_hours_bjt": {
         "window": "周日 11/29 全天至周一 11/30 07:00 BJT 亚洲开盘消化"
       },
-      "gold_impact_note": "敲定 2027 产量基线与年底到期 200 万桶/日减产去留；若油价大跌击穿布油 $80 且叠加 DFII10 > 2.95%，须立即复核尾部深熊升级红线。"
+      "gold_impact_note": "两场会议的公告均确认日期，开始时间与产量决定以公告为准。若油价大跌击穿布油 $80 且叠加 DFII10 > 2.95%，须立即复核尾部深熊升级红线。"
     },
     {
       "id": "fomc_dec_2026",

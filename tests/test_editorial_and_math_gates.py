@@ -158,6 +158,7 @@ class ActionableDiagnosticsAndRetractedGuardTests(unittest.TestCase):
 
     def test_focus_table_col1_extraction_catches_row_with_secondary_stock_in_col3(self):
         fake_dossiers = {
+            "edition_id": "2026-11-27_0730",
             "dossiers": {
                 "hk-stock:00883.HK": {
                     "updated_at": "2026-11-27",
@@ -190,6 +191,10 @@ class ActionableDiagnosticsAndRetractedGuardTests(unittest.TestCase):
                 self.assertIn("市盈率 9.5 倍", joined)
                 self.assertIn("收盘价 29.99", joined)
                 self.assertIn("买入/观察锚区间 12–13", joined)
+                historical = eq_lint._check_daily_focus_table_vs_dossiers(
+                    bad_table, "2026-11-27_1130_hk_stock.md", "hk_stock", edition_date="2026-11-27"
+                )
+                self.assertEqual(historical, [])
 
 
 class DeterministicMathEditorialAndTenseGateTests(unittest.TestCase):

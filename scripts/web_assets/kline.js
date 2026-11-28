@@ -164,17 +164,27 @@
   /* ------------------------------------------------------------------------
      1. Manifest & Sharded Static JSON Loader (Allowlist + Memory Cache)
      ------------------------------------------------------------------------ */
+  function fetchJson(url, cache) {
+    return fetch(url, { cache: cache }).then(function (response) {
+      return response.ok ? response.json() : null;
+    }).catch(function () {
+      return null;
+    });
+  }
+
   function loadManifest(basePath) {
     const bp = getBasePrefix(basePath);
     const url = bp + "assets/klines/manifest.json";
     if (manifestCache.has(url)) return manifestCache.get(url);
-    const p = fetch(url, { cache: "default" })
-      .then(function (resp) {
-        if (!resp.ok) return null;
-        return resp.json();
-      })
+    // Pin the initial publication for this page view after HTTP revalidation.
+    const p = fetchJson(url, "no-cache")
       .then(function (data) {
         if (!data || typeof data !== "object" || !Array.isArray(data.catalog)) return null;
+        const versioned = data.catalog.length >= 100 || "edition_id" in data || "generated_at_cst" in data;
+        if (versioned && (
+          typeof data.edition_id !== "string" || !data.edition_id.trim() ||
+          typeof data.generated_at_cst !== "string" || !data.generated_at_cst.trim()
+        )) return null;
         const byId = new Map();
         const byIdLower = new Map();
         const byCode = new Map();
@@ -199,8 +209,9 @@
         data._byDossierLower = byDossierLower;
         return data;
       })
-      .catch(function () {
-        return null;
+      .then(function (data) {
+        if (!data) manifestCache.delete(url);
+        return data;
       });
     manifestCache.set(url, p);
     return p;
@@ -235,34 +246,55 @@
     return null;
   }
 
-  function loadShardFile(shardFile, basePath) {
+  function loadShardFile(shardFile, shardKey, basePath, manifest) {
     if (typeof shardFile !== "string" || !/^[A-Za-z0-9_.-]+\.json$/.test(shardFile)) {
       return Promise.resolve(null);
     }
     const bp = getBasePrefix(basePath);
-    const url = bp + "assets/klines/" + shardFile;
+    const versioned = !!manifest.edition_id;
+    const version = versioned
+      ? "?v=" + encodeURIComponent(manifest.edition_id + "@" + manifest.generated_at_cst) : "";
+    const url = bp + "assets/klines/" + shardFile + version;
     if (shardCache.has(url)) return shardCache.get(url);
-    const p = fetch(url, { cache: "default" })
-      .then(function (resp) {
-        if (!resp.ok) return null;
-        return resp.json();
-      })
-      .then(function (data) {
-        return data && typeof data === "object" && data.series ? data : null;
-      })
-      .catch(function () {
+
+    function matchesPublication(data) {
+      return !versioned || (data.shard === shardKey &&
+        data.edition_id === manifest.edition_id && data.generated_at_cst === manifest.generated_at_cst);
+    }
+
+    const p = fetchJson(url, "default").then(function (data) {
+      if (!data || matchesPublication(data)) return data;
+      // A deployment or intermediate cache can briefly serve a different shard.
+      return fetchJson(url, "reload").then(function (reloaded) {
+        if (reloaded && matchesPublication(reloaded)) return reloaded;
+        if (reloaded) {
+          const manifestUrl = bp + "assets/klines/manifest.json";
+          const held = manifestCache.get(manifestUrl);
+          if (held) held.then(function (current) {
+            if (current === manifest && manifestCache.get(manifestUrl) === held) manifestCache.delete(manifestUrl);
+          });
+        }
         return null;
       });
+    }).then(function (data) {
+      if (data && data.series && typeof data.series === "object" && !Array.isArray(data.series)) return data;
+      shardCache.delete(url);
+      return null;
+    });
     shardCache.set(url, p);
     return p;
   }
 
-  function sanitizeBars(rawBars) {
+  function sanitizeBars(rawBars, symbolId) {
     if (!Array.isArray(rawBars)) return [];
+    const allowSignedClose = /^(rate_|spread_)/.test(symbolId);
     const out = [];
     for (let i = 0; i < rawBars.length; i++) {
       const b = rawBars[i];
       if (!Array.isArray(b) || b.length < 5) continue;
+      if (b.slice(1, 5).some(function (value) {
+        return typeof value !== "number" && !(typeof value === "string" && value.trim());
+      })) continue;
       const dt = String(b[0] || "").trim();
       const o = Number(b[1]);
       const h = Number(b[2]);
@@ -271,7 +303,7 @@
       const vRaw = b.length >= 6 && b[5] != null ? Number(b[5]) : null;
       const v = vRaw != null && Number.isFinite(vRaw) && vRaw >= 0 ? vRaw : null;
       if (!dt || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c)) continue;
-      if (c <= 0 || h < l) continue;
+      if ((!allowSignedClose && c <= 0) || h < l) continue;
       out.push({ t: dt, o: o, h: h, l: l, c: c, v: v });
     }
     return out;
@@ -293,12 +325,12 @@
           : shardKey.endsWith(".json")
           ? shardKey
           : shardKey + ".json";
-      return loadShardFile(shardFile, basePath).then(function (shardData) {
+      return loadShardFile(shardFile, shardKey, basePath, manifest).then(function (shardData) {
         if (!shardData || !shardData.series || !shardData.series[item.id]) {
           return { status: "missing_series", meta: item, series: null, bars: [] };
         }
         const ser = shardData.series[item.id];
-        const bars = sanitizeBars(ser.bars);
+        const bars = sanitizeBars(ser.bars, item.id);
         return {
           status: bars.length > 0 ? "ok" : "empty_bars",
           meta: item,
@@ -542,6 +574,33 @@
     return v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
   }
 
+  function quoteChange(symbolId, close, previousClose, unit) {
+    const isRate = /^(rate_|spread_)/.test(symbolId);
+    const value = isFiniteNum(close) && isFiniteNum(previousClose)
+      ? (isRate ? (close - previousClose) * (unit === "bp" ? 1 : 100)
+        : previousClose > 0 ? (close - previousClose) / previousClose * 100 : null)
+      : null;
+    if (!isFiniteNum(value)) return { value: null, text: "涨跌待核" };
+    const rounded = Number(value.toFixed(2));
+    return {
+      value: rounded,
+      text: (rounded > 0 ? "+" : "") + rounded.toFixed(2) + (isRate ? " bp" : "%"),
+    };
+  }
+
+  function catalogQuoteChange(item) {
+    const previousClose = item.bars_count === 1 && /^(rate_|spread_)/.test(item.id) ? null : item.prev_close;
+    return quoteChange(item.id, item.latest_close, previousClose, item.unit);
+  }
+
+  function catalogQuoteAttribution(item) {
+    return [
+      item.latest_date ? "行情日 " + item.latest_date : "行情日待核",
+      item.stale === true ? "沿用旧缓存" : "日线参考",
+      fmtProviderLabel(item.provider) || "来源待核",
+    ].join(" · ");
+  }
+
   function fmtNum(v, dp) {
     if (!isFiniteNum(v)) return "—";
     return v.toFixed(dp == null ? 2 : dp);
@@ -689,7 +748,7 @@
     if (cryptoReadOnly) {
       riskLabel = "合规与定位";
       riskVal = "仅作流动风向（只读）";
-      riskSub = "境内严禁虚拟货币交易";
+      riskSub = "境内禁止开展虚拟货币相关业务";
       riskTone = "warn";
     } else if (goldLocked) {
       riskVal = "黄金红灯观察期";
@@ -735,7 +794,7 @@
     }
 
     const disclaimer = cryptoReadOnly
-      ? "⛔ 依据《银发〔2026〕42号》，中国大陆境内严禁虚拟货币交易；本图仅作全球美元流动性只读风向参考，不构成任何投资或交易建议。"
+      ? "⛔ 依据银发〔2026〕42号，境内禁止开展虚拟货币相关业务。本项目配置为 0%，图表仅供观察全球流动性。"
       : goldLocked
       ? "⚠️ 当前黄金处于风控红灯观察期，本图仅供趋势跟踪与旧仓参考，不构成新买建议。"
       : "💡 技术指标仅反映历史价量与短期强弱，大方向以大盘红绿灯水温与基本面参考锚为准。";
@@ -810,6 +869,7 @@
       hoverY: -1,
       hoverLocked: false,
       loading: false,
+      loadRequest: 0,
       errorMsg: "",
       destroyed: false,
       layout: null,
@@ -995,13 +1055,14 @@
       }
       const idx = barIdx >= 0 && barIdx < state.bars.length ? barIdx : state.bars.length - 1;
       const b = state.bars[idx];
-      const prevC = idx > 0 ? state.bars[idx - 1].c : b.o;
-      const chgPct = prevC > 0 ? ((b.c - prevC) / prevC) * 100 : null;
+      const symbolId = (state.meta && state.meta.id) || state.symbolId;
+      const prevC = idx > 0 ? state.bars[idx - 1].c : /^(rate_|spread_)/.test(symbolId) ? null : b.o;
       const unit = (state.series && state.series.unit) || (state.meta && state.meta.unit) || "";
       const mkt = (state.series && state.series.market) || (state.meta && state.meta.market) || "";
-      const isUp = b.c >= prevC;
-      const chgCls = state.colorConv === "us" ? (isUp ? "kl-green" : "kl-red") : (isUp ? "kl-red" : "kl-green");
-      const chgStr = isFiniteNum(chgPct) ? (chgPct >= 0 ? "+" : "") + chgPct.toFixed(2) + "%" : "—";
+      const change = quoteChange(symbolId, b.c, prevC, unit);
+      const isUp = change.value >= 0;
+      const chgCls = change.value == null ? "" : state.colorConv === "us"
+        ? (isUp ? "kl-green" : "kl-red") : (isUp ? "kl-red" : "kl-green");
       const nameStr = (state.series && state.series.name) || (state.meta && state.meta.name) || state.symbolId;
       const codeStr = (state.series && state.series.code) || (state.meta && state.meta.code) || "";
 
@@ -1011,7 +1072,7 @@
         "<span>开 <strong>" + fmtPrice(b.o, unit) + "</strong></span>",
         "<span>高 <strong>" + fmtPrice(b.h, unit) + "</strong></span>",
         "<span>低 <strong>" + fmtPrice(b.l, unit) + "</strong></span>",
-        '<span>收 <strong class="' + chgCls + '">' + fmtPrice(b.c, unit) + " (" + chgStr + ")</strong></span>",
+        '<span>收 <strong class="' + chgCls + '">' + fmtPrice(b.c, unit) + " (" + change.text + ")</strong></span>",
       ];
       if (state.ind && state.ind.hasVol && isFiniteNum(b.v) && b.v > 0) {
         parts.push("<span>量 <strong>" + fmtVol(b.v, mkt) + "</strong></span>");
@@ -1725,15 +1786,14 @@
 
     function updateFootNote() {
       if (!footEl || !state.bars.length) return;
-      const rawProv = (state.series && state.series.provider) || (state.meta && state.meta.provider) || "";
-      const prov = fmtProviderLabel(rawProv) || "多源官库";
       const lastDt = state.bars[state.bars.length - 1].t;
+      const attribution = catalogQuoteAttribution(Object.assign({}, state.meta, state.series, { latest_date: lastDt }));
       const hint = window.innerWidth <= 640
         ? "滑动平移 · 双指缩放 · 点按或长按查价"
         : opts.mode === "compact"
         ? "拖拽平移 · Ctrl/⌘+滚轮或点击＋/−缩放 · 手机端长按查价"
         : "拖拽平移 · 滚轮/双指缩放 · 点击或长按查看逐日价量";
-      footEl.textContent = "数据截止 " + lastDt + " · 共 " + state.bars.length + " 交易日（来源：" + prov + "）｜" + hint;
+      footEl.textContent = attribution + " · 共 " + state.bars.length + " 根日线｜" + hint;
     }
 
     function load(symbolId, extraMeta) {
@@ -1750,11 +1810,14 @@
       state.hoverIdx = -1;
       state.hoverLocked = false;
       hideEmpty();
+      if (footEl) footEl.textContent = "";
+      renderDiagnosisBlock();
       updateReadout(-1);
 
       const reqSym = state.symbolId;
+      const requestNumber = ++state.loadRequest;
       return loadSeries(reqSym, opts.basePath).then(function (res) {
-        if (state.destroyed || state.symbolId !== reqSym) return;
+        if (state.destroyed || state.loadRequest !== requestNumber) return;
         state.loading = false;
         if (res.status !== "ok" || !res.bars.length) {
           const reason =
@@ -1776,7 +1839,7 @@
         renderDiagnosisBlock();
         applyTimeframe(state.timeframe > 0 ? state.timeframe : 66);
         if (typeof opts.onSymbolChange === "function") {
-          opts.onSymbolChange(res.meta, res.series);
+          opts.onSymbolChange(res.meta, res.series, res.manifest);
         }
       });
     }
@@ -2168,6 +2231,36 @@
     let chartInst = null;
     let listExpanded = false;
 
+    function adoptManifest(manifest) {
+      if (!manifest || manifest === loadedManifest) return false;
+      loadedManifest = manifest;
+      catalog = manifest.catalog.map(function (item, order) {
+        return Object.assign({ _order: order }, item);
+      });
+      if (catalog.some(function (item) { return isFiniteNum(item.priority); })) {
+        catalog.sort(function (a, b) {
+          const pa = isFiniteNum(a.priority) ? a.priority : 9999;
+          const pb = isFiniteNum(b.priority) ? b.priority : 9999;
+          return pa - pb || a._order - b._order;
+        });
+      }
+      return true;
+    }
+
+    function showSelectedQuote(item, symId) {
+      const isCrypto = isCryptoReadOnly((item && item.id) || symId);
+      if (headTitle) {
+        const baseTitle = item ? item.name + " (" + item.code + ")" : symId;
+        headTitle.textContent = isCrypto ? baseTitle + "（只读·禁交易）" : baseTitle;
+      }
+      if (headSub) {
+        const price = item && isFiniteNum(item.latest_close) ? fmtPrice(item.latest_close, item.unit) : "";
+        headSub.textContent = item
+          ? [price, catalogQuoteChange(item).text, catalogQuoteAttribution(item)].filter(Boolean).join(" · ")
+          : "交互 K 线与技术指标";
+      }
+    }
+
     function getChipSymId(chip) {
       if (!chip) return "";
       return (
@@ -2232,20 +2325,7 @@
         (symId && symId !== "_groups" && metaBridge[symId]) ||
         (item && item.dossier_key && item.dossier_key !== "_groups" ? metaBridge[item.dossier_key] : null) ||
         {};
-      if (headTitle) {
-        const baseTitle = item ? item.name + " (" + item.code + ")" : symId;
-        headTitle.textContent = isCrypto ? baseTitle + "（只读·禁交易）" : baseTitle;
-      }
-      if (headSub) {
-        const chg = item && isFiniteNum(item.change_pct)
-          ? (item.change_pct >= 0 ? "+" : "") + item.change_pct.toFixed(2) + "%"
-          : "";
-        const price = item && isFiniteNum(item.latest_close) ? fmtPrice(item.latest_close, item.unit) : "";
-        const provLabel = item ? fmtProviderLabel(item.provider) : "";
-        headSub.textContent = item
-          ? [price, chg, item.latest_date ? "截止 " + item.latest_date : "", provLabel].filter(Boolean).join(" · ")
-          : "交互 K 线与技术指标";
-      }
+      showSelectedQuote(item, symId);
       if (headStar) {
         headStar.hidden = isCrypto;
         headStar.disabled = isCrypto;
@@ -2264,6 +2344,10 @@
           anchorLow: bridge.anchor_low,
           anchorHigh: bridge.anchor_high,
           goldLocked: !!bridge.gold_locked,
+          onSymbolChange: function (quote, _series, manifest) {
+            if (adoptManifest(manifest)) renderSidebar();
+            showSelectedQuote(quote, activeSym);
+          },
         });
       } else {
         chartInst.load(symId, {
@@ -2329,9 +2413,9 @@
           const isAct = item.id === activeSym;
           const isCrypto = isCryptoReadOnly(item.id);
           const isStar = !isCrypto && (watchSet.has(item.id) || (item.dossier_key && watchSet.has(item.dossier_key)));
-          const chg = isFiniteNum(item.change_pct) ? item.change_pct : null;
+          const change = catalogQuoteChange(item);
+          const chg = change.value;
           const chgCls = chg == null ? "" : chg >= 0 ? "chg-up" : "chg-dn";
-          const chgTxt = chg == null ? "—" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
           const pTxt = isFiniteNum(item.latest_close) ? fmtPrice(item.latest_close, item.unit) : "待核";
           const starBtnHtml = isCrypto
             ? ""
@@ -2346,11 +2430,11 @@
             '<div class="kline-sym-row' + (isAct ? " active" : "") + '" data-sym-id="' + escHtml(item.id) + '" role="button" tabindex="0">' +
             '<div class="kline-sym-main">' +
             '<div class="kline-sym-name">' + escHtml(item.name) + "</div>" +
-            '<div class="kline-sym-code">' + escHtml(item.code) + "</div>" +
+            '<div class="kline-sym-code">' + escHtml(item.code + " · " + catalogQuoteAttribution(item)) + "</div>" +
             "</div>" +
             '<div class="kline-sym-right">' +
             '<div class="kline-sym-price">' + escHtml(pTxt) + "</div>" +
-            '<div class="kline-sym-chg ' + chgCls + '">' + escHtml(chgTxt) + "</div>" +
+            '<div class="kline-sym-chg ' + chgCls + '">' + escHtml(change.text) + "</div>" +
             "</div>" +
             starBtnHtml +
             "</div>"
@@ -2550,21 +2634,7 @@
     });
 
     loadManifest().then(function (manifest) {
-      loadedManifest = manifest;
-      if (manifest && Array.isArray(manifest.catalog) && manifest.catalog.length > 0) {
-        catalog = manifest.catalog.map(function (c, idx) {
-          return Object.assign({ _order: idx }, c);
-        });
-        const hasAnyPriority = catalog.some(function (c) { return isFiniteNum(c.priority); });
-        if (hasAnyPriority) {
-          catalog.sort(function (a, b) {
-            const pa = isFiniteNum(a.priority) ? a.priority : 9999;
-            const pb = isFiniteNum(b.priority) ? b.priority : 9999;
-            if (pa !== pb) return pa - pb;
-            return a._order - b._order;
-          });
-        }
-      }
+      adoptManifest(manifest);
       applyTerminalHash();
       renderSidebar();
       selectSymbol(activeSym, false);
@@ -2725,6 +2795,8 @@
     loadSeries: loadSeries,
     resolveCatalogItem: resolveCatalogItem,
     fmtPrice: fmtPrice,
+    catalogQuoteChange: catalogQuoteChange,
+    catalogQuoteAttribution: catalogQuoteAttribution,
     isGoldAsset: isGoldAsset,
     isCryptoReadOnly: isCryptoReadOnly,
     fmtProviderLabel: fmtProviderLabel,
@@ -2733,9 +2805,9 @@
     initChartsTerminal: initChartsTerminal,
   };
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initDeclarativeDecks);
-  } else {
+  if (document.readyState === "complete") {
     initDeclarativeDecks();
+  } else {
+    document.addEventListener("DOMContentLoaded", initDeclarativeDecks, { once: true });
   }
 })();

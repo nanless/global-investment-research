@@ -22,16 +22,27 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import copy
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from functools import wraps
 import json
 import math
 import os
 from pathlib import Path
 import re
 import sys
-import tempfile
 from typing import Any
 from urllib.parse import urlsplit
+
+if __package__:
+    from . import review_evidence
+    from .inventory_evidence import ETF_FIELDS, STOCK_FIELDS, inventory_evidence, load_research_json, retain_inventory_evidence
+    from .source_links import is_https_source as _is_strict_https_url, policy_extra_source_error
+    from .state_transaction import install_locked, state_read_lock, state_write_lock
+else:
+    import review_evidence
+    from inventory_evidence import ETF_FIELDS, STOCK_FIELDS, inventory_evidence, load_research_json, retain_inventory_evidence
+    from source_links import is_https_source as _is_strict_https_url, policy_extra_source_error
+    from state_transaction import install_locked, state_read_lock, state_write_lock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EQUITY_STATE_DIR = REPO_ROOT / "equity" / "state"
@@ -39,6 +50,8 @@ POLICY_CALENDAR_PATH = EQUITY_STATE_DIR / "policy_calendar.json"
 
 EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\d+))?")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+POLICY_CLOCK_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
+DATA_CONTRACT_CUTOVER = "2026-11-28_1130"
 PERIOD_SLUG_RE = re.compile(r"^\d{4}_(0[1-9]|1[0-2])$")
 FLAGSHIP_CUTOFF_RE = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{4}年\d{1,2}月\d{1,2}日) +(\d{2}:\d{2})(?!\d)")
 ROLLOVER_MARKETS = ("a_share", "hk_stock", "us_stock")
@@ -93,7 +106,7 @@ ETF_ALL_21_KEYS = frozenset({
     "otc_feeder",
     "gold_locked",
 })
-ETF_OPTIONAL_KEYS = frozenset({"updated_at", "asset_class", "region"})
+ETF_OPTIONAL_KEYS = frozenset({"updated_at", "asset_class", "region", "evidence"})
 ETF_NEW_REQUIRED_KEYS = ETF_ALL_21_KEYS | frozenset({"asset_class", "region"})
 ETF_ALLOWED_KEYS = ETF_ALL_21_KEYS | ETF_OPTIONAL_KEYS
 ETF_ALLOWED_MARKETS = frozenset({"a-share", "hk-stock", "us-stock", "global", "multi-asset"})
@@ -126,6 +139,7 @@ ETF_ALLOWED_REGIONS = frozenset({
     "global",
 })
 MIN_ETF_COUNT = 140
+LIVE_MIN_ETF_COUNT = 181
 MAX_ETF_DELTA = 10
 
 DOSSIER_DIMENSIONS = (
@@ -141,7 +155,7 @@ DOSSIER_DIMENSIONS = (
 POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "UK", "JP", "GLOBAL"})
 POLICY_CAL_REGIONS = POLICY_CAL_ALLOWED_REGIONS
 BARE_IMPACT_TIER_RE = re.compile(r"(?<![A-Za-z0-9])P[0-2](?![A-Za-z0-9])")
-POLICY_CAL_PROSE_SKIP_KEYS = frozenset({"impact_tier", "event_id", "brief_id", "id", "source_url"})
+POLICY_CAL_PROSE_SKIP_KEYS = frozenset({"impact_tier", "event_id", "brief_id", "id", "source_url", "source_urls"})
 POLICY_CAL_ALLOWED_CATEGORIES = frozenset({
     "top_politics",
     "central_bank",
@@ -260,7 +274,7 @@ CHANNEL_META_KEYS = frozenset({
     "high_net_worth_only", "min_amount_tier", "risk_stars", "status_tone",
     "related_etf_codes",
 })
-DOSSIER_META_KEYS = frozenset({"market", "code", "name", "depth_tier", "updated_at"})
+DOSSIER_META_KEYS = frozenset({"market", "code", "name", "depth_tier", "updated_at", "evidence"})
 
 GOLD_ETF_CODES = frozenset({
     "518660", "518880", "518850", "159934", "159937", "518800",
@@ -523,8 +537,8 @@ def _read_json_obj(path: Path, label: str) -> dict[str, Any]:
     if not path.is_file():
         raise ValueError(f"Missing required JSON file: {label}")
     try:
-        obj = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        obj = load_research_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
         raise ValueError(f"Cannot parse {label}: {exc}") from exc
     if not isinstance(obj, dict):
         raise ValueError(f"{label} root must be a JSON object.")
@@ -533,31 +547,6 @@ def _read_json_obj(path: Path, label: str) -> dict[str, Any]:
 
 def _serialize_json(obj: dict[str, Any]) -> bytes:
     return (json.dumps(obj, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-
-
-def _target_file_mode(dest: Path) -> int:
-    if dest.exists():
-        orig_mode = dest.stat().st_mode & 0o777
-        return 0o644 if orig_mode == 0o600 else orig_mode
-    return 0o644
-
-
-def _is_strict_https_url(value: object) -> bool:
-    if not isinstance(value, str) or not value or any(c.isspace() for c in value):
-        return False
-    try:
-        parsed = urlsplit(value)
-        host = parsed.hostname or ""
-        return (
-            parsed.scheme == "https"
-            and bool(host)
-            and "." in host
-            and not host.startswith(".")
-            and not host.endswith(".")
-            and parsed.username is None
-        )
-    except ValueError:
-        return False
 
 
 def _strip_html_comments(text: str) -> str:
@@ -616,74 +605,37 @@ def _check_sibling_token_drift(
         raise ValueError("\n".join(local_errors))
 
 
-def _atomic_write_single(dest: Path, content: bytes) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    target_mode = _target_file_mode(dest)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(dest.parent))
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(content)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.chmod(tmp_path, target_mode)
-        os.replace(tmp_path, dest)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
+def _atomic_write_transaction(writes: list[tuple[Path, bytes | None]], *, repo_root: Path | None = None) -> None:
+    """Run a standalone transaction for callers that already have their output bytes."""
+    if not writes:
+        return
+    if repo_root is None:
+        common = Path(os.path.commonpath([path.resolve().parent for path, _ in writes]))
+        ancestors = (common, *common.parents)
+        repo_root = next((path for path in ancestors if (path / ".git").exists()), None)
+        if repo_root is None:
+            repo_root = next(path for path in ancestors if path.is_dir())
+    with state_write_lock(repo_root):
+        install_locked(repo_root, writes)
 
 
-def _atomic_write_transaction(writes: list[tuple[Path, bytes]]) -> None:
-    """All-or-nothing transactional write across multiple target files with full rollback.
+def _serialize_patch_operation(operation):
+    @wraps(operation)
+    def wrapped(repo_root: Path = REPO_ROOT, *, dry_run: bool = False, **kwargs):
+        lock = state_read_lock if dry_run else state_write_lock
+        with lock(repo_root):
+            return operation(repo_root, dry_run=dry_run, **kwargs)
+    return wrapped
 
-    Supports both overwriting existing files (restoring original bytes on rollback) and
-    creating brand-new destination files (unlinking them cleanly on rollback).
-    """
-    originals: list[tuple[Path, bytes | None]] = []
-    for dest, _ in writes:
-        originals.append((dest, dest.read_bytes() if dest.exists() else None))
 
-    staged: list[tuple[Path, Path, bytes | None]] = []
-    replaced: list[tuple[Path, bytes | None]] = []
-    try:
-        # Phase 1: Stage and fsync every temp file in its target directory first.
-        for (dest, new_bytes), (_, orig_bytes) in zip(writes, originals):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            target_mode = _target_file_mode(dest)
-            fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(dest.parent))
-            tmp_path = Path(tmp_name)
-            try:
-                with os.fdopen(fd, "wb") as fh:
-                    fh.write(new_bytes)
-                    fh.flush()
-                    os.fsync(fh.fileno())
-                os.chmod(tmp_path, target_mode)
-            except Exception:
-                tmp_path.unlink(missing_ok=True)
-                raise
-            staged.append((tmp_path, dest, orig_bytes))
-
-        # Phase 2: Replace targets sequentially; roll back every replaced/created file on any failure.
-        for tmp_path, dest, orig_bytes in staged:
-            os.replace(tmp_path, dest)
-            replaced.append((dest, orig_bytes))
-    except Exception as exc:
-        for tmp_path, _, _ in staged:
-            tmp_path.unlink(missing_ok=True)
-        rollback_errors: list[str] = []
-        for dest, orig_bytes in reversed(replaced):
-            try:
-                if orig_bytes is None:
-                    dest.unlink(missing_ok=True)
-                else:
-                    _atomic_write_single(dest, orig_bytes)
-            except Exception as rb_exc:
-                rollback_errors.append(f"{dest.name}: {rb_exc}")
-        if rollback_errors:
-            raise RuntimeError(
-                f"Atomic transaction failed ({exc}); rollback errors: {'; '.join(rollback_errors)}"
-            ) from exc
-        raise
+def _commit_patch(
+    repo_root: Path, writes: list[tuple[Path, bytes]], patch_path: Path, *, keep_patch: bool,
+) -> bool:
+    changes: list[tuple[Path, bytes | None]] = list(writes)
+    if not keep_patch:
+        changes.append((patch_path, None))
+    install_locked(repo_root, changes)
+    return not keep_patch
 
 
 def _merge_multi_asset(
@@ -1050,16 +1002,17 @@ def _merge_etf_universe(
                             if k == "code" or k not in ETF_ALLOWED_KEYS:
                                 continue  # Preserve existing canonical code format & skip invalid keys
                             touched_keys.add(k)
-                            if k != "updated_at":
+                            if k not in ("updated_at", "evidence"):
                                 old_tokens |= _extract_dynamic_tokens(orig_etf.get(k))
                                 new_tokens |= _extract_dynamic_tokens(v)
                             target[k] = copy.deepcopy(v)
                         target["code"] = canonical_code
                         target["updated_at"] = as_of_date
+                        retain_inventory_evidence(orig_etf, target, entry)
                         replaced_tokens = old_tokens - new_tokens
                         untouched_strings: list[tuple[str, str]] = []
                         for sk, sv in target.items():
-                            if sk in ("code", "updated_at") or sk in touched_keys:
+                            if sk in ("code", "updated_at", "evidence") or sk in touched_keys:
                                 continue
                             untouched_strings.extend(_walk_json_strings(sv, sk))
                         _check_sibling_token_drift(
@@ -1284,10 +1237,12 @@ def _merge_deep_dossiers(
                                 local_errors.append(f"Cannot mutate immutable {k!r} on dossier {stock_key!r}.")
                                 continue
                             touched_keys.add(k)
-                            old_tokens |= _extract_dynamic_tokens(orig_entry.get(k))
-                            new_tokens |= _extract_dynamic_tokens(v)
+                            if k != "evidence":
+                                old_tokens |= _extract_dynamic_tokens(orig_entry.get(k))
+                                new_tokens |= _extract_dynamic_tokens(v)
                             target[k] = copy.deepcopy(v)
                         target["updated_at"] = as_of_date
+                        retain_inventory_evidence(orig_entry, target, upd)
                         replaced_tokens = old_tokens - new_tokens
                         untouched_strings: list[tuple[str, str]] = []
                         for sk, sv in target.items():
@@ -1557,16 +1512,27 @@ def _validate_policy_calendar(
     edition_id: str,
     as_of_date: str,
     gold_tier0_active: bool,
+    market_as_of_cst: object = None,
+    enforce_live_contract: bool = False,
 ) -> list[str]:
     errs: list[str] = []
     if not isinstance(pc.get("schema_version"), str) or not pc["schema_version"].strip():
         errs.append("policy_calendar.json: missing non-empty schema_version.")
     if pc.get("edition_id") != edition_id:
         errs.append(f"policy_calendar.json: edition_id ({pc.get('edition_id')!r}) != {edition_id!r}")
+    as_of = None
     try:
-        _validate_iso_cst_timestamp(pc.get("as_of_cst"), "policy_calendar.json.as_of_cst")
+        as_of = datetime.fromisoformat(_validate_iso_cst_timestamp(pc.get("as_of_cst"), "policy_calendar.json.as_of_cst"))
     except ValueError as exc:
         errs.append(f"policy_calendar.json: {exc}")
+    if enforce_live_contract:
+        try:
+            market_as_of = datetime.fromisoformat(_validate_iso_cst_timestamp(market_as_of_cst, "market_state.json.as_of_cst"))
+        except ValueError as exc:
+            errs.append(f"policy_calendar.json: {exc}")
+        else:
+            if as_of is not None and as_of != market_as_of:
+                errs.append("policy_calendar.json: as_of_cst must match market_state.json.as_of_cst.")
     hdays = pc.get("horizon_days")
     if type(hdays) is not int or hdays < POLICY_CAL_MIN_HORIZON_DAYS:
         errs.append(
@@ -1577,6 +1543,9 @@ def _validate_policy_calendar(
     if not isinstance(briefs, list) or not briefs:
         errs.append("policy_calendar.json: policy_briefs must be a non-empty list.")
     else:
+        featured = sum(isinstance(brief, dict) and brief.get("home_featured") is True for brief in briefs)
+        if enforce_live_contract and not 6 <= featured <= 9:
+            errs.append(f"policy_calendar.json: expected 6–9 home_featured policy_briefs, found {featured}.")
         seen_bids: set[str] = set()
         for idx, b in enumerate(briefs):
             if not isinstance(b, dict):
@@ -1595,9 +1564,16 @@ def _validate_policy_calendar(
                     errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) missing non-empty {field}.")
             if isinstance(b.get("date_cst"), str) and b["date_cst"].strip():
                 try:
-                    _validate_date(b["date_cst"], f"policy_briefs[{idx}]({bid}).date_cst")
+                    brief_day = datetime.fromisoformat(_validate_date(b["date_cst"], f"policy_briefs[{idx}]({bid}).date_cst"))
                 except ValueError as exc:
                     errs.append(f"policy_calendar.json: {exc}")
+                else:
+                    if enforce_live_contract and as_of is not None:
+                        brief_time = b.get("time_cst")
+                        if isinstance(brief_time, str) and POLICY_CLOCK_RE.fullmatch(brief_time):
+                            brief_day = datetime.fromisoformat(f"{b['date_cst'].strip()}T{brief_time}")
+                        if brief_day > as_of.replace(tzinfo=None):
+                            errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) is later than as_of_cst.")
             reg = str(b.get("region", "")).strip()
             if reg and reg not in POLICY_CAL_ALLOWED_REGIONS:
                 errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid region {reg!r}.")
@@ -1617,12 +1593,19 @@ def _validate_policy_calendar(
                         f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid affected_markets {bad_mkts} "
                         f"(allowed: {sorted(POLICY_CAL_ALLOWED_MARKETS)})."
                     )
-            if "source_url" in b and b["source_url"] is not None and not _is_strict_https_url(b["source_url"]):
-                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid https source_url {b['source_url']!r}.")
+            source = b.get("source_url")
+            if (enforce_live_contract or source is not None) and not _is_strict_https_url(source, published_source=enforce_live_contract):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) invalid https source_url {source!r}.")
+            elif enforce_live_contract and not _is_strict_https_url(source, published_source=True, direct=True):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) source_url must point to specific evidence.")
+            if source_error := policy_extra_source_error(b):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) {source_error} HTTPS source_urls.")
             if "home_featured" in b and b["home_featured"] is not None and type(b["home_featured"]) is not bool:
                 errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) home_featured must be boolean.")
             if "time_cst" in b and b["time_cst"] is not None and (not isinstance(b["time_cst"], str) or not b["time_cst"].strip()):
                 errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) time_cst must be non-empty string.")
+            elif enforce_live_contract and b.get("time_cst") is not None and not POLICY_CLOCK_RE.fullmatch(b["time_cst"]):
+                errs.append(f"policy_calendar.json: policy_briefs[{idx}]({bid}) time_cst must use HH:MM when supplied.")
 
     events = pc.get("events")
     max_end_date = None
@@ -1666,6 +1649,13 @@ def _validate_policy_calendar(
             prec = str(ev.get("date_precision", "")).strip()
             if prec and prec not in POLICY_CAL_ALLOWED_PRECISIONS:
                 errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid date_precision {prec!r}.")
+            if enforce_live_contract and prec in POLICY_CAL_ALLOWED_PRECISIONS:
+                event_time = ev.get("time_cst")
+                has_exact_time = isinstance(event_time, str) and POLICY_CLOCK_RE.fullmatch(event_time)
+                if prec == "exact" and (not has_exact_time or start_d != end_d):
+                    errs.append(f"policy_calendar.json: events[{idx}]({eid}) exact requires one date and an HH:MM time_cst.")
+                elif prec == "window_tbd" and has_exact_time:
+                    errs.append(f"policy_calendar.json: events[{idx}]({eid}) window_tbd requires a time window or an unknown time.")
             reg = str(ev.get("region", "")).strip()
             if reg and reg not in POLICY_CAL_ALLOWED_REGIONS:
                 errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid region {reg!r}.")
@@ -1694,7 +1684,7 @@ def _validate_policy_calendar(
                 errs.append(
                     f"policy_calendar.json: events[{idx}]({eid}).watch_triggers requires non-empty upside_bull and downside_bear."
                 )
-            if not _is_strict_https_url(ev.get("source_url")):
+            if not _is_strict_https_url(ev.get("source_url"), published_source=enforce_live_contract):
                 errs.append(f"policy_calendar.json: events[{idx}]({eid}) invalid https source_url {ev.get('source_url')!r}.")
             mwin = ev.get("monitor_window_min")
             if type(mwin) is not int or mwin < 0:
@@ -1787,6 +1777,7 @@ def _validate_merged_equity_dbs(
     market_state: dict[str, Any] | None = None,
 ) -> list[str]:
     errs: list[str] = []
+    cutoff = date.fromisoformat(edition_id.split("_", 1)[0])
 
     # 1. Edition ID alignment
     for name, doc in (
@@ -1897,15 +1888,17 @@ def _validate_merged_equity_dbs(
                         f"exact weights sum={sum(exact_pcts):.2f}% != 100%."
                     )
 
-    # 3. Validate etf_universe (>= 140 ETFs, unique codes, valid enums, zero markup, Gold Tier-0 lock)
+    # 3. Validate ETF coverage, unique codes, enums, and Gold Tier-0 lock.
     if gold_tier0_active and eu.get("gold_tier0_locked") is not True:
         errs.append("etf_universe.json: gold_tier0_locked must be true while Gold is Tier 0 / new_buy_allowed=false.")
     etfs = eu.get("etfs")
     if not isinstance(etfs, list):
         errs.append("etf_universe.json: etfs must be a list.")
     else:
-        if len(etfs) < MIN_ETF_COUNT:
-            errs.append(f"etf_universe.json: ETF count {len(etfs)} < {MIN_ETF_COUNT}.")
+        live_coverage = expected_pool >= 100 and edition_id[:15] >= DATA_CONTRACT_CUTOVER
+        min_etfs = LIVE_MIN_ETF_COUNT if live_coverage else MIN_ETF_COUNT
+        if len(etfs) < min_etfs:
+            errs.append(f"etf_universe.json: ETF count {len(etfs)} < {min_etfs}.")
         if eu.get("total_etfs") != len(etfs):
             errs.append(f"etf_universe.json: total_etfs ({eu.get('total_etfs')}) != len(etfs) ({len(etfs)}).")
         seen_etf_codes: set[str] = set()
@@ -1971,6 +1964,10 @@ def _validate_merged_equity_dbs(
                     _validate_date(item["updated_at"], f"etfs[{idx}]({code}).updated_at")
                 except ValueError as exc:
                     errs.append(f"etf_universe.json: {exc}")
+            try:
+                inventory_evidence(item, ETF_FIELDS, cutoff)
+            except ValueError as exc:
+                errs.append(f"etf_universe.json: etfs[{idx}]({code}) {exc}.")
             if "premium_status" in item and item["premium_status"] not in ETF_ALLOWED_PREMIUM_STATUSES:
                 errs.append(f"etf_universe.json: etfs[{idx}]({code}) invalid premium_status {item['premium_status']!r}.")
             pstatus = str(item.get("premium_status", "")).strip()
@@ -2101,6 +2098,10 @@ def _validate_merged_equity_dbs(
             if not isinstance(entry, dict):
                 errs.append(f"deep_dossiers.json[{dkey}] must be an object.")
                 continue
+            try:
+                inventory_evidence(entry, STOCK_FIELDS, cutoff)
+            except ValueError as exc:
+                errs.append(f"deep_dossiers.json[{dkey}] {exc}.")
             mkt_prefix = str(dkey).split(":", 1)[0]
             for dim in DOSSIER_DIMENSIONS:
                 val = entry.get(dim)
@@ -2249,6 +2250,7 @@ def _validate_merged_equity_dbs(
     return errs
 
 
+@_serialize_patch_operation
 def apply_equity_patch(
     repo_root: Path = REPO_ROOT,
     *,
@@ -2356,6 +2358,9 @@ def apply_equity_patch(
         ]
         if len(counts) == 3 and all(type(c) is int and c > 0 for c in counts):
             expected_pool = sum(counts)
+    enforce_live_contract = (
+        expected_pool >= 100 and edition_id_valid and edition_id[:15] >= DATA_CONTRACT_CUTOVER
+    )
 
     merged_ma: dict[str, Any] | None = None
     ma_stats: dict[str, Any] = {}
@@ -2424,6 +2429,8 @@ def apply_equity_patch(
                 edition_id=edition_id,
                 as_of_date=as_of_date,
                 gold_tier0_active=gold_tier0_active,
+                market_as_of_cst=market_state.get("as_of_cst") if isinstance(market_state, dict) else None,
+                enforce_live_contract=enforce_live_contract,
             )
         )
     if errors:
@@ -2466,10 +2473,7 @@ def apply_equity_patch(
         }
 
     if not dry_run:
-        _atomic_write_transaction(writes)
-        if not keep_patch:
-            patch_path.unlink(missing_ok=True)
-            summary["patch_deleted"] = True
+        summary["patch_deleted"] = _commit_patch(repo_root, writes, patch_path, keep_patch=keep_patch)
 
     return summary
 
@@ -2602,6 +2606,7 @@ def _validate_gold_edition_review(
         raise ValueError("GOLD_EDITION_REVIEW.forecast_review.sources must be non-empty when status == 'settled'.")
 
 
+@_serialize_patch_operation
 def prepend_gold_ledgers(
     repo_root: Path = REPO_ROOT,
     *,
@@ -2780,13 +2785,10 @@ def prepend_gold_ledgers(
     }
 
     if not dry_run:
-        _atomic_write_transaction([
+        summary["patch_deleted"] = _commit_patch(repo_root, [
             (changelog_path, new_changelog_bytes),
             (audit_path, new_audit_bytes),
-        ])
-        if not keep_patch:
-            patch_path.unlink(missing_ok=True)
-            summary["patch_deleted"] = True
+        ], patch_path, keep_patch=keep_patch)
 
     return summary
 
@@ -2928,6 +2930,7 @@ def _validate_rsi_patch_entry(
     return run_id, findings
 
 
+@_serialize_patch_operation
 def append_rsi_metrics(
     repo_root: Path = REPO_ROOT,
     *,
@@ -2973,16 +2976,40 @@ def append_rsi_metrics(
         expected_dims=target_dims,
         require_six_dims=(track == "gold"),
     )
+    requires_receipt = _edition_sort_key(run_id) > review_evidence.LAST_LEGACY_EDITION
+    if requires_receipt:
+        candidate = review_evidence.working_snapshot(repo_root, run_id)
+        review_evidence.validate_receipt(
+            entry["review_closure"], candidate, patch_label,
+            read=lambda path: review_evidence.read_working_file(repo_root, path),
+        )
+        if "superseded_reviews" in entry:
+            raise ValueError(f"{patch_label} cannot supply its own superseded review history.")
 
     target_obj: dict[str, Any] = copy.deepcopy(target_raw)
     target_runs = target_obj["runs"]
 
-    for existing in target_runs:
-        if isinstance(existing, dict) and existing.get("run_id") == run_id:
-            raise ValueError(f"{target_label} already contains run_id {run_id!r}; refusing duplicate append.")
-
     prior_runs = len(target_runs)
-    target_runs.append(copy.deepcopy(entry))
+    matches = [
+        index for index, existing in enumerate(target_runs)
+        if isinstance(existing, dict) and existing.get("run_id") == run_id
+    ]
+    if len(matches) > 1 or (matches and not requires_receipt):
+        raise ValueError(f"{target_label} already contains run_id {run_id!r}; refusing duplicate append.")
+    if matches:
+        index = matches[0]
+        existing = target_runs[index]
+        history = existing.pop("superseded_reviews", [])
+        if not isinstance(history, list):
+            raise ValueError(f"{target_label} has invalid superseded review history for {run_id!r}.")
+        if existing != entry:
+            prior_closure = existing.get("review_closure") or {}
+            if prior_closure.get("candidate_sha256") == candidate["candidate_sha256"]:
+                raise ValueError(f"{target_label} already has a different receipt for this review candidate.")
+            history = [*history, existing]
+        target_runs[index] = {**entry, **({"superseded_reviews": history} if history else {})}
+    else:
+        target_runs.append(copy.deepcopy(entry))
     new_bytes = (json.dumps(target_obj, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
     summary = {
@@ -2996,10 +3023,7 @@ def append_rsi_metrics(
     }
 
     if not dry_run:
-        _atomic_write_single(target_path, new_bytes)
-        if not keep_patch:
-            patch_path.unlink(missing_ok=True)
-            summary["patch_deleted"] = True
+        summary["patch_deleted"] = _commit_patch(repo_root, [(target_path, new_bytes)], patch_path, keep_patch=keep_patch)
 
     return summary
 
@@ -3059,6 +3083,7 @@ def _insert_after_first_hr(text: str, block: str, *, file_label: str) -> str:
     raise ValueError(f"{file_label}: no '---' separator or heading block found; cannot safely prepend.")
 
 
+@_serialize_patch_operation
 def prepend_equity_audit(
     repo_root: Path = REPO_ROOT,
     *,
@@ -3126,10 +3151,7 @@ def prepend_equity_audit(
     }
 
     if not dry_run:
-        _atomic_write_single(audit_path, new_bytes)
-        if not keep_patch:
-            patch_path.unlink(missing_ok=True)
-            summary["patch_deleted"] = True
+        summary["patch_deleted"] = _commit_patch(repo_root, [(audit_path, new_bytes)], patch_path, keep_patch=keep_patch)
 
     return summary
 
@@ -3184,6 +3206,7 @@ def _extract_appendix2_raw_rows(md_text: str) -> list[str] | None:
     return best_rows if best_rows else None
 
 
+@_serialize_patch_operation
 def rollover_equity_month(
     repo_root: Path = REPO_ROOT,
     *,
@@ -3430,10 +3453,7 @@ def rollover_equity_month(
     }
 
     if not dry_run:
-        _atomic_write_transaction(writes)
-        if not keep_patch:
-            patch_path.unlink(missing_ok=True)
-            summary["patch_deleted"] = True
+        summary["patch_deleted"] = _commit_patch(repo_root, writes, patch_path, keep_patch=keep_patch)
 
     return summary
 
@@ -3455,6 +3475,7 @@ def _extract_ledger_header(text: str, file_label: str) -> str:
     return text[m_h1.start() : pos + offset].lstrip("\n").rstrip("\n")
 
 
+@_serialize_patch_operation
 def archive_gold_ledgers(
     repo_root: Path = REPO_ROOT,
     *,
@@ -3555,25 +3576,30 @@ def archive_gold_ledgers(
     }
 
     if not dry_run:
-        _atomic_write_transaction([
+        summary["patch_deleted"] = _commit_patch(repo_root, [
             (archive_cl_path, orig_cl_bytes),
             (archive_au_path, orig_au_bytes),
             (changelog_path, active_cl_bytes),
             (audit_path, active_au_bytes),
-        ])
-        if not keep_patch:
-            patch_path.unlink(missing_ok=True)
-            summary["patch_deleted"] = True
+        ], patch_path, keep_patch=keep_patch)
 
     return summary
 
 
 def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str, Any]:
+    with state_read_lock(repo_root):
+        return _inspect_state_dbs(repo_root, target)
+
+
+def _inspect_state_dbs(repo_root: Path, target: str) -> dict[str, Any]:
     raw_target = str(target or "").strip()
     if not raw_target:
         raise ValueError(
-            "Empty --inspect target (allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar)."
+            "Empty --inspect target (allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar, review-candidate)."
         )
+
+    if raw_target == "review-candidate":
+        return review_evidence.working_snapshot(repo_root)
 
     if raw_target == "channels":
         ma = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "multi_asset_channels.json"), "multi_asset_channels.json")
@@ -3786,7 +3812,7 @@ def inspect_state_dbs(repo_root: Path = REPO_ROOT, target: str = "") -> dict[str
 
     raise ValueError(
         f"Unknown --inspect target {raw_target!r} "
-        "(allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar)."
+        "(allowed: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar, review-candidate)."
     )
 
 
@@ -3831,7 +3857,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     mode.add_argument(
         "--inspect",
         metavar="TARGET",
-        help="Read-only JSON summary: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar.",
+        help="Read-only JSON summary: channels, channel:<id>, etf:<code>, etf-freshness, stock:<key>, stale-dossiers, ah-benchmarks, policy-calendar, review-candidate.",
     )
     parser.add_argument(
         "--dry-run",

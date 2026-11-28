@@ -2,11 +2,31 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 
 
 _NUMBER = re.compile(r"[+-]?(?:\d{1,3}(?:,\d{3})+(?:\.\d*)?|\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?")
+
+
+def load_gold_json(raw: str) -> object:
+    """Reject duplicates and unrepresentable numbers in published gold inputs."""
+    def object_from_pairs(pairs: list[tuple[str, object]]) -> dict:
+        result: dict = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"重复 JSON 键 {key!r}")
+            result[key] = value
+        return result
+
+    def finite_number(token: str) -> float:
+        value = float(token)
+        if not math.isfinite(value):
+            raise ValueError(f"非有限 JSON 数值 {token!r}")
+        return value
+
+    return json.loads(raw, object_pairs_hook=object_from_pairs, parse_float=finite_number, parse_constant=finite_number)
 
 
 def chart_number(value: object) -> float:

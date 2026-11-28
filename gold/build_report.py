@@ -15,7 +15,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import statistics
 from pathlib import Path
@@ -27,6 +26,8 @@ from build_daily import (
     sanitize_hex_color,
     svg_esc,
 )
+
+from chart_input import load_gold_json
 
 OUT_DIR = Path(__file__).resolve().parent
 BASE_NAME = "黄金跨世纪周期与2026-2030终审研究报告"
@@ -43,12 +44,12 @@ REPORT_SHORT_DATE = "2026-11-24 16:30"
 
 
 def parse_master_baseline(md_text: str) -> dict:
-    m = MASTER_BASELINE_RE.search(md_text)
-    if not m:
-        raise ValueError("Master Markdown is missing its MASTER_BASELINE lock")
+    matches = MASTER_BASELINE_RE.findall(md_text)
+    if len(matches) != 1:
+        raise ValueError("Master Markdown requires exactly one MASTER_BASELINE lock")
     try:
-        baseline = json.loads(m.group(1))
-    except json.JSONDecodeError as exc:
+        baseline = load_gold_json(matches[0])
+    except ValueError as exc:
         raise ValueError(f"Invalid JSON in <!-- MASTER_BASELINE ... -->: {exc}") from exc
     if baseline.get("snapshot") != DEFAULT_MASTER_SNAPSHOT.name or not baseline.get("as_of_short"):
         raise ValueError("MASTER_BASELINE requires snapshot='master_snapshot.json' and as_of_short")
@@ -66,8 +67,10 @@ def load_master_snapshot(
 
     if not snap_path.exists():
         raise FileNotFoundError(f"Master Report snapshot missing: {snap_path}")
-    snap = json.loads(snap_path.read_text(encoding="utf-8"))
+    snap = load_gold_json(snap_path.read_text(encoding="utf-8"))
 
+    if not isinstance(snap, dict):
+        raise ValueError(f"{snap_path.name} must contain a JSON object")
     lock_ts = baseline.get("as_of_short")
     snap_ts = snap.get("as_of_short")
     if not snap_ts:
@@ -331,12 +334,12 @@ def svg_chart_china_tax_channels(fig_num: int = 5) -> str:
     as_short, _, _, _, _, cn_date, _, time_word = _as_of_meta()
 
     items = [
-        ("黄金ETF / 交易所原料", base, "+0元（0%增值税，投资首选）", "#1e3a8a"),
+        ("黄金ETF / 交易所原料", base, "+0元（估价基准）", "#1e3a8a"),
         ("四大行积存金（账面）", int(ch["bank_accum_rmb"]), f"+{int(ch['bank_accum_rmb'])-base}元（卖出扣0.5%）", "#2563eb"),
-        ("四大行标准投资金条", int(ch["bank_bar_rmb"]), f"+{int(ch['bank_bar_rmb'])-base}元（实物最划算）", "#0f766e"),
+        ("四大行标准投资金条", int(ch["bank_bar_rmb"]), f"+{int(ch['bank_bar_rmb'])-base}元（银行报价样例）", "#0f766e"),
         ("银行金条 + 水贝加工", bank_craft, f"+{bank_craft-base}元（比金店省{save_g}元/克）", "#059669"),
-        ("水贝非会员零售金条", int(ch["shuibei_nonmember_bar_rmb"]), f"+{int(ch['shuibei_nonmember_bar_rmb'])-base}元（非会员13%税坑）", "#d97706"),
-        ("水贝含税零售首饰", int(ch["shuibei_taxed_jewelry_rmb"]), f"+{int(ch['shuibei_taxed_jewelry_rmb'])-base}元（税差+5%消费税+工费）", "#c2410c"),
+        ("水贝非会员零售金条", int(ch["shuibei_nonmember_bar_rmb"]), f"+{int(ch['shuibei_nonmember_bar_rmb'])-base}元（含税报价样例）", "#d97706"),
+        ("水贝含税零售首饰", int(ch["shuibei_taxed_jewelry_rmb"]), f"+{int(ch['shuibei_taxed_jewelry_rmb'])-base}元（含税及工费）", "#c2410c"),
         ("品牌金店挂牌（周大福等）", brand, f"+{brand-base}元（+{((brand-base)/max(base,1))*100:.1f}% 溢价）", "#991b1b"),
     ]
 
@@ -391,7 +394,7 @@ def svg_chart_china_tax_channels(fig_num: int = 5) -> str:
 
 
 def svg_chart_48h_crash_and_weekend(fig_num: int = 3) -> str:
-    """FROZEN Historical Case Study (Nov 18–24, 2026) — immutable constants prevent future snapshots from falsifying history!"""
+    """Render the original Nov 18–24, 2026 historical price samples."""
     case_peak = 3690
     case_spot = 3635
     case_fair_usd = 3690
@@ -399,13 +402,13 @@ def svg_chart_48h_crash_and_weekend(fig_num: int = 3) -> str:
     case_night_rmb = 786
     steps = [
         ("11/18", 68, 3850, "暴跌前\n高点", "above", 9, 3.5, "start"),
-        ("11/19", 142, 3672, "利息飙\n破成本", "below", -10, -1.0, "end"),
-        ("11/20午", 216, 3517, "亚股跌\n抽血", "below", 0, 0, "middle"),
+        ("11/19", 142, 3672, "金价\n走低", "below", -10, -1.0, "end"),
+        ("11/20午", 216, 3517, "亚盘\n低点", "below", 0, 0, "middle"),
         ("11/20晚", 290, 3590, "欧盘\n弱反弹", "above", 0, 0, "middle"),
-        ("11/21晨", 364, 3503, "黑五\n双底", "below", 0, 0, "middle"),
+        ("11/21晨", 364, 3503, "当周\n低点", "below", 0, 0, "middle"),
         ("11/21收", 438, 3535, "周五\n终盘", "below", 0, 0, "middle"),
-        ("11/24 00:30", 516, case_peak, "冲顶触及\n天花板", "above", 0, 0, "middle"),
-        ("11/24 06:00", 594, case_spot, "官员表态\n回落收盘", "below", 0, 0, "middle"),
+        ("11/24 00:30", 516, case_peak, "反弹\n高点", "above", 0, 0, "middle"),
+        ("11/24 06:00", 594, case_spot, "纽约\n参考收盘", "below", 0, 0, "middle"),
     ]
 
     def y_w(val: float) -> float:
@@ -432,24 +435,24 @@ def svg_chart_48h_crash_and_weekend(fig_num: int = 3) -> str:
             nodes += f'<text x="{x}" y="{257 + li*14}" text-anchor="middle" font-size="10.2" fill="#475569">{svg_esc(dl)}</text>'
 
     y_ceil = y_w(float(case_fair_usd))
-    chart_title = esc(f"图 {fig_num}：经典复盘——从 11/21 跌到 $3,503 到 11/24 凌晨冲上 ${case_peak:,} 又回落")
+    chart_title = esc(f"图 {fig_num}：11/21 下探 $3,503，11/24 凌晨反弹至 ${case_peak:,} 后回落")
     return f'''
     <div class="chart-box">
       <div class="chart-title">{chart_title}</div>
-      <div class="chart-sub">2026 年 11 月 18–24 日流动性冲击与高利息天花板历史教学案例（国际现货金 · 美元/盎司 · 北京时间）</div>
+      <div class="chart-sub">2026 年 11 月 18–24 日原刊样本（国际现货金 · 美元/盎司 · 北京时间）</div>
       <svg viewBox="0 0 640 286" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="286" fill="#ffffff" rx="6"/>
         <rect x="336" y="34" width="130" height="188" fill="#fef2f2" opacity="0.65" rx="4"/>
-        <text x="401" y="48" text-anchor="middle" font-size="10.4" fill="#991b1b" font-weight="700">周五恐慌抽血谷底</text>
+        <text x="401" y="48" text-anchor="middle" font-size="10.4" fill="#991b1b" font-weight="700">周五交易时段低位</text>
         <rect x="492" y="34" width="128" height="188" fill="#fffbeb" opacity="0.72" rx="4"/>
         <text x="556" y="48" text-anchor="middle" font-size="10.4" fill="#92400e" font-weight="700">11/24 冲顶后回落</text>
         {grid}
         <line x1="54" y1="{y_ceil}" x2="624" y2="{y_ceil}" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5,3"/>
-        <text x="328" y="{round(y_ceil-6,1)}" text-anchor="end" font-size="10.4" fill="#b91c1c" font-weight="700" {HALO}>宏观合理价天花板 ~${case_fair_usd:,}</text>
+        <text x="328" y="{round(y_ceil-6,1)}" text-anchor="end" font-size="10.4" fill="#b91c1c" font-weight="700" {HALO}>原刊模型参考 ${case_fair_usd:,}</text>
         <polyline fill="none" stroke="#1e3a5f" stroke-width="2.5" points="{poly}"/>
         {nodes}
       </svg>
-      <div class="chart-note">历史教学案例（固定基线 2026-11-24 07:30）：11/23–24 凌晨美股大涨解除强平抛压，推升金价 00:30 精准触及 ${case_peak:,}（折合约 {case_fair_rmb} 元/克），随后震荡回落并在 05:00 美联储官员强硬加息表态后压至 ${case_spot:,}（国内夜盘 02:30 先收 {case_night_rmb} 元/克，此后日盘随国际盘补跌）。</div>
+      <div class="chart-note">原刊 11/24 07:30 样本记录，00:30 参考价 ${case_peak:,}（折约 {case_fair_rmb} 元/克），06:00 参考收盘 ${case_spot:,}。国内 02:30 夜盘为 {case_night_rmb} 元/克，时点与纽约收盘不同。图中价格用于复盘，机构平仓和消息影响尚无可复算明细。</div>
     </div>
     '''
 
@@ -476,10 +479,10 @@ def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
     dot_col, _ = _tier_dot_color(SNAP)
 
     default_cal = [
-        {"title": "① 11月下旬（现在）· 感恩节前排雷期", "line1": "• 11/25 晚美国核心通胀 + 11/26 感恩节休市", "line2": "• 策略：管住手不追高，等靴子落地", "bg": "#fff7ed", "brd": "#fb923c", "hdr": "#c2410c", "txt": "#7c2d12"},
-        {"title": "② 12/01 – 12/18 · 加息逆风砸坑期", "line1": "• 美欧英日四大央行 10 天内密集加息", "line2": "• 欧美机构年底卖亏本黄金抵税，容易砸出坑", "bg": "#fef2f2", "brd": "#f87171", "hdr": "#b91c1c", "txt": "#7f1d1d"},
-        {"title": "③ 12/24 – 01/07 · 情绪拐点观察窗", "line1": "• 加息与年底抵税抛售结束，压力明显减轻", "line2": "• 盯着下方四步红绿灯，亮黄/绿再分批买", "bg": "#f0fdf4", "brd": "#4ade80", "hdr": "#15803d", "txt": "#14532d"},
-        {"title": "④ 01/08 – 01/15 · 指数基金强制进货", "line1": "• 两大全球商品指数调高金银权重", "line2": "• 被动基金强制净买 33–48 亿美元金+25 亿银", "bg": "#dcfce7", "brd": "#15803d", "hdr": "#0f5132", "txt": "#14532d"},
+        {"title": "① 11月下旬 · 感恩节时段与通胀数据", "line1": "• 核对美国通胀发布时间和交易时段", "line2": "• 假日成交较薄，注意价差", "bg": "#fff7ed", "brd": "#fb923c", "hdr": "#c2410c", "txt": "#7c2d12"},
+        {"title": "② 12/01 – 12/18 · 央行决议窗口", "line1": "• 美欧英日央行陆续公布决议", "line2": "• 税务规则按地区、账户和产品区分", "bg": "#fef2f2", "brd": "#f87171", "hdr": "#b91c1c", "txt": "#7f1d1d"},
+        {"title": "③ 12/24 – 01/07 · 假日流动性窗口", "line1": "• 核对假日成交与前后价差", "line2": "• 四关按下方数据逐项核对", "bg": "#f0fdf4", "brd": "#4ade80", "hdr": "#15803d", "txt": "#14532d"},
+        {"title": "④ 01/08 起 · 标普商品指数调权", "line1": "• 标普参考权重上调黄金与白银", "line2": "• 实际净买卖量尚无法由公告确定", "bg": "#dcfce7", "brd": "#15803d", "hdr": "#0f5132", "txt": "#14532d"},
     ]
     cal_cards = SNAP.get("mechanical_calendar") or default_cal
 
@@ -528,14 +531,14 @@ def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
             f'<text x="{x+10}" y="{y+38}" font-size="10.4" fill="#374151">{svg_esc(detail)}</text>'
         )
 
-    chart_title = esc(f"图 {fig_num}：12 月中旬前仍是加息逆风期，明年 1 月中旬大基金强制进货才是顺风窗")
+    chart_title = esc(f"图 {fig_num}：跨年事件日历与黄金四关读数")
     return f'''
     <div class="chart-box">
       <div class="chart-title">{chart_title}</div>
       <div class="chart-sub">跨年资金节奏时间表（上）与买金四步红绿灯体检仪（下 · 当前满足 {passed}/{total} 项）</div>
       <svg viewBox="0 0 640 342" width="100%" role="img" aria-label="{chart_title}" xmlns="http://www.w3.org/2000/svg">
         <rect x="0" y="0" width="640" height="342" fill="#ffffff" rx="6"/>
-        <text x="14" y="19" font-size="11.4" fill="#1e3a8a" font-weight="800">一、跨年资金节奏（先避开 12 月逆风，再看 1 月大资金强制买盘）</text>
+        <text x="14" y="19" font-size="11.4" fill="#1e3a8a" font-weight="800">一、跨年事件与观察事项</text>
         {cal_svg}
         <polygon points="316,57 324,62 316,67" fill="#94a3b8"/>
         <polygon points="316,132 324,137 316,142" fill="#15803d"/>
@@ -544,7 +547,7 @@ def svg_chart_mechanical_clock_and_switch(fig_num: int = 4) -> str:
         <text x="31" y="205" font-size="11.4" fill="#1e3a8a" font-weight="800">二、买金四步红绿灯体检仪（{tier_sub}）</text>
         {gate_cards}
       </svg>
-      <div class="chart-note">数据来源：彭博商品指数、标普商品指数官方公告、法国兴业银行测算及美联储公开利率库。四关全亮（黄灯试买）才动首批 30% 预算，普通人无需每天盯盘猜底。</div>
+      <div class="chart-note">数据来源：标普道琼斯指数调权公告与主报告所列利率数据。四关全亮（黄灯试买）才动首批 30% 预算，普通人无需每天盯盘猜底。</div>
     </div>
     '''
 

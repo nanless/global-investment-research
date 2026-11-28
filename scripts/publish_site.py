@@ -19,9 +19,12 @@ from pathlib import Path
 from typing import Callable, Iterator, TypeVar
 
 if __package__:
-    from . import edition_run
+    from . import edition_run, pages_release
+    from .state_transaction import state_read_lock, state_write_lock
 else:
     import edition_run
+    import pages_release
+    from state_transaction import state_read_lock, state_write_lock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SITE_DIR = REPO_ROOT / "_site"
@@ -227,8 +230,6 @@ def _check_manuscripts(root: Path, env: dict[str, str], expected_edition: str | 
     _check_no_transient_patch_files(root)
     gold_daily = _latest_daily(root / "gold" / "daily", GOLD_DAILY_RE)
     gold = json.loads((root / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
-    if isinstance(gold, dict) and isinstance(gold.get("edition_id"), str):
-        edition_run.check_edition_reviews(gold["edition_id"], root=root)
 
     market_state_path = root / "equity" / "state" / "market_state.json"
     if not market_state_path.is_file():
@@ -238,8 +239,19 @@ def _check_manuscripts(root: Path, env: dict[str, str], expected_edition: str | 
     if not isinstance(equity_edition, str) or not equity_edition.strip():
         raise RuntimeError("equity/state/market_state.json must contain a non-empty edition_id.")
 
-    if isinstance(gold, dict) and isinstance(equity, dict):
-        _warn_stale_as_of(gold, equity)
+    match = GOLD_DAILY_RE.fullmatch(gold_daily.name)
+    assert match is not None
+    named_edition = f"{match[1]}_{match[2]}" + (f"_r{match[3]}" if match[3] else "")
+    target_edition = equity_edition if expected_edition is None else expected_edition
+    if named_edition != target_edition or any(
+        not isinstance(item, dict) or item.get("edition_id") != target_edition for item in (gold, equity)
+    ):
+        raise RuntimeError(f"Gold manuscript, gold snapshot and equity state must match {target_edition}.")
+    meta = re.search(r"<!--\s*DAILY_META\s*(\{.*?\})\s*-->", gold_daily.read_text(encoding="utf-8"), re.S)
+    if meta is None or json.loads(meta[1]).get("edition_id") != target_edition:
+        raise RuntimeError(f"Gold manuscript metadata must match {target_edition}.")
+    edition_run.check_edition_reviews(target_edition, root=root)
+    _warn_stale_as_of(gold, equity)
 
     for rel in EXTENDED_EQUITY_STATE_FILES:
         state_path = root / rel
@@ -254,18 +266,6 @@ def _check_manuscripts(root: Path, env: dict[str, str], expected_edition: str | 
             raise RuntimeError(
                 f"{rel} edition_id ({got!r}) must match equity/state/market_state.json ({equity_edition!r})."
             )
-
-    if expected_edition is not None:
-        match = GOLD_DAILY_RE.fullmatch(gold_daily.name)
-        assert match is not None
-        named_edition = f"{match[1]}_{match[2]}" + (f"_r{match[3]}" if match[3] else "")
-        if named_edition != expected_edition or any(
-            not isinstance(item, dict) or item.get("edition_id") != expected_edition for item in (gold, equity)
-        ):
-            raise RuntimeError(f"Gold manuscript, gold snapshot and equity state must match {expected_edition}.")
-        meta = re.search(r"<!--\s*DAILY_META\s*(\{.*?\})\s*-->", gold_daily.read_text(encoding="utf-8"), re.S)
-        if meta is None or json.loads(meta[1]).get("edition_id") != expected_edition:
-            raise RuntimeError(f"Gold manuscript metadata must match {expected_edition}.")
 
     for script, reports in (
         ("gold/lint_readability.py", [str(gold_daily), str(root / "gold" / f"{GOLD_MASTER}.md")]),
@@ -299,7 +299,19 @@ def _is_forbidden_stage_path(path: str) -> bool:
 
 
 def _check_tree_no_forbidden_files(env: dict[str, str], tree: str) -> None:
-    files = _git(env, "ls-tree", "-r", "--name-only", "-z", tree).split("\0")
+    files = []
+    non_regular = []
+    for entry in _git(env, "ls-tree", "-r", "-z", tree).split("\0"):
+        if not entry:
+            continue
+        header, path = entry.split("\t", 1)
+        mode = header.split(" ", 1)[0]
+        files.append(path)
+        if mode not in {"100644", "100755"}:
+            non_regular.append(path)
+    if non_regular:
+        sample = ", ".join(non_regular[:10])
+        raise RuntimeError(f"Publication tree inputs must be regular files: {sample}")
     forbidden = [p for p in files if p and _is_forbidden_stage_path(p)]
     if forbidden:
         sample = ", ".join(forbidden[:10])
@@ -430,9 +442,30 @@ def _remote_repository(url: str) -> str:
 def _validate_revision(
     revision: str, output: Path, env: dict[str, str], *, edition: str | None = None,
 ) -> None:
+    _check_tree_no_forbidden_files(env, revision)
     with _checkout_revision(revision, env) as source:
         _check_manuscripts(source, env, edition)
         _build_and_lint(source, output, env)
+
+
+def _require_nonregressing_edition(env: dict[str, str], candidate: str, baseline: str) -> None:
+    if candidate == baseline:
+        return
+
+    def edition_for(tree: str) -> str:
+        return pages_release.edition_from_snapshots([
+            _git(env, "show", f"{tree}:{path}").encode("utf-8")
+            for path in pages_release.EDITION_PATHS
+        ])
+
+    old_edition = edition_for(baseline)
+    new_edition = edition_for(candidate)
+    old_key = edition_run._edition_key(old_edition)
+    new_key = edition_run._edition_key(new_edition)
+    if old_key is None or new_key is None:
+        raise RuntimeError("Publication snapshots must identify valid dated editions.")
+    if new_key < old_key:
+        raise RuntimeError(f"Publication edition {new_edition} would replace the newer edition {old_edition}.")
 
 
 def _remote_main(env: dict[str, str]) -> str | None:
@@ -449,11 +482,20 @@ def _require_remote_main(env: dict[str, str], sha: str) -> None:
         raise RuntimeError(f"Remote main no longer points to publication commit {sha}; preserve the newer version.")
 
 
-def _is_commit_on_remote_main(env: dict[str, str], commit: str) -> bool:
-    """Return True if commit is already an ancestor of origin/main after fetching."""
-    fetch = _run(["git", "fetch", "origin", "main"], env, timeout=60)
-    _checked(fetch, "git fetch origin main")
-    anc = _run(["git", "merge-base", "--is-ancestor", commit, "FETCH_HEAD"], env, timeout=30)
+def _fetch_remote_main(env: dict[str, str]) -> str:
+    remote = _remote_main(env)
+    if remote is None:
+        raise RuntimeError("Automated publication requires an existing origin/main branch.")
+    commit = f"{remote}^{{commit}}"
+    if _run(["git", "cat-file", "-e", commit], env, timeout=30).returncode:
+        fetch = _run(["git", "fetch", "--no-write-fetch-head", "origin", "main"], env, timeout=60)
+        _checked(fetch, "git fetch origin main")
+        _git(env, "cat-file", "-e", commit)
+    return remote
+
+
+def _is_ancestor(env: dict[str, str], ancestor: str, descendant: str) -> bool:
+    anc = _run(["git", "merge-base", "--is-ancestor", ancestor, descendant], env, timeout=30)
     if anc.returncode == 0:
         return True
     if anc.returncode == 1:
@@ -462,17 +504,57 @@ def _is_commit_on_remote_main(env: dict[str, str], commit: str) -> bool:
     raise RuntimeError(f"git merge-base failed ({anc.returncode}): {detail}")
 
 
-def _push_verified_commit(env: dict[str, str], commit: str, *, already_pushed: bool = False) -> None:
-    if already_pushed or _remote_main(env) == commit:
+def _is_commit_on_remote_main(env: dict[str, str], commit: str) -> bool:
+    """Verify the candidate is still reachable even if main moved after the push."""
+    return _is_ancestor(env, commit, _fetch_remote_main(env))
+
+
+def _automated_push_needed(env: dict[str, str], commit: str, *, already_pushed: bool) -> bool:
+    remote = _fetch_remote_main(env)
+    if _is_ancestor(env, commit, remote):
+        return False
+    if already_pushed:
+        raise RuntimeError(f"Recorded publication commit {commit} is not reachable from remote main.")
+    if not _is_ancestor(env, remote, commit):
+        raise _NonFastForwardError("Remote main moved ahead of the publication candidate.")
+
+    # Inspect each outgoing commit. A later revert does not remove paths from Git history.
+    paths = _git(
+        env, "log", "--format=", "--name-only", "--no-renames", "--diff-merges=first-parent",
+        "-z", f"{remote}..{commit}", "--",
+    ).split("\0")
+    outside = sorted({path for path in paths if path and not _scoped(path, AUTOMATED_STAGE_PATHS)})
+    if outside:
+        raise RuntimeError(f"Outgoing commits include paths outside automated publication scope: {', '.join(outside)}")
+    return True
+
+
+def _push_verified_commit(
+    env: dict[str, str], commit: str, *, already_pushed: bool = False, automated: bool = False,
+    before_push: Callable[[str], None] | None = None,
+) -> None:
+    if not automated and (already_pushed or _remote_main(env) == commit):
         _require_remote_main(env, commit)
         return
     for attempt in (1, 2):
+        if automated:
+            try:
+                if not _automated_push_needed(env, commit, already_pushed=already_pushed):
+                    return
+            except _NonFastForwardError as exc:
+                if attempt == 1:
+                    raise
+                # The earlier transport failure may have happened after the server accepted the push.
+                raise RuntimeError("Remote main changed during an unconfirmed push; preserve its intent.") from exc
+        if attempt == 1 and before_push is not None:
+            before_push(commit)
         try:
             result = _run(["git", "push", "origin", f"{commit}:refs/heads/main"], env, timeout=120)
             _checked(result, "git push")
             break
         except (RuntimeError, subprocess.TimeoutExpired) as exc:
-            if _remote_main(env) == commit:
+            landed = _is_commit_on_remote_main(env, commit) if automated else _remote_main(env) == commit
+            if landed:
                 return  # A transport error can occur after origin accepts the ref update.
             if attempt == 1 and _is_non_fast_forward_error(exc):
                 raise _NonFastForwardError(str(exc)) from exc
@@ -480,7 +562,11 @@ def _push_verified_commit(env: dict[str, str], commit: str, *, already_pushed: b
                 raise
             print(f"[git] Retry push of {commit[:12]} after transient error: {exc}", file=sys.stderr)
             time.sleep(3)
-    _require_remote_main(env, commit)
+    if automated:
+        if not _is_commit_on_remote_main(env, commit):
+            raise RuntimeError(f"Publication commit {commit} is not reachable from remote main after pushing.")
+    else:
+        _require_remote_main(env, commit)
 
 
 def _push_main(
@@ -493,15 +579,19 @@ def _push_main(
     validated_output: Path | None = None,
 ) -> str:
     for attempt in (1, 2):
+        remote = None
         try:
-            if _remote_main(env):
-                pull = _run(["git", "pull", "--rebase", "--autostash", "origin", "main"], env, timeout=90)
-                _checked(pull, "git pull --rebase")
+            remote = _remote_main(env)
+            if remote:
+                with state_write_lock(REPO_ROOT):
+                    pull = _run(["git", "pull", "--rebase", "--autostash", "origin", "main"], env, timeout=90)
+                    _checked(pull, "git pull --rebase")
                 if pull.stderr.strip():
                     print(pull.stderr.strip())
         except (RuntimeError, subprocess.TimeoutExpired) as exc:
             if any((git_dir / name).exists() for name in ("rebase-merge", "rebase-apply")):
-                _git(env, "rebase", "--abort")
+                with state_write_lock(REPO_ROOT):
+                    _git(env, "rebase", "--abort")
             if attempt == 2:
                 raise
             print(f"[git] Retry after {exc}", file=sys.stderr)
@@ -511,6 +601,8 @@ def _push_main(
         if _git(env, "diff", "--name-only", "--diff-filter=U", "-z"):
             raise RuntimeError("Rebase left unmerged paths. Resolve them before continuing.")
         commit = _git(env, "rev-parse", "HEAD").strip()
+        if remote:
+            _require_nonregressing_edition(env, commit, remote)
         commit_tree = _git(env, "rev-parse", f"{commit}^{{tree}}").strip()
         prebuilt = validated_output or output
         if (
@@ -532,10 +624,8 @@ def _push_main(
             _validate_revision(commit, output, env, edition=edition)
             validated_tree = commit_tree
             validated_output = output
-        if before_push is not None:
-            before_push(commit)
         try:
-            _push_verified_commit(env, commit)
+            _push_verified_commit(env, commit, automated=edition is not None, before_push=before_push)
         except _NonFastForwardError as exc:
             # Origin deterministically rejected the ref update (non-fast-forward) and commit never landed.
             if on_push_rejected is not None:
@@ -566,6 +656,11 @@ def _save_json(path: Path, value: dict) -> None:
             file.flush()
             os.fsync(file.fileno())
             os.replace(temporary, path)
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -579,11 +674,13 @@ def _prepare_commit(
     token: str | None = None,
 ) -> tuple[str, Path]:
     current_tree = _git(env, "rev-parse", "HEAD^{tree}").strip()
-    tree, automatic = _publication_tree(
-        env, work / "publish-index", automated=automated, explicit_stage=explicit_stage,
-    )
+    with state_read_lock(REPO_ROOT):
+        tree, automatic = _publication_tree(
+            env, work / "publish-index", automated=automated, explicit_stage=explicit_stage,
+        )
     if token is not None:
         edition_run.check_gold_ledger_history_for_token(token, tree)
+    _require_nonregressing_edition(env, tree, current_tree)
     _validate_revision(tree, output, env, edition=edition)
     if tree == current_tree:
         return tree, output
@@ -630,24 +727,23 @@ def _push_edition(
         intent.unlink(missing_ok=True)
 
     if expected is not None:
-        if _git(env, "rev-parse", "HEAD").strip() != expected:
+        head_changed = _git(env, "rev-parse", "HEAD").strip() != expected
+        if head_changed and not _is_commit_on_remote_main(env, expected):
             raise RuntimeError(f"Resume the recorded publication commit {expected} before creating another commit.")
         _validate_revision(expected, output, env, edition=edition)
         edition_run.check_publication_candidate(token, sha=expected, repository=repository)
         try:
-            _push_verified_commit(env, expected, already_pushed=pushed is not None)
+            _push_verified_commit(env, expected, already_pushed=pushed is not None or head_changed, automated=True)
             sha = expected
         except _NonFastForwardError:
-            if pushed is not None or _is_commit_on_remote_main(env, expected):
-                raise RuntimeError(
-                    f"Recorded commit {expected} is already on or superseded by origin/main; "
-                    "verify deployment or run close-superseded."
+            if _is_commit_on_remote_main(env, expected):
+                sha = expected
+            else:
+                intent.unlink(missing_ok=True)
+                sha = _push_main(
+                    env, output, git_dir, edition=edition,
+                    before_push=remember, on_push_rejected=forget,
                 )
-            intent.unlink(missing_ok=True)
-            sha = _push_main(
-                env, output, git_dir, edition=edition,
-                before_push=remember, on_push_rejected=forget,
-            )
     else:
         prepared = _prepare_commit(
             env, work, output, edition=edition, message=message, automated=True, token=token,
@@ -668,10 +764,11 @@ def _push_edition(
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-m", "--message", help="Custom publication commit message.")
-    parser.add_argument("--dry-run", action="store_true", help="Validate in temporary storage and preview Git status.")
-    parser.add_argument("--check-manuscripts", action="store_true", help="Run both source manuscript lint gates without building or publishing.")
-    parser.add_argument("--no-push", action="store_true", help="Validate and commit locally without remote changes.")
-    parser.add_argument("--edition-token", help="Token for an active edition in the publish phase.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Validate in temporary storage and preview Git status.")
+    mode.add_argument("--check-manuscripts", action="store_true", help="Run both source manuscript lint gates without building or publishing.")
+    mode.add_argument("--no-push", action="store_true", help="Validate and commit locally without remote changes.")
+    mode.add_argument("--edition-token", help="Token for an active edition in the publish phase.")
     parser.add_argument(
         "--stage",
         nargs="+",
@@ -679,8 +776,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Explicit in-scope path(s) to stage for manual publication (cannot be combined with --edition-token).",
     )
     args = parser.parse_args(argv)
-    if args.edition_token and (args.dry_run or args.check_manuscripts or args.no_push or args.stage):
-        parser.error("Edition tokens require full automated publication without --stage/--dry-run/--no-push.")
+    if args.edition_token and args.stage:
+        parser.error("--stage cannot be combined with --edition-token.")
     if args.stage and (args.dry_run or args.check_manuscripts):
         parser.error("--stage cannot be combined with --dry-run or --check-manuscripts.")
     return args
@@ -691,7 +788,9 @@ def main(argv: list[str] | None = None) -> int:
     env = _clean_env()
     try:
         if args.check_manuscripts:
-            _check_manuscripts(REPO_ROOT, env)
+            _check_tree_no_forbidden_files(env, "HEAD")
+            with state_read_lock(REPO_ROOT):
+                _check_manuscripts(REPO_ROOT, env)
             return 0
 
         token = args.edition_token
@@ -699,8 +798,9 @@ def main(argv: list[str] | None = None) -> int:
             work = Path(tmp).resolve()
             output = work / "site"
             if args.dry_run:
-                _check_manuscripts(REPO_ROOT, env)
-                _build_and_lint(REPO_ROOT, output, env)
+                with state_read_lock(REPO_ROOT):
+                    _check_manuscripts(REPO_ROOT, env)
+                    _build_and_lint(REPO_ROOT, output, env)
                 print(_git(env, "--no-optional-locks", "status", "--short"), end="")
                 print("[dry-run] Temporary web portal validated.")
                 return 0
@@ -729,8 +829,13 @@ def main(argv: list[str] | None = None) -> int:
                         raise RuntimeError("The origin fetch and push repositories differ.")
 
                 pushed_sha: str | None = None
+                recovering = False
                 if token is not None:
                     assert edition is not None and repository is not None
+                    recovering = (
+                        edition_run.push_intent_path(common, token).is_file()
+                        or edition_run.publication_commit(token) is not None
+                    )
                     pushed_sha, _ = _push_edition(
                         token, edition, repository, env, git_dir=git_dir, common=common, work=work,
                         output=output, message=args.message,
@@ -750,7 +855,10 @@ def main(argv: list[str] | None = None) -> int:
                         )
 
                 try:
-                    _install_site(output)
+                    if recovering and SITE_DIR.exists():
+                        print("[git] Preserved the existing preview during publication recovery.")
+                    else:
+                        _install_site(output)
                 except (OSError, RuntimeError) as exc:
                     if pushed_sha is not None:
                         print(

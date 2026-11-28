@@ -71,7 +71,7 @@ class AlertMessage:
 @dataclass(frozen=True)
 class DeliveryResult:
     provider: str
-    status: str  # sent | dry_run | suppressed_quiet | suppressed_dedupe | skipped_severity | failed
+    status: str  # sent means provider accepted, not that a recipient read or received the alert
     chunks: int
     attempts: int
     http_status: int | None = None
@@ -79,6 +79,7 @@ class DeliveryResult:
     receipt: str | None = None
     error: str | None = None
     latency_ms: int = 0
+    audit_error: str | None = None
 
 
 @dataclass
@@ -436,6 +437,20 @@ def _wecom_url(pcfg: dict[str, Any]) -> str:
     return f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={raw}"
 
 
+def _wxpusher_destinations(pcfg: dict[str, Any]) -> tuple[list[str], list[int]]:
+    raw_uids = pcfg.get("uids")
+    raw_topics = pcfg.get("topic_ids")
+    uids = list(dict.fromkeys(
+        value.strip() for value in (raw_uids if isinstance(raw_uids, list) else [])
+        if isinstance(value, str) and not _is_placeholder(value)
+    ))
+    topics = list(dict.fromkeys(
+        value for value in (raw_topics if isinstance(raw_topics, list) else [])
+        if type(value) is int and value > 0
+    ))
+    return uids, topics
+
+
 def _provider_configured(name: str, pcfg: dict[str, Any]) -> tuple[bool, str]:
     if not pcfg.get("enabled"):
         return False, "disabled"
@@ -444,8 +459,8 @@ def _provider_configured(name: str, pcfg: dict[str, Any]) -> tuple[bool, str]:
         return (not _is_placeholder(u)), "missing webhook_url/key"
     if name == "wxpusher":
         tok = str(pcfg.get("app_token") or "").strip()
-        uids = [str(x).strip() for x in (pcfg.get("uids") or []) if not _is_placeholder(str(x))]
-        return (not _is_placeholder(tok) and bool(uids)), "missing app_token or uids"
+        uids, topics = _wxpusher_destinations(pcfg)
+        return (not _is_placeholder(tok) and bool(uids or topics)), "missing app_token or uids/topic_ids"
     if name == "pushplus":
         tok = str(pcfg.get("token") or "").strip()
         return (not _is_placeholder(tok)), "missing token"
@@ -465,7 +480,7 @@ class _HttpResult(Exception):
         super().__init__(msg)
         self.retryable = retryable
         self.http_status = http_status
-        self.api_code = api_code
+        self.api_code = api_code if type(api_code) in (int, str) else None
 
 
 class Notifier:
@@ -489,10 +504,16 @@ class Notifier:
         dt = self._now_fn()
         return dt.astimezone(CST) if dt.tzinfo is not None else dt.replace(tzinfo=CST)
 
+    def has_ready_provider(self) -> bool:
+        return any(
+            _provider_configured(name, self.config.providers.get(name) or {})[0]
+            for name in SUPPORTED_PROVIDERS
+        )
+
     def _append_outbox(self, record: dict[str, Any]) -> None:
         path = self.config.outbox_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        safe = json.loads(redact_text(json.dumps(record, ensure_ascii=False), self._secrets))
+        safe = {key: redact_text(value, self._secrets) if isinstance(value, str) else value for key, value in record.items()}
         with path.open("a+", encoding="utf-8") as fh:
             try:
                 os.chmod(path, 0o600)
@@ -511,15 +532,21 @@ class Notifier:
         if cooldown <= 0:
             return False
         path = self.config.dedupe_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        if self.dry_run:
+            if not path.is_file():
+                return False
+            commit = False
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
         now_ts = self._now().timestamp()
         compound = f"{provider}:{dedupe_key}"
-        with path.open("a+", encoding="utf-8") as fh:
-            try:
-                os.chmod(path, 0o600)
-            except OSError:
-                pass
-            fcntl.flock(fh, fcntl.LOCK_EX)
+        with path.open("r" if self.dry_run else "a+", encoding="utf-8") as fh:
+            if not self.dry_run:
+                try:
+                    os.chmod(path, 0o600)
+                except OSError:
+                    pass
+            fcntl.flock(fh, fcntl.LOCK_SH if self.dry_run else fcntl.LOCK_EX)
             try:
                 fh.seek(0)
                 raw = fh.read().strip()
@@ -600,7 +627,7 @@ class Notifier:
         if provider == "wxpusher":
             chunks = chunk_text(full_md, max_bytes=28000, max_chars=36000)
             url = "https://wxpusher.zjiecode.com/api/send/message"
-            uids = [str(u).strip() for u in (pcfg.get("uids") or []) if not _is_placeholder(str(u))]
+            uids, topics = _wxpusher_destinations(pcfg)
             summary = stamped_title[:100]
             content_type = int(pcfg.get("content_type", 3))
             out: list[tuple[str, dict[str, Any]]] = []
@@ -611,7 +638,7 @@ class Notifier:
                     "summary": summary,
                     "contentType": content_type,
                     "uids": uids,
-                    "topicIds": pcfg.get("topic_ids") or [],
+                    "topicIds": topics,
                     "verifyPayType": 0,
                 }
                 if msg.url:
@@ -681,10 +708,12 @@ class Notifier:
 
         raise ValueError(f"Unsupported HTTP provider: {provider}")
 
-    def _validate_api_response(self, provider: str, status: int, data: dict[str, Any]) -> tuple[Any, str | None]:
+    def _validate_api_response(
+        self, provider: str, status: int, data: dict[str, Any], payload: dict[str, Any],
+    ) -> tuple[Any, str | None]:
         if provider == "wecom_webhook":
             errcode = data.get("errcode")
-            if status == 200 and errcode == 0:
+            if status == 200 and type(errcode) is int and errcode == 0:
                 return errcode, "wecom:ok"
             raise _HttpResult(
                 f"WeCom error {errcode}: {data.get('errmsg', '')}",
@@ -695,13 +724,16 @@ class Notifier:
         if provider == "wxpusher":
             code = data.get("code")
             items = data.get("data") if isinstance(data.get("data"), list) else []
-            items_ok = all(isinstance(it, dict) and it.get("code") == 1000 for it in items)
+            expected = len(payload["uids"]) + len(payload["topicIds"])
+            items_ok = expected > 0 and len(items) == expected and all(
+                isinstance(it, dict) and it.get("code") == 1000 for it in items
+            )
             if status == 200 and code == 1000 and data.get("success") is True and items_ok:
-                receipt = str(items[0].get("messageContentId") or items[0].get("messageId") or "ok") if items else "ok"
+                receipt = str(items[0].get("messageContentId") or items[0].get("messageId") or "accepted")
                 return code, receipt
             raise _HttpResult(
                 f"WxPusher error {code}: {data.get('msg', '')}",
-                retryable=(code not in (1001, 1002, 1005)),
+                retryable=(code not in (1000, 1001, 1002, 1005)),
                 http_status=status,
                 api_code=code,
             )
@@ -719,7 +751,7 @@ class Notifier:
             code = data.get("code")
             inner = data.get("data") if isinstance(data.get("data"), dict) else {}
             errno = inner.get("errno", 0)
-            if status == 200 and code == 0 and errno == 0:
+            if status == 200 and type(code) is int and code == 0 and type(errno) is int and errno == 0:
                 return code, str(inner.get("pushid") or "ok")
             raise _HttpResult(
                 f"ServerChan error code={code} errno={errno}: {data.get('message') or data.get('info') or ''}",
@@ -772,6 +804,14 @@ class Notifier:
                 "macos_osascript", "failed", 1, 1, error=redact_text(str(exc), self._secrets), latency_ms=ms
             )
 
+    def _record_dedupe(self, result: DeliveryResult, msg: AlertMessage, severity: str) -> DeliveryResult:
+        if result.status == "sent" and msg.dedupe_key:
+            try:
+                self._check_and_update_dedupe(result.provider, msg.dedupe_key, severity, commit=True)
+            except OSError as exc:
+                return dataclasses.replace(result, audit_error=redact_text(f"dedupe: {exc}", self._secrets))
+        return result
+
     def _deliver_one(self, provider: str, pcfg: dict[str, Any], msg: AlertMessage, now_cst: datetime) -> DeliveryResult:
         sev = msg.normalized_severity()
         min_sev = str(pcfg.get("min_severity") or "P2").strip().upper()
@@ -789,10 +829,7 @@ class Notifier:
         if provider == "macos_osascript":
             if self.dry_run:
                 return DeliveryResult(provider, "dry_run", 1, 0, receipt="dry_run:osascript")
-            res = self._send_macos_osascript(msg)
-            if res.status == "sent" and msg.dedupe_key:
-                self._check_and_update_dedupe(provider, msg.dedupe_key, sev, commit=True)
-            return res
+            return self._record_dedupe(self._send_macos_osascript(msg), msg, sev)
 
         payloads = self._build_chunks_and_payloads(provider, pcfg, msg, now_cst)
         if self.dry_run:
@@ -814,11 +851,11 @@ class Notifier:
                 try:
                     st, data = self._http_post_json(url, payload)
                     last_status = st
-                    last_code, last_receipt = self._validate_api_response(provider, st, data)
+                    last_code, last_receipt = self._validate_api_response(provider, st, data, payload)
                     break
                 except _HttpResult as err:
                     last_status = err.http_status
-                    last_code = err.api_code
+                    last_code = redact_text(err.api_code, self._secrets) if isinstance(err.api_code, str) else err.api_code
                     if not err.retryable or attempt >= 3:
                         ms = int((time.monotonic() - t0) * 1000)
                         return DeliveryResult(
@@ -833,19 +870,18 @@ class Notifier:
                         )
                     self._sleep_fn(backoffs[attempt - 1])
 
-        if msg.dedupe_key:
-            self._check_and_update_dedupe(provider, msg.dedupe_key, sev, commit=True)
         ms = int((time.monotonic() - t0) * 1000)
-        return DeliveryResult(
+        result = DeliveryResult(
             provider=provider,
             status="sent",
             chunks=len(payloads),
             attempts=total_attempts,
             http_status=last_status,
             api_code=last_code,
-            receipt=last_receipt,
+            receipt=redact_text(last_receipt, self._secrets) if last_receipt is not None else None,
             latency_ms=ms,
         )
+        return self._record_dedupe(result, msg, sev)
 
     def send(self, msg: AlertMessage, *, providers: list[str] | None = None) -> list[DeliveryResult]:
         now_cst = self._now()
@@ -868,18 +904,23 @@ class Notifier:
                 res = self._deliver_one(pname, pcfg, msg, now_cst)
             except Exception as exc:
                 res = DeliveryResult(pname, "failed", 0, 1, error=redact_text(str(exc), self._secrets))
+            if not self.dry_run:
+                try:
+                    self._append_outbox(
+                        {
+                            "timestamp_cst": now_cst.isoformat(timespec="seconds"),
+                            "severity": sev,
+                            "category": msg.category,
+                            "title": msg.title,
+                            "body_sha256": body_hash,
+                            "dedupe_key": msg.dedupe_key,
+                            **dataclasses.asdict(res),
+                        }
+                    )
+                except OSError as exc:
+                    audit_errors = [error for error in (res.audit_error, redact_text(f"outbox: {exc}", self._secrets)) if error]
+                    res = dataclasses.replace(res, audit_error=" | ".join(audit_errors))
             results.append(res)
-            self._append_outbox(
-                {
-                    "timestamp_cst": now_cst.isoformat(timespec="seconds"),
-                    "severity": sev,
-                    "category": msg.category,
-                    "title": msg.title,
-                    "body_sha256": body_hash,
-                    "dedupe_key": msg.dedupe_key,
-                    **dataclasses.asdict(res),
-                }
-            )
         return results
 
 
@@ -913,7 +954,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--url", default=None, help="Optional detail link.")
     p.add_argument("--dedupe-key", default=None, help="Optional cooldown deduplication key.")
     p.add_argument("--provider", default=None, help="Comma-separated provider subset.")
-    p.add_argument("--dry-run", action="store_true", help="Render & log to outbox without network send.")
+    p.add_argument("--dry-run", action="store_true", help="Preview routing without sending or writing local state.")
     p.add_argument("--doctor", action="store_true", help="Inspect config safety & ready providers (secrets redacted).")
     p.add_argument("--test", action="store_true", help="Send a safe P2 timestamped connectivity test message.")
     return p.parse_args(argv)

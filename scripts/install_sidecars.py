@@ -22,9 +22,11 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from stat import S_IMODE
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +38,7 @@ PLACEHOLDER_TOKENS = (
     "__REPO_ROOT__", "__PYTHON_BIN__", "__RUN_SLOT__", "__UNIFIED_PROMPT__", "__SHARED_GRANTS__",
 )
 FORBIDDEN_GLOBAL_TOKENS = ("--permission-mode",)
+PERMISSION_GRANT_COUNT = 56
 SHELL_INJECTION_RE = re.compile(r"(?:;|&&|\|\||\||`|\$\()")
 FENCED_CODE_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 SCHEDULES = {
@@ -65,6 +68,17 @@ def validate_paths(repo_root: Path, python_bin: str) -> None:
             raise ValueError("repository and Python paths must be absolute and usable as bare command arguments")
     if not Path(python_bin).is_file() or not os.access(python_bin, os.X_OK):
         raise ValueError(f"Python interpreter is missing or not executable: {python_bin}")
+    try:
+        result = subprocess.run(
+            [python_bin, "-I", "-S", "-c", "import sys\nprint(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+            check=True, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(f"Cannot determine Python interpreter version: {python_bin}") from exc
+    version = re.fullmatch(r"([0-9]+)\.([0-9]+)", result.stdout.strip())
+    if version is None or tuple(map(int, version.groups())) < (3, 12):
+        actual = result.stdout.strip() if version else "unknown"
+        raise ValueError(f"Scheduled publication requires Python 3.12 or newer: {python_bin} reports {actual}")
 
 
 def discover_templates(template_dir: Path) -> list[tuple[str, Path]]:
@@ -132,6 +146,8 @@ def render_template(template_path: Path, repo_root: Path, python_bin: str) -> tu
     deduped_grants = _dedupe_preserve_order([
         grant.replace("__REPO_ROOT__", str(repo_root)).replace("__PYTHON_BIN__", python_bin) for grant in grants
     ])
+    if len(grants) != PERMISSION_GRANT_COUNT or len(deduped_grants) != PERMISSION_GRANT_COUNT:
+        raise ValueError(f"{template_path.name}: require exactly {PERMISSION_GRANT_COUNT} distinct configured grants")
     for grant in deduped_grants:
         if "*" in grant:
             raise ValueError(f"{template_path.name}: wildcard '*' forbidden in access_grant: {grant!r}")
@@ -208,12 +224,14 @@ def _audit_prompt_commands(
 def atomic_write_bytes(dest: Path, content: bytes) -> None:
     """Atomically write raw bytes to dest via temp file in same directory + os.replace."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    mode = S_IMODE(dest.stat().st_mode) if dest.exists() else 0o600
     fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(dest.parent))
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(content)
             fh.flush()
+            os.fchmod(fh.fileno(), mode)
             os.fsync(fh.fileno())
         os.replace(tmp_path, dest)
     except Exception:
@@ -264,10 +282,13 @@ def check_registry(
     for sidecar_id, (_, definition) in rendered.items():
         entry = entries.get(sidecar_id, {})
         project_id = entry.get("projectId") if isinstance(entry, dict) else None
-        if (not isinstance(project_id, str) or not re.fullmatch(r"[\w-]+", project_id, re.ASCII)
-                or entry.get("enabled") is not True):
-            problems.append(f"{sidecar_id}: register and enable this task in Antigravity")
+        if not isinstance(project_id, str) or not re.fullmatch(r"[\w-]+", project_id, re.ASCII):
+            problems.append(f"{sidecar_id}: missing or invalid Antigravity registration")
             continue
+        if entry.get("enabled") is False:
+            problems.append(f"{sidecar_id}: disabled in Antigravity")
+        elif entry.get("enabled") is not True:
+            problems.append(f"{sidecar_id}: Antigravity registration lacks a valid enablement status")
         resolved = entry.get("resolvedPermissions") or {}
         expected = definition["agent_permissions"]
         if (not isinstance(resolved, dict) or resolved.get("workspaceUris") != expected["workspace_uris"]
@@ -292,9 +313,17 @@ def check_registry(
                     or locations != set(expected["workspace_uris"])
                     or _string_list(project_grants.get("allow")) != sorted(expected["access_grants"])):
                 problems.append(f"{sidecar_id}: project identity, workspace or recorded allow rules differ")
-            if settings.get("sandboxMode") is False and notes is not None:
-                notes.append(f"{sidecar_id}: terminal sandbox disabled under {settings.get('permissionPreset', 'inherited policy')}; "
-                             "recorded grants do not bound effective access")
+            preset = settings.get("permissionPreset", "inherited policy")
+            if settings.get("sandboxMode") is not True or preset == "AGENT_PERMISSION_PRESET_TURBO":
+                message = (
+                    f"{sidecar_id}: terminal sandbox is not verified as enabled under "
+                    f"{preset}; "
+                    "recorded grants cannot verify effective access"
+                )
+                if entry.get("enabled") is True:
+                    problems.append(message)
+                elif notes is not None:
+                    notes.append(message)
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             problems.append(f"{sidecar_id}: cannot verify the referenced Antigravity project")
     return problems
@@ -332,7 +361,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     mode.add_argument("--check-runtime", action="store_true", help="Check both files and Antigravity's enablement/grants.")
     parser.add_argument("--registry", type=Path, help="Registry path for --check-runtime (defaults beside sidecars).")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.registry is not None and not args.check_runtime:
+        parser.error("--registry requires --check-runtime.")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -357,12 +389,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[FAIL] {exc}", file=sys.stderr)
             return 1
 
+    destinations = {sidecar_id: target_dir / sidecar_id / "sidecar.json" for sidecar_id in rendered_map}
+    for dest in destinations.values():
+        if dest.is_symlink() or dest.parent.is_symlink():
+            print(f"[FAIL] Sidecar destination must not be a symbolic link: {dest}", file=sys.stderr)
+            return 1
+
     stale_dirs = find_stale_sidecar_dirs(target_dir)
 
     if args.check or args.check_runtime:
         mismatches = 0
         for sidecar_id, (rendered_text, data) in rendered_map.items():
-            dest = target_dir / sidecar_id / "sidecar.json"
+            dest = destinations[sidecar_id]
             grants_count = len(data["agent_permissions"]["access_grants"])
             if not dest.is_file():
                 print(f"[MISS] {dest} does not exist", file=sys.stderr)
@@ -400,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[DRY-RUN] python_bin={python_bin}")
         print(f"[DRY-RUN] target_dir={target_dir}")
         for sidecar_id, (rendered_text, data) in rendered_map.items():
-            dest = target_dir / sidecar_id / "sidecar.json"
+            dest = destinations[sidecar_id]
             grants = data["agent_permissions"]["access_grants"]
             if dest.is_file() and dest.read_bytes() == rendered_text.encode("utf-8"):
                 status = "UNCHANGED"
@@ -417,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
     written: list[tuple[Path, bytes | None]] = []
     try:
         for sidecar_id, (rendered_text, data) in rendered_map.items():
-            dest = target_dir / sidecar_id / "sidecar.json"
+            dest = destinations[sidecar_id]
             expected_bytes = rendered_text.encode("utf-8")
             previous = dest.read_bytes() if dest.is_file() else None
             if previous == expected_bytes:

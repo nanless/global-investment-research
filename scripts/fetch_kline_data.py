@@ -30,7 +30,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import io
 import json
 import math
@@ -46,6 +46,11 @@ from typing import Any, Callable
 import urllib.error
 import urllib.parse
 import urllib.request
+
+if __package__:
+    from .state_transaction import install_locked, state_write_lock
+else:
+    from state_transaction import install_locked, state_write_lock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT_DIR = REPO_ROOT / "equity" / "state" / "klines"
@@ -97,6 +102,8 @@ FT_UCITS_XID_MAP: dict[str, str] = {
     "EQQQ": "86266974",
     "IUIT": "93233034",
 }
+# Fund-directory keys stay stable. These two charts use the corresponding USD listings in London.
+UCITS_LONDON_USD_TICKERS = {"SWDA": "IWDA", "EQQQ": "EQQU"}
 
 FT_INDEX_XID_MAP: dict[str, str] = {
     "DAX": "596850",
@@ -164,6 +171,13 @@ ALL_SHARDS_ORDER: tuple[str, ...] = (
     "stocks_us",
 )
 
+MIN_PUBLISHED_INSTRUMENTS = 480
+REQUIRED_PUBLISHED_SERIES: tuple[str, ...] = (
+    "idx_sh000001", "idx_N225", "idx_TOPIX", "idx_GDAXI", "idx_FCHI", "idx_STOXX50E",
+    "idx_FTSE", "idx_NSEI", "idx_TWII", "idx_KS11", "idx_HSCI", "idx_HSAHP",
+    "rate_CN2Y", "rate_CN10Y", "rate_CN30Y", "idx_932047", "idx_932006",
+)
+
 SCOPE_SHARDS: dict[str, tuple[str, ...]] = {
     "all": ALL_SHARDS_ORDER,
     "core": ("core",),
@@ -222,8 +236,8 @@ def build_core_specs() -> list[InstrumentSpec]:
         InstrumentSpec("idx_IXIC", "IXIC", "纳斯达克综合", "us_index", "美股", "USD", "点", "core", "us_index", "us.IXIC", ".ixic"),
         InstrumentSpec("idx_NDX", "NDX", "纳斯达克100", "us_index", "美股", "USD", "点", "core", "us_index", "us.NDX", ".ndx"),
         InstrumentSpec("idx_DJI", "DJI", "道琼斯工业", "us_index", "美股", "USD", "点", "core", "us_index", "us.DJI", ".dji"),
-        InstrumentSpec("idx_RUT", "IWM", "罗素2000·IWM", "us_index", "美股", "USD", "点", "core", "us_index", "usIWM.AM", "iwm"),
-        InstrumentSpec("idx_SPXEW", "RSP", "标普500等权·RSP", "us_index", "美股", "USD", "点", "core", "us_index", "usRSP.AM", "rsp"),
+        InstrumentSpec("idx_RUT", "IWM", "罗素2000 ETF（IWM）", "us_index", "美股", "USD", "美元", "core", "us_index", "usIWM.AM", "iwm"),
+        InstrumentSpec("idx_SPXEW", "RSP", "标普500等权 ETF（RSP）", "us_index", "美股", "USD", "美元", "core", "us_index", "usRSP.AM", "rsp"),
         InstrumentSpec("idx_SOX", "SOX", "费城半导体", "us_index", "美股", "USD", "点", "core", "us_sina_only", ".sox"),
         InstrumentSpec("idx_VIX", "VIX", "VIX恐慌指数", "us_index", "美股", "USD", "点", "core", "cboe_vix", "VIX", force_no_volume=True),
         # --- Non-US Global Equity Indices (9) ---
@@ -407,6 +421,9 @@ def load_etf_specs(etf_path: Path = ETF_UNIVERSE_PATH) -> list[InstrumentSpec]:
             )
         elif channel == "爱尔兰UCITS":
             base = strip_lse_suffix(code)
+            london_ticker = UCITS_LONDON_USD_TICKERS.get(base)
+            if london_ticker:
+                name = f"{name}（伦交所美元代码 {london_ticker}）"
             specs.append(
                 InstrumentSpec(
                     id=inst_id,
@@ -504,7 +521,10 @@ def _to_float(val: Any) -> float | None:
     if val is None or isinstance(val, bool):
         return None
     if isinstance(val, (int, float)):
-        f = float(val)
+        try:
+            f = float(val)
+        except OverflowError:
+            return None
     else:
         s = str(val).strip().replace(",", "")
         if not s or s.upper() in ("N/A", "NA", "NULL", "NONE", "-", "--"):
@@ -545,10 +565,13 @@ def normalize_date_mmddyyyy(raw: str) -> str | None:
     s = raw.strip().strip('"').strip("'")
     if not s:
         return None
-    if DATE_ISO_RE.match(s):
-        return s
+    if DATE_ISO_RE.fullmatch(s):
+        try:
+            return date.fromisoformat(s).isoformat()
+        except ValueError:
+            return None
     if len(s) >= 10 and s[10:11] in ("T", " ") and DATE_ISO_RE.match(s[:10]):
-        return s[:10]
+        return normalize_date_mmddyyyy(s[:10])
     if len(s) in (8, 14) and s.isdigit():
         try:
             dt = datetime(int(s[:4]), int(s[4:6]), int(s[6:8]))
@@ -607,6 +630,7 @@ def sanitize_bars(
     force_no_volume: bool = False,
     price_divisor_if_gt: tuple[float, float] | None = None,
     allow_nonpositive: bool = False,
+    through_date: date | None = None,
 ) -> list[list[Any]]:
     """Validate, deduplicate by ISO date, sort ascending, round, and slice to last N bars.
 
@@ -614,14 +638,16 @@ def sanitize_bars(
     Drops bars where close <= 0, open <= 0, high <= 0, low <= 0 (unless allow_nonpositive=True,
     e.g. for TIPS real yields), raw high < low, invalid date, or NaN/Inf. Clamps slight
     intraday envelope anomalies where open/close lies outside [low, high] while raw high >= low.
+    When given a through_date, exclude sessions after the Beijing generation day.
     """
     rows = normalize_bar_units(raw_bars, price_divisor_if_gt=price_divisor_if_gt)
+    cutoff = through_date.isoformat() if through_date is not None else None
     by_date: dict[str, list[Any]] = {}
     for row in rows:
         if not isinstance(row, (list, tuple)) or len(row) < 5:
             continue
         date_iso = normalize_date_mmddyyyy(str(row[0]))
-        if not date_iso:
+        if not date_iso or (cutoff is not None and date_iso > cutoff):
             continue
         o = _to_float(row[1])
         h = _to_float(row[2])
@@ -639,14 +665,10 @@ def sanitize_bars(
         # Ensure strict candlestick envelope: low <= min(open, close) <= max(open, close) <= high
         h = max(h, o, c)
         l = min(l, o, c)
-        by_date[date_iso] = [
-            date_iso,
-            _round_price(o, decimals_override),
-            _round_price(h, decimals_override),
-            _round_price(l, decimals_override),
-            _round_price(c, decimals_override),
-            0 if force_no_volume else _round_volume(v),
-        ]
+        prices = [_round_price(price, decimals_override) for price in (o, h, l, c)]
+        if not allow_nonpositive and min(prices) <= 0:
+            continue
+        by_date[date_iso] = [date_iso, *prices, 0 if force_no_volume else _round_volume(v)]
 
     ordered = [by_date[d] for d in sorted(by_date.keys())]
     if bars_limit > 0 and len(ordered) > bars_limit:
@@ -1419,9 +1441,9 @@ def atomic_write_json(path: Path, payload: Any, *, compact: bool = True) -> int:
     """Atomically write JSON with 0o644 permissions and return byte size."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if compact:
-        text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     else:
-        text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        text = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     encoded = text.encode("utf-8")
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     tmp_path = Path(tmp_name)
@@ -1441,18 +1463,27 @@ def atomic_write_json(path: Path, payload: Any, *, compact: bool = True) -> int:
     return len(encoded)
 
 
-def load_existing_shard(path: Path) -> dict[str, dict[str, Any]]:
-    """Load existing shard series map for stale-while-error preservation."""
-    if not path.exists():
+def _existing_shard_series(content: bytes | None) -> dict[str, dict[str, Any]]:
+    """Decode the snapshotted series used for stale-while-error preservation."""
+    if content is None:
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        series = data.get("series")
+        data = json.loads(content)
+        series = data.get("series") if isinstance(data, dict) else None
         if isinstance(series, dict):
             return series
-    except (OSError, json.JSONDecodeError):
+    except (UnicodeDecodeError, json.JSONDecodeError):
         pass
     return {}
+
+
+def bar_close_change(bars: list[list[Any]]) -> tuple[float | None, float]:
+    """Derive the previous close and the published change from accepted candles."""
+    if not bars:
+        return None, 0.0
+    previous_close = bars[-2][4] if len(bars) >= 2 else bars[0][1]
+    change = round((bars[-1][4] - previous_close) / previous_close * 100.0, 2) if previous_close > 0 else 0.0
+    return previous_close, change
 
 
 def build_series_record(
@@ -1466,16 +1497,7 @@ def build_series_record(
     has_volume = False if spec.force_no_volume else any((b[5] or 0) > 0 for b in bars)
     latest_date = bars[-1][0] if bars else ""
     latest_close = bars[-1][4] if bars else None
-    if len(bars) >= 2:
-        prev_close = bars[-2][4]
-    elif len(bars) == 1:
-        prev_close = bars[-1][1]
-    else:
-        prev_close = None
-    if latest_close is not None and prev_close is not None and prev_close > 0:
-        change_pct = round((latest_close - prev_close) / prev_close * 100.0, 2)
-    else:
-        change_pct = 0.0
+    prev_close, change_pct = bar_close_change(bars)
 
     rec: dict[str, Any] = {
         "id": spec.id,
@@ -1541,6 +1563,7 @@ def merge_with_stale_cache(
     cached_entry: dict[str, Any] | None,
     *,
     bars_limit: int,
+    through_date: date | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Merge live fetch result with stale cache on failure.
 
@@ -1558,6 +1581,7 @@ def merge_with_stale_cache(
             force_no_volume=spec.force_no_volume,
             price_divisor_if_gt=spec.price_divisor_if_gt,
             allow_nonpositive=spec.allow_nonpositive,
+            through_date=through_date,
         )
         if sanitized:
             cached_prov = str(cached_entry.get("provider", "cached"))
@@ -1902,6 +1926,7 @@ class KlineFetcher:
         Returns (sanitized_bars, provider_name, error_reason).
         """
         errors: list[str] = []
+        market_data_date = datetime.now(CST).date()
 
         def _clean(raw_bars: list[list[Any]]) -> list[list[Any]]:
             return sanitize_bars(
@@ -1911,6 +1936,7 @@ class KlineFetcher:
                 force_no_volume=spec.force_no_volume,
                 price_divisor_if_gt=spec.price_divisor_if_gt,
                 allow_nonpositive=spec.allow_nonpositive,
+                through_date=market_data_date,
             )
 
         kind = spec.kind
@@ -2218,6 +2244,27 @@ def resolve_edition_id(explicit_edition_id: str | None) -> str:
     return datetime.now(CST).strftime("%Y-%m-%d_%H%M")
 
 
+def load_instrument_specs(
+    scope: str,
+    etf_path: Path = ETF_UNIVERSE_PATH,
+    dossiers_path: Path = DEEP_DOSSIERS_PATH,
+) -> list[InstrumentSpec]:
+    """Load the canonical, ordered universe shared by the fetcher and publication gate."""
+    specs: list[InstrumentSpec] = []
+    if scope in ("all", "core"):
+        specs.extend(build_core_specs())
+    if scope in ("all", "etfs"):
+        specs.extend(load_etf_specs(etf_path))
+    if scope in ("all", "stocks"):
+        specs.extend(load_stock_specs(dossiers_path))
+    ids: set[str] = set()
+    for spec in specs:
+        if spec.id in ids:
+            raise ValueError(f"Duplicate K-line instrument ID: {spec.id}")
+        ids.add(spec.id)
+    return specs
+
+
 def run_fetch(
     *,
     scope: str = "all",
@@ -2234,24 +2281,32 @@ def run_fetch(
     t0 = time.monotonic()
     bars_limit = max(MIN_BARS, min(MAX_BARS, int(bars_limit)))
     workers = max(1, min(32, int(workers)))
-    eid = resolve_edition_id(edition_id)
-    now_cst = datetime.now(CST).strftime("%Y-%m-%dT%H:%M:%S+08:00")
-
-    ref_year = int(eid[:4]) if len(eid) >= 4 and eid[:4].isdigit() else datetime.now(CST).year
-
     target_shards = SCOPE_SHARDS[scope]
-    specs: list[InstrumentSpec] = []
-    if scope in ("all", "core"):
-        specs.extend(build_core_specs())
-    if scope in ("all", "etfs"):
-        specs.extend(load_etf_specs(etf_path))
-    if scope in ("all", "stocks"):
-        specs.extend(load_stock_specs(dossiers_path))
-
-    # Load existing shards for stale-while-error preservation
-    existing_by_shard: dict[str, dict[str, dict[str, Any]]] = {
-        sh: load_existing_shard(out_dir / f"{sh}.json") for sh in target_shards
+    canonical_path = DEFAULT_OUT_DIR.absolute()
+    out_dir = out_dir.resolve()
+    lock_root = REPO_ROOT if out_dir.is_relative_to(REPO_ROOT) else out_dir
+    manifest_path = out_dir / "manifest.json"
+    canonical_output = out_dir == canonical_path.resolve()
+    if canonical_output and (
+        canonical_path.is_symlink() or (canonical_path.is_relative_to(REPO_ROOT) and out_dir != canonical_path)
+    ):
+        raise ValueError("The K-line publication directory must not contain a symbolic link.")
+    if canonical_output and scope != "all":
+        raise ValueError("Partial K-line refreshes require a separate --out-dir; the publication directory needs --scope all.")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    shard_paths = {shard: out_dir / f"{shard}.json" for shard in target_shards}
+    generation_files = (manifest_path, *shard_paths.values())
+    with state_write_lock(lock_root):
+        eid = resolve_edition_id(edition_id)
+        if canonical_output and eid != resolve_edition_id(None):
+            raise ValueError("K-line edition must match the current market state for the publication directory.")
+        specs = load_instrument_specs(scope, etf_path, dossiers_path)
+        previous_generation = {path: path.read_bytes() if path.exists() else None for path in generation_files}
+    previous_manifest = previous_generation[manifest_path]
+    existing_by_shard = {
+        shard: _existing_shard_series(previous_generation[path]) for shard, path in shard_paths.items()
     }
+    ref_year = int(eid[:4]) if len(eid) >= 4 and eid[:4].isdigit() else datetime.now(CST).year
 
     http = http_client or RateLimitedHttpClient()
     if us_suffix_cache_path is not None:
@@ -2296,14 +2351,13 @@ def run_fetch(
             except Exception as exc:
                 fetched_results[sp.id] = ([], None, f"unhandled:{type(exc).__name__}")
 
-    if persist_suffix_cache:
-        us_cache.save_if_dirty()
-
     # Merge with stale cache in canonical spec order
     shard_series: dict[str, dict[str, dict[str, Any]]] = {sh: {} for sh in target_shards}
     new_catalog_by_shard: dict[str, list[dict[str, Any]]] = {sh: [] for sh in target_shards}
     new_failures_by_shard: dict[str, list[dict[str, Any]]] = {sh: [] for sh in target_shards}
     omitted_optional: list[str] = []
+    generated_at = datetime.now(CST)
+    market_data_date = generated_at.date()
 
     for sp in specs:
         bars, prov, err = fetched_results.get(sp.id, ([], None, "missing_result"))
@@ -2311,7 +2365,7 @@ def run_fetch(
         if sp.optional_min_bars > 0 and len(bars) < sp.optional_min_bars:
             live_err = err or f"insufficient_bars:{len(bars)}<{sp.optional_min_bars}"
             rec, failure = merge_with_stale_cache(
-                sp, [], None, live_err, cached, bars_limit=bars_limit
+                sp, [], None, live_err, cached, bars_limit=bars_limit, through_date=market_data_date
             )
             if rec is not None and rec["bars_count"] >= sp.optional_min_bars:
                 shard_series[sp.shard][sp.id] = rec
@@ -2322,7 +2376,7 @@ def run_fetch(
                 omitted_optional.append(sp.id)
             continue
         rec, failure = merge_with_stale_cache(
-            sp, bars, prov, err, cached, bars_limit=bars_limit
+            sp, bars, prov, err, cached, bars_limit=bars_limit, through_date=market_data_date
         )
         if rec is not None:
             shard_series[sp.shard][sp.id] = rec
@@ -2330,10 +2384,11 @@ def run_fetch(
         if failure is not None:
             new_failures_by_shard[sp.shard].append(failure)
 
-    # Atomically write each target shard JSON
+    now_cst = generated_at.strftime("%Y-%m-%dT%H:%M:%S+08:00")
     shard_meta: dict[str, dict[str, Any]] = {}
+    writes: list[tuple[Path, bytes | None]] = []
     for sh in target_shards:
-        shard_file = out_dir / f"{sh}.json"
+        shard_file = shard_paths[sh]
         shard_payload = {
             "schema_version": SCHEMA_VERSION,
             "shard": sh,
@@ -2343,23 +2398,21 @@ def run_fetch(
             "count": len(shard_series[sh]),
             "series": shard_series[sh],
         }
-        nbytes = atomic_write_json(shard_file, shard_payload, compact=True)
+        encoded = json.dumps(shard_payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        writes.append((shard_file, encoded))
         shard_meta[sh] = {
             "file": f"{sh}.json",
             "count": len(shard_series[sh]),
-            "bytes": nbytes,
+            "bytes": len(encoded),
         }
 
     # Load previous manifest to preserve untouched shards on partial scopes
-    manifest_path = out_dir / "manifest.json"
     prev_manifest: dict[str, Any] = {}
-    if scope != "all" and manifest_path.exists():
-        try:
-            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                prev_manifest = loaded
-        except (OSError, json.JSONDecodeError):
-            prev_manifest = {}
+    if scope != "all" and previous_manifest is not None:
+        loaded = json.loads(previous_manifest)
+        if not isinstance(loaded, dict):
+            raise ValueError("The prior K-line manifest must be an object for a partial refresh.")
+        prev_manifest = loaded
 
     final_shards: dict[str, dict[str, Any]] = {}
     final_catalog: list[dict[str, Any]] = []
@@ -2404,7 +2457,43 @@ def run_fetch(
         "catalog": final_catalog,
         "partial_failures": final_failures,
     }
-    manifest_bytes = atomic_write_json(manifest_path, manifest, compact=True)
+    manifest_content = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    writes.append((manifest_path, manifest_content))
+    requested_ok = sum(len(series) for series in shard_series.values())
+    requested_missing = sum(
+        not failure["used_stale_cache"] for failures in new_failures_by_shard.values() for failure in failures
+    )
+    requested_fresh = sum(not row["stale"] for rows in new_catalog_by_shard.values() for row in rows)
+    publication_blockers = []
+    if canonical_output:
+        missing_required = set(REQUIRED_PUBLISHED_SERIES) - {row["id"] for row in final_catalog}
+        empty_shards = [name for name, rows in shard_series.items() if not rows]
+        if missing_required:
+            publication_blockers.append(f"Missing required K-line series: {', '.join(sorted(missing_required))}")
+        if empty_shards:
+            publication_blockers.append(f"Empty K-line shards: {', '.join(empty_shards)}")
+        if total_instruments < MIN_PUBLISHED_INSTRUMENTS:
+            publication_blockers.append(f"K-line universe accounts for fewer than {MIN_PUBLISHED_INSTRUMENTS} instruments")
+    promoted = (
+        not publication_blockers and requested_fresh > 0
+        and requested_ok / (requested_ok + requested_missing) >= 0.90
+    )
+    cache_warning = None
+    if promoted:
+        with state_write_lock(lock_root):
+            current_generation = {path: path.read_bytes() if path.exists() else None for path in generation_files}
+            if current_generation != previous_generation:
+                raise RuntimeError("K-line data changed during the fetch. Retry the refresh.")
+            if canonical_output and (
+                eid != resolve_edition_id(None) or specs != load_instrument_specs(scope, etf_path, dossiers_path)
+            ):
+                raise RuntimeError("The publication edition or K-line universe changed during the fetch.")
+            install_locked(lock_root, writes)
+            if persist_suffix_cache:
+                try:
+                    us_cache.save_if_dirty()
+                except OSError as exc:
+                    cache_warning = type(exc).__name__
     elapsed = round(time.monotonic() - t0, 2)
 
     return {
@@ -2417,7 +2506,11 @@ def run_fetch(
         "stale_count": stale_count,
         "failed_count": failed_count,
         "omitted_optional": omitted_optional,
-        "manifest_bytes": manifest_bytes,
+        "manifest_bytes": len(manifest_content) if promoted else 0,
+        "promoted": promoted,
+        "publication_blockers": publication_blockers,
+        "retained_previous": not promoted and previous_manifest is not None,
+        "suffix_cache_warning": cache_warning,
         "shards": final_shards,
         "partial_failures": final_failures,
     }
@@ -2431,7 +2524,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--scope",
         choices=("all", "core", "etfs", "stocks"),
         default="all",
-        help="Instrument scope to fetch (default: all).",
+        help="Instrument scope to fetch (default: all). Partial scopes require a separate --out-dir.",
     )
     parser.add_argument(
         "--bars",
@@ -2463,20 +2556,19 @@ def main(argv: list[str] | None = None) -> int:
     out_path = Path(args.out_dir)
     if not out_path.is_absolute():
         out_path = REPO_ROOT / out_path
-    summary = run_fetch(
-        scope=args.scope,
-        bars_limit=args.bars,
-        edition_id=args.edition_id,
-        out_dir=out_path,
-        workers=args.workers,
-    )
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
-    # Exit non-zero only if total collapse (<90% coverage)
-    total = summary["total_instruments"]
-    ok = summary["ok_count"]
-    if total == 0 or (ok / total) < 0.90:
+    try:
+        summary = run_fetch(
+            scope=args.scope,
+            bars_limit=args.bars,
+            edition_id=args.edition_id,
+            out_dir=out_path,
+            workers=args.workers,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"[FAIL] {exc}", file=sys.stderr)
         return 1
-    return 0
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["promoted"] else 1
 
 
 if __name__ == "__main__":
