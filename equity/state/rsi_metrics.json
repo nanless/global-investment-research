@@ -972,6 +972,108 @@
         "【11/30 周一四重撞车哨兵】盯 09:30 中国 11 月 PMI、降保 80%、15:00 明晟剔除 22 A 股与 15 港股尾盘冲击、大成 000834 限购砍半及 21:30 美国财政部 815.1 亿美元真实净抽水",
         "【旗舰 5 条件持续跟踪】验证沪深 300 能否在下周一二完成 4,025 点 200 周线连续 3 日放量站稳（今为第 1/3 日）及中金所前 20 机构空头是否收手"
       ]
+    },
+    {
+      "run_id": "2026-11-28_0730",
+      "edition_type": "weekend_morning_unified",
+      "reports": [
+        "daily/2026-11-27_1800_a_share_r2.md",
+        "daily/2026-11-27_1800_hk_stock_r2.md",
+        "daily/2026-11-28_0730_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-28T07:55:00+08:00",
+      "first_pass_clean": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "lint_errors_fixed": [
+        "初轮合并 _edition_patch.json 修正 5 项校验（qdii_mrf beginner_avoids 兄弟同步、移除池外 QQQ 保持 181 只、commodity_etfs.avoid_if 黄金红灯前置否定词）；初轮 lint_equity.py 拦截 3 段超 180 字拆短后 0 错 0 警；独立盲审（24/30）揪出 4 组阻断项（E-B1 至 E-B4）全部通过原子补丁与美股守望刊定版发前清零"
+      ],
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 3,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 4
+      },
+      "total_score": 24,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/27 23:55 追踪：【周六 07:30 黑五美股周五守望刊 + 全量挂账清零】封账 02:00 美股与 03:00 美债官收、恒指夜期 03:00 终盘、11/27 两融日终与宽基基金官方份额",
+          "outcome": "hit",
+          "evidence": "完整封账 11/27 黑五八大美股常规早收（标普 7,297.49 / 量能 30.4%）、美国财政部官曲（10 年 4.94% / 实际利率 2.79% / 2 年 4.69%）、美联储 H.4.1（准备金 2.929 万亿破红线 / SRF 激增 231.5 亿）、恒指夜期 22,802、中证官估 13.96 倍、主流宽基 +395 亿 vs 科创 50 -34.79 亿与沪市两融 11,248.86 亿，并客观结案美股 4.91% 劈叉预判为 ⚠️ 部分兑现"
+        },
+        {
+          "claim": "11/27 23:55 追踪：【11/30 周一四重撞车哨兵】盯 09:30 中国 11 月 PMI、降保 80%、15:00 明晟调仓、大成 000834 砍半及 21:30 美债 815.1 亿真实净抽水",
+          "outcome": "hit",
+          "evidence": "全部前置写入美股黑五守望刊、INDEX.md、12 渠道库与 policy_calendar.json，并新增追踪 11/28 华夏纳指 513300 率先公告周一 09:30–10:30 停牌、沃尔玛高管减持 439 万与央行公告〔2026〕第30号/令〔2026〕第5号双文核实"
+        },
+        {
+          "claim": "11/27 23:55 追踪：【旗舰 5 条件持续跟踪与零残留同步】守住三市旗舰 0/5 锁并避免黄金过关数/周末时态残留",
+          "outcome": "partial",
+          "evidence": "三市旗舰 0/5 严守、美股 07:30 零盘后终盘越线、100% 黄金红灯锁全部达标，但初版遗漏 8 只黄金/金矿 ETF 旧 1/4 关、五大/六大纳指计数与周末今日/今收时态，已借盲审发前全量修复归零"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "E-B1 [HIGH]: equity/state/etf_universe.json 中 8 只黄金/金矿 ETF（02840/03081/518660/518850/GLDM/517520/159562/159937）滞留旧 1/4 关（共 12 处），且 518850 残留“11/27 官净份额待早刊核销”",
+            "status": "resolved",
+            "evidence": "已通过 equity/state/_edition_patch.json + scripts/patch_state_dbs.py --apply 将全部 13 只黄金/金矿 ETF 统一同步至 2/4 关红灯停（保持 gold_locked=true 与红灯暂停新买），清零 518850 过期待核销并补齐 159937 深交所 11/27 份额 48.7302 亿份与国内 6 金基 -3.99 亿流向，复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-B2 [HIGH]: 美股守望刊 L125、policy_calendar.json L152、multi_asset_channels.json（L63/L1024/L1025）与 etf_universe.json（L47/L3319）共 7 处误将 6 只纳指兄弟基（159632/513300/159941/513100/159696/159501）写为“五大纳指”",
+            "status": "resolved",
+            "evidence": "已将全部 7 处统一更正为“六大纳指兄弟基金”/“六大纳指基”，并同步将 159941/159632/159501/159696 4 只兄弟纳指 ETF 补齐黑五后周一隐含溢价（+16.49% 至 +20.38%），全库 100% 一致"
+          },
+          {
+            "description": "E-B3 [HIGH]: 周末多库残留 11/27 交易日“今日/今收/今停转”时态（reverse_repo/convertible_bonds/c_reits/a-share:000333），且 513520 仍引旧折价 -0.18%、159980/159981 滞留 23:55 未封账口吻",
+            "status": "resolved",
+            "evidence": "已全部改为显式交易日期“11/27”（保留周六客观事实“今日无新债申购”），同步更新 513520 引用东证 513800 官净折价 -0.79%、159980 补黑五美铜 $5.517/伦铜 $12,262/沪铜夜盘 92,590 元、159981 补黑五布油官收 $95.44（-1.17%），复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-B4 [MEDIUM]: 2026-11-28_0730_us_stock.md 图表组件含 3 处裸缩写（L106 CTO、L286 BCRED、L287 CDS），且 policy_calendar.json L563 FOMC 加息概率滞留旧值 95%–99%",
+            "status": "resolved",
+            "evidence": "已重撰 2026-11-28_0730_us_stock.md 改为“高管减持勿当防御”“黑石私募信贷 5%”“算力违约险逾 1,314 点”并清除 L292 裸 BTC，同时通过 events_upsert 将 us_fomc_dec_decision_sep_20261210 更新为 94%–97.5%，复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-CAVEAT-01 [DEFERRED_DATA]: Cboe 11/27 VIX_History.csv 官方日线行、11/27 SOFR、Farside 完整现货比特币 ETF 资金流、深北两市 11/27 两融日终余额及黑五零售终报截至周六 07:55 尚未公布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+              "due_edition": "2026-11-30_0730",
+              "disposition": "全部滞后项均 1:1 写入 market_state.json data_caveats 与 pending_backfills、美股守望刊末尾及 INDEX.md 透明披露，不编造不阻塞，排入下周一 07:30 早刊一次性核销"
+            }
+          },
+          {
+            "description": "E-CAVEAT-02 [DISCLOSED_CAVEAT]: 周六 A 股与港股休市按 --plan 沿用 11/27 晚报修订稿（r2），其底层 5 只黄金股深研档案将在周日全池轮换中统筹核对",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://www.hkex.com.hk/",
+              "due_edition": "2026-11-29_0730",
+              "disposition": "严格遵守周末休市沿用纪律不伪造新市盘口，所有 13 只黄金/金矿 ETF 已全部同步至 2/4 关红灯停，深研池中低频条目排入明日周日全量周度校准"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【黄金过关数变动 13-ETF 联扫铁律】每当黄金 SSOT tier1_passed 变动（如 1/4→2/4），写 _edition_patch.json 时必须一次性覆盖 etf_universe.json 全部 13 只 asset_class==gold 标的（含 02840/03081/518660/518850/GLDM/517520/159562/518880/159937/IAUM/GLD/GDX/IGLN），彻底根除局部遗漏",
+        "【数字集合计数 + 周末时态 + 图表缩写三项发前 10 秒快检】凡写“X大/X只”群组必逐个清点括号内代码数量；周六/周日班次写库必扫除 reverse_repo/convertible_bonds/c_reits/dossiers 中的“今日/今收/今停转”改显式周五日期；SVG/DAILY_VISUAL 文本字段严禁裸放 CTO/BCRED/CDS/BTC"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周日 07:30 全量周度校准】按周日职责集中校准 12 大渠道中低频项（大额存单新规细则、外币定存、储蓄保险、个人养老金、私募信托、租售比）、全量核对 181 只 ETF 费率规模、轮换精修 231 股池 6–10 只龙头（含黄金矿股档案 2/4 关同步）并更新 SCORECARD 周度复盘",
+        "【周一 07:30 四重催化开盘前瞻与滞后表清零】封账周日 19:00 第 42 届产油国联盟会议对布油/美债 5.0% 冲击，清零 Cboe 11/27 VIX CSV、11/27 SOFR、完整币基流与深北两融；置顶周一 09:30 中国 11 月官方 PMI、A 股降保 80%、15:00 明晟剔除 22 A 股与 15 港股、大成 000834 限购砍半、513300 停牌至 10:30 及 21:30 美国 815.1 亿净抽水",
+        "【新周期首个 first_pass_clean=true 冲刺】严格落实 13 只黄金 ETF 全联扫、群组计数核对、周末时态隔离与 SVG 零裸缩写，目标总分冲刺 ≥28/30"
+      ]
     }
   ]
 }

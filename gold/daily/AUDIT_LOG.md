@@ -5,6 +5,30 @@
 ---
 
 <!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-28_0730",
+  "as_of_short": "2026-11-28 07:55",
+  "note": "完成 2026-11-28 07:30 周末专项早报四重交叉验证：核销美国财政部 11/27 官方收益率曲线（10Y 4.94% +9bp、DFII10 2.79% +6bp、T10YIE 2.15% +3bp、2Y 4.69% +8bp -> +81bp 利差、30Y 5.33% +9bp）；核销纽约 17:00 现货金官收 $3,652.11 (+1.76%，高于 11/25 前高 $3,589.85 闯过第 4 关，下周新门槛 $3,685.31)，买金由 1/4 升至 2/4 仍严格锁定 Tier 0 红灯停（new_buy_allowed=false）与主报告 0/5 锁（+0.46% < 3%、60日新高硬止损与尾部深熊 0/2）；核销 Cboe 11/27 黑五早收暂定 VIX 23.81（-11.16%，10日窗口推进至 11/16..11/27，同步核销官方期货结算 UX1 22.8402 / UX2 22.7857 与 SKEW 145.90，周末非发布窗 vix_live=null）；核销美联储 H.4.1 周报（周三银行储备 $2,928.66B 跌破 $2.98T、TGA $923.56B）、NY Fed 黑五 SRF $23.15B、ON RRP $350M、FRED 11/25 HY 377bp / CCC 1,417bp、COMEX 11/27 官结（GCZ26 $3,639.60 / GCG27 $3,668.50 / SIZ26 $43.167 / HGZ26 $5.517）、LME 3M 铜官收 $12,262、02:30 国内金银夜盘终盘（au2702 781.36 / Au99.99 782.00 同刻溢价 +2.97 元 / Au(T+D) 780.14 溢价 +1.11 元 / ag2702 10,344）与 01:00 有色夜盘沪铜 92,590 (+0.84%)、深交所 159934/159937 份额（6金基合计净赎回 -3.99 亿元）及周日 OPEC+ 与周一 $81.51B 私部门净抽水官方算式。",
+  "sources": {
+    "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"],
+    "rate_spread": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv", "https://markets.newyorkfed.org/api/rates/all/latest.json"],
+    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv", "https://finance.yahoo.com/quote/%5EVIX"],
+    "ny_close": ["https://www.kitco.com/charts/gold", "https://www.sge.com.cn/sjzx/mrhqsj", "https://www.shfe.com.cn/data/tradedata/future/dailydata/kx20261127.dat", "https://www.cmegroup.com/markets/metals/precious/gold.settlements.html"]
+  },
+  "forecast_review": {
+    "status": "settled",
+    "note": "客观结案 2 项到期预测（2026-11-26 早报黑五第 4 关与实际利率双检验、2026-11-27 午报亚盘轧空不改黑五红灯停）均为 ✅ 兑现：11/27 纽约金收 $3,652.11 站上 $3,589.85 闯过第 4 关，但美债官方曲线 DFII10 升至 2.79%、2Y-FF 扩至 +81bp 双卡前两关，严格维持 2/4 红灯停新仓 0%；累计投资计分 10 项升至 5 兑现 / 5 部分兑现 / 0 证伪（完全兑现率 50.0%、至少部分兑现 100.0%），新增 2 项下周一/二追踪。",
+    "sources": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv", "https://www.federalreserve.gov/releases/h41/current/"]
+  }
+} -->
+
+### 2026-11-28 07:30 周末专项早报核验记录（截点 2026-11-28 07:55）
+
+- **三大信任资产增量（累计拦谣 48 条 · 模型升级 18 项 · 细节校准 44 项 · 核心结论影响 0/44）**：① 新增拦谣 #47–#48：拆穿“纽约金站稳 3,652 闯过第 4 关升至 2/4 已亮黄灯”与“纽约联储常备回购激增 231.5 亿等于重启放水”；② 新增校准 #42–#44：锁定周一 11/30 美债私部门真实净抽水官方算式（$218.00B 发行 − $136.49B 私营到期 = $81.51B）、核销 `161226` 11/27 正式净值 `1.1213`（静态溢价 +14.96%，明确系董事长曲刚变更非基金经理）并校准 `IAUM` 规模为 `$7.25B`。
+- **剩余滞后官方表挂账（归周一早/晚报）**：11/27 Cboe 官方 CSV 日线行（现用暂定 23.81）、11/27 SPDR 持仓 / VanEck 净值 / LBMA 午盘金定盘公开镜像、山东黄金说明会文字纪要及因感恩节顺延至 12/01 04:30 的 CFTC COT 持仓周报。
+
+---
+
+<!-- GOLD_EDITION_REVIEW {
   "edition_id": "2026-11-27_1800_r2",
   "as_of_short": "2026-11-27 23:55",
   "note": "完成 2026-11-27 18:00 工作日晚报 23:55 BJT 修订封账版四重交叉验证：核销 Cboe VIX_History.csv 已补录 2026-11-26 完整行（O 27.18 / H 27.54 / L 26.57 / C 26.80，status 升级为 published，十日窗口推进至 2026-11-13..2026-11-26）及 23:55 BJT（10:55 EST 黑五常规窗内）实盘 VIX 25.38（倒挂 UX1 23.73 > UX2 23.30）；核销 23:55 黑五美盘现货金自日高 $3,685.11 倒吐 $61.77 至 $3,623.34 (+0.96% vs 11/25 NY)、布油 1 月 BZF27 自 $98.06 倒跌至 $94.80 (-1.83%) 与 WTI 翻跌至 $83.45 (-0.27%) 之际 10Y 名义美债反升至 4.914%、10Y 实际利率 US10YTIPS 扩至 2.783%（日内 2.735%-2.796% 未触 ≤2.72%）、2Y 美债升至 4.697%（实时利差 +81.7bp）；核销 NY Fed 11/25 SOFR 3.95% (+5bp vs IORB)、11/27 LBMA AM 金定盘 $3,672.10 (+3.08%) / 银午盘 $44.0400 (+6.02%)、国内四大黄金 ETF 11/27 官方 NAV（518880 7.4473/-0.085%/-3.72 亿、518800 7.8078/+0.80 亿、159934 7.7806、159937 7.4308；沪市 4 只合计净赎回 -3.25 亿）、SGE Au(T+D) 递延费由空付多翻转为多付空及夜盘自 786.60 回吐至 778.03（按同刻离岸汇率 6.6552 折算理论平价 775.28、温和价差 +2.75 元/+0.35%，无逼空抢筹）、SHFE au2702 夜盘 777.32 (-1.08%/OI +1,882) 与 ag2702 夜盘 10,287 (-1.87%/OI +11,152) 及具名席位明细；买金维持 Tier 0 红灯停（1/4 关、new_buy_allowed=false）与主报告 0/5 锁（含 60 日新高硬止损与尾部深熊 0/2 核验）。",

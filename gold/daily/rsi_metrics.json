@@ -872,6 +872,89 @@
         "【11/29 周日第 42 届产油国会议与沪银夜盘增仓压力】追踪布油 1 月倒跌 94.80 美元后油会决议及沪银 ag2702 夜盘增仓 +11,152 手的回调风险",
         "【上线前同刻溢价自检】对 sge_autd_*_premium_rmb 做实时算术复算（容差 ≤0.50 元/克）确保零口径背离"
       ]
+    },
+    {
+      "run_id": "2026-11-28_0730",
+      "edition_type": "weekend_morning_unified",
+      "report_file": "daily/2026-11-28_0730_早报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-28 07:55",
+      "first_pass_strict": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "初稿严检拦下 3 处格式瑕疵（DAILY_CHART_TIMELINE 键名错用 x_label/price/y、DAILY_PERSONA 误含禁词“高弹性”、Layer 2 有 3 段略超 260 字），一次修正后通过 gold/lint_readability.py --strict（0 errors / 0 warnings）；独立盲审给出 29/30 且 0 项阻塞硬伤"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 5
+      },
+      "total_score": 29,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/27 23:55 追踪：【周六 07:30 黑五官收终判第 4 关】核销 11/28 06:00 纽约现货官收是否站稳 3,589.85 美元并验证黑五美债官方曲线",
+          "outcome": "hit",
+          "evidence": "全量核销 11/27 黑五纽约现货官收 $3,652.11 (+1.76%) 站稳 $3,589.85 闯过第 4 关（升至 2/4 关，下周门槛移至 $3,685.31），同步封账美国财政部 11/27 官曲 10 年 4.94% / 实际利率 2.79% (+6bp) / 2 年 4.69% (+81bp) 确认前两关牢牢锁死红灯停，主报告 0/5 未触发"
+        },
+        {
+          "claim": "11/27 23:55 追踪：【11/29 周日产油国会议与沪银夜盘增仓压力】追踪布油 1 月官收与沪银 ag2702 夜盘动态",
+          "outcome": "hit",
+          "evidence": "封账黑五布油 1 月官收 $95.44 (-1.17%，近远深贴水 $4.60)、周六 02:30 上金所 Au99.99 782.00（同刻溢价 +2.97 元）与沪银 ag2702 10,344 元 (+3.74%) 持仓由增转微减 -686 手，并补齐深交所 159934/159937 份额确认国内 6 金基合计净赎回 -3.99 亿"
+        },
+        {
+          "claim": "11/27 23:55 追踪：【上线前同刻溢价自检与 SCORECARD 结案】核验 02:30 同刻溢价与 2 项到期预判",
+          "outcome": "hit",
+          "evidence": "按 02:30 XAU $3,649.18 × CNH 6.6552 ÷ 31.1034768 = 779.03 元精确核对 Au99.99 +2.97 元 / Au(T+D) +1.11 元，客观结案 SCORECARD 2 项到期预判全为 ✅ 兑现（命中率升至 50.0% / 含部分 100.0%），且盲审总分创 29/30 新高（0 阻塞）"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "G-01 [DISCLOSED_CAVEAT]: 芝加哥期权交易所 VIX_History.csv 2026-11-27 官方日线 OHLC 行截至周六 07:45 仍止于 2026-11-26（26.80）",
+            "status": "disclosed_caveat",
+            "evidence": {
+              "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+              "due_edition": "2026-11-30_0730",
+              "disposition": "按黑五半日市非阻塞新规多源交叉锁定暂定早收 23.81（日高 27.52，provisional_close，周末 vix_live=null），同步核销 Cboe 期货官结 UX1 22.8402 / UX2 22.7857 与 SKEW 145.90，透明记入 data_caveats 待周一 07:30 早报核销"
+            }
+          },
+          {
+            "description": "G-02 [DEFERRED_DATA]: 11/27 SPDR GLD 官方实物持仓吨数、VanEck GDX 官方每日净值及 LBMA 11/27 午盘金定盘公开镜像截至周六 07:55 尚未更新",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.ssga.com/us/en/intermediary/etfs/library-content/products/fund-data/etfs/us/navhist-us-en-gld.xlsx",
+              "due_edition": "2026-11-30_0730",
+              "disposition": "已封账 11/27 黑五 GLD $334.40 / GDX $79.18 官收与 LBMA 早盘金定盘 $3,672.10 / 银定盘 $44.04；持仓与净值严守原交易日 11/25（1,027.88 吨 / $73.70）并写入 data_caveats，排入周一 07:30 早报核销"
+            }
+          },
+          {
+            "description": "G-03 [DEFERRED_DATA]: 山东黄金 11/26 业绩说明会公开纪要全文及受感恩节顺延的 CFTC 期货持仓周报（COT）截至周六 07:55 尚未发布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm",
+              "due_edition": "2026-11-30_0730",
+              "disposition": "不估算不脑补，透明记入 data_caveats 与正文第三部分，待周一/周二官方归档后同步核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【图 1 键名与禁词落盘前 3 秒快检】写 DAILY_CHART_TIMELINE 必用 time/val/val_label/desc/label_pos 与 ref_lines[].val，DAILY_PERSONA 禁写“高弹性”（改“大幅反弹”），Layer 2 单段控 ≤240 字，冲刺下周一 first_pass_strict=true",
+        "【跨轨红绿灯档位变动同步提醒】黄金过关数由 1/4 升至 2/4（仍红灯停）时，写完黄金 SSOT 即在权益侧一次性提醒全扫 13 只黄金/金矿 ETF 与档案文本中的旧“1/4 关”残留"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周一 07:30 封账周日 19:00 产油国会议结果与 3 项 data_caveats】核销第 42 届产油国联盟会议对布油/美债 5.0% 的即时传导，同步清零 Cboe 11/27 VIX CSV 行、GLD 持仓吨数、GDX 官方净值、LBMA 11/27 午盘定盘与山东黄金纪要",
+        "【周一 09:00 线下金店调价与 780–788 元重仓减负带验真】跟踪周一早盘四大行金条与品牌金店是否随 782 元上调牌价，验证国内 6 金基持续逢高净赎回趋势及重仓户 780–788 元减负窗口",
+        "【第 4 关新门槛 $3,685.31 与联储常备回购持续性追踪】紧盯 11/30 815.1 亿美元美债净抽水下银行准备金（2.929 万亿）与常备回购（231.5 亿）演变，检验 10 年实际利率 2.79% 是否松动"
+      ]
     }
   ]
 }
