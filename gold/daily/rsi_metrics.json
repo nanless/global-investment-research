@@ -955,6 +955,81 @@
         "【周一 09:00 线下金店调价与 780–788 元重仓减负带验真】跟踪周一早盘四大行金条与品牌金店是否随 782 元上调牌价，验证国内 6 金基持续逢高净赎回趋势及重仓户 780–788 元减负窗口",
         "【第 4 关新门槛 $3,685.31 与联储常备回购持续性追踪】紧盯 11/30 815.1 亿美元美债净抽水下银行准备金（2.929 万亿）与常备回购（231.5 亿）演变，检验 10 年实际利率 2.79% 是否松动"
       ]
+    },
+    {
+      "run_id": "2026-11-28_1130",
+      "edition_type": "weekend_midday_unified",
+      "report_file": "daily/2026-11-28_1130_午报_黄金深度研报.md",
+      "timestamp_bjt": "2026-11-28 12:00",
+      "first_pass_strict": false,
+      "lint_retries": 1,
+      "visual_retries": 0,
+      "master_updated": false,
+      "lint_errors_fixed": [
+        "首轮 gold/lint_readability.py --strict 检出 1 处禁词“法证”（L150/153/212，改为“穿透”）与 5 段 Layer 2 略超 260 字（全部拆短），一轮修正即达 0 errors / 0 warnings（5 张 640px 矢量图含 waterfall 与 bar_compare 一次零碰撞，visual_retries=0）；Stage 4 独立盲审评定 28/30（0 阻塞 / 2 处轻度微瑕：G-01 熔断条日元方向措辞反写、G-02 图 4 标题与 8 根柱口径对齐及 L365 裸 PMI），均已发前热修并复过 --strict（0 errors, 0 warnings）"
+      ],
+      "scores": {
+        "data_freshness_and_zero_hallucination": 5,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 4,
+        "visual_layout_and_pagination": 4,
+        "research_efficiency_and_source_quality": 5,
+        "engine_and_guardrail_reliability": 5
+      },
+      "total_score": 28,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/28 07:55 追踪：【封账周日 19:00 产油国会议与 3 项 data_caveats 清零】核销 Cboe 11/27 VIX CSV 行、GLD 持仓吨数、GDX 官方净值、LBMA 午盘定盘与山东黄金纪要",
+          "outcome": "partial",
+          "evidence": "周六午间提前一次性核销 4 项欧美官方终值——Cboe VIX_History.csv 11/27 完整行（23.81，正式解除暂定）、SSGA GLD 11/27 官净 $332.98（AUM $120.07B，360.6M 份单日 0.00 吨零流 / 全周 -6.56 吨）、VanEck GDX 11/27 官净 $78.89（AUM $24.77B）与 LBMA 11/27 PM $3,634.50，清零 2 条 data_caveats；周日油会、山东黄金纪要与顺延至 12/01 的 CFTC COT 仍按官历排期后续核销"
+        },
+        {
+          "claim": "11/28 07:55 追踪：【线下金店调价与国内 6 金基流向追踪】核验四大行金条与品牌金店调价及重仓 780–788 元减负窗口",
+          "outcome": "hit",
+          "evidence": "周六早间实测捕捉品牌金店集体提价 +20–25 元至周大福 1,093 元/克（老凤祥/周生生 1,092 元），四大行锁周五均价 795.87 元（打金 814 元）将婚庆立省扩至 279 元/克（50 克省 13,950 元 / 25.5%）；核实工行主动积存 0 买费无缝延至 2027-03-31 拆穿抢单谣言，并锁定 518850 官净 7.5319（-0.039%）与 6 金基 -3.99 亿赎回"
+        },
+        {
+          "claim": "11/28 07:55 追踪：【第 4 关新门槛 $3,685.31 与联储常备回购持续性追踪】跟踪 815.1 亿美债抽水下常备回购（231.5 亿）与准备金演变",
+          "outcome": "hit",
+          "evidence": "拆解纽约联储黑五 SRF $23.15B 全部发生于 08:15 早场（98.27% 美债抵押、13:30 午场归零）并绘制周一 $218.00B 交割 $81.51B 私营净抽水瀑布图，同步纳入标普下调法国展望至负面、日央行行长植田和男周一 09:05 名古屋演讲与土耳其央行暂停本土矿金优先购三大新变量，维持 2/4 红灯停与主报告 0/5 锁"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "G-01 [MINOR]: gold/daily/2026-11-28_1130_午报_黄金深度研报.md L362 危机熔断第 2 线将日元急升套息平仓误写为“美元兑日元 3 日急升超 3%”（方向反写）",
+            "status": "resolved",
+            "evidence": "已将 L362 修正为“② 日元 3 日急升超 3%（即美元兑日元 3 日急跌超 3%；周五收 159.54，3 日反微涨 +0.33% 未触发，周一 09:05 演讲紧盯 160 干预线与 157 套息线）”，与 market_state.json usdjpy_3d_drop_brake_pct=-3.0 及 INDEX.md 100% 对齐，复过 gold/lint_readability.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "G-02 [MINOR]: gold/daily/2026-11-28_1130_午报_黄金深度研报.md 图 4 标题写“七大买金渠道”而绘制 8 根柱（水贝拆会员/非会员两档），且 L365 首现中国 PMI 未配中文全称",
+            "status": "resolved",
+            "evidence": "已将图 4 标题更新为“图 4：2026-11-28 周六国内七大买金渠道八档真实总成本阶梯对比”（引言与章节标题同步注清双档），并将 L365 改为“09:30 中国制造业采购经理指数（PMI）”，复过 gold/lint_readability.py --strict（0 errors, 0 warnings）"
+          },
+          {
+            "description": "G-03 [DEFERRED_DATA]: 山东黄金（600547）11/26 业绩说明会正式文字纪要与因美国感恩节按官历顺延至 2026-12-01 04:30 CST 的 CFTC 每周持仓报告（COT）截至周六 12:00 尚未发布",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm",
+              "due_edition": "2026-11-30_1800",
+              "disposition": "其余 4 项 11/27 欧美官表（Cboe VIX 23.81 / GLD NAV / GDX NAV / LBMA PM）已全部清零，仅余该项透明写入 gold/data_snapshot.json data_caveats 与午报第三部分，待周一晚报及周二早报按官方发布节奏核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【汇率熔断方向零反写铁律】凡写日元套息熔断第 2 线，必写“日元 3 日急升超 3%（即美元兑日元 3 日急跌超 3%）”，严禁把 USD/JPY 上涨（日元贬值）误写为急升触发线",
+        "【禁用内部工程词与图表标题数 parity 3 秒快检】写正文及双账本前禁扫“法证”与任何 .json/.py 文件名；柱状对比图标题渠道数必须与 items 实绘柱数精准对应（如七大渠道八档）且正文首现 PMI 必配中文括注"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周日 19:00 第 42 届产油国会议 + 周一 09:05 日央行植田演讲】封账产油国决议对布油 1 月到期换月（$95.44→$90.84 贴水 $4.60）与美债 5.0% 传导，紧盯植田名古屋演讲对 USD/JPY 159.54（160 干预线 / 157 套息线）的即时冲击",
+        "【周一 09:00 四大行金条调价与 815.1 亿美债抽水验收】核验四大行金条是否仅温和浮动（≤±8 元）及品牌店 1,093 元剪刀差变化，追踪纽约联储常备回购（231.5 亿到期）能否归零及 10 年实际利率 2.79% 变化",
+        "【第 4 关新门槛 $3,685.31 与最后 1 条 data_caveats 核销】盯紧周一纽约终盘能否站上 $3,685.31，跟进山东黄金说明会纪要与周二 04:30 CFTC COT 持仓报告，并贯彻“禁词/段长/熔断方向”快检冲刺 first_pass_strict=true"
+      ]
     }
   ]
 }

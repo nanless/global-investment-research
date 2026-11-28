@@ -1074,6 +1074,98 @@
         "【周一 07:30 四重催化开盘前瞻与滞后表清零】封账周日 19:00 第 42 届产油国联盟会议对布油/美债 5.0% 冲击，清零 Cboe 11/27 VIX CSV、11/27 SOFR、完整币基流与深北两融；置顶周一 09:30 中国 11 月官方 PMI、A 股降保 80%、15:00 明晟剔除 22 A 股与 15 港股、大成 000834 限购砍半、513300 停牌至 10:30 及 21:30 美国 815.1 亿净抽水",
         "【新周期首个 first_pass_clean=true 冲刺】严格落实 13 只黄金 ETF 全联扫、群组计数核对、周末时态隔离与 SVG 零裸缩写，目标总分冲刺 ≥28/30"
       ]
+    },
+    {
+      "run_id": "2026-11-28_1130",
+      "edition_type": "weekend_midday_unified",
+      "reports": [
+        "daily/2026-11-27_1800_a_share_r2.md",
+        "daily/2026-11-27_1800_hk_stock_r2.md",
+        "daily/2026-11-28_0730_us_stock.md"
+      ],
+      "timestamp_cst": "2026-11-28T12:00:00+08:00",
+      "first_pass_clean": true,
+      "lint_retries": 0,
+      "visual_retries": 0,
+      "lint_errors_fixed": [
+        "首轮原子合并 equity/state/_edition_patch.json 与 equity/lint_equity.py --strict（Gates 0–5 + SVG + SSOT + Cross-Project）均一次 0 errors / 0 warnings 通过（first_pass_clean=true, lint_retries=0）；Stage 4 独立盲审评定 28/30（0 阻塞 / 2 处轻度微瑕：E-01 SCORECARD 与 us-stock:MSTR 午间浮亏精确反算同步、E-02 02840/03081 补齐 11/27 港交所官收与 policy_calendar 12/01 起点对齐 04:30），已全部发前热修并复过 --strict（0/0）"
+      ],
+      "flagship_updated": {
+        "a_share": false,
+        "hk_stock": false,
+        "us_stock": false
+      },
+      "scores": {
+        "data_freshness_and_zero_hallucination": 4,
+        "prior_forecast_calibration": 5,
+        "plain_language_and_strict_readability": 5,
+        "visual_layout_and_pagination": 5,
+        "research_efficiency_and_source_quality": 4,
+        "engine_and_guardrail_reliability": 5
+      },
+      "total_score": 28,
+      "max_score": 30,
+      "prior_predictions_checked": [
+        {
+          "claim": "11/28 07:55 追踪：【黄金矿股档案 2/4 关同步与 11/27 基金官净/离岸终盘校准】核对 181 只 ETF 与 231 股池中低频/黄金关联档案",
+          "outcome": "hit",
+          "evidence": "提前于周六午刊完成全套精准纠偏：将 6 只黄金矿饰股（601899/02899.HK/600547/06181.HK/01929.HK/NEM）全部同步至 2/4 关红灯口径与 11/27 最新官收；修复 market_state 与 etf_universe 中 VXUS($79.52/+1.92%)、VGK($85.91/+1.13%)、IEMG($70.84/+3.00%)、IUIT($44.45/+0.93%) 与 5 只爱尔兰 UCITS 11/27 终盘；翻转大成有色 159980 官净 1.8829 为实测溢价 +1.23%，更新转债 511380(528.54亿/+0.71%) 与 511180(116.30亿/+0.33%)"
+        },
+        {
+          "claim": "11/28 07:55 追踪：【11/27 滞后官表清零与周六突发风险扫雷】清零 Cboe 11/27 VIX CSV 行、黑五盘后及 SEC 8-K，并捕捉周六突发宏观监管事件",
+          "outcome": "hit",
+          "evidence": "提前清零 Cboe 11/27 恐慌官行 23.81、黑五盘后与 SEC 8-K 零突袭排查、NY Fed SRF 分场明细（早场 $23.15B / 午场 $0）与 GLD/GDX 官净；同步捕获标普下调法国展望至负面、日央行植田周一 09:05 名古屋演讲、布油 1 月合约 11/30 到期换月、央行金融稳定报告及双规答记者问、华虹 688347 128.06 元定增、*ST卓然 688121、恒大汽车 00708.HK 退市决定、香港证监会仿冒警示及豆粕 159985 重点监控至 12/01"
+        },
+        {
+          "claim": "11/28 07:55 追踪：【新周期首个 first_pass_clean=true 冲刺】发前落实四联动全联扫，冲刺总分 ≥28/30",
+          "outcome": "hit",
+          "evidence": "首轮原子合库与 equity/lint_equity.py --strict 一次 0 errors / 0 warnings 通过（first_pass_clean=true, lint_retries=0），独立盲审给分 28/30 且 0 项阻塞硬伤"
+        }
+      ],
+      "review_closure": {
+        "reviewer_completed": true,
+        "findings": [
+          {
+            "description": "E-01 [MINOR]: equity/daily/SCORECARD.md L29 按午间 BTC $59,980 估算微策略（MSTR）浮亏“逾 -132 亿”略高于精确值 -$131.66 亿（851,305 × ($59,980 - $75,446)），且 deep_dossiers.json us-stock:MSTR 仍留早间 $59,780（-$133.37 亿）",
+            "status": "resolved",
+            "evidence": "已将 SCORECARD.md L29 更正为“浮亏约 -131.7 亿（-20.50%）”，并经 equity/state/_edition_patch.json + patch_state_dbs.py --apply 将 us-stock:MSTR 全 4 关联字段精确同步至午间 BTC $59,980（市值 $510.6 亿、浮亏 -$131.66 亿 / -20.50%、11 月币基流出逾 -$54.5 亿），复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-02 [MINOR]: equity/state/etf_universe.json 中 02840 与 03081 的 premium_note 仍引 11/26 港交所收盘；policy_calendar.json global_dec1_pmi_euro_cpi_nvda_20261201 的 time_cst 标 09:00 晚于首项 04:30 COT 与 08:00 韩国出口",
+            "status": "resolved",
+            "evidence": "经一手行情核销 11/27 港交所官收（02840 收 2,627.00 港元 +2.54% / 03081 收 17.23 港元 +2.68%），通过 _edition_patch.json 同步更新 02840/03081 及将 global_dec1_pmi_euro_cpi_nvda_20261201.time_cst 修正为 04:30，复过 lint_equity.py --strict（0/0）"
+          },
+          {
+            "description": "E-CAVEAT-01 [DEFERRED_DATA]: 2026-11-27 深交所与北交所两融日终终值（上交所已核销 11,248.86 亿）及山东黄金 11/26 业绩说明会正式文字纪要截至周六 12:00 尚未披露",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://www.szse.cn/disclosure/margin/margin/index.html",
+              "due_edition": "2026-11-30_1130",
+              "disposition": "严守零编造，已写入 equity/state/market_state.json data_caveats 与 pending_backfills，待周一午刊核销"
+            }
+          },
+          {
+            "description": "E-CAVEAT-02 [DEFERRED_DATA]: 2026-11-27 美国 T+1 利率流动性（SOFR/EFFR、TGA、FRED HY/CCC OAS）、贝莱德 IBIT 等余下现货加密基金单日流及黑五零售终报截至周六 12:00 尚未披露（Cboe 11/27 恐慌官行 23.81 与黑五盘后/SEC 8-K 已核销）",
+            "status": "deferred_data",
+            "evidence": {
+              "source": "https://markets.newyorkfed.org/api/rates/all/latest.json",
+              "due_edition": "2026-11-30_0730",
+              "disposition": "已从 data_caveats 移出全部已清零项，仅余 T+1 滞后统计挂账下周一 07:30 早刊一次性核销"
+            }
+          }
+        ]
+      },
+      "tier_a_improvements": [
+        "【实时锚点联动公式重算铁律】凡日内/午间刷新共享锚点（如 BTC $59,780 → $59,980），必须用精确公式（持仓量 × (现价 - 均价)）重算全部衍生浮亏并同步落盘至 SCORECARD 与关联个股档案（us-stock:MSTR），严禁凭口算写“逾 -132 亿”",
+        "【同批 updated_at 核对最新交易日收盘】将 ETF 标为当日 updated_at 时同步核清其 premium_note 所引收盘日是否为最新官方交易日（如 02840/03081 同步至 11/27），并确保 policy_calendar 复合事件 time_cst 取最早触发节点"
+      ],
+      "tier_b_patches": [],
+      "tier_c_proposals": [],
+      "next_run_watch": [
+        "【周日 07:30 全量周度校准与 SCORECARD 首测】集中校准 12 大渠道中低频项（大额存单、外币定存、储蓄保险、养老金、私募信托、租金对比）、全量核对 181 只 ETF 费率规模、轮换精修 231 股池 6–10 只非金核心龙头并完成 11/29 周日首周防守体验统算",
+        "【周一 07:30 / 11:30 四重催化与余下滞后表清零】封账周日 19:00 产油国会议决议，清零 11/27 SOFR/TGA/FRED OAS/完整币基流与深北两融；置顶周一 09:05 日央行植田演讲、09:30 中国 11 月 PMI、降保 80%、15:00 明晟调仓、大成 000834 砍半、513300 停牌、159985 重点监控、布油 1 月到期换月及 21:30 美债 815.1 亿净抽水",
+        "【守稳 first_pass_clean=true 与 ≥28/30 高分带】延续四联动全联扫并新增实时锚点公式重算自检，确保零阻断、零算术近似误差"
+      ]
     }
   ]
 }

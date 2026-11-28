@@ -5,6 +5,30 @@
 ---
 
 <!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-28_1130",
+  "as_of_short": "2026-11-28 12:00",
+  "note": "完成 2026-11-28 11:30 周末专项午报四重交叉验证与 7 项分歧终审仲裁：直连 Cboe 官方历史日线表核销 2026-11-27 完整行（O 24.89 / H 27.52 / L 23.81 / C 23.81，正式升级为已发布并清零暂定滞后项）；直连 SSGA 官方净值表核销 GLD 11/27 官方 NAV $332.980175 (+4.85%, AUM $120.073B, 份额 360.6M 零变动 = 0.00 吨净流，全周 -6.56 吨)、VanEck 官网核销 GDX 11/27 官方 NAV $78.89 (+7.04%, AUM $24.77B) 及双源与 7 位小数数学反验核销 LBMA 11/27 午盘定盘 $3,634.50 (+1.55%，清零午盘定盘滞后项)；直连上金所官方日表纠偏 11/27 Ag(T+D) 递延费为多付空（交收量自 11/26 256.92 吨骤降 90.8% 至 23.76 吨）；三源核实周六品牌金店提价 20-25 元至周大福 1,093 元/克（老凤祥/周生生 1,092 元，婚庆立省扩至 279 元/克 / 50 克 13,950 元 / 25.5%），并驳回工行主动积存 0 费今日到期误读（核实官网已无缝延至 2027-03-31）；核实标普下调法国展望至负面、日央行行长植田和男 11/30 09:05 CST 名古屋演讲、ICE 布油 1 月合约 11/30 到期换月、土耳其央行 11/26 暂停本土矿金优先购金权、COMEX 银库存降至 323.0M oz 及周六午间只读 XAUT $3,649.55 / PAXG $3,647.89 / BTC $59,980；买金维持红灯停（2/4 关，禁止新买）与全景主报告 0/5 锁（+0.46% < 3%、60日新高止损与尾部深熊 0/2）。",
+  "sources": {
+    "real_yield": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"],
+    "rate_spread": ["https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv", "https://markets.newyorkfed.org/api/rates/all/latest.json"],
+    "vix": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv", "https://www.cboe.com/us/futures/market_statistics/settlement/csv?dt=2026-11-27"],
+    "ny_close": ["https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/navhist-us-en-gld.xlsx", "https://www.vaneck.com/us/en/investments/gold-miners-etf-gdx/", "https://www.sge.com.cn/sjzx/quotation_daily_new", "https://www.cmegroup.com/markets/metals/precious/gold.settlements.html"]
+  },
+  "forecast_review": {
+    "status": "none_due",
+    "note": "本 2026-11-28 11:30 周末午报时段无新增到期结案预判（累计保持 10 项计分：5 兑现 / 5 部分兑现 / 0 证伪，完全兑现率 50.0%、至少部分兑现 100.0%），新增 1 项周一四大行金条温和浮动与植田和男演讲联动追踪，并在既有追踪项追加 11/27 Cboe 官表、GLD 零流、Ag(T+D) 翻多付空与链上零缺口进展注记。",
+    "sources": ["https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv", "https://www.sge.com.cn/sjzx/quotation_daily_new"]
+  }
+} -->
+
+### 2026-11-28 11:30 周末专项午报核验记录（截点 2026-11-28 12:00）
+
+- **三大信任资产增量（累计拦谣 51 条 · 模型升级 18 项 · 细节校准 47 项 · 核心结论影响 0/47）**：① 新增拦谣 #49–#51：拆穿“工行主动积存 0 费今日到期须赶单”（官网已无缝顺延至 2027-03-31）、“品牌金店周六涨 25 元且水贝热闹等于周一跳空逼空”（链上 XAUT $3,649.55 对应平价约 781.3 元零缺口）与“布油跌破 91 美元等于通胀警报解除”（系 11/30 1 月合约切 2 月 4.60 美元换月贴水）；② 新增校准 #45–#47：依上金所官方日表将 11/27 `Ag(T+D)` 递延费方向纠偏为 `多付空`（交收量 256.92→23.76 吨）、更新周六品牌金店提价至 `1,093 元/克`（婚庆立省扩至 `279 元/克` / `25.5%`）、并提前全量核销 Cboe 11/27 VIX 官行 `23.81`、SSGA `GLD` 11/27 官净 `$332.98`（`0.00 吨` 零流）、VanEck `GDX` 11/27 官净 `$78.89`（`$24.77B`）与 LBMA 11/27 PM `$3,634.50`。
+- **剩余滞后官方表挂账（归周一晚报/周二早报）**：仅余山东黄金（`600547`）11/26 业绩说明会正式文字纪要与因感恩节按官方日历顺延至 `2026-12-01 04:30 CST` 的 CFTC COT 持仓周报。
+
+---
+
+<!-- GOLD_EDITION_REVIEW {
   "edition_id": "2026-11-28_0730",
   "as_of_short": "2026-11-28 07:55",
   "note": "完成 2026-11-28 07:30 周末专项早报四重交叉验证：核销美国财政部 11/27 官方收益率曲线（10Y 4.94% +9bp、DFII10 2.79% +6bp、T10YIE 2.15% +3bp、2Y 4.69% +8bp -> +81bp 利差、30Y 5.33% +9bp）；核销纽约 17:00 现货金官收 $3,652.11 (+1.76%，高于 11/25 前高 $3,589.85 闯过第 4 关，下周新门槛 $3,685.31)，买金由 1/4 升至 2/4 仍严格锁定 Tier 0 红灯停（new_buy_allowed=false）与主报告 0/5 锁（+0.46% < 3%、60日新高硬止损与尾部深熊 0/2）；核销 Cboe 11/27 黑五早收暂定 VIX 23.81（-11.16%，10日窗口推进至 11/16..11/27，同步核销官方期货结算 UX1 22.8402 / UX2 22.7857 与 SKEW 145.90，周末非发布窗 vix_live=null）；核销美联储 H.4.1 周报（周三银行储备 $2,928.66B 跌破 $2.98T、TGA $923.56B）、NY Fed 黑五 SRF $23.15B、ON RRP $350M、FRED 11/25 HY 377bp / CCC 1,417bp、COMEX 11/27 官结（GCZ26 $3,639.60 / GCG27 $3,668.50 / SIZ26 $43.167 / HGZ26 $5.517）、LME 3M 铜官收 $12,262、02:30 国内金银夜盘终盘（au2702 781.36 / Au99.99 782.00 同刻溢价 +2.97 元 / Au(T+D) 780.14 溢价 +1.11 元 / ag2702 10,344）与 01:00 有色夜盘沪铜 92,590 (+0.84%)、深交所 159934/159937 份额（6金基合计净赎回 -3.99 亿元）及周日 OPEC+ 与周一 $81.51B 私部门净抽水官方算式。",
