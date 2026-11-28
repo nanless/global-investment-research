@@ -96,7 +96,8 @@ class TestCanonicalKlineUniverse(unittest.TestCase):
         bars = [["2026-11-27", 10, 12, 9, 11, 100]]
 
         def fetch_instrument(spec):
-            return ([], None, "offline") if spec.id == missing_id else (bars, "fixture", None)
+            provider = "ft_chartapi" if spec.kind == "ucits_ft" else "fixture"
+            return ([], None, "offline") if spec.id == missing_id else (bars, provider, None)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
@@ -510,7 +511,7 @@ class TestParsersAndColumnReordering(unittest.TestCase):
             ],
         )
 
-    def test_ft_batch_and_justetf_parsers(self) -> None:
+    def test_ft_batch_parser(self) -> None:
         raw_ft = json.dumps({
             "Dates": ["2026-11-24T00:00:00", "2026-11-25T00:00:00", "2026-11-26T00:00:00"],
             "Elements": [
@@ -545,20 +546,6 @@ class TestParsersAndColumnReordering(unittest.TestCase):
         self.assertEqual(parsed["IB01"][0], ["2026-11-24", 122.65, 122.65, 122.65, 122.65, 0])
         # Length-mismatched element rejected to prevent date-shift corruption
         self.assertNotIn("IGLN", parsed)
-
-        raw_je = json.dumps({
-            "series": [
-                {"date": "2026-11-25", "value": {"raw": 139.8}},
-                {"date": "2026-11-26", "value": {"raw": 140.12}},
-            ]
-        })
-        self.assertEqual(
-            fk.parse_justetf_performance(raw_je),
-            [
-                ["2026-11-25", 139.8, 139.8, 139.8, 139.8, 0],
-                ["2026-11-26", 140.12, 140.12, 140.12, 140.12, 0],
-            ],
-        )
 
     def test_cnbc_harmony_and_rest_quote_t0_guards(self) -> None:
         raw_harmony = json.dumps({
@@ -811,7 +798,7 @@ class TestSanityFiltersAndCacheMerge(unittest.TestCase):
         # Live success -> stale=False, fail=None
         rec3, fail3 = fk.merge_with_stale_cache(
             spec,
-            [["2026-11-25", 3480.0, 3500.0, 3460.0, 3476.88, 120000]],
+            cached["bars"],
             "tencent_newfqkline",
             None,
             cached,
@@ -821,6 +808,68 @@ class TestSanityFiltersAndCacheMerge(unittest.TestCase):
         self.assertIsNone(fail3)
         assert rec3 is not None
         self.assertFalse(rec3["stale"])
+
+    def test_truncated_live_response_cannot_replace_a_valid_history(self):
+        spec = fk.build_core_specs()[0]
+        cached = {"provider": "previous", "bars": [
+            ["2026-11-26", 10, 12, 9, 11, 100], ["2026-11-27", 11, 13, 10, 12, 100],
+        ]}
+        live_bar = ["2026-11-30", 20, 26, 19, 25, 100]
+        record, failure = fk.merge_with_stale_cache(
+            spec, [live_bar], "upstream", None, cached, bars_limit=150,
+        )
+        self.assertEqual(record["bars"], cached["bars"])
+        self.assertEqual(record["prev_close"], 11)
+        self.assertTrue(record["stale"])
+        self.assertIn("fewer than", failure["reason"])
+
+        shortened, failure = fk.merge_with_stale_cache(
+            spec, [live_bar], "upstream", None, cached, bars_limit=1,
+        )
+        self.assertEqual(shortened["bars"], [live_bar])
+        self.assertFalse(shortened["stale"])
+        self.assertIsNone(shortened["prev_close"])
+        self.assertIsNone(shortened["change_pct"])
+        self.assertIsNone(failure)
+
+    def test_ucits_outage_reuses_only_exchange_listing_history(self):
+        spec = next(spec for spec in fk.load_etf_specs() if spec.code == "SWDA")
+        http = Mock()
+        fetcher = fk.KlineFetcher(http, Mock())
+        live, provider, error = fetcher.fetch_instrument(spec)
+        self.assertEqual((live, provider, error), ([], None, "ft_chartapi:empty"))
+        http.request_text.assert_not_called()
+        cached_bars = [["2026-11-27", 139, 140, 138, 139.13, 0]]
+        with self.subTest("performance values in the old cache are rejected"):
+            record, failure = fk.merge_with_stale_cache(
+                spec, live, provider, error, {"bars": cached_bars, "provider": "justetf_api"}, bars_limit=150,
+            )
+            self.assertIsNone(record)
+            self.assertFalse(failure["used_stale_cache"])
+        with self.subTest("the actual listing's older candles are marked stale"):
+            record, failure = fk.merge_with_stale_cache(
+                spec, live, provider, error, {"bars": cached_bars, "provider": "ft_chartapi"}, bars_limit=150,
+            )
+            self.assertEqual(record["bars"], cached_bars)
+            self.assertTrue(record["stale"])
+            self.assertTrue(failure["used_stale_cache"])
+
+    def test_live_history_cannot_skip_a_known_trading_day(self):
+        spec = fk.build_core_specs()[0]
+        cached = {"provider": "upstream", "bars": [
+            ["2026-11-26", 10, 12, 9, 11, 100], ["2026-11-27", 11, 13, 10, 12, 100],
+        ]}
+        latest = ["2026-11-30", 12, 14, 11, 13, 100]
+        gapped = [["2026-11-24", 4, 6, 3, 5, 100], latest]
+        record, failure = fk.merge_with_stale_cache(spec, gapped, "upstream", None, cached, bars_limit=150)
+        self.assertTrue(record["stale"])
+        self.assertIn("2026-11-26", failure["reason"])
+
+        rolled = [cached["bars"][-1], latest]
+        record, failure = fk.merge_with_stale_cache(spec, rolled, "upstream", None, cached, bars_limit=150)
+        self.assertFalse(record["stale"])
+        self.assertEqual(record["prev_close"], 12)
+        self.assertIsNone(failure)
 
     def test_older_response_preserves_the_newer_valid_cache(self):
         spec = fk.build_core_specs()[0]

@@ -29,12 +29,18 @@ CHECK_IDS = (
 )
 GOLD_DAILY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4})_.*黄金深度研报(?:_r(\d+))?\.md$")
 MARKETS = ("a_share", "hk_stock", "us_stock")
+PUBLIC_DAILY_PATTERNS = {
+    "gold": re.compile(r"\d{4}-\d{2}-\d{2}_(\d{4})_.*\.md"),
+    "equity": re.compile(rf"\d{{4}}-\d{{2}}-\d{{2}}_(\d{{4}})_({'|'.join(MARKETS)})(?:_r\d+)?\.md"),
+}
+PUBLIC_LEDGER_PREFIXES = {"gold": ("CHANGELOG_", "AUDIT_LOG_"), "equity": ("CHANGELOG_",)}
 STATE_PATH = "equity/state/market_state.json"
 BACKFILL_STATE_PATHS = {"gold": "gold/data_snapshot.json", "equity": STATE_PATH}
 BACKFILL_KINDS = {"gold": ("data_caveats",), "equity": ("data_caveats", "pending_backfills")}
 BACKFILL_ID_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
+BACKFILL_CONTENT_FIELDS = ("item", "detail", "impact", "category", "severity")
 POLICY_CALENDAR_PATH = "equity/state/policy_calendar.json"
-MARKDOWN_SOURCE_LINK_RE = re.compile(r"\[[^\]\n]+\]\((https://[^)\s]+)\)")
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
 FIXED_PATHS = (
     "gold/data_snapshot.json",
     "gold/master_snapshot.json",
@@ -70,25 +76,55 @@ def _policy_briefs(raw: bytes | str) -> dict[str, dict]:
     return by_id
 
 
+def _published_policy_brief(brief: dict) -> bool:
+    markets = brief.get("affected_markets")
+    return brief.get("home_featured") is True or (
+        isinstance(markets, list) and any(market in markets for market in ("gold", *MARKETS))
+    )
+
+
+def _published_daily_paths(paths: Iterable[str]) -> set[str]:
+    """Select the top-level and archived manuscripts that can generate portal pages."""
+    reports = set()
+    for name in paths:
+        parts = PurePosixPath(name).parts
+        if (len(parts) not in {3, 5} or parts[1] != "daily" or parts[0] not in PUBLIC_DAILY_PATTERNS
+                or (len(parts) == 5 and parts[2] != "archive")):
+            continue
+        match = PUBLIC_DAILY_PATTERNS[parts[0]].fullmatch(parts[-1])
+        if match and (len(parts) == 3 or match[1] in {"0730", "1130", "1800"}):
+            reports.add(name)
+    return reports
+
+
+def _public_ledger_archive_paths(paths: Iterable[str]) -> set[str]:
+    return {
+        name for name in paths
+        if len(parts := PurePosixPath(name).parts) >= 4 and parts[1:3] == ("daily", "archive")
+        and parts[-1].endswith(".md") and parts[-1].startswith(PUBLIC_LEDGER_PREFIXES.get(parts[0], ()))
+    }
+
+
 def snapshot(
     edition: str,
     read: Callable[[str], bytes],
-    gold_names: Iterable[str],
+    daily_names: Iterable[str],
 ) -> dict:
     state_bytes = read(STATE_PATH)
     state = json.loads(state_bytes)
     if not isinstance(state, dict) or state.get("edition_id") != edition:
         raise ValueError(f"Review candidate market state must match {edition}.")
+    daily_names = tuple(daily_names)
+    published_dailies = _published_daily_paths(daily_names)
     gold = []
-    for relative in gold_names:
-        path = PurePosixPath(relative)
-        if len(path.parts) != 1 and not (len(path.parts) == 3 and path.parts[0] == "archive"):
+    for path in sorted(published_dailies):
+        if not path.startswith("gold/daily/"):
             continue
-        match = GOLD_DAILY_RE.fullmatch(path.name)
+        match = GOLD_DAILY_RE.fullmatch(PurePosixPath(path).name)
         if match:
             key = f"{match[1]}_{match[2]}" + (f"_r{match[3]}" if match[3] else "")
             if key == edition:
-                gold.append(f"gold/daily/{path}")
+                gold.append(path)
     if len(gold) != 1:
         raise ValueError(f"Review candidate {edition} must have exactly one matching gold manuscript.")
 
@@ -111,15 +147,20 @@ def snapshot(
 
     digests = {STATE_PATH: hashlib.sha256(state_bytes).hexdigest()}
     featured_policy_briefs = []
-    for path in (*FIXED_PATHS, *gold, *equity_paths):
+    published_policy_briefs = []
+    archived_content = set()
+    if edition[:15] > LAST_LEGACY_CLAIMS_SLOT:
+        archived_content = published_dailies.difference(gold, equity_paths) | _public_ledger_archive_paths(daily_names)
+    for path in (*FIXED_PATHS, *gold, *equity_paths, *sorted(archived_content)):
         raw = read(path)
         digests[path] = hashlib.sha256(raw).hexdigest()
         if path == POLICY_CALENDAR_PATH and edition[:15] > LAST_LEGACY_CLAIMS_SLOT:
-            featured_policy_briefs = [
-                {"id": brief_id, "headline": brief.get("headline"), "source_urls": policy_brief_links(brief)}
-                for brief_id, brief in _policy_briefs(raw).items()
-                if brief.get("home_featured") is True
-            ]
+            for brief_id, brief in _policy_briefs(raw).items():
+                details = {"id": brief_id, "headline": brief.get("headline"), "source_urls": policy_brief_links(brief)}
+                if brief.get("home_featured") is True:
+                    featured_policy_briefs.append(details)
+                if _published_policy_brief(brief):
+                    published_policy_briefs.append({**details, "summary": brief.get("summary")})
     encoded = json.dumps(digests, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {
         "edition_id": edition,
@@ -128,6 +169,7 @@ def snapshot(
         "current_manuscripts": [*gold, *(path for path in equity_paths if _equity_edition(path) == edition)],
         "check_ids": list(CHECK_IDS),
         "featured_policy_briefs": featured_policy_briefs,
+        "published_policy_briefs": published_policy_briefs,
     }
 
 
@@ -155,9 +197,52 @@ def working_snapshot(root: Path, edition: str | None = None) -> dict:
         edition = state.get("edition_id") if isinstance(state, dict) else None
         if not isinstance(edition, str) or not edition:
             raise ValueError("Review candidate market state has no edition_id.")
-    daily = root / "gold/daily"
-    names = (path.relative_to(daily).as_posix() for path in (*daily.glob("*.md"), *daily.glob("archive/*/*.md")))
+    names = (
+        path.relative_to(root).as_posix()
+        for track in ("gold", "equity")
+        for pattern in ("*.md", "archive/*/*.md", "archive/**/CHANGELOG_*.md", "archive/**/AUDIT_LOG_*.md")
+        for path in (root / track / "daily").glob(pattern)
+    )
     return snapshot(edition, read, names)
+
+
+def inspect_changed_historical_manuscripts(
+    root: Path, candidate: dict, *, baseline: str = "HEAD", revision: str | None = None,
+) -> list[dict[str, str]]:
+    if candidate["edition_id"][:15] <= LAST_LEGACY_CLAIMS_SLOT or not (root / ".git").exists():
+        return []
+    try:
+        scope = ("--", "gold/daily", "equity/daily")
+        committed = subprocess.check_output(
+            ["git", "ls-tree", "--name-only", "-rz", baseline, *scope], cwd=root, timeout=15,
+        )
+        revisions = [baseline, revision] if revision else [baseline]
+        changed = subprocess.check_output(
+            ["git", "diff", "--name-only", "-z", *revisions, *scope], cwd=root, timeout=15,
+        )
+        prior_paths = _published_daily_paths(committed.decode("utf-8").split("\0"))
+        changed_paths = set(changed.decode("utf-8").split("\0"))
+        current_paths = _published_daily_paths(candidate["files"])
+        current_manuscripts = set(candidate["current_manuscripts"])
+        changes = [
+            {"path": path, "status": "modified"}
+            for path in (prior_paths & current_paths & changed_paths) - current_manuscripts
+        ]
+        removed_paths = prior_paths - current_paths
+        removed_by_name = {(path.split("/", 1)[0], PurePosixPath(path).name): path for path in removed_paths}
+        for path in (current_paths - prior_paths) - current_manuscripts:
+            previous = removed_by_name.get((path.split("/", 1)[0], PurePosixPath(path).name))
+            if previous is None:
+                changes.append({"path": path, "status": "added"})
+                continue
+            removed_paths.remove(previous)
+            raw = subprocess.check_output(["git", "show", f"{baseline}:{previous}"], cwd=root, timeout=15)
+            if hashlib.sha256(raw).hexdigest() != candidate["files"][path]:
+                changes.append({"path": path, "status": "modified"})
+        changes.extend({"path": path, "status": "removed"} for path in removed_paths)
+        return sorted(changes, key=lambda entry: entry["path"])
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("Cannot compare historical manuscripts with the committed baseline.") from exc
 
 
 def _planned_slot(value: object) -> str | None:
@@ -197,7 +282,10 @@ def _backfill_rows(raw: bytes, track: str) -> dict[tuple[str, str], dict]:
             key = (kind, backfill_id)
             if key in records or _planned_slot(due) is None:
                 raise ValueError(f"{track}.{kind} {backfill_id} has a duplicate ID or invalid review slot.")
-            records[key] = {"kind": kind, "id": backfill_id, "market": market, "item": item, "due_session": due}
+            records[key] = {
+                "kind": kind, "id": backfill_id, "market": market, "due_session": due,
+                **{field: row[field] for field in BACKFILL_CONTENT_FIELDS if field in row},
+            }
     return records
 
 
@@ -209,7 +297,9 @@ def previous_backfills(edition: str, track: str, raw: bytes) -> dict[tuple[str, 
     prior_edition = prior.get("edition_id") if isinstance(prior, dict) else None
     if not isinstance(prior_edition, str) or _planned_slot(prior_edition[:15]) is None:
         raise ValueError(f"The previous {track} snapshot does not identify a valid edition.")
-    if not LAST_LEGACY_BACKFILL_SLOT <= prior_edition[:15] < current_slot:
+    if prior_edition[:15] > current_slot:
+        raise ValueError(f"The committed {track} snapshot is newer than the edition under review.")
+    if prior_edition[:15] < LAST_LEGACY_BACKFILL_SLOT:
         return {}
     return _backfill_rows(raw, track)
 
@@ -233,9 +323,9 @@ def inspect_previous_backfills(root: Path, edition: str) -> dict[str, list[dict]
 
 
 def validate_backfill_rechecks(closure: dict, edition: str, track: str, previous: bytes, current: bytes) -> None:
-    old = previous_backfills(edition, track, previous)
-    if not old:
+    if edition[:15] <= LAST_LEGACY_BACKFILL_SLOT:
         return
+    old = previous_backfills(edition, track, previous)
     new = _backfill_rows(current, track)
     evidence = closure.get("backfill_rechecks", [])
     if not isinstance(evidence, list):
@@ -254,6 +344,10 @@ def validate_backfill_rechecks(closure: dict, edition: str, track: str, previous
             raise ValueError(f"{track} backfill recheck {row['id']} requires specific public HTTPS evidence.")
         decisions[key] = row["status"]
 
+    for row in new.values():
+        if row["due_session"] <= edition[:15]:
+            raise ValueError(f"{track} backfill {row['kind']}/{row['id']} must set a review slot after the current edition.")
+
     for key, prior in old.items():
         current_row = new.get(key)
         decision = decisions.get(key)
@@ -264,14 +358,16 @@ def validate_backfill_rechecks(closure: dict, edition: str, track: str, previous
             continue
         if current_row["market"] != prior["market"] or decision == "resolved":
             raise ValueError(f"{label} cannot change market or remain open after a resolved recheck.")
-        if current_row["due_session"] <= edition[:15]:
-            raise ValueError(f"{label} must set a review slot after the current edition.")
-        if (prior["due_session"] <= edition[:15] or current_row["due_session"] != prior["due_session"]) and decision != "still_pending":
-            raise ValueError(f"{label} requires a still_pending recheck and evidence before changing its review slot.")
+        changed = current_row["due_session"] != prior["due_session"] or any(
+            current_row.get(field) != prior.get(field) for field in BACKFILL_CONTENT_FIELDS
+        )
+        if changed and decision != "still_pending":
+            raise ValueError(f"{label} requires a still_pending recheck and evidence before changing its item or review slot.")
 
 
 def validate_receipt(
     closure: dict, candidate: dict, label: str, *, read: Callable[[str], bytes],
+    historical_changes: Iterable[dict[str, str]] = (),
 ) -> None:
     if closure.get("candidate_sha256") != candidate["candidate_sha256"]:
         raise ValueError(f"{label} review candidate digest differs from the current manuscripts and source data.")
@@ -299,6 +395,29 @@ def validate_receipt(
     ):
         raise ValueError(f"{label} primary_sources check requires distinct public HTTPS source URLs.")
     _validate_claims(checks["primary_sources"], candidate, label, read)
+    _validate_historical_review(closure, checks["primary_sources"], historical_changes, label)
+
+
+def _validate_historical_review(closure: dict, primary_sources: dict, changes: Iterable[dict[str, str]], label: str) -> None:
+    removals = closure.get("historical_removals", [])
+    if not isinstance(removals, list):
+        raise ValueError(f"{label} historical_removals must be an array.")
+    reasons = set()
+    for entry in removals:
+        path = entry.get("file") if isinstance(entry, dict) else None
+        reason = entry.get("reason") if isinstance(entry, dict) else None
+        if (not isinstance(path, str) or not _published_daily_paths((path,)) or path in reasons
+                or not isinstance(reason, str) or sum(char.isalnum() for char in reason) < 8):
+            raise ValueError(f"{label} historical removal requires a unique manuscript file and substantive reason.")
+        reasons.add(path)
+    claims = {row["file"] for row in primary_sources["claims"]}
+    for change in changes:
+        path = change["path"]
+        if change["status"] == "removed":
+            if path not in reasons:
+                raise ValueError(f"{label} must document why this historical manuscript was removed: {path}.")
+        elif path not in claims:
+            raise ValueError(f"{label} must cite evidence for a claim in the changed historical manuscript: {path}.")
 
 
 def _validate_claims(
@@ -310,6 +429,7 @@ def _validate_claims(
     strict_claims = candidate["edition_id"][:15] > LAST_LEGACY_CLAIMS_SLOT
     current_manuscripts = set(candidate["current_manuscripts"])
     contents: dict[str, str] = {}
+    claim_texts: dict[str, str] = {}
     markdown_sources: dict[str, set[str]] = {}
 
     def content(path: str) -> str:
@@ -343,8 +463,7 @@ def _validate_claims(
         kind = entry.get("kind")
         if kind not in ("fact", "calculation", "inference"):
             raise ValueError(f"{where} requires kind fact, calculation or inference.")
-        if excerpt != excerpt.strip() or len(excerpt.splitlines()) != 1:
-            raise ValueError(f"{where} excerpt does not match the reviewed file: {path}.")
+        brief_id = None
         if strict_claims and path == POLICY_CALENDAR_PATH:
             brief_id = entry.get("policy_brief_id")
             brief = policy_briefs.get(brief_id) if isinstance(brief_id, str) else None
@@ -352,10 +471,15 @@ def _validate_claims(
                 raise ValueError(f"{where} must cite the headline or summary of its policy_brief_id in {path}.")
             if url not in policy_brief_links(brief):
                 raise ValueError(f"{where} source URL does not belong to policy brief {brief_id}.")
-            if kind == "fact":
+            if kind == "fact" and excerpt == brief.get("summary"):
                 reviewed_briefs.add(brief_id)
         else:
-            if excerpt not in content(path):
+            if excerpt != excerpt.strip() or len(excerpt.splitlines()) != 1:
+                raise ValueError(f"{where} excerpt does not match the reviewed file: {path}.")
+            if path not in claim_texts:
+                text = content(path)
+                claim_texts[path] = MARKDOWN_LINK_RE.sub(r"\1", text) if strict_claims and path.endswith(".md") else text
+            if excerpt not in claim_texts[path]:
                 raise ValueError(f"{where} excerpt does not match the reviewed file: {path}.")
             source_text = content(source_path)
             if strict_claims and source_path.endswith(".md"):
@@ -363,7 +487,9 @@ def _validate_claims(
                     markup = re.sub(r"`[^`\n]+`|<code>[^\n]*?</code>", " ", source_text, flags=re.IGNORECASE)
                     if source_path.startswith("gold/"):
                         markup = re.sub(r"<strong>[^\n]*?</strong>", " ", markup, flags=re.IGNORECASE)
-                    markdown_sources[source_path] = set(MARKDOWN_SOURCE_LINK_RE.findall(markup))
+                    markdown_sources[source_path] = {
+                        target for caption, target in MARKDOWN_LINK_RE.findall(markup) if caption.strip()
+                    }
                 if url not in markdown_sources[source_path]:
                     raise ValueError(f"{where} source URL does not match a citation link target in {source_path}.")
             elif not re.search(rf"[\s<('=\"]{re.escape(url)}(?=$|[\s>')\"])", " " + html.unescape(source_text)):
@@ -377,7 +503,7 @@ def _validate_claims(
             ):
                 raise ValueError(f"{where} classifies the same claim excerpt as multiple kinds.")
             earlier.append((kind, normalized))
-        key = (path, excerpt, url)
+        key = (path, brief_id, excerpt, url)
         if key in seen:
             raise ValueError(f"{where} repeats an already verified claim and source.")
         seen.add(key)
@@ -391,11 +517,9 @@ def _validate_claims(
             raise ValueError(f"{label} primary_sources must review a fact, calculation and inference in {path}.")
         if not strict_claims and ("inference" not in kinds or not kinds.intersection({"fact", "calculation"})):
             raise ValueError(f"{label} primary_sources must review an observed fact or calculation and an inference in {path}.")
-    missing_briefs = set(
-        brief_id for brief_id, brief in policy_briefs.items() if brief.get("home_featured") is True
-    ) - reviewed_briefs
+    missing_briefs = {brief_id for brief_id, brief in policy_briefs.items() if _published_policy_brief(brief)} - reviewed_briefs
     if missing_briefs:
-        raise ValueError(f"{label} primary_sources missing facts for featured policy briefs: {', '.join(sorted(missing_briefs))}.")
+        raise ValueError(f"{label} primary_sources missing summary facts for published policy briefs: {', '.join(sorted(missing_briefs))}.")
     if used_sources != set(check["source_urls"]):
         raise ValueError(f"{label} primary_sources includes unused source URLs.")
 

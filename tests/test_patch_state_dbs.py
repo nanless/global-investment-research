@@ -2326,7 +2326,8 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                 )
                 policy_path = review_evidence.POLICY_CALENDAR_PATH
                 brief = {
-                    "id": "treasury-rates", "headline": fact, "source_url": source, "home_featured": True,
+                    "id": "treasury-rates", "headline": "美国财政部公布实际利率表。", "summary": fact,
+                    "source_url": source, "home_featured": True,
                 }
                 (sandbox / policy_path).write_text(json.dumps({"policy_briefs": [brief]}), encoding="utf-8")
                 candidate = psd.inspect_state_dbs(sandbox, "review-candidate")

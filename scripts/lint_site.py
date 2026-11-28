@@ -3539,6 +3539,8 @@ def check_s7_roster(
             for field in ("code", "name", "shard", "group", "market", "currency", "unit", "market_label", "category", "dossier_key")
         ):
             errors.append(f"[S7] K-line instrument {symbol!r} has mismatched canonical metadata")
+        if row is not None and spec.kind == "ucits_ft" and row.get("provider") != "ft_chartapi":
+            errors.append(f"[S7] K-line instrument {symbol!r} must use the listed FT market-price series")
         failure = failures.get(symbol)
         if failure is not None and (
             failure.get("shard") != spec.shard
@@ -3879,8 +3881,10 @@ def run_gate_s7(
                 if expected_edition is not None and sym_id in expected_series:
                     prev_close, change_pct = bar_close_change(sdata["bars"])
                     if (
-                        not _s7_number(sdata.get("prev_close")) or sdata["prev_close"] != prev_close
-                        or not _s7_number(sdata.get("change_pct")) or sdata["change_pct"] != change_pct
+                        "prev_close" not in sdata or "change_pct" not in sdata
+                        or sdata["prev_close"] != prev_close or sdata["change_pct"] != change_pct
+                        or (prev_close is not None and not _s7_number(sdata["prev_close"]))
+                        or (change_pct is not None and not _s7_number(sdata["change_pct"]))
                         or not isinstance(sdata.get("has_volume"), bool)
                         or sdata["has_volume"] != any(bar[5] > 0 for bar in sdata["bars"])
                     ):

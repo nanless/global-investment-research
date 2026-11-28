@@ -400,6 +400,18 @@ def check_scheduled_runtime(git: Callable[..., str]) -> None:
         )
 
 
+def _check_frozen_scheduled_runtime(base_sha: str, candidate: str) -> None:
+    paths = git_value(
+        "diff", "--name-only", "--no-renames", "-z", base_sha, candidate, "--", *SCHEDULED_RUNTIME_PATHS,
+    )
+    if paths:
+        examples = ", ".join(paths.rstrip("\0").split("\0")[:5])
+        raise ValueError(
+            f"Scheduled edition workflow differs from its starting commit {base_sha[:12]}: {examples}. "
+            "Publish the maintenance baseline separately before starting another attempt."
+        )
+
+
 def _check_scheduled_checkout(base_sha: str) -> None:
     """Catch worktree states that publication would reject after research has started."""
     try:
@@ -408,6 +420,9 @@ def _check_scheduled_checkout(base_sha: str) -> None:
         branch = ""
     if branch != "main":
         raise ValueError("Scheduled editions require branch main, the branch used for publication.")
+    checkout_dir = Path(git_value("rev-parse", "--absolute-git-dir"))
+    if any((checkout_dir / name).exists() for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply")):
+        raise ValueError("Complete the current Git merge or rebase before starting scheduled research.")
     check_scheduled_runtime(git_value)
     with state_read_lock(ROOT):
         _check_gold_ledger_history(base_sha, None)
@@ -606,6 +621,7 @@ def check_edition_reviews(
         )
 
     candidate = None
+    historical_changes = []
     for track, file in (("gold", "gold/daily/rsi_metrics.json"), ("equity", "equity/state/rsi_metrics.json")):
         document = json.loads(read_candidate(file))
         reviews = document.get("runs") if isinstance(document, dict) else None
@@ -619,12 +635,16 @@ def check_edition_reviews(
         if current > review_evidence.LAST_LEGACY_EDITION:
             if candidate is None:
                 if sha:
-                    prefix = "gold/daily/"
-                    names = (name.removeprefix(prefix) for name in commit_files if name.startswith(prefix))
-                    candidate = review_evidence.snapshot(edition, read_candidate, names)
+                    candidate = review_evidence.snapshot(edition, read_candidate, commit_files)
                 else:
                     candidate = review_evidence.working_snapshot(root, edition)
-            review_evidence.validate_receipt(matches[0]["review_closure"], candidate, file, read=read_candidate)
+                if base_sha is not None or not sha:
+                    historical_changes = review_evidence.inspect_changed_historical_manuscripts(
+                        ROOT if sha else root, candidate, baseline=base_sha or "HEAD", revision=sha,
+                    )
+            review_evidence.validate_receipt(
+                matches[0]["review_closure"], candidate, file, read=read_candidate, historical_changes=historical_changes,
+            )
             if base_sha is not None and edition[:15] > review_evidence.LAST_LEGACY_BACKFILL_SLOT:
                 path = review_evidence.BACKFILL_STATE_PATHS[track]
                 review_evidence.validate_backfill_rechecks(
@@ -641,6 +661,7 @@ def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
     attempt = runs.execute("SELECT base_sha, source FROM attempts WHERE token = ?", (token,)).fetchone()
     if attempt is not None and attempt["source"].startswith("antigravity-"):
         check_scheduled_runtime(git_value)
+        _check_frozen_scheduled_runtime(attempt["base_sha"], "HEAD")
     if phase in ("equity", "publish"):
         with state_read_lock(ROOT):
             _check_edition_document(row["edition"], "gold/data_snapshot.json")
@@ -927,9 +948,11 @@ def _check_publication_candidate(runs: sqlite3.Connection, token: str, sha: str,
     if not SHA_RE.fullmatch(sha) or not REPOSITORY_RE.fullmatch(repository):
         raise ValueError("Invalid publication commit or GitHub repository.")
     row = _publishing_run(runs, token)
-    attempt = runs.execute("SELECT base_sha FROM attempts WHERE token = ?", (token,)).fetchone()
+    attempt = runs.execute("SELECT base_sha, source FROM attempts WHERE token = ?", (token,)).fetchone()
     if attempt is None or attempt["base_sha"] == sha:
         raise ValueError("This commit existed before the run. Start a new attempt for an unrecorded legacy run.")
+    if attempt["source"].startswith("antigravity-"):
+        _check_frozen_scheduled_runtime(attempt["base_sha"], sha)
     _check_edition_document(row["edition"], "gold/data_snapshot.json", sha)
     _check_edition_document(row["edition"], "equity/state/market_state.json", sha)
     _check_extended_equity_documents(row["edition"], sha=sha, base_sha=attempt["base_sha"])
@@ -949,10 +972,13 @@ def record_push(token: str, *, sha: str, repository: str) -> None:
     with closing(open_runs()) as runs, runs:
         runs.execute("BEGIN IMMEDIATE")
         _check_publication_candidate(runs, token, sha, repository)
-        runs.execute("INSERT OR IGNORE INTO publications (token, sha, repository) VALUES (?, ?, ?)",
-                     (token, sha, repository))
+        receipt = runs.execute(
+            "INSERT OR IGNORE INTO publications (token, sha, repository) VALUES (?, ?, ?)",
+            (token, sha, repository),
+        )
+        if receipt.rowcount:
+            _record_phase_timestamp(runs, token, "pushed")
         runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (utc_now(), token))
-        _record_phase_timestamp(runs, token, "pushed")
 
 
 def _gh_timeout(cmd: list[str], deadline: float | None) -> float:

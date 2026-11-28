@@ -3004,6 +3004,7 @@ def append_rsi_metrics(
         review_evidence.validate_receipt(
             entry["review_closure"], candidate, patch_label,
             read=lambda path: review_evidence.read_working_file(repo_root, path),
+            historical_changes=review_evidence.inspect_changed_historical_manuscripts(repo_root, candidate),
         )
         baseline = review_evidence.read_working_backfill_baseline(repo_root, run_id, track)
         if baseline is not None:
@@ -3629,6 +3630,7 @@ def _inspect_state_dbs(repo_root: Path, target: str) -> dict[str, Any]:
     if raw_target == "review-candidate":
         candidate = review_evidence.working_snapshot(repo_root)
         candidate["previous_backfills"] = review_evidence.inspect_previous_backfills(repo_root, candidate["edition_id"])
+        candidate["changed_historical_manuscripts"] = review_evidence.inspect_changed_historical_manuscripts(repo_root, candidate)
         return candidate
 
     if raw_target == "channels":
@@ -3917,7 +3919,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.inspect is not None:
             result = inspect_state_dbs(REPO_ROOT, args.inspect)
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            if args.inspect.strip().lower() == "review-candidate":
+                files = result.pop("files")
+                print(json.dumps({**result, "files": files}, ensure_ascii=False, separators=(",", ":")))
+            else:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         if args.apply:
             summary = apply_equity_patch(

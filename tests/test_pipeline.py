@@ -42,8 +42,8 @@ class EditionRunTest(unittest.TestCase):
             cwd=self.root, capture_output=True, text=True, check=True,
         ).stdout.strip()
 
-    def reach_equity(self):
-        token = edition_run.begin(self.runs, self.edition)
+    def reach_equity(self, source="manual"):
+        token = edition_run.begin(self.runs, self.edition, source)
         with self.runs:
             edition_run.advance(self.runs, token, "gold")
         for name in ("gold/data_snapshot.json", "equity/state/market_state.json"):
@@ -59,8 +59,8 @@ class EditionRunTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"runs": [review]}), encoding="utf-8")
 
-    def reach_publish(self):
-        token = self.reach_equity()
+    def reach_publish(self, source="manual"):
+        token = self.reach_equity(source)
         with self.assertRaisesRegex((OSError, ValueError), "rsi_metrics.json"), self.runs:
             edition_run.advance(self.runs, token, "publish")
         for name in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
@@ -105,6 +105,19 @@ class EditionRunTest(unittest.TestCase):
             self.assertEqual(edition_run.complete(self.runs, token), "https://example.invalid/run")
         deploy.assert_called_once_with(sha, "example/project", 180)
         self.assertEqual(edition_run.status(self.runs)[0]["status"], "complete")
+
+    def test_recording_the_same_push_after_recovery_retains_its_first_timestamp(self):
+        token = self.reach_publish()
+        sha = self.committed_edition()
+        pushed_at = "2026-11-26T18:30:00+08:00"
+        recovered_at = "2026-11-26T19:00:00+08:00"
+        with patch.object(edition_run, "cst_now", side_effect=[pushed_at, recovered_at]):
+            edition_run.record_push(token, sha=sha, repository="example/project")
+            edition_run.record_push(token, sha=sha, repository="example/project")
+
+        run, = edition_run.status(self.runs)
+        self.assertEqual(run["pushed_commit"], sha)
+        self.assertEqual(run["phase_timestamps"]["pushed"], pushed_at)
 
     def test_complete_can_be_retried_after_the_receipt_was_committed(self):
         token = self.reach_publish()
@@ -281,6 +294,22 @@ class EditionRunTest(unittest.TestCase):
         self.assertIn("must preserve every prior nonblank line", stderr.getvalue())
         self.assertEqual(edition_run.status(self.runs), [])
 
+    def test_scheduled_entry_rejects_a_pending_git_merge_before_research(self):
+        self.git("checkout", "-qb", "maintenance")
+        (self.root / "README.md").write_text("Maintenance notes\n", encoding="utf-8")
+        self.git("add", "README.md")
+        self.git("commit", "-qm", "Maintenance notes")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "--no-ff", "--no-commit", "maintenance")
+
+        with self.assertRaisesRegex(ValueError, "Git merge or rebase"):
+            edition_run.begin(self.runs, self.edition, "antigravity-1800")
+        self.assertEqual(edition_run.status(self.runs), [])
+
+        self.git("merge", "--abort")
+        token = edition_run.begin(self.runs, self.edition, "antigravity-1800")
+        self.assertEqual(edition_run.active_run(self.runs, token)["phase"], "research")
+
     def test_scheduled_entry_keeps_prior_completion_when_recovery_outlasts_its_window(self):
         token = self.reach_publish()
         sha = self.committed_edition()
@@ -321,6 +350,35 @@ class EditionRunTest(unittest.TestCase):
 
         rule.unlink()
         self.assertEqual(edition_run.advance(self.runs, token, "gold"), "gold")
+
+    def test_scheduled_phase_stays_bound_to_the_starting_runtime_after_a_commit(self):
+        token = edition_run.begin(self.runs, self.edition, "antigravity-1800")
+        path = "gold/daily/DAILY_FORMAT_SPEC.md"
+        (self.root / path).write_text("Changed rule after the run began\n", encoding="utf-8")
+        self.git("add", path)
+        self.git("commit", "-qm", "Maintenance committed mid-run")
+        self.assertEqual(self.git("status", "--short"), "")
+
+        with self.assertRaisesRegex(ValueError, r"starting commit.*gold/daily/DAILY_FORMAT_SPEC.md"):
+            edition_run.advance(self.runs, token, "gold")
+        self.assertEqual(edition_run.active_run(self.runs, token)["phase"], "research")
+
+        self.git("revert", "--no-edit", "HEAD")
+        self.assertEqual(edition_run.advance(self.runs, token, "gold"), "gold")
+
+    def test_scheduled_push_receipt_checks_the_runtime_in_the_candidate_tree(self):
+        token = self.reach_publish("antigravity-1800")
+        unchanged_runtime = self.committed_edition()
+        path = "gold/daily/DAILY_FORMAT_SPEC.md"
+        (self.root / path).write_text("Changed rule in the outgoing commit\n", encoding="utf-8")
+        changed_runtime = self.committed_edition()
+        self.git("revert", "--no-edit", "HEAD")
+
+        with self.assertRaisesRegex(ValueError, r"starting commit.*gold/daily/DAILY_FORMAT_SPEC.md"):
+            edition_run.record_push(token, sha=changed_runtime, repository="example/project")
+        self.assertIsNone(edition_run.publication_commit(token))
+        edition_run.record_push(token, sha=unchanged_runtime, repository="example/project")
+        self.assertEqual(edition_run.publication_commit(token), unchanged_runtime)
 
     def test_committed_source_snapshot_sets_scheduled_floor_without_local_run(self):
         snapshot = self.root / "gold/data_snapshot.json"
@@ -1006,7 +1064,12 @@ class OperationalRegressionTest(unittest.TestCase):
                     "id": project_id, "sidecar": {"sidecarId": name},
                     "projectResources": {"resources": [{"folderUri": root.as_uri()}]},
                     "permissionGrants": {"permissionGrants": {"allow": grants["access_grants"]}},
-                    "settings": {"sandboxMode": True},
+                    "settings": {
+                        "sandboxMode": True,
+                        "permissionPreset": "AGENT_PERMISSION_PRESET_DEFAULT",
+                        "autoExecutionPolicy": "CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX",
+                        "fileAccessPolicy": "AGENT_SETTING_POLICY_DENY",
+                    },
                 }
                 (base / "projects" / f"{project_id}.json").write_text(json.dumps(payload))
             registry.write_text(json.dumps({"sidecars": entries}))

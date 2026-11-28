@@ -29,7 +29,12 @@ class SidecarRuntimeTests(unittest.TestCase):
             "sidecar": {"sidecarId": sidecar_id},
             "projectResources": {"resources": [{"folderUri": folder_uri}]},
             "permissionGrants": {"permissionGrants": {"allow": []}},
-            "settings": {"sandboxMode": True},
+            "settings": {
+                "sandboxMode": True,
+                "permissionPreset": "AGENT_PERMISSION_PRESET_DEFAULT",
+                "autoExecutionPolicy": "CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX",
+                "fileAccessPolicy": "AGENT_SETTING_POLICY_DENY",
+            },
         }
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -48,6 +53,19 @@ class SidecarRuntimeTests(unittest.TestCase):
             project["settings"]["permissionPreset"] = "AGENT_PERMISSION_PRESET_DEFAULT"
             project_path.write_text(json.dumps(project), encoding="utf-8")
             self.assertEqual(install_sidecars.check_registry(registry_path, rendered), [])
+
+            settings = project["settings"].copy()
+            for field, value in (
+                ("permissionPreset", "UNRECOGNIZED_PRESET"),
+                ("autoExecutionPolicy", "CASCADE_COMMANDS_AUTO_EXECUTION_ALWAYS"),
+                ("fileAccessPolicy", "AGENT_SETTING_POLICY_ALLOW"),
+            ):
+                with self.subTest(field=field):
+                    project["settings"] = {**settings, field: value}
+                    project_path.write_text(json.dumps(project), encoding="utf-8")
+                    problems = install_sidecars.check_registry(registry_path, rendered)
+                    self.assertEqual(len(problems), 1)
+                    self.assertIn(field, problems[0])
 
 
 class DailyDiscoveryTests(unittest.TestCase):

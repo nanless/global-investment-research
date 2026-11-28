@@ -56,9 +56,11 @@ RETIRED_IDS = frozenset({
     "daily-a-us-equity-research", "daily-a-us-equity-research-evening",
 })
 STALE_PREFIXES = ("gir-local-replay-",)
-UNSANDBOXED_PRESETS = frozenset({
-    "AGENT_PERMISSION_PRESET_REQUEST_REVIEW", "AGENT_PERMISSION_PRESET_TURBO",
-})
+DEFAULT_PERMISSION_PRESET = "AGENT_PERMISSION_PRESET_DEFAULT"
+EXPECTED_PROJECT_POLICIES = {
+    "autoExecutionPolicy": "CASCADE_COMMANDS_AUTO_EXECUTION_PROCEED_IN_SANDBOX",
+    "fileAccessPolicy": "AGENT_SETTING_POLICY_DENY",
+}
 
 
 def _is_stale_sidecar_id(sidecar_id: str) -> bool:
@@ -316,18 +318,20 @@ def check_registry(
                     or locations != set(expected["workspace_uris"])
                     or _string_list(project_grants.get("allow")) != sorted(expected["access_grants"])):
                 problems.append(f"{sidecar_id}: project identity, workspace or recorded allow rules differ")
-            preset = settings.get("permissionPreset", "inherited policy")
-            if (not isinstance(preset, str) or settings.get("sandboxMode") is not True
-                    or preset in UNSANDBOXED_PRESETS):
-                message = (
-                    f"{sidecar_id}: terminal sandbox is not verified as enabled under "
-                    f"{preset}; "
-                    "recorded grants cannot verify effective access"
+            policy_problems = []
+            preset = settings.get("permissionPreset")
+            if settings.get("sandboxMode") is not True or preset != DEFAULT_PERMISSION_PRESET:
+                policy_problems.append(
+                    f"{sidecar_id}: terminal sandbox is not verified under the Default permissionPreset "
+                    f"(stored {preset!r})"
                 )
-                if entry.get("enabled") is True:
-                    problems.append(message)
-                elif notes is not None:
-                    notes.append(message)
+            for key, expected_policy in EXPECTED_PROJECT_POLICIES.items():
+                if settings.get(key) != expected_policy:
+                    policy_problems.append(f"{sidecar_id}: {key} does not match {expected_policy}")
+            if entry.get("enabled") is True:
+                problems.extend(policy_problems)
+            elif notes is not None:
+                notes.extend(policy_problems)
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             problems.append(f"{sidecar_id}: cannot verify the referenced Antigravity project")
     return problems

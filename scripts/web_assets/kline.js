@@ -589,7 +589,7 @@
   }
 
   function catalogQuoteChange(item) {
-    const previousClose = item.bars_count === 1 && /^(rate_|spread_)/.test(item.id) ? null : item.prev_close;
+    const previousClose = item.bars_count === 1 ? null : item.prev_close;
     return quoteChange(item.id, item.latest_close, previousClose, item.unit);
   }
 
@@ -1056,7 +1056,7 @@
       const idx = barIdx >= 0 && barIdx < state.bars.length ? barIdx : state.bars.length - 1;
       const b = state.bars[idx];
       const symbolId = (state.meta && state.meta.id) || state.symbolId;
-      const prevC = idx > 0 ? state.bars[idx - 1].c : /^(rate_|spread_)/.test(symbolId) ? null : b.o;
+      const prevC = idx > 0 ? state.bars[idx - 1].c : null;
       const unit = (state.series && state.series.unit) || (state.meta && state.meta.unit) || "";
       const mkt = (state.series && state.series.market) || (state.meta && state.meta.market) || "";
       const change = quoteChange(symbolId, b.c, prevC, unit);

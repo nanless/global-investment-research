@@ -29,6 +29,33 @@ gold_daily = gold_lint._load_gold_module("build_daily", ROOT / "gold" / "build_d
 gold_master = gold_lint._load_gold_module("build_report", ROOT / "gold" / "build_report.py")
 
 
+class ShortBondTaxTests(unittest.TestCase):
+    def test_short_bond_fund_tax_guards_reject_a_blanket_exemption(self):
+        for claim in ("511360（免底层 20% 息税）", "银行间短融 ETF 511360 底层免代扣 20% 利息税",
+                      "交易所产品（非银行间零底层税）"):
+            with self.subTest(claim=claim):
+                self.assertTrue(eq_lint._check_retracted_facts("tax", claim))
+                self.assertTrue(eq_lint._check_playbook_retracted_claims(claim))
+        precise = "511360 年报区分企业债券利息代扣个人所得税与金融同业往来利息免征增值税。"
+        self.assertEqual(eq_lint._check_retracted_facts("tax", precise), [])
+        self.assertEqual(eq_lint._check_playbook_retracted_claims(precise), [])
+
+
+class GoldMirrorTests(unittest.TestCase):
+    def test_night_quote_mirror_cannot_display_a_withdrawn_value(self):
+        gold = json.loads(gold_lint.DAILY_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+        equity = json.loads(eq_lint.STATE_PATH.read_text(encoding="utf-8"))
+        field = "sge_au9999_0230_premium_rmb"
+        mirror = equity["markets"]["gold_mirror_readonly"]
+        gold[field] = None
+        mirror[field] = None
+        self.assertEqual(eq_lint._check_release_snapshot(gold, equity, []), [])
+        mirror[field] = 2.97
+        self.assertTrue(any(field in error for error in eq_lint._check_release_snapshot(gold, equity, [])))
+        gold[field] = 2.97
+        self.assertEqual(eq_lint._check_release_snapshot(gold, equity, []), [])
+
+
 class DataCaveatScheduleTests(unittest.TestCase):
     def validate(self, track, rows, edition="2026-11-29_1130"):
         if track == "equity":

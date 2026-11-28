@@ -36,10 +36,22 @@ COPIED_ASSETS = {
     "assets/klines/manifest.json": "equity/state/klines/manifest.json",
     **{f"assets/klines/{shard}.json": f"equity/state/klines/{shard}.json" for shard in ALL_SHARDS_ORDER},
 }
-RELEASE_FILES = (
+LEGACY_RELEASE_FILES = (
     "index.html", "charts.html", "screener.html",
     *(f"daily/{market}-latest.html" for market in ("gold", "a-share", "hk-stock", "us-stock")),
     *COPIED_ASSETS,
+)
+# Preserve the serialized resource contract when the site's lint requirements change.
+RELEASE_FILES = (
+    *LEGACY_RELEASE_FILES,
+    "channels.html", "etfs.html", "guide.html", "scorecard.html", "archive.html",
+    "manifest.json", "assets/favicon.svg",
+    *(f"reports/{market}.html" for market in ("gold", "a-share", "hk-stock", "us-stock")),
+    *(f"channels/{channel}.html" for channel in (
+        "reverse_repo", "large_cds", "fx_deposits_wm", "bonds", "funds_wm", "savings_insurance",
+        "tax_advantaged_accounts", "qdii_mrf", "convertible_bonds", "c_reits", "commodity_etfs",
+        "private_funds_trust",
+    )),
 )
 EDITION_PATHS = ("gold/data_snapshot.json", "equity/state/market_state.json")
 SHA_RE = re.compile(r"[a-f0-9]{40}")
@@ -156,7 +168,7 @@ def write_release(site: Path, commit: str, edition: str) -> None:
     homepage = homepage.replace(b"</head>", _commit_meta(commit) + b"\n</head>", 1)
     resources["index.html"] = homepage
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "commit": commit,
         "edition_id": edition,
         "files": {name: hash_bytes(content) for name, content in resources.items()},
@@ -256,8 +268,10 @@ def verify_release(
         manifest = json.loads(release_bytes, object_pairs_hook=_unique_object)
     except RecursionError as exc:
         raise ValueError("The public Pages release manifest is too deeply nested.") from exc
-    if not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
+    if (not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int
+            or manifest["schema_version"] not in (1, 2)):
         raise ValueError("The public Pages release manifest has an unsupported schema.")
+    release_files = RELEASE_FILES if manifest["schema_version"] == 2 else LEGACY_RELEASE_FILES
     live_commit, live_edition = manifest.get("commit"), manifest.get("edition_id")
     if not isinstance(live_commit, str) or not SHA_RE.fullmatch(live_commit) or not _valid_edition(live_edition):
         raise ValueError("The public Pages release manifest has an invalid commit or edition.")
@@ -267,16 +281,16 @@ def verify_release(
             f"expected {commit[:12]} ({edition})."
         )
     expected = manifest.get("files")
-    if not isinstance(expected, dict) or set(expected) != set(RELEASE_FILES):
+    if not isinstance(expected, dict) or set(expected) != set(release_files):
         raise ValueError("The public Pages release manifest does not list every key resource.")
     if any(not isinstance(digest, str) or not HASH_RE.fullmatch(digest) for digest in expected.values()):
         raise ValueError("The public Pages release manifest has invalid SHA-256 hashes.")
     if any(expected[path] != source_hashes[path] for path in COPIED_ASSETS):
         raise ValueError("The Pages release manifest differs from the committed static assets.")
 
-    paths = ("" if path == "index.html" else path for path in RELEASE_FILES)
+    paths = ("" if path == "index.html" else path for path in release_files)
     with ThreadPoolExecutor(max_workers=4) as downloads:
-        for path, body in zip(RELEASE_FILES, downloads.map(fetch_resource, paths)):
+        for path, body in zip(release_files, downloads.map(fetch_resource, paths)):
             if hash_bytes(body) != expected[path]:
                 raise ValueError(f"Public Pages content does not match the release hash for {path}.")
             if path == "index.html" and _commit_meta(commit) not in body:

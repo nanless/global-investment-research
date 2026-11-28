@@ -203,7 +203,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
     def test_cockpit_and_charts_handle_missing_manifest_gracefully(self):
         gold = {"new_buy_allowed": False, "tier_code": "Tier 0", "as_of_short": "2026-11-27 07:30"}
         eq = {"as_of_cst": "2026-11-27T07:30:00+08:00", "markets": {"a_share": {"benchmark_sse": 3910.0, "benchmark_csi300": 4570.0}}}
-        cockpit = build_site.build_cockpit_page(gold, eq, {}, {"a-share": 76}, kline_manifest=None, kline_core=None)
+        cockpit = build_site.build_cockpit_page(gold, eq, {}, {"a-share": 76}, kline_manifest=None)
         self.assertIn("crisis-ribbon", cockpit)
         self.assertNotIn("vix-spark-svg", cockpit)
         self.assertIn("vix-spark-svg", build_site._render_vix_sparkline_svg({
@@ -304,6 +304,88 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
             "2026-11-27", "us-stock", "2026-11-28T02:15:00+08:00", [half_day], close_delay_minutes=15,
         ))
 
+    def test_non_us_dashboard_and_deck_share_exchange_local_close_cutoff(self):
+        edition = "2026-11-30_1800"
+        state = {
+            "edition_id": edition, "as_of_cst": "2026-11-30T18:00:00+08:00",
+            "non_us_global_satellite": {"markets": [
+                {"id": "jp", "name": "日本股市", "kline_id": "idx_N225", "benchmarks": [
+                    {"code": "N225", "value": 55750, "as_of": "2026-11-30 官收"},
+                ]},
+                {"id": "eu", "name": "欧洲股市", "kline_id": "idx_GDAXI", "benchmarks": [
+                    {"code": "GDAXI", "value": 66750, "as_of": "2026-11-30 官收"},
+                ]},
+                {"id": "in", "name": "印度股市", "kline_id": "idx_NSEI", "benchmarks": [
+                    {"code": "NSEI", "value": 66850, "as_of": "2026-11-30 官收"},
+                ]},
+            ]},
+        }
+        manifest = {"edition_id": edition, "catalog": [
+            {"id": "idx_GDAXI", "latest_date": "2026-11-30", "latest_close": 66700},
+            {"id": "idx_STOXX50E", "latest_date": "2026-11-30", "latest_close": 66910},
+            {"id": "etf_IB01", "latest_date": "2026-11-30", "latest_close": 66920},
+            {"id": "idx_TWII", "latest_date": "2026-11-27", "latest_close": 55550},
+        ]}
+        rows = {row["id"]: row for group in build_site._resolve_multi_index_groups({}, state, manifest).values() for row in group}
+        for symbol in ("idx_GDAXI", "idx_STOXX50E", "etf_IB01"):
+            self.assertIsNone(rows[symbol]["value"], symbol)
+        self.assertEqual(rows["idx_N225"]["value"], 55750)
+        self.assertEqual(rows["idx_NSEI"]["value"], 66850)
+        self.assertEqual(rows["idx_TWII"]["value"], 55550)
+        html = build_site.build_cockpit_page({}, state, {}, {}, kline_manifest=manifest)
+        card = html.split('id="card-nonus"', 1)[1].split("</article>", 1)[0]
+        self.assertIn("55,750.00", card)
+        self.assertIn("66,850.00", card)
+        self.assertIn("行情待核", card)
+        self.assertNotIn("66,750.00", html)
+        self.assertNotIn("66,700.00", html)
+        self.assertFalse(build_site._closing_quote_available("2026-07-10", "de-stock", "2026-07-10T23:35:00+08:00"))
+        self.assertTrue(build_site._closing_quote_available("2026-07-10", "de-stock", "2026-07-11T00:00:00+08:00"))
+        self.assertFalse(build_site._closing_quote_available("2026-11-30", "de-stock", "2026-12-01T00:59:00+08:00"))
+        self.assertTrue(build_site._closing_quote_available("2026-11-30", "de-stock", "2026-12-01T01:00:00+08:00"))
+
+    def test_dated_cash_quote_cannot_be_reintroduced_through_undated_scalar(self):
+        state = {
+            "as_of_cst": "2026-11-30T12:00:00+08:00",
+            "markets": {"a_share": {"benchmark_sse": 67890, "index_matrix": [
+                {"id": "idx_sh000001", "value": 67890, "as_of": "2026-11-30 11:30 官收"},
+                {"id": "idx_sh000300", "value": 67893, "as_of": "2026-11-30 11:30 午收"},
+                {"id": "idx_sz399001", "value": 67894, "as_of": "2026-11-30 11:99 盘中"},
+            ]}, "us_stock": {"index_matrix": [
+                {"id": "idx_NDX", "value": 67891, "observation_date": "2026-11-30"},
+                {"id": "idx_SPX", "value": 67892, "as_of": "2026-11-28 2:00+08:00 官收"},
+            ]}},
+            "calendar_overrides": [
+                {"date_cst": "2026-11-27", "markets_affected": ["us_stock"], "type": "half_day"},
+            ],
+        }
+        manifest = {"catalog": [
+            {"id": "idx_sh000001", "latest_date": "2026-11-27", "latest_close": 67889},
+        ]}
+        groups = build_site._resolve_multi_index_groups({}, state, manifest)
+        self.assertEqual(groups["a_share"][0]["value"], 67889)
+        self.assertEqual(groups["a_share"][1]["value"], 67893)
+        self.assertIsNone(groups["a_share"][2]["value"])
+        self.assertEqual(groups["us_stock"][0]["quote_date"], "2026-11-27")
+        self.assertIsNone(groups["us_stock"][2]["value"])
+        html = build_site.build_cockpit_page({}, state, {}, {}, kline_manifest=manifest)
+        self.assertIn('<div class="m-hero-num">67,889.00</div>', html)
+        self.assertNotIn("67,890.00", html)
+
+    def test_rates_quote_moves_use_basis_points_for_signed_yields(self):
+        manifest = {"catalog": [
+            {"id": "rate_DFII10", "latest_date": "2026-11-27", "latest_close": 0.0, "prev_close": -0.5,
+             "change_pct": -100, "unit": "%", "bars_count": 2},
+            {"id": "rate_US10Y", "latest_date": "2026-11-27", "latest_close": 4.3, "prev_close": 0.0,
+             "change_pct": 0, "unit": "%", "bars_count": 1},
+        ]}
+        groups = build_site._resolve_multi_index_groups({}, {"as_of_cst": "2026-11-28T18:00:00+08:00"}, manifest)
+        rows = {row["id"]: row for row in groups["bonds_reits"]}
+        self.assertIsNone(rows["rate_DFII10"]["change_pct"])
+        self.assertEqual(rows["rate_DFII10"]["change_bp"], 50)
+        self.assertIn("+50.00 bp", build_site._render_idx_tile(rows["rate_DFII10"], "bonds_reits"))
+        self.assertIsNone(rows["rate_US10Y"]["change_bp"])
+
     def test_kline_quote_change_uses_signed_closes_and_discloses_cache(self):
         result = self._run_kline_js("""
 const {catalogQuoteChange, catalogQuoteAttribution} = window.GIRKline;
@@ -387,6 +469,18 @@ fetchMock = async (url, {cache}) => {
 
 
 class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
+    def test_bond_fund_tax_disclosure_links_the_fund_and_regulatory_sources(self):
+        channels = json.loads((ROOT / "equity/state/multi_asset_channels.json").read_text(encoding="utf-8"))
+        etfs = json.loads((ROOT / "equity/state/etf_universe.json").read_text(encoding="utf-8"))
+        bond = next(row for row in channels["channels"] if row["id"] == "bonds")
+        fund = next(row for row in etfs["etfs"] if row["code"] == "511360")
+        report = next(item["source_url"] for item in fund["evidence"] if item["field"] == "tax_and_rules")
+        html = build_site.build_channel_detail_page(bond, channels["channels"], channels, etfs)
+        self.assertIn(f'href="{report}"', html)
+        self.assertIn("企业债券利息", html)
+        self.assertIn("金融同业往来免征增值税", fund["tax_and_rules"])
+        self.assertNotIn("银行间免底层税", html)
+
     def test_wallet_calculator_gold_lock_and_unlock(self):
         locked_html = build_site._render_wallet_calculator(
             {"new_buy_allowed": False, "tier_code": "Tier 0"},
@@ -659,6 +753,21 @@ class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
 
 
 class TestGateS7AndBundling(unittest.TestCase):
+    def test_gate_s7_rejects_ucits_nav_on_the_exchange_ohlc_route(self):
+        spec = lint_site.InstrumentSpec("etf_IB01", "IB01", "短期美债", "ucits_etf", "离岸", "USD", "美元", "etfs_offshore", "ucits_ft")
+        item = {key: getattr(spec, key) for key in (
+            "code", "name", "shard", "group", "market", "currency", "unit", "market_label", "category", "dossier_key",
+        )}
+        shards = dict.fromkeys(lint_site.ALL_SHARDS_ORDER)
+        self.assertIn(spec.shard, shards)
+        for provider, should_fail in (("justetf_api", True), (None, True), ("ft_chartapi", False)):
+            with self.subTest(provider=provider):
+                errors = []
+                lint_site.check_s7_roster([spec], {spec.id: dict(item, provider=provider)}, {}, shards, errors)
+                self.assertEqual(bool(errors), should_fail, errors)
+                if should_fail:
+                    self.assertIn("listed FT market-price series", errors[0])
+
     def _make_minimal_s7_site(self, root: Path, *, dict_shards: bool = True) -> dict[str, lint_site.ParsedHtml]:
         (root / "assets" / "klines").mkdir(parents=True, exist_ok=True)
         index_html = (
@@ -971,7 +1080,7 @@ class TestSixMarketCockpitAndOrthogonalEtfUpgrades(unittest.TestCase):
             "markets": {"a_share": {"benchmark_sse": 3910.0, "benchmark_csi300": 4570.0}},
         }
         min_cockpit = build_site.build_cockpit_page(
-            min_gold, min_eq, {}, {"a-share": 76}, kline_manifest=None, kline_core=None,
+            min_gold, min_eq, {}, {"a-share": 76}, kline_manifest=None,
         )
         min_doc = lint_site.parse_html_file(
             "index.html", Path("index.html"), f"<!doctype html><html><body>{min_cockpit}</body></html>"

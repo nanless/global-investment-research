@@ -156,7 +156,7 @@
       "sge_autd_day_rmb": 783.35,
       "sge_autd_night_rmb": 780.14,
       "sge_same_ts_premium_rmb": 0.83,
-      "sge_au9999_0230_premium_rmb": 2.97,
+      "sge_au9999_0230_premium_rmb": null,
       "dfii10_pct": 2.79,
       "index_matrix": [
         {"id": "cmd_XAU", "code": "XAU", "name": "伦敦现货黄金", "value": 3652.11, "change_pct": 1.76},

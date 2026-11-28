@@ -122,19 +122,6 @@ EASTMONEY_CGB_URL = (
     "&pageNumber=1&pageSize=250&sortColumns=SOLAR_DATE&sortTypes=-1"
 )
 
-JUSTETF_ISIN_MAP: dict[str, str] = {
-    "IB01": "IE00BGSF1X88",
-    "VUAA": "IE00BFMXXD54",
-    "VWRA": "IE00BK5BQT80",
-    "CNDX": "IE00B53SZB19",
-    "IGLN": "IE00B4ND3602",
-    "CSPX": "IE00B5BMR087",
-    "SWDA": "IE00B4L5Y983",
-    "XDEW": "IE00BLNMYC90",
-    "EQQQ": "IE0032077012",
-    "IUIT": "IE00B3WJKG14",
-}
-
 ETF_SHARD_BY_CHANNEL: dict[str, str] = {
     "境内场内": "etfs_onshore",
     "境内场外": "etfs_onshore",
@@ -437,7 +424,6 @@ def load_etf_specs(etf_path: Path = ETF_UNIVERSE_PATH) -> list[InstrumentSpec]:
                     shard=shard,
                     kind="ucits_ft",
                     provider_symbol=base,
-                    fallback_symbol=JUSTETF_ISIN_MAP.get(base, ""),
                     market_label=market_label,
                     category=category,
                     force_no_volume=True,
@@ -1068,26 +1054,6 @@ def parse_ft_batch_series(raw_text: str) -> dict[str, list[list[Any]]]:
     return result
 
 
-def parse_justetf_performance(raw_text: str) -> list[list[Any]]:
-    """Parse JustETF performance-chart JSON response into synthesized OHLC bars."""
-    payload = json.loads(raw_text)
-    if not isinstance(payload, dict):
-        return []
-    series = payload.get("series") or []
-    out: list[list[Any]] = []
-    for pt in series:
-        if not isinstance(pt, dict):
-            continue
-        date_iso = normalize_date_mmddyyyy(str(pt.get("date", "")))
-        val_obj = pt.get("value")
-        val = val_obj.get("raw") if isinstance(val_obj, dict) else val_obj
-        f = _to_float(val)
-        if not date_iso or f is None or f <= 0:
-            continue
-        out.append([date_iso, f, f, f, f, 0])
-    return out
-
-
 def parse_cnbc_harmony(raw_text: str) -> list[list[Any]]:
     """Parse CNBC harmony 1Y.json response payload['barData']['priceBars'].
 
@@ -1310,7 +1276,6 @@ class RateLimitedHttpClient:
             "eastmoney": threading.Semaphore(2),
             "csindex": threading.Semaphore(1),
             "ft": threading.Semaphore(1),
-            "justetf": threading.Semaphore(1),
             "treasury": threading.Semaphore(2),
             "sge": threading.Semaphore(2),
             "cboe": threading.Semaphore(2),
@@ -1332,8 +1297,6 @@ class RateLimitedHttpClient:
             return "csindex"
         if "ft.com" in host:
             return "ft"
-        if "justetf.com" in host:
-            return "justetf"
         if "treasury.gov" in host:
             return "treasury"
         if "sge.com.cn" in host:
@@ -1478,12 +1441,12 @@ def _existing_shard_series(content: bytes | None) -> dict[str, dict[str, Any]]:
     return {}
 
 
-def bar_close_change(bars: list[list[Any]]) -> tuple[float | None, float]:
+def bar_close_change(bars: list[list[Any]]) -> tuple[float | None, float | None]:
     """Derive the previous close and the published change from accepted candles."""
-    if not bars:
-        return None, 0.0
-    previous_close = bars[-2][4] if len(bars) >= 2 else bars[0][1]
-    change = round((bars[-1][4] - previous_close) / previous_close * 100.0, 2) if previous_close > 0 else 0.0
+    if len(bars) < 2:
+        return None, None
+    previous_close = bars[-2][4]
+    change = round((bars[-1][4] - previous_close) / previous_close * 100.0, 2) if previous_close > 0 else None
     return previous_close, change
 
 
@@ -1566,9 +1529,15 @@ def merge_with_stale_cache(
     bars_limit: int,
     through_date: date | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Use valid cached bars when a live response fails or falls behind them."""
+    """Preserve prior candles when a live response fails, regresses or loses history."""
     cached_bars = []
     cached_provider = "cached"
+    if spec.kind == "ucits_ft":
+        if fetched_bars and provider != "ft_chartapi":
+            error_reason = "UCITS data does not identify the configured exchange listing feed"
+            fetched_bars = None
+        if cached_entry and cached_entry.get("provider") != "ft_chartapi":
+            cached_entry = None
     if cached_entry and isinstance(cached_entry.get("bars"), list) and cached_entry["bars"]:
         cached_bars = sanitize_bars(
             cached_entry["bars"],
@@ -1584,6 +1553,16 @@ def merge_with_stale_cache(
     if fetched_bars and cached_bars and fetched_bars[-1][0] < cached_bars[-1][0]:
         error_reason = f"live bars through {fetched_bars[-1][0]} predate cached bars through {cached_bars[-1][0]}"
         fetched_bars = None
+    if fetched_bars and len(fetched_bars) < len(cached_bars):
+        error_reason = f"live response has {len(fetched_bars)} bars, fewer than the {len(cached_bars)} valid cached bars"
+        fetched_bars = None
+    if fetched_bars and cached_bars:
+        first_live_day = fetched_bars[0][0]
+        live_days = {bar[0] for bar in fetched_bars}
+        missing = next((bar[0] for bar in cached_bars if bar[0] >= first_live_day and bar[0] not in live_days), None)
+        if missing:
+            error_reason = f"live response omits cached trading day {missing} within the reported history"
+            fetched_bars = None
     if fetched_bars:
         rec = build_series_record(spec, fetched_bars, provider=provider or "unknown", stale=False)
         return rec, None
@@ -1912,18 +1891,6 @@ class KlineFetcher:
         raw = self.http.request_text(url, headers={"Referer": SINA_REFERER})
         return parse_sina_us_kline(raw), "sina_us_kline"
 
-    def _fetch_justetf(self, isin: str) -> tuple[list[list[Any]], str]:
-        end_dt = datetime.now(CST).date()
-        start_dt = end_dt - timedelta(days=max(260, int(self.bars_limit * 1.7) + 30))
-        url = (
-            f"https://www.justetf.com/api/etfs/{isin}/performance-chart"
-            f"?locale=en&currency=USD&valuesType=MARKET_VALUE&reduceData=false"
-            f"&includeDividends=false&features=DIVIDENDS"
-            f"&dateFrom={start_dt.isoformat()}&dateTo={end_dt.isoformat()}"
-        )
-        raw = self.http.request_text(url, headers={"Accept": "application/json"})
-        return parse_justetf_performance(raw), "justetf_api"
-
     def fetch_instrument(self, spec: InstrumentSpec) -> tuple[list[list[Any]], str | None, str | None]:
         """Fetch and sanitize daily OHLCV bars for a single instrument with fallback chain.
 
@@ -2074,16 +2041,6 @@ class KlineFetcher:
                 if bars:
                     return bars, "ft_chartapi", None
             errors.append("ft_chartapi:empty")
-            isin = spec.fallback_symbol or JUSTETF_ISIN_MAP.get(base, "")
-            if isin:
-                try:
-                    raw_bars, prov = self._fetch_justetf(isin)
-                    bars = _clean(raw_bars)
-                    if bars:
-                        return bars, prov, None
-                    errors.append(f"{prov}:empty")
-                except Exception as exc:
-                    errors.append(f"justetf:{type(exc).__name__}")
 
         elif kind == "sina_global_futures":
             url = (

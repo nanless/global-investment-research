@@ -173,10 +173,19 @@ RESTRICTED_WARN_RE = re.compile(
 )
 _MA_RESTRICTED_WARN_RE = RESTRICTED_WARN_RE
 _LOCAL_PATH_RE = re.compile(r"(?:file:///|/Users/|/home/|[A-Za-z]:\\Users\\|/opt/homebrew/)")
+_SHORT_BOND_TAX_GUARD = (
+    "短融 ETF 511360 的基金端利息一律免税已撤回",
+    re.compile(
+        r"(?:511360|银行间(?:市场)?(?:的)?(?:短融|债基))[^。；;\n]{0,42}"
+        r"(?:免(?:扣|代扣)?\s*底层|底层\s*(?:免|不扣|不代扣)|不(?:扣|代扣)\s*底层|"
+        r"(?:银行间)?零底层)[^。；;\n]{0,18}税|银行间零底层税"
+    ),
+)
 EQUITY_RETRACTED_FACT_GUARDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Blue Owl 误写为新增 5% 赎回", re.compile(r"Blue\s*Owl[^。\n]{0,20}新增\s*5%\s*赎回", re.IGNORECASE)),
     ("工银黄金联接 008143 误写为 7 天免赎回", re.compile(r"008143[^。\n]{0,25}7\s*天免赎回")),
     ("海波转债 123080 误写为 12/02 到期", re.compile(r"123080[^。\n]{0,25}12/02\s*到期")),
+    _SHORT_BOND_TAX_GUARD,
 )
 _EQUITY_RETRACTED_NEG_RE = re.compile(
     r"(?:已区隔|更正|修正|原稿|驳回|不含|未停牌|非硬停|仅第三方折价要约|误标|误写|并非|不是|辟谣|严禁|纠偏)"
@@ -330,6 +339,7 @@ _PLAYBOOK_RETRACTED_RULES = (
         "可转债末日二级卖出免 20% 个人税已撤回旧口径",
         re.compile(r"(?:末日)?二级(?:市场)?卖出\s*免\s*20%\s*(?:个人)?税"),
     ),
+    _SHORT_BOND_TAX_GUARD,
 )
 _PLAYBOOK_NEGATION_PREFIX_RE = re.compile(
     r"(?:(?:严禁|禁止|不得|不可(?:直接)?|切忌|勿|不要|切勿|已撤回|已纠偏|误写为?|误称为?)"
@@ -340,7 +350,7 @@ _PLAYBOOK_NEGATION_INSIDE_RE = re.compile(r"(?:并非|不是|不等同|非一律
 
 
 def _check_playbook_retracted_claims(pb_text: str) -> list[str]:
-    """Ensure state/RSI_PLAYBOOK.md does not carry over the 3 retracted tax/ETF claims."""
+    """Prevent withdrawn tax and ETF claims from being carried into future research."""
     errs: list[str] = []
     for line_no, ln in enumerate(pb_text.splitlines(), 1):
         for label, pat in _PLAYBOOK_RETRACTED_RULES:
@@ -1427,6 +1437,15 @@ def _check_release_snapshot(gold: dict, state: dict, targets: list[Path]) -> lis
             errors.append(
                 f"Gate C1 失败：共享字段 {g_key}↔{eq_key} 跨轨数值漂移 gold={g_val} equity={e_val}"
             )
+    for key in ("sge_au9999_night_rmb", "sge_au9999_night_change_pct", "sge_au9999_0230_premium_rmb"):
+        if key not in mirror:
+            continue
+        gold_value, mirror_value = gold.get(key), mirror[key]
+        if gold_value is None and mirror_value is None:
+            continue
+        if (any(type(value) not in (int, float) or not isfinite(value) for value in (gold_value, mirror_value))
+                or gold_value != mirror_value):
+            errors.append(f"Gate C1 失败：夜盘镜像字段 {key} 与黄金快照不一致")
     return errors
 
 

@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from urllib.parse import urlsplit
 from zlib import error as GzipError
 
-from scripts import pages_release
+from scripts import lint_site, pages_release
 
 
 class PagesResourceTests(unittest.TestCase):
@@ -221,3 +221,34 @@ class PagesResourceTests(unittest.TestCase):
             with patch.object(pages_release, "_fetch", side_effect=rolled_forward):
                 with self.assertRaisesRegex(ValueError, "changed while checking"):
                     pages_release.verify_release(commit, edition, "example/project", expected, timeout=15)
+
+    def test_new_release_covers_channel_details_and_can_read_legacy_receipts(self):
+        required = {*lint_site.REQUIRED_NONEMPTY_FILES, *pages_release.COPIED_ASSETS}
+        required.update(f"channels/{channel}.html" for channel in lint_site.REQUIRED_MULTI_ASSET_CHANNELS)
+        self.assertEqual(required, set(pages_release.RELEASE_FILES))
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            for name in pages_release.RELEASE_FILES:
+                path = site / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"<head>\n</head>" if name == "index.html" else name.encode())
+            edition, commit = "2026-11-28_1130", "a" * 40
+            pages_release.write_release(site, commit, edition)
+            manifest_path = site / pages_release.MANIFEST_PATH
+            manifest = json.loads(manifest_path.read_bytes())
+            self.assertEqual(manifest["schema_version"], 2)
+            hashes = {name: manifest["files"][name] for name in pages_release.COPIED_ASSETS}
+            channel = "channels/qdii_mrf.html"
+            (site / channel).write_bytes(b"stale channel")
+
+            def fetch(url, _timeout):
+                path = urlsplit(url).path.removeprefix("/project/") or "index.html"
+                return (site / path).read_bytes()
+
+            with patch.object(pages_release, "_fetch", side_effect=fetch):
+                with self.assertRaisesRegex(ValueError, channel):
+                    pages_release.verify_release(commit, edition, "example/project", hashes, timeout=15)
+                manifest["schema_version"] = 1
+                manifest["files"] = {name: manifest["files"][name] for name in pages_release.LEGACY_RELEASE_FILES}
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                pages_release.verify_release(commit, edition, "example/project", hashes, timeout=15)
