@@ -55,9 +55,10 @@ class TestThreeSlotSiteSupport(unittest.TestCase):
         self.assertEqual(build_site.session_label_from_hhmm("0730"), ("morning", "早报 07:30"))
         self.assertEqual(build_site.session_label_from_hhmm("1130"), ("midday", "午报 11:30"))
         self.assertEqual(build_site.session_label_from_hhmm("1800"), ("evening", "晚报 18:00"))
-        self.assertIn("早报核销", build_site._fmt_due_edition("2026-11-27_0730"))
-        self.assertIn("午报核销", build_site._fmt_due_edition("2026-11-27_1130"))
-        self.assertIn("晚报核销", build_site._fmt_due_edition("2026-11-27_1800"))
+        self.assertEqual(build_site._fmt_due_edition("2026-11-27_0730"), "计划于 11/27 07:30 早报复查")
+        self.assertEqual(build_site._fmt_due_edition("2026-11-27_1130"), "计划于 11/27 11:30 午报复查")
+        self.assertEqual(build_site._fmt_due_edition("2026-11-30_1800"), "计划于 11/30 18:00 晚报复查")
+        self.assertEqual(build_site._fmt_due_edition("2026-11-30"), "计划于 11/30 复查")
         self.assertIn("ed-midday", build_site._edition_pill_html("midday"))
         self.assertIn("午刊", build_site._edition_pill_html("midday"))
 
@@ -247,6 +248,62 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
         self.assertIn("2026-11-26 · 沿用报价 · 腾讯行情", deck)
         self.assertNotIn("2026-11-28", deck)
 
+    def test_index_decks_reject_same_day_closes_past_the_edition_cutoff(self):
+        edition = "2026-11-30_1130"
+        state = {
+            "edition_id": edition,
+            "as_of_cst": "2026-11-30T11:45:00+08:00",
+            "markets": {"a_share": {"index_matrix": [
+                {"id": "idx_sh000001", "value": 3901, "as_of": "2026-11-30 11:30 盘中"},
+                {"id": "idx_sh000300", "value": 98765.43, "as_of": "2026-11-30 15:00 官收"},
+                {"id": "idx_sz399001", "value": 2112, "as_of": "2026-11-30T11:30:00+08:00", "quote_status": "午盘"},
+                {"id": "idx_sh000510", "value": 2901, "as_of": "2026-12-01 15:00 官收"},
+                {"id": "idx_sh000016", "value": 2113, "as_of": "2026-11-30 官收"},
+            ]}, "us_stock": {"index_matrix": [
+                {"id": "idx_NDX", "value": 81920, "as_of": "2026-11-30 09:30 EST 盘中"},
+            ]}},
+        }
+        rows = [
+            {"id": symbol, "latest_date": "2026-11-30", "latest_close": 55443, "stale": False}
+            for symbol in ("idx_sh000300", "idx_hkHSI", "idx_IXIC", "idx_VIX", "etf_513800", "etf_VXUS")
+        ]
+        manifest = {"edition_id": edition, "catalog": rows}
+        by_id = {
+            row["id"]: row
+            for group in build_site._resolve_multi_index_groups({}, state, manifest).values()
+            for row in group
+        }
+        for row in rows:
+            with self.subTest(symbol=row["id"]):
+                self.assertIsNone(by_id[row["id"]]["value"])
+        self.assertEqual(by_id["idx_sh000001"]["value"], 3901)
+        self.assertEqual(by_id["idx_sh000001"]["quote_status"], "盘中")
+        self.assertEqual(by_id["idx_sz399001"]["value"], 2112)
+        self.assertEqual(by_id["idx_sz399001"]["quote_status"], "午盘")
+        self.assertIsNone(by_id["idx_sh000510"]["value"])
+        self.assertIsNone(by_id["idx_sh000016"]["value"])
+        self.assertIsNone(by_id["idx_NDX"]["value"])
+        rows[2]["latest_date"] = "2026-11-27"
+        us_rows = build_site._resolve_multi_index_groups({}, state, manifest)["us_stock"]
+        self.assertEqual(us_rows[1]["value"], 55443)
+        self.assertEqual(us_rows[1]["quote_date"], "2026-11-27")
+        wrong_edition = dict(manifest, edition_id="2026-11-27_1800")
+        self.assertIsNone(build_site._resolve_multi_index_groups({}, state, wrong_edition)["us_stock"][1]["value"])
+
+    def test_daily_close_uses_declared_calendar_and_us_local_date(self):
+        holiday = {"date_cst": "2026-11-26", "type": "partial_holiday", "markets_affected": ["us_stock"]}
+        cutoff = "2026-11-28T07:30:00+08:00"
+        self.assertFalse(build_site._closing_quote_available("2026-11-26", "us-stock", cutoff, [holiday]))
+        self.assertFalse(build_site._closing_quote_available("2026-11-28", "a-share", cutoff))
+        self.assertTrue(build_site._closing_quote_available("2026-11-27", "a-share", cutoff, [holiday]))
+        half_day = {"date_cst": "2026-11-27", "type": "half_day", "markets_affected": ["us_stock"]}
+        self.assertFalse(build_site._closing_quote_available(
+            "2026-11-27", "us-stock", "2026-11-28T02:05:00+08:00", [half_day], close_delay_minutes=15,
+        ))
+        self.assertTrue(build_site._closing_quote_available(
+            "2026-11-27", "us-stock", "2026-11-28T02:15:00+08:00", [half_day], close_delay_minutes=15,
+        ))
+
     def test_kline_quote_change_uses_signed_closes_and_discloses_cache(self):
         result = self._run_kline_js("""
 const {catalogQuoteChange, catalogQuoteAttribution} = window.GIRKline;
@@ -354,15 +411,26 @@ class TestWalletCalculatorAhMatrixAndQdii(unittest.TestCase):
         self.assertIn("黄金允许按档分批", unlocked_html)
 
     def test_wallet_calculator_keeps_zero_cap_and_uses_price_for_one_lot(self):
+        state = {"edition_id": "2026-11-30_1130", "as_of_cst": "2026-11-30T11:45:00+08:00",
+                 "markets": {"a_share": {"equity_cap_pct": 0}}}
+        manifest = {"edition_id": "2026-11-30_1130", "catalog": [
+            {"id": "etf_511360", "code": "511360", "currency": "CNY", "stale": False,
+             "latest_close": 122.505, "latest_date": "2026-11-27"},
+        ]}
         html = build_site._render_wallet_calculator(
-            {"new_buy_allowed": False, "tier_code": "Tier 0"},
-            {"markets": {"a_share": {"equity_cap_pct": 0}}},
-            {"catalog": [{"id": "etf_511360", "latest_close": 122.505, "latest_date": "2026-11-27"}]},
+            {"new_buy_allowed": False, "tier_code": "Tier 0"}, state, manifest,
         )
         config = json.loads(re.search(r'id="wallet-calc-data" type="application/json">(.*?)</script>', html)[1])
         self.assertEqual(config["eq_cap_pct"], 0)
         self.assertEqual(config["short_bond_lot_rmb"], 12250.50)
         self.assertEqual(config["short_bond_quote_date"], "2026-11-27")
+        row = manifest["catalog"][0]
+        for replacement in ({"latest_date": "2026-11-30"}, {"currency": "HKD"}, {"stale": True}, {"code": "511380"}):
+            with self.subTest(replacement=replacement):
+                rejected = build_site._render_wallet_calculator({}, state, dict(manifest, catalog=[dict(row, **replacement)]))
+                config = json.loads(re.search(r'id="wallet-calc-data" type="application/json">(.*?)</script>', rejected)[1])
+                self.assertIsNone(config["short_bond_lot_rmb"])
+                self.assertIsNone(config["short_bond_quote_date"])
 
     def test_ah_after_tax_dividend_matrix_does_not_reuse_dossier_estimates(self):
         benchmarks = [
@@ -1279,6 +1347,66 @@ class TestPolicyCalendarSectionAndGates(unittest.TestCase):
         self.assertEqual(len(issues), 2)
         self.assertTrue(any("fed-funding" in issue for issue in issues))
         self.assertTrue(any("other-brief" in issue for issue in issues))
+
+    def test_policy_cards_use_validated_fields_and_lint_visible_source_attribution(self):
+        policy = {"as_of_cst": "2026-11-28T12:00:00+08:00", "policy_briefs": [{
+            "id": "pbc-notice", "headline": "央行正式公告", "summary": "按原公告核对生效日期",
+            "authority": "中国人民银行", "date_cst": "2026-11-27", "time_cst": "18:00",
+            "timestamp_cst": "2099-01-01", "plain_takeaway": "过时的早期文案",
+            "home_featured": True, "affected_markets": ["a_share"],
+            "source_url": "https://www.pbc.gov.cn/tiaofasi/20261127/index.html",
+        }]}
+        snippets = {
+            "index.html": build_site._render_policy_calendar_section(policy, {}, False),
+            "daily/a-share-latest.html": build_site._render_market_news_radar("a-share", policy, {}, False)[0],
+        }
+        for name, raw in snippets.items():
+            with self.subTest(name=name):
+                self.assertIn("中国人民银行 · 2026-11-27 18:00", raw)
+                self.assertIn("按原公告核对生效日期", raw)
+                self.assertNotIn("2099-01-01", raw)
+                self.assertNotIn("过时的早期文案", raw)
+        issues = []
+        docs = {name: lint_site.parse_html_file(name, ROOT / name, raw) for name, raw in snippets.items()}
+        lint_site._check_published_policy_links(docs, policy, issues)
+        self.assertEqual(issues, [])
+
+        raw = snippets["index.html"]
+        card = re.search(r'<article [^>]*data-pcal-brief-id="pbc-notice".*?</article>', raw, re.S)[0]
+        for wrong, expected in (
+            (raw.replace("中国人民银行 · 2026-11-27 18:00", "另一机构 · 2026-11-28 11:30"), "attribution differs"),
+            (raw.replace("央行正式公告", "另一场会议"), "headline differs"),
+            (raw.replace("按原公告核对生效日期", "错误的公告摘要"), "summary differs"),
+            (raw.replace(card, card + card), "repeats policy briefs"),
+        ):
+            with self.subTest(expected=expected):
+                issues = []
+                docs["index.html"] = lint_site.parse_html_file("index.html", ROOT / "index.html", wrong)
+                lint_site._check_published_policy_links(docs, policy, issues)
+                self.assertTrue(any(expected in issue for issue in issues), issues)
+
+    def test_home_calendar_prefers_reviewed_events_and_preserves_direct_sources(self):
+        source = "https://www.federalreserve.gov/newsevents/calendar.htm"
+        event = {
+            "event_id": "calendar-early-point", "title": "已到原定时刻的事件",
+            "date_cst": "2026-11-28", "end_date_cst": "2026-11-28",
+            "time_cst": "10:00", "date_precision": "exact", "impact_tier": "P1",
+            "affected_markets": ["us_stock"], "source_url": source,
+        }
+        policy = {
+            "edition_id": "2026-11-28_1130", "as_of_cst": "2026-11-28T12:00:00+08:00",
+            "events": [event, dict(event, event_id="calendar-next", title="未到原定时刻的事件", time_cst="13:00")],
+            "upcoming_events": [dict(event, title="未使用的旧日历")],
+        }
+        home = build_site._render_policy_calendar_section(policy, {}, False)
+        self.assertIn("原定时刻已过", home)
+        self.assertNotIn("近期已落地", home)
+        self.assertNotIn("未使用的旧日历", home)
+        self.assertEqual(home.count(f'href="{source}"'), 2)
+        market = build_site._render_market_forward_calendar("us-stock", policy, "2026-11-28_1130")
+        self.assertNotIn("已到原定时刻的事件", market)
+        self.assertIn("未到原定时刻的事件", market)
+        self.assertIn(f'href="{source}"', market)
 
     def test_daily_calendar_filters_markets_dates_and_windows_by_event_id(self):
         ed = "2026-11-28_1130"

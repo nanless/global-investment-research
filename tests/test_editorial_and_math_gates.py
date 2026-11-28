@@ -29,6 +29,56 @@ gold_daily = gold_lint._load_gold_module("build_daily", ROOT / "gold" / "build_d
 gold_master = gold_lint._load_gold_module("build_report", ROOT / "gold" / "build_report.py")
 
 
+class DataCaveatScheduleTests(unittest.TestCase):
+    def validate(self, track, rows, edition="2026-11-29_1130"):
+        if track == "equity":
+            return eq_lint._check_data_caveats(
+                {"edition_id": edition, "data_caveats": rows}, require_presence=True,
+            )
+        errors = []
+        gold_lint._validate_data_caveats(rows, "data_snapshot.json", errors, edition=gold_lint._edition_key(edition))
+        return errors
+
+    def test_current_and_overdue_caveats_require_a_later_real_scheduled_slot(self):
+        pending = {
+            "id": "delayed_market_release", "category": "delayed_official",
+            "severity": "info", "item": "待原表", "detail": "发布延迟", "impact": "采用上一观测日",
+            "next_review": "2026-11-29_1800",
+        }
+        for track in ("gold", "equity"):
+            item = dict(pending, market="gold" if track == "gold" else "a_share")
+            self.assertEqual(self.validate(track, [item]), [])
+            for invalid in (None, "下一班", "2026-02-30_1800", "2026-11-29_1801", "2026-12-01_0730_r2"):
+                with self.subTest(track=track, invalid=invalid):
+                    errors = self.validate(track, [dict(item, next_review=invalid)])
+                    self.assertTrue(any("有效的计划班次" in error for error in errors), errors)
+            for overdue in ("2026-11-28_1800", "2026-11-29_1130"):
+                with self.subTest(track=track, overdue=overdue):
+                    errors = self.validate(track, [dict(item, next_review=overdue)])
+                    self.assertTrue(any("到期" in error for error in errors), errors)
+            self.assertTrue(any("重复" in error for error in self.validate(track, [item, item])))
+            self.assertTrue(any("编号" in error for error in self.validate(track, [dict(item, id="换 名")])))
+            self.assertEqual(self.validate(track, [dict(item, next_review="下次复查")], "2026-11-28_1800_r2"), [])
+
+    def test_new_gold_snapshot_cannot_omit_the_caveats_array(self):
+        with TemporaryDirectory() as temp:
+            snapshot = json.loads(gold_lint.DAILY_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+            del snapshot["data_caveats"]
+            snapshot["edition_id"] = "2026-11-29_1130"
+            path = Path(temp) / "data_snapshot.json"
+            path.write_text(json.dumps(snapshot), encoding="utf-8")
+            errors = []
+            with patch.object(gold_lint, "DAILY_SNAPSHOT_PATH", path):
+                gold_lint.validate_snapshot_file(path, errors, [])
+        self.assertTrue(any("data_caveats 须为数组" in error for error in errors), errors)
+
+    def test_malformed_equity_caveat_enum_fields_return_diagnostics(self):
+        rows = [{"market": [], "category": [], "severity": []}]
+        errors = self.validate("equity", rows)
+        for field in ("market", "category", "severity"):
+            self.assertTrue(any(f".{field} 非法" in error for error in errors), errors)
+
+
 class ChartA2AndGoldHtmlTests(unittest.TestCase):
     def test_chart_a2_semantic_color_normalization_and_defaults(self):
         # DEFAULT_A_INDICES must align with A-share semantic colors (#c2410c up, #0f766e down)

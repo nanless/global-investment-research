@@ -162,7 +162,7 @@
         {"id": "cmd_XAU", "code": "XAU", "name": "伦敦现货黄金", "value": 3652.11, "change_pct": 1.76},
         {"id": "cmd_GC", "code": "GC", "name": "COMEX黄金主力", "value": 3668.5, "change_pct": 2.91},
         {"id": "cmd_AU0", "code": "AU0", "name": "沪金主力(au2702)", "value": 781.36, "change_pct": 0.8},
-        {"id": "cmd_Au9999", "code": "Au99.99", "name": "上金所Au99.99", "value": 782.0, "change_pct": -0.26},
+        {"id": "cmd_Au9999", "code": "Au99.99", "name": "上金所Au99.99", "value": 784.0, "change_pct": 2.37, "as_of": "2026-11-27 官收"},
         {"id": "cmd_XAG", "code": "XAG", "name": "伦敦现货白银", "value": 43.67, "change_pct": 5.46},
         {"id": "cmd_AG0", "code": "AG0", "name": "沪银主力(ag2702)", "value": 10344.0, "change_pct": 3.74}
       ]

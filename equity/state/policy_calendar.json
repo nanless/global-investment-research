@@ -25,6 +25,7 @@
       "market_impact": "紧接周日产油国联盟部长会前增添航运与油价变数；但截至 22:25 链上只读锚 XAUT 报 3,646.76 美元，黄金仍锁 2/4 关红灯停新仓 0%，待周一外盘实盘与官方利率检验。",
       "source_url": "https://www.ukmto.org/-/media/ukmto/products/20261128-ukmto_warning_225_26.pdf",
       "source_urls": [
+        "https://www.ukmto.org/recent-incidents?gsid=6dfaa179-467a-4d1a-891b-ed39b4c77b9e",
         "https://english.news.cn/20261128/cd1c1b1c31274070be291a27e7f9a2b5/c.html"
       ]
     },
@@ -38,7 +39,7 @@
       "impact_tier": "P0",
       "authority": "标普全球评级 · 法国财政部 · 欧洲央行",
       "headline": "标普 05:11 新闻稿将法国主权评级展望调为负面，维持 A+ 评级",
-      "summary": "标普官方新闻稿列表确认北京时间 11/28 05:11 发布公告，维持法国本外币长期主权评级 A+、短期 A-1，将展望由稳定调为负面，指出财政整顿与 2027 年预算分歧风险；法国财长罗兰·莱斯屈尔发表声明称此举为明确警告、力守 2027 年赤字不超 5%。行情平台 Investing.com 11/27 法国 10 年期国债市场收盘参考 4.705%（同源法德 +143.7 基点、法意 +38.2 基点），欧洲央行定档 12 月 17 日议息。",
+      "summary": "标普官方新闻稿列表确认北京时间 11/28 05:11 发布公告，维持法国本外币长期主权评级 A+、短期 A-1，将展望由稳定调为负面，指出财政整顿与 2027 年预算分歧风险；法国财长罗兰·莱斯屈尔发表声明称此举为明确警告、力守 2027 年赤字不超 5%。行情平台 Investing.com 11/27 法国 10 年期国债市场收盘参考 4.705%（同源法德 +143.7 基点、法意 +38.2 基点），欧洲央行于 12 月 16–17 日开会，17 日公布决议并举行记者会。",
       "affected_markets": [
         "non_us_global_satellite",
         "us_stock",
@@ -51,21 +52,22 @@
       "source_url": "https://disclosure.spglobal.com/ratings/en/regulatory/press-releases",
       "source_urls": [
         "https://presse.economie.gouv.fr/notation-standard-amp-poors-reaction-de-roland-lescure/",
-        "https://www.investing.com/rates-bonds/france-10-year-bond-yield",
+        "https://www.investing.com/rates-bonds/france-10-year-bond-yield-historical-data",
+        "https://www.investing.com/rates-bonds/germany-10-year-bond-yield-historical-data",
+        "https://www.investing.com/rates-bonds/italy-10-year-bond-yield-historical-data",
         "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
       ]
     },
     {
       "id": "us_fed_reserves_breach_srf_23b_us10y_494_20261128",
       "date_cst": "2026-11-28",
-      "time_cst": "11:45",
       "home_featured": true,
       "region": "US",
       "category": "liquidity_treasury",
       "impact_tier": "P0",
       "authority": "美联储 · 纽约联储 · 芝加哥期权交易所",
       "headline": "美联储周报显示银行准备金约 2.929 万亿美元，Cboe 历史日线收报 23.81",
-      "summary": "美联储 11/27 周报显示，11/25 存款机构准备金余额为 2.928659 万亿美元。Cboe 11/27 恐慌指数历史日线收报 23.81。美国议息会议日期为 12/08–09 美东时间，按外部沟通规则换算，北京时间 11/28 13:00 已进入缄默期。",
+      "summary": "美联储 11/27（美东）周报显示，11/25 存款机构准备金余额为 2.928659 万亿美元。Cboe 11/27 恐慌指数历史日线收报 23.81。美国议息会议日期为 12/08–09 美东时间，按外部沟通规则换算，北京时间 11/28 13:00 开始缄默期。",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
@@ -79,20 +81,20 @@
         "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
         "https://www.federalreserve.gov/newsevents/2026-December.htm",
         "https://www.federalreserve.gov/monetarypolicy/files/FOMC_RulesAuthPamphlet_202601.pdf",
-        "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?field_tdr_date_value_month=202611&type=daily_treasury_yield_curve"
+        "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?field_tdr_date_value_month=202611&type=daily_treasury_yield_curve",
+        "https://www.federalreserve.gov/newsevents/2026-November.htm"
       ]
     },
     {
       "id": "gold_sat_brand_1093_gld_zero_agtd_cbrt_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "11:55",
+      "date_cst": "2026-11-27",
       "home_featured": true,
       "region": "GLOBAL",
       "category": "market_structure",
       "impact_tier": "P0",
       "authority": "美国道富 · VanEck · 上金所 · 芝商所",
       "headline": "道富与 VanEck 公布黄金相关基金净值，上金所发布 11 月 27 日行情",
-      "summary": "道富公布 GLD 每份净值 332.98 美元，VanEck 公布 GDX 每份净值 78.89 美元。上海黄金交易所显示 Au99.99 日盘收于每克 784 元、夜盘收 782 元，白银延期交收当日补偿费方向为多付空；芝商所金银库存原始电子表格再查不可读暂作挂账。",
+      "summary": "道富和 VanEck 同一交易日的黄金相关基金每份净值分别为 GLD 332.98 美元及 GDX 78.89 美元。上海黄金交易所的 11 月 27 日公开日行情列出 Au99.99 收盘每克 784 元、白银延期交收补偿费方向为多付空。该表未单列本期研究引用的 782 元第三方参考价。芝商所金银库存原始表暂不可读，留待复查。",
       "affected_markets": [
         "gold",
         "a_share",
@@ -130,31 +132,26 @@
     },
     {
       "id": "cn_state_council_broad_etf_huahong_st_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "09:30",
+      "date_cst": "2026-11-27",
       "home_featured": true,
       "region": "CN",
       "category": "top_politics",
       "impact_tier": "P0",
-      "authority": "国务院常务会议 · 上交所 · 深交所",
-      "headline": "国常会研究资本市场投融资改革，上证指数收报 3,606.49 点",
-      "summary": "国务院常务会议提出加力发挥“国家队”稳市作用、优化中央汇金公司的类平准基金功能，并推动上市公司加大分红回购力度。上交所披露上证指数收报 3,606.49 点。政策工具用量及启动时间待后续披露。",
+      "authority": "国务院常务会议",
+      "headline": "国务院常务会议研究资本市场投融资改革",
+      "summary": "11 月 27 日国务院常务会议提出加力发挥“国家队”稳市作用、优化中央汇金公司的类平准基金功能，并推动上市公司加大分红回购力度。政策工具用量及启动时间待后续披露。",
       "affected_markets": [
         "a_share",
         "hk_stock",
         "rates_bonds_core"
       ],
       "market_impact": "把会议部署与资金是否实际入市分别跟踪。观察量能和行业涨幅扩散，也核对个别公司公告。",
-      "source_url": "https://www.mee.gov.cn/ywdt/szyw/202611/t20261127_1187530.shtml",
-      "source_urls": [
-        "https://www.sse.com.cn/market/sseindex/overview/",
-        "https://www.sse.com.cn/aboutus/mediacenter/conference/c/10839279/files/48e2348d45b64de68e8cdc0c213af6e1.pdf"
-      ]
+      "source_url": "https://www.mee.gov.cn/ywdt/szyw/202611/t20261127_1187530.shtml"
     },
     {
       "id": "hk_night_futures_22802_evergrande_delist_sfc_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "10:00",
+      "date_cst": "2026-11-27",
+      "time_cst": "22:24",
       "home_featured": true,
       "region": "HK",
       "category": "market_structure",
@@ -167,8 +164,9 @@
         "a_share"
       ],
       "market_impact": "持有人应核对公司是否申请复核、何时取消上市和停牌期间安排。留意两轮指数调整前后的收市竞价流动性。",
-      "source_url": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/1127/2026112701935.pdf",
+      "source_url": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/1127/2026112701936_c.pdf",
       "source_urls": [
+        "https://www1.hkexnews.hk/search/predefineddoc.xhtml?lang=zh&predefineddocuments=9",
         "https://www.sfc.hk/TC/alert-list/3572",
         "https://www.hkma.gov.hk/eng/data-publications-and-research/data-and-statistics/daily-monetary-statistics/"
       ]
@@ -200,37 +198,35 @@
     {
       "id": "us_black_friday_adobe_131b_crypto_etf_flows_20261128",
       "date_cst": "2026-11-28",
-      "time_cst": "21:30",
       "home_featured": false,
       "region": "US",
       "category": "macro_data",
       "impact_tier": "P1",
       "authority": "路透社（援引 Adobe Analytics）· Farside",
       "headline": "路透援引 Adobe 终报美国黑五线上消费 131 亿美元，加密基金单日流出 3.89 亿",
-      "summary": "路透社援引 Adobe Analytics 终报称 2026 年美国黑五线上消费达 131 亿美元（同比增 11.1%），高于节前 129 亿美元预期；同日补齐的 Farside 11/27 完整终表显示美国现货比特币基金净流出 3.89 亿美元（连流 8 日）、以太坊基金净流出 6,940 万美元。",
+      "summary": "路透社援引 Adobe Analytics 称美国 2026 年黑五线上消费为 131 亿美元（同比增 11.1%）。Farside 11/27 完整终表显示美国现货比特币基金净流出 3.89 亿美元，以太坊基金净流出 6,940 万美元。",
       "affected_markets": [
         "us_stock",
         "rates_bonds_core",
         "gold"
       ],
-      "market_impact": "消费韧性支撑主要央行偏紧定调；加密基金流出仅作海外高风险资产风险偏好参照（不能外推美元整体流动性或黄金方向，依央行银发〔2026〕42号中国大陆虚拟货币配置严格 0%）。",
-      "source_url": "https://www.devdiscourse.com/article/international/4013461-black-friday-online-shopping-rises-to-131-billion-in-the-us-adobe-analytics-data-shows",
+      "market_impact": "线上零售数据提供单一消费观察，基金流向提供局部风险偏好观察。需要其他资料来判断总消费、美元流动性和黄金方向。境内虚拟货币保持只读观察。",
+      "source_url": "https://new.streetinsider.com/Reuters/Black%2BFriday%2Bonline%2Bshopping%2Brises%2Bto%2B%2413.1%2Bbillion%2Bin%2Bthe%2BUS%2C%2BAdobe%2BAnalytics%2Bdata%2Bshows/27409568.html",
       "source_urls": [
         "https://farside.co.uk/btc/",
-        "https://farside.co.uk/ethereum-etf-flow-all-data"
+        "https://farside.co.uk/ethereum-etf-flow-all-data/"
       ]
     },
     {
       "id": "cn_funds_advisory_t_class_hk_gold_clearing_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "18:00",
+      "date_cst": "2026-11-27",
       "home_featured": false,
       "region": "CN",
       "category": "market_structure",
       "impact_tier": "P1",
       "authority": "招商基金 · 嘉实基金 · 香港财库局",
-      "headline": "首批公募基金投顾 T 类份额 11/30 生效，香港重申 2027 一季度黄金清算计划",
-      "summary": "招商基金（63 只）与嘉实基金（60 只）公告自 2026 年 11 月 30 日起增设个人基金投顾专属 T 类份额，免申购费、免尾佣且管理费打六折。同日香港财库局官员重申 11 月 11 日已公布的香港黄金中央清算系统 2027 年一季度上线计划（目标 2028 年储金超 2,000 吨）。",
+      "headline": "基金投顾 T 类份额公告 11 月 30 日生效，香港黄金清算试营运进展",
+      "summary": "招商、嘉实基金 11 月 27 日发布投顾专属 T 类份额公告，自 11 月 30 日起生效，费用以对应基金文件为准。香港黄金中央清算 7 月开始试营运。9 月施政报告列明 2027 年第一季度正式启用计划，财库局 11 月的书面答复重申了安排。",
       "affected_markets": [
         "a_share",
         "hk_stock",
@@ -238,22 +234,23 @@
         "rates_bonds_core"
       ],
       "market_impact": "存量投顾持仓勿自行赎回以防损失费率衔接；香港清算基建属中长期实物枢纽进展，黄金短线仍严守 2/4 关红灯停新仓 0%。",
-      "source_url": "https://finance.sina.com.cn/money/fund/2026-11-28/doc-inevwtcp9784323.shtml",
+      "source_url": "https://qcloud.fund.eastmoney.com/gonggao/007328,AN202611271832121667.html",
       "source_urls": [
-        "https://finance.sina.com.cn/roll/2026-11-28/doc-inevwrtt9330107.shtml"
+        "https://qcloud.fund.eastmoney.com/gonggao/501311,AN202611271832118010.html",
+        "https://www.info.gov.hk/gia/general/202609/16/P2026091600212p.htm",
+        "https://www.info.gov.hk/gia/general/202611/11/P2026111000415.htm"
       ]
     },
     {
       "id": "cn_qdii_513300_159980_159985_bonds_20261128",
       "date_cst": "2026-11-28",
-      "time_cst": "11:40",
       "home_featured": false,
       "region": "CN",
       "category": "market_structure",
       "impact_tier": "P1",
-      "authority": "上交所 · 深交所 · 基金公司官净",
+      "authority": "华夏基金 · 上交所",
       "headline": "华夏纳斯达克 100 基金公告 11 月 30 日开盘后临时停牌",
-      "summary": "华夏基金公告列明纳斯达克 100 基金（513300）的二级市场溢价风险与 11 月 30 日 09:30–10:30 临时停牌安排。场内价格相对基金参考净值可能波动，复牌后的成交价和当日净值需分开核查。",
+      "summary": "华夏基金公告列明纳斯达克 100 基金（513300）的二级市场溢价风险，以及 11 月 30 日自开市起至 10:30 临时停牌安排。复牌后的成交价和当日净值需分开核查。",
       "affected_markets": [
         "a_share",
         "us_stock",
@@ -261,12 +258,11 @@
         "rates_bonds_core"
       ],
       "market_impact": "交易前重查复牌时间和最新溢价。场内停牌、场外限购与一级市场申赎分别以交易所和管理人具体公告为准。",
-      "source_url": "https://www.chinaamc.com/c/2026-11-28/1018978.shtml"
+      "source_url": "https://www.sse.com.cn/disclosure/fund/announcement/c/new/2026-11-28/513300_20261128_MQ9L.pdf"
     },
     {
       "id": "us_wmt_cto_form144_nvda_mstr_btc_below60k_20261128",
       "date_cst": "2026-11-28",
-      "time_cst": "11:30",
       "home_featured": false,
       "region": "US",
       "category": "market_structure",
@@ -281,6 +277,7 @@
       "market_impact": "关注指数跟踪基金的实际调仓成交量，以及英伟达访谈公开信息。证券公告提交与交易执行分别核验。",
       "source_url": "https://www.sec.gov/Archives/edgar/data/104169/000195917326008341/primary_doc.xml",
       "source_urls": [
+        "https://stock.walmart.com/sec-filings/all-sec-filings/content/0001959173-26-008341/primary_doc.html",
         "https://www.msci.com/downloads/web/msci-com/indexes/quarterly-index-review/insights-from-msci-november-2026-index-review.pdf",
         "https://intelligence.house.gov/2026/11/17/jensen-huang-and-nvidia-agree-to-appear-before-congress/"
       ]
@@ -288,7 +285,6 @@
     {
       "id": "us_credit_ccc_1417_vix_skew_20261128",
       "date_cst": "2026-11-28",
-      "time_cst": "11:55",
       "home_featured": false,
       "region": "US",
       "category": "liquidity_treasury",
@@ -310,8 +306,7 @@
     },
     {
       "id": "jp_tokyo_cpi_usdjpy_15954_boj_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "11:00",
+      "date_cst": "2026-11-27",
       "home_featured": false,
       "region": "JP",
       "category": "central_bank",
@@ -333,15 +328,14 @@
     },
     {
       "id": "cn_cffex_short_huahong_midea_exdiv_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "07:00",
+      "date_cst": "2026-11-22",
       "home_featured": false,
       "region": "CN",
       "category": "market_structure",
       "impact_tier": "P1",
-      "authority": "中金所 · 上交所 · 深交所",
+      "authority": "上海证券交易所",
       "headline": "上交所 11 月 30 日起调整融资保证金比例",
-      "summary": "交易所通知将融资买入证券的最低保证金比例由 100% 调整为 80%，11 月 30 日施行。证券公司可根据风险和客户适当性设置更高的要求。",
+      "summary": "上交所 11 月 22 日发布通知，自 11 月 30 日起融资买入证券的保证金比例不得低于 80%。证券公司可根据风险和客户适当性设置更高的要求。",
       "affected_markets": [
         "a_share",
         "hk_stock"
@@ -351,8 +345,7 @@
     },
     {
       "id": "hk_southbound_shenhua_rebalance_20261127",
-      "date_cst": "2026-11-27",
-      "time_cst": "17:30",
+      "date_cst": "2026-11-20",
       "home_featured": false,
       "region": "HK",
       "category": "market_structure",
@@ -367,30 +360,28 @@
       "market_impact": "观察跟踪基金在变动实施前后的成交。指数调整的生效日和基金实际成交时点可能有差别。",
       "source_url": "https://www.hsi.com.hk/content/dam/wpb/hsil/zh_cn/press_releases/content/20261120T174500.pdf",
       "source_urls": [
-        "https://ir.msci.com/news-releases/news-release-details/msci-equity-indexes-november-2026-index-review"
+        "https://www.msci.com/downloads/web/msci-com/indexes/quarterly-index-review/insights-from-msci-november-2026-index-review.pdf"
       ]
     },
     {
       "id": "global_5cb_sovereign_gold_accumulation_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "11:20",
+      "date_cst": "2026-11-07",
       "home_featured": false,
       "region": "GLOBAL",
       "category": "central_bank",
       "impact_tier": "P2",
-      "authority": "中国人民银行 · 波兰/印度/土耳其央行 · 新加坡金管局",
+      "authority": "国家外汇管理局",
       "headline": "中国官方黄金储备 10 月末增至 7,830 万盎司",
       "summary": "国家外汇管理局列明 9 月末为 7,747 万金衡盎司，10 月末为 7,830 万金衡盎司，环比增加 83 万盎司（约 25.82 吨）。",
       "affected_markets": [
         "gold"
       ],
       "market_impact": "黄金储备数据用于观察官方部门长期配置。日内价格与当期仓位仍按实际利率和风险规则独立评估。",
-      "source_url": "https://www.safe.gov.cn/en/file/file/20261107/09f1865706594d6b87bb47e39eb9b65b.pdf?n=pdf"
+      "source_url": "https://www.safe.gov.cn/safe/2026/0205/27113.html"
     },
     {
       "id": "cn_bonds_1202_auction_reits_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "11:00",
+      "date_cst": "2026-11-26",
       "home_featured": false,
       "region": "CN",
       "category": "fiscal_policy",
@@ -403,12 +394,15 @@
         "a_share"
       ],
       "market_impact": "结合其他资金流和利率观测判断月末流动性变化。国债招标规模、品种和本次存款操作分开核验。",
-      "source_url": "https://gks.mof.gov.cn/gongzuodongtai/202611/t20261126_4005436.htm"
+      "source_url": "https://gks.mof.gov.cn/gongzuodongtai/202611/t20261126_4005436.htm",
+      "source_urls": [
+        "https://zwgls.mof.gov.cn/ywgg/202611/t20261125_4005370.htm",
+        "https://zwgls.mof.gov.cn/ywgg/202611/t20261125_4005368.htm"
+      ]
     },
     {
       "id": "us_ustr_301_and_black_friday_retail_20261127",
-      "date_cst": "2026-11-27",
-      "time_cst": "23:40",
+      "date_cst": "2026-11-25",
       "home_featured": false,
       "region": "US",
       "category": "regulation_trade",
@@ -430,7 +424,6 @@
     {
       "id": "tw_dgbas_q3_gdp_20261127",
       "date_cst": "2026-11-27",
-      "time_cst": "16:00",
       "home_featured": false,
       "region": "GLOBAL",
       "category": "macro_data",
@@ -443,12 +436,15 @@
         "us_stock"
       ],
       "market_impact": "结合实际出口、制造业和资本形成分项，判断人工智能产业链与整体经济的贡献。",
-      "source_url": "https://eng.dgbas.gov.tw/News_Content.aspx?n=4438&s=236907"
+      "source_url": "https://eng.dgbas.gov.tw/News_Content.aspx?n=4438&s=236907",
+      "time_cst": "16:00",
+      "source_urls": [
+        "https://ws.dgbas.gov.tw/001/Upload/463/relfile/10980/236908/newstotal11511.pdf"
+      ]
     },
     {
       "id": "kr_bok_rate_hike_20261126",
       "date_cst": "2026-11-26",
-      "time_cst": "10:00",
       "home_featured": false,
       "region": "GLOBAL",
       "category": "central_bank",

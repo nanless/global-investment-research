@@ -45,6 +45,7 @@ EDITION_CUTOVER = ("2026-11-25", 1800, 2)
 ALL_MAIN_CUTOVER = getattr(_edition_plan_mod, "ALL_MAIN_CUTOVER", ("2026-11-26", 1800, 1))
 EDITORIAL_DEPTH_CUTOVER = ("2026-11-27", 730, 1)
 DATA_CONTRACT_CUTOVER = ("2026-11-28", 1130, 1)
+CAVEAT_SCHEDULE_CUTOVER = ("2026-11-28", 1800)
 _POLICY_CLOCK_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 _REQUIRED_MULTI_ASSET_CHANNELS = (
     "reverse_repo",
@@ -2092,13 +2093,16 @@ def _check_data_caveats(state: dict | None, *, require_presence: bool) -> list[s
     errs: list[str] = []
     if not isinstance(state, dict):
         return errs
+    edition = parse_edition_id(state.get("edition_id"))
+    validate_schedule = edition is not None and edition[:2] > CAVEAT_SCHEDULE_CUTOVER
     if "data_caveats" not in state:
-        if require_presence:
+        if require_presence or validate_schedule:
             errs.append("Gate 4 失败：market_state.json 缺少 data_caveats 数组")
         return errs
     caveats = state.get("data_caveats")
     if not isinstance(caveats, list):
         return ["Gate 4 失败：market_state.json.data_caveats 须为数组"]
+    seen_ids: set[str] = set()
     for idx, item in enumerate(caveats):
         if not isinstance(item, dict):
             errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}] 须为对象")
@@ -2107,12 +2111,29 @@ def _check_data_caveats(state: dict | None, *, require_presence: bool) -> list[s
             val = item.get(req_k)
             if not isinstance(val, str) or not val.strip():
                 errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}] 缺少非空 {req_k}")
-        if "market" in item and item["market"] not in _CAVEAT_ALLOWED_MARKETS:
-            errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}].market 非法 ({item['market']!r})")
-        if item.get("category") not in _CAVEAT_ALLOWED_CATEGORIES:
-            errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}].category 非法 ({item.get('category')!r})")
-        if item.get("severity") not in _CAVEAT_ALLOWED_SEVERITIES:
-            errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}].severity 非法 ({item.get('severity')!r})")
+        if validate_schedule:
+            assert edition is not None
+            caveat_id = item.get("id")
+            if not isinstance(caveat_id, str) or re.fullmatch(r"[a-z0-9][a-z0-9_-]*", caveat_id) is None:
+                errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}].id 须为稳定的小写编号")
+            elif caveat_id in seen_ids:
+                errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}].id 重复 ({caveat_id})")
+            else:
+                seen_ids.add(caveat_id)
+            next_review = parse_edition_id(item.get("next_review"))
+            if next_review is None or next_review[2] != 1:
+                errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}].next_review 须为有效的计划班次")
+            elif next_review[:2] <= edition[:2]:
+                errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}] 已到期，须复核后结清或登记后续班次")
+        for field, allowed in (
+            ("market", _CAVEAT_ALLOWED_MARKETS), ("category", _CAVEAT_ALLOWED_CATEGORIES),
+            ("severity", _CAVEAT_ALLOWED_SEVERITIES),
+        ):
+            if field == "market" and not validate_schedule and field not in item:
+                continue
+            value = item.get(field)
+            if not isinstance(value, str) or value not in allowed:
+                errs.append(f"Gate 4 失败：market_state.json data_caveats[{idx}].{field} 非法 ({value!r})")
         for scan_k in ("item", "detail", "impact", "next_review"):
             sval = item.get(scan_k)
             if isinstance(sval, str):

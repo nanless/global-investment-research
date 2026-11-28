@@ -403,9 +403,9 @@
 
 每次提交 `lint_readability.py --strict` 与 `lint_equity.py --strict` 前，必须逐项完成以下 **4 项卫生清扫** 并写入审计留痕：
 
-1. **清扫 1｜到期挂账一键清零（Due Backfill Sweep）**：
-   - 检查 `gold/data_snapshot.json.data_caveats`、`equity/state/market_state.json.data_caveats` 与 `pending_backfills` 中所有 **`next_review == 当班 edition_id`** 的条目；
-   - 凡 Tier 1 官源已公布的条目必须本班清零回填并从挂账表移出；确系官方延迟未出者，须写明官源核查结论并诚实顺延至下一可用班次 `next_review`。
+1. **清扫 1｜逐项复查到期和逾期挂账**
+   - 对照上个已提交班次两轨的 `data_caveats` 和权益 `pending_backfills`。检查计划不晚于本班的事项，也承接尚未到期的事项。
+   - 原证齐全时回填并在审稿回执记录核销来源。仍缺数据时保持原编号和市场，记录复查结果和后续计划。已知发布时点晚于原定复查时，计划可改到公布后的一个班次，网页显示复查计划。
 2. **清扫 2｜4 点跨库防漂移联动清单（4-Point Cross-DB Propagation Checklist）**：
    - **(a) 全量重算 27 对 A/H 实时基准**：用当班最新 A/H 官收/午收价格重新计算全部 27 对 A/H 溢价率与税后股息对比，确保 `PE_A / PE_H ≈ 1 + AH 溢价率` 全量闭环；
    - **(b) 全量刷新单日异动 `≥ 5%` 的 ETF 与个股**：在 `etf_universe.json` 与 `deep_dossiers.json` 中刷新所有当日涨跌幅 `≥ 5%` 标的的最新价位、估值与实算股息率，**同步彻底清除已过时的方向性/技术面旧表述**（例如某指数或个股已经放量突破关键阻力位后，必须删改旧档案中残留的“仍压在关键阻力位下方”类过时陈述），并严守**诚实单股 `updated_at`**（仅刷新本期实审标的）；

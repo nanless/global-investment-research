@@ -28,7 +28,7 @@ import tempfile
 import urllib.parse
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from difflib import SequenceMatcher
 from math import isfinite
 from pathlib import Path
@@ -1589,10 +1589,10 @@ def _fmt_due_edition(code: Any) -> str:
     if m:
         hhmm_int = int(m.group(4) + m.group(5))
         slot = "早报" if hhmm_int < 1100 else ("午报" if hhmm_int < 1500 else "晚报")
-        return f"预计 {int(m.group(2))}/{int(m.group(3))} {m.group(4)}:{m.group(5)} {slot}核销"
+        return f"计划于 {int(m.group(2))}/{int(m.group(3))} {m.group(4)}:{m.group(5)} {slot}复查"
     m_d = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", s)
     if m_d:
-        return f"预计 {int(m_d.group(2))}/{int(m_d.group(3))} 核销"
+        return f"计划于 {int(m_d.group(2))}/{int(m_d.group(3))} 复查"
     return _sanitize_caveat_text(s)
 
 
@@ -1683,9 +1683,9 @@ def collect_data_caveats(
                         "market": "gold",
                         "category": "provisional_close" if st == "provisional_close" else "delayed_official",
                         "severity": "warn",
-                        "item": f"美股恐慌指数（VIX）{dt_key} 官方历史日线表待核销",
+                        "item": f"美股恐慌指数（VIX）{dt_key} 官方历史日线表待复查",
                         "detail": chk.get("note") or f"{dt_key} 官方历史日线表尚未更新，暂采交易所官网收盘读数。",
-                        "impact": "次班官方历史表刷新后自动复核清零，不影响核心风控红线。",
+                        "impact": "后续班次复查官方历史表。核实后再更新读数与核验状态。",
                     },
                     "gold",
                     is_explicit=False,
@@ -1705,7 +1705,7 @@ def collect_data_caveats(
                 "category": "delayed_official",
                 "severity": "info",
                 "item": pb.get("item") or "",
-                "detail": "该市场部分官方次级数据尚待收盘或官方数据库披露，本期严守宁缺毋滥原则，下个班次统一封账核销。",
+                "detail": "该市场部分官方次级数据尚待收盘或官方数据库披露，计划按所列班次复查。",
                 "due_session": pb.get("due_session") or "",
             },
             mkt,
@@ -2012,7 +2012,7 @@ def render_cockpit_disclosure(caveats: list[dict[str, str]], holidays: list[dict
         f'<span class="disclosure-icon" aria-hidden="true">{info_svg}</span>'
         '<div class="disclosure-heading">'
         '<span class="disclosure-title">数据完整性与可能遗漏说明</span>'
-        '<span class="disclosure-sub">07:30 早报 · 11:30 午报 · 18:00 晚报准时发刊，未到官库披露时点或暂采官网收盘的数据如实挂账，绝不估算填表</span>'
+        '<span class="disclosure-sub">每日计划在 07:30、11:30、18:00 启动。尚未披露或暂采官网收盘的数据均列明</span>'
         "</div></div>"
         '<div class="disclosure-summary-meta">'
         f'<span class="disclosure-badge {badge_cls}">{esc(badge_txt)}</span>'
@@ -2022,10 +2022,10 @@ def render_cockpit_disclosure(caveats: list[dict[str, str]], holidays: list[dict
         '<div class="disclosure-body">'
         f'<div class="disclosure-list-col">{items_html}</div>'
         '<div class="disclosure-policy-col">'
-        '<div class="disclosure-policy-title">准时发刊与纠偏机制</div>'
+        '<div class="disclosure-policy-title">发刊与后续复查</div>'
         '<ul class="disclosure-policy-list">'
         "<li><strong>宁缺毋滥</strong>：未到官库披露时点的次级数据一律留空或沿用最近已核实官收并标注原日期，绝不估算填数。</li>"
-        "<li><strong>暂用明示</strong>：跨时区官方历史表尚未更新时，可暂采交易所官网收盘价，并在下一班次自动复核清零。</li>"
+        "<li><strong>暂用明示</strong>：跨时区官方历史表尚未更新时，可暂采交易所官网收盘价。在所列班次复查，核实后再更新。</li>"
         "<li><strong>留痕可查</strong>：任何后续官源修订均同步记入公开演进与核查账本，永不事后涂改旧账。</li>"
         "</ul>"
         '<div class="disclosure-policy-links">'
@@ -4801,8 +4801,8 @@ _MULTI_INDEX_SPECS: dict[str, tuple[dict[str, Any], ...]] = {
         {"id": "idx_TWII", "code": "TWII", "name": "中国台湾加权", "short": "台湾加权", "tier": "AI供应链", "prefix": "", "suffix": "", "fmt": ",.2f"},
         {"id": "idx_KS11", "code": "KOSPI", "name": "韩国KOSPI", "short": "韩国KOSPI", "tier": "存储芯片", "prefix": "", "suffix": "", "fmt": ",.2f"},
         {"id": "idx_NSEI", "code": "NIFTY50", "name": "印度Nifty50", "short": "印度Nifty50", "tier": "新兴成长", "prefix": "", "suffix": "", "fmt": ",.2f"},
-        {"id": "etf_513800", "code": "513800", "name": "南方日本东证ETF", "short": "东证513800", "tier": "境内平价", "prefix": "¥", "suffix": "", "fmt": ".3f"},
-        {"id": "etf_159561", "code": "159561", "name": "嘉实德国DAX ETF", "short": "德国159561", "tier": "境内直投", "prefix": "¥", "suffix": "", "fmt": ".3f"},
+        {"id": "etf_513800", "code": "513800", "name": "南方日本东证ETF", "short": "东证513800", "tier": "境内场内基金", "prefix": "¥", "suffix": "", "fmt": ".3f"},
+        {"id": "etf_159561", "code": "159561", "name": "嘉实德国DAX ETF", "short": "德国159561", "tier": "境内场内基金", "prefix": "¥", "suffix": "", "fmt": ".3f"},
         {"id": "etf_VXUS", "code": "VXUS", "name": "全球除美VXUS", "short": "除美VXUS", "tier": "离岸分散", "prefix": "$", "suffix": "", "fmt": ".2f"},
     ),
     "bonds_reits": (
@@ -4819,7 +4819,7 @@ _MULTI_INDEX_SPECS: dict[str, tuple[dict[str, Any], ...]] = {
         {"id": "etf_511090", "code": "511090", "name": "30年国债ETF", "short": "三十债511090", "tier": "高波久期", "prefix": "¥", "suffix": "", "fmt": ".3f"},
         {"id": "etf_511360", "code": "511360", "name": "短融ETF", "short": "短融511360", "tier": "活钱现金盾", "prefix": "¥", "suffix": "", "fmt": ".3f"},
         {"id": "etf_SGOV", "code": "SGOV", "name": "0-3月美债SGOV", "short": "短美债SGOV", "tier": "美元现金盾", "prefix": "$", "suffix": "", "fmt": ".2f"},
-        {"id": "etf_IB01", "code": "IB01", "name": "爱尔兰0-1Y美债", "short": "爱尔兰IB01", "tier": "免遗产税", "prefix": "$", "suffix": "", "fmt": ".2f"},
+        {"id": "etf_IB01", "code": "IB01", "name": "爱尔兰0-1Y美债", "short": "爱尔兰IB01", "tier": "美元累积份额", "prefix": "$", "suffix": "", "fmt": ".2f"},
         {"id": "etf_TLT", "code": "TLT", "name": "20+年美债TLT", "short": "长美债TLT", "tier": "长债博弈", "prefix": "$", "suffix": "", "fmt": ".2f"},
         {"id": "etf_XLRE", "code": "XLRE", "name": "美股REITs XLRE", "short": "美REITs", "tier": "海外不动产", "prefix": "$", "suffix": "", "fmt": ".2f"},
     ),
@@ -4871,7 +4871,7 @@ def _kline_source_label(provider: Any) -> str:
 
 def _quote_status(stamp: str) -> str:
     for pattern, label in (
-        (r"沿用|缓存", "沿用报价"), (r"官结|官方结算", "官结"),
+        (r"沿用|缓存", "沿用报价"), (r"官结|官方结算", "官结"), (r"午收|午盘|早盘收", "午盘"),
         (r"官收|官方收盘|官方终盘", "官收"), (r"盘中|实盘", "盘中"),
         (r"前收|收盘", "收盘参考"),
     ):
@@ -4888,15 +4888,54 @@ def _quote_provenance(row: dict[str, Any]) -> str:
     ))
 
 
+def _quote_timestamp(stamp: str, observed_day: str) -> datetime | None:
+    if not observed_day:
+        return None
+    clock = re.search(r"(?<![\d+-])([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:Z|[+-]\d{2}:\d{2})?", stamp)
+    if not clock:
+        return None
+    try:
+        observation = datetime.fromisoformat(f"{observed_day}T{clock[0]}")
+    except ValueError:
+        return None
+    if observation.tzinfo is not None:
+        return observation
+    timezone_label = stamp[clock.end():].strip().upper()
+    if re.match(r"E[DS]?T\b|美东", timezone_label):
+        return observation.replace(tzinfo=ZoneInfo("America/New_York"))
+    if re.match(r"UTC\b|GMT\b", timezone_label):
+        return observation.replace(tzinfo=timezone.utc)
+    return observation.replace(tzinfo=timezone(timedelta(hours=8)))
+
+
+def _edition_quote_catalog(
+    manifest: dict[str, Any] | None, state: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    manifest = manifest or {}
+    edition = state.get("edition_id")
+    if edition and manifest.get("edition_id") != edition:
+        return {}
+    return {
+        row["id"]: row for row in (manifest.get("catalog") or [])
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    }
+
+
 def _resolve_multi_index_groups(
     gold_snap: dict[str, Any],
     eq_state: dict[str, Any],
     kline_manifest: dict[str, Any] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Choose a single observation for each index, keeping its move and attribution together."""
-    cat_by_id = {
-        row["id"]: row for row in ((kline_manifest or {}).get("catalog") or [])
-        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    cat_by_id = _edition_quote_catalog(kline_manifest, eq_state)
+    cutoff = str(eq_state.get("as_of_cst") or "")
+    cutoff_day = _valid_iso_date(cutoff[:10])
+    cutoff_time = _quote_timestamp(cutoff, cutoff_day)
+    calendar = eq_state.get("calendar_overrides")
+    cash_index_markets = {"a_share": "a-share", "hk_stock": "hk-stock", "us_stock": "us-stock"}
+    fund_listing_markets = {
+        "etf_511360": "a-share", "etf_513800": "a-share", "etf_159561": "a-share",
+        "etf_SGOV": "us-stock", "etf_TLT": "us-stock", "etf_XLRE": "us-stock", "etf_VXUS": "us-stock",
     }
     markets = eq_state.get("markets") or {}
     a_m = markets.get("a_share") or {}
@@ -4972,6 +5011,8 @@ def _resolve_multi_index_groups(
         rows = []
         for rank, spec in enumerate(specs, start=1):
             sid = spec["id"]
+            stock_market = cash_index_markets.get(group) or fund_listing_markets.get(sid)
+            close_delay_minutes = 15 if sid == "idx_VIX" else 0
             override, source = (
                 overrides.get(sid.upper()) or overrides.get(spec["code"].upper())
                 or overrides.get(spec["name"].upper()) or ({}, "")
@@ -4987,14 +5028,32 @@ def _resolve_multi_index_groups(
                 stamp = str(override.get("as_of") or override.get("quote_date") or "")
                 observed_day = _valid_iso_date(_extract_iso_date(stamp))
                 status = "沿用报价" if override.get("stale") is True else _quote_status(str(override.get("quote_status") or stamp))
-                observation = value, change, observed_day, status, str(override.get("source_label") or source)
+                observed_at = _quote_timestamp(stamp, observed_day)
+                if observed_at is not None and cutoff_time is not None:
+                    in_time = observed_at <= cutoff_time
+                elif observed_day and cutoff_time is not None and stock_market and status in ("官收", "收盘参考"):
+                    in_time = _closing_quote_available(
+                        observed_day, stock_market, cutoff, calendar, close_delay_minutes=close_delay_minutes,
+                    )
+                else:
+                    in_time = not cutoff_day or observed_day <= cutoff_day
+                if in_time:
+                    observation = value, change, observed_day, status, str(override.get("source_label") or source)
 
             catalog = cat_by_id.get(sid, {})
             catalog_value = _safe_float(catalog.get("latest_close"))
+            catalog_day = _valid_iso_date(catalog.get("latest_date"))
+            available = (
+                not cutoff
+                or (catalog_day and cutoff_day and catalog_day <= cutoff_day
+                    and (not stock_market or _closing_quote_available(
+                        catalog_day, stock_market, cutoff, calendar, close_delay_minutes=close_delay_minutes,
+                    )))
+            )
             series_observation = None
-            if catalog_value is not None:
+            if catalog_value is not None and available:
                 series_observation = (
-                    catalog_value, _safe_float(catalog.get("change_pct")), _valid_iso_date(catalog.get("latest_date")),
+                    catalog_value, _safe_float(catalog.get("change_pct")), catalog_day,
                     "沿用报价" if catalog.get("stale") is True else "日线参考", _kline_source_label(catalog.get("provider")),
                 )
             if observation is None and sid not in ("rate_CN10Y", "rate_CN30Y", "idx_HSAHP"):
@@ -5006,6 +5065,8 @@ def _resolve_multi_index_groups(
                         continue
                     change = _safe_float(record.get(fields[0])) if fields else None
                     observed_day = _valid_iso_date(record.get(fields[1])) if len(fields) > 1 else ""
+                    if cutoff_day and observed_day > cutoff_day:
+                        continue
                     status = "收盘参考" if key == "spot_gold_ny_close_usd" else "盘口待核"
                     observation = value, change, observed_day, status, gold_source if record is gold_snap else eq_source
                     break
@@ -5289,19 +5350,24 @@ def _render_wallet_calculator(
     gold_allowed = gold_new_buy and (gold_tier != "Tier 0")
     markets = (eq_state or {}).get("markets") or {}
     a_cap = _safe_float((markets.get("a_share") or {}).get("equity_cap_pct"))
-    short_bond_quote = next(
-        (row for row in (kline_manifest or {}).get("catalog", [])
-         if isinstance(row, dict) and row.get("id") == "etf_511360"),
-        {},
-    )
+    short_bond_quote = _edition_quote_catalog(kline_manifest, eq_state).get("etf_511360", {})
     short_bond_close = _safe_float(short_bond_quote.get("latest_close"))
-    has_quote = short_bond_close is not None and short_bond_close > 0 and not short_bond_quote.get("stale")
+    quote_date = _valid_iso_date(short_bond_quote.get("latest_date"))
+    has_quote = (
+        short_bond_close is not None and short_bond_close > 0
+        and short_bond_quote.get("stale") is False
+        and (short_bond_quote.get("code"), short_bond_quote.get("currency")) == ("511360", "CNY")
+        and bool(quote_date)
+        and _closing_quote_available(
+            quote_date, "a-share", str(eq_state.get("as_of_cst") or ""), eq_state.get("calendar_overrides"),
+        )
+    )
     payload = {
         "gold_new_buy_allowed": gold_allowed,
         "eq_cap_pct": a_cap,
         "gold_cap_pct": 10,
         "short_bond_lot_rmb": round(short_bond_close * 100, 2) if has_quote else None,
-        "short_bond_quote_date": short_bond_quote.get("latest_date") if has_quote else None,
+        "short_bond_quote_date": quote_date if has_quote else None,
     }
     safe_json = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     gold_status_pill = (
@@ -5880,6 +5946,20 @@ def _pcal_pick(obj: dict[str, Any], *keys: str, default: str = "") -> str:
     return default
 
 
+def _policy_brief_display(brief: dict[str, Any]) -> dict[str, str]:
+    """Display the same reviewed fields on the homepage and the market radar."""
+    authority = _pcal_pick(brief, "authority", "source_authority", "source", "agency", default="官源追踪")
+    day = _pcal_pick(brief, "date_cst", "timestamp_cst", default="日期待核")
+    clock = _pcal_pick(brief, "time_cst")
+    stamp = f"{day} {clock}" if clock and clock not in day else day
+    return {
+        "attribution": f"{authority} · {stamp}",
+        "headline": _pcal_pick(brief, "headline", "title", default="重要市场动态"),
+        "summary": _pcal_pick(brief, "summary", "plain_takeaway", "plain_chinese", "plain_summary", "beginner_summary",
+                              default="持续跟踪官方口径与落地节奏。"),
+    }
+
+
 def _policy_brief_source_links(brief: dict[str, Any]) -> str:
     links = policy_brief_links(brief)
     return " ".join(
@@ -5887,6 +5967,13 @@ def _policy_brief_source_links(brief: dict[str, Any]) -> str:
         f'原始来源{f" {index}" if len(links) > 1 else ""} ↗</a>'
         for index, url in enumerate(links, start=1)
     )
+
+
+def _policy_event_source_link(event: dict[str, Any]) -> str:
+    source = event.get("source_url")
+    if not is_https_source(source, published_source=True):
+        return ""
+    return f' <a class="mnews-src-link" href="{esc(source)}" target="_blank" rel="noopener noreferrer">原始来源 ↗</a>'
 
 
 def _pcal_parse_base_date(policy_cal: dict[str, Any] | None, eq_state: dict[str, Any]) -> date:
@@ -6084,8 +6171,8 @@ def _render_policy_calendar_section(
 
     raw_briefs = (cal_obj.get("policy_briefs") if cal_obj else None) or []
     raw_events = (
-        (cal_obj.get("upcoming_events") if cal_obj else None)
-        or (cal_obj.get("events") if cal_obj else None)
+        (cal_obj.get("events") if cal_obj else None)
+        or (cal_obj.get("upcoming_events") if cal_obj else None)
         or (cal_obj.get("calendar_events") if cal_obj else None)
         or []
     )
@@ -6107,6 +6194,7 @@ def _render_policy_calendar_section(
         or fmt_cst_compact(str(eq_state.get("as_of_cst") or ""))
         or base_date.isoformat()
     )
+    cutoff_clock = as_of_disp[11:16]
 
     _mkt_cn_map = {
         "a_share": "A股",
@@ -6187,13 +6275,7 @@ def _render_policy_calendar_section(
         )
         cat_raw = str(b.get("category") or "").strip().lower()
         cat_lbl = _cat_cn_map.get(cat_raw, "")
-        auth = _pcal_pick(b, "authority", "source_authority", "source", "agency", default="官方政策追踪")
-        ts = _pcal_pick(b, "timestamp_cst", "published_cst", "published_at", "date_cst", "as_of", default=as_of_disp)
-        t_hm = str(b.get("time_cst") or "").strip()
-        ts_disp = f"{ts} {t_hm}" if (t_hm and t_hm not in ts) else ts
-        src_disp = f"{auth} · {ts_disp}" if (auth and ts_disp) else (auth or ts_disp)
-        headline = _pcal_pick(b, "headline", "title", default="核心政策动态跟踪")
-        plain = _pcal_pick(b, "plain_takeaway", "plain_chinese", "plain_summary", "beginner_summary", "summary", default="持续跟踪官方口径与落地节奏。")
+        display = _policy_brief_display(b)
         trans = _pcal_pick(b, "cross_market_transmission", "market_transmission", "transmission", "cross_market_impact", "impact_chain")
         guard = _pcal_pick(b, "action_guardrail", "action_boundary", "practical_boundary", "pre_event_stance", "guardrail", "discipline")
         mkt_imp = _pcal_pick(b, "market_impact")
@@ -6226,11 +6308,11 @@ def _render_policy_calendar_section(
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
             f'<span class="pcal-tier-pill {tier_cls}">{_pcal_meter_html(b_tier_code)}{esc(tier_lbl)}</span>'
             f"{cat_pill_html}"
-            f'<span class="pcal-src">{esc(src_disp)}</span>'
+            f'<span class="pcal-src" data-pcal-brief-field="attribution">{esc(display["attribution"])}</span>'
             f"{_policy_brief_source_links(b)}"
             "</div>"
-            f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
-            f'<div class="pcal-brief-row"><strong>白话看懂：</strong>{esc(plain)}</div>'
+            f'<h4 class="pcal-brief-title" data-pcal-brief-field="headline">{esc(display["headline"])}</h4>'
+            f'<div class="pcal-brief-row"><strong>白话看懂：</strong><span data-pcal-brief-field="summary">{esc(display["summary"])}</span></div>'
             f'<div class="pcal-brief-row"><strong>跨市传导：</strong>{esc(trans)}</div>'
             f'<div class="pcal-brief-guard"><strong>实操边界：</strong>{esc(guard)}</div>'
             "</article>"
@@ -6312,6 +6394,12 @@ def _render_policy_calendar_section(
             and end_delta_days is not None
             and end_delta_days >= 0
         )
+        exact_time_passed = (
+            prec == "exact" and delta_days == 0 and (end_delta_days is None or end_delta_days == 0)
+            and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time_raw)
+            and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", cutoff_clock)
+            and time_raw < cutoff_clock
+        )
 
         explicit_horizon = str(ev.get("horizon") or "").strip().lower()
         if explicit_horizon in ("14d", "30d"):
@@ -6324,7 +6412,7 @@ def _render_policy_calendar_section(
         is_soon = False
         if prec == "window_tbd":
             if is_ongoing:
-                countdown_lbl = "进行中"
+                countdown_lbl = "窗口进行中"
                 is_soon = True
                 sort_delta = 0
             elif delta_days is not None and 0 <= delta_days <= 3:
@@ -6355,8 +6443,11 @@ def _render_policy_calendar_section(
                 is_soon = True
                 sort_delta = 0
             elif delta_days < 0:
-                countdown_lbl = "近期已落地"
+                countdown_lbl = "原定日期已过"
                 sort_delta = delta_days
+            elif exact_time_passed:
+                countdown_lbl = "原定时刻已过"
+                sort_delta = 0
             elif delta_days == 0:
                 countdown_lbl = "今日"
                 is_soon = True
@@ -6414,6 +6505,7 @@ def _render_policy_calendar_section(
             f'<span class="pcal-event-time">{esc(time_disp)}</span>'
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
             f'<span class="pcal-tier-pill {tier_cls}">{_pcal_meter_html(tier_code)}{esc(tier_lbl)}</span>'
+            f'{_policy_event_source_link(ev)}'
             "</div>"
             f'<div class="pcal-event-title">{esc(title)}</div>'
             f'<div class="pcal-event-cons"><strong>市场预期：</strong>{esc(consensus)}</div>'
@@ -6577,8 +6669,7 @@ def _render_market_forward_calendar(
         time = _pcal_pick(event, "time_cst", default="时刻待核")
         _, tier_cls, tier_name = _pcal_norm_tier(event.get("impact_tier"))
         title = esc(_pcal_pick(event, "title"))
-        source = _pcal_pick(event, "source_url")
-        source_link = f' <a href="{esc(source)}">原始来源</a>' if source.startswith("https://") else ""
+        source_link = _policy_event_source_link(event)
         rows.append(
             f'<tr data-event-id="{esc(event_id)}"><td>{esc(span)} · {esc(time)}</td>'
             f'<td><strong>{title}</strong> <span class="pcal-tier-pill {tier_cls}">{esc(tier_name)}</span>{source_link}</td>'
@@ -6733,12 +6824,7 @@ def _render_market_news_radar(
         if cat_k not in seen_cat_keys:
             seen_cat_keys.add(cat_k)
             seen_cats.append((cat_k, cat_lbl))
-        auth = _pcal_pick(b, "authority", "source_authority", "source", default="官源追踪")
-        ts = _pcal_pick(b, "date_cst", default=as_of_disp)
-        t_hm = str(b.get("time_cst") or "").strip()
-        ts_disp = f"{ts} {t_hm}" if (t_hm and t_hm not in ts) else ts
-        headline = _pcal_pick(b, "headline", "title", default="重要市场动态")
-        plain = _pcal_pick(b, "summary", "plain_takeaway", default="")
+        display = _policy_brief_display(b)
         mkt_imp = _pcal_pick(b, "market_impact")
         aff_labels = [_mkt_cn.get(str(m).strip(), str(m).strip()) for m in (b.get("affected_markets") or []) if str(m).strip()]
         aff_txt = " / ".join(dict.fromkeys(aff_labels))
@@ -6760,11 +6846,11 @@ def _render_market_news_radar(
             f'<span class="pcal-region-tag">{esc(reg_lbl)}</span>'
             f'<span class="pcal-tier-pill {tier_cls}">{_meter(b_tier_code)}{esc(tier_lbl)}</span>'
             f'<span class="mnews-cat-pill">{esc(cat_lbl)}</span>'
-            f'<span class="pcal-src">{esc(auth)} · {esc(ts_disp)}</span>'
+            f'<span class="pcal-src" data-pcal-brief-field="attribution">{esc(display["attribution"])}</span>'
             f"{_policy_brief_source_links(b)}"
             "</div>"
-            f'<h4 class="pcal-brief-title">{esc(headline)}</h4>'
-            f'<div class="pcal-brief-row"><strong>白话看懂：</strong>{esc(plain)}</div>'
+            f'<h4 class="pcal-brief-title" data-pcal-brief-field="headline">{esc(display["headline"])}</h4>'
+            f'<div class="pcal-brief-row"><strong>白话看懂：</strong><span data-pcal-brief-field="summary">{esc(display["summary"])}</span></div>'
             f'<div class="pcal-brief-row"><strong>跨市传导：</strong>{esc(trans)}</div>'
             f'<div class="pcal-brief-guard"><strong>实操边界：</strong>{esc(guard)}</div>'
             "</article>"
@@ -9300,26 +9386,38 @@ def merge_stock_dossiers(
 
 def _closing_quote_available(
     observed: str, market: str, cutoff: str, calendar_overrides: list[dict] | None = None,
+    *,
+    close_delay_minutes: int = 0,
 ) -> bool:
+    """Check a dated daily bar against the local cash session and declared holidays."""
     try:
         day = date.fromisoformat(observed)
-        if cutoff == cutoff[:10]:
-            return day <= date.fromisoformat(cutoff)
         stamp = datetime.fromisoformat(cutoff)
     except (TypeError, ValueError):
         return False
+    if day.weekday() >= 5:
+        return False
+
+    market_id = market.replace("-", "_")
+    holiday_types = {"partial_holiday", "long_holiday_start", "full_holiday", "full_holiday_and_rollover"}
+    session_rules = {
+        entry.get("type") for entry in calendar_overrides or []
+        if isinstance(entry, dict) and isinstance(entry.get("type"), str)
+        and isinstance(entry.get("markets_affected"), list) and market_id in entry["markets_affected"]
+        and (first := _valid_iso_date(entry.get("date_cst"))) and first <= observed
+        and observed <= _valid_iso_date(entry.get("end_date_cst", first))
+    }
+    if session_rules & holiday_types:
+        return False
+    if cutoff == cutoff[:10]:
+        return day <= stamp.date()
     beijing = ZoneInfo("Asia/Shanghai")
     zone = ZoneInfo("America/New_York") if market == "us-stock" else beijing
     closes = {"a-share": time(15), "hk-stock": time(16, 10), "us-stock": time(16)}
     half_day_closes = {"hk-stock": time(12, 10), "us-stock": time(13)}
-    half_day = any(
-        isinstance(entry, dict) and entry.get("type") == "half_day" and entry.get("date_cst") == observed
-        and isinstance(entry.get("markets_affected"), list) and market.replace("-", "_") in entry["markets_affected"]
-        for entry in calendar_overrides or []
-    )
-    close = half_day_closes.get(market, closes[market]) if half_day else closes[market]
+    close = half_day_closes.get(market, closes[market]) if "half_day" in session_rules else closes[market]
     cutoff_at = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=beijing)
-    return datetime.combine(day, close, zone) <= cutoff_at
+    return datetime.combine(day, close, zone) + timedelta(minutes=close_delay_minutes) <= cutoff_at
 
 
 def _align_screener_quotes(

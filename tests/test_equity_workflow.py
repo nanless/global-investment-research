@@ -107,6 +107,7 @@ class EquityWorkflowTests(unittest.TestCase):
         }
         self.state = {
             "period_slug": "2026_11", "markets": {market: {} for market in MARKETS}, "policy_radars": {},
+            "data_caveats": [],
             "cross_market_linkages": {
                 "rates_fx_chain": {key: self.gold[key] for key in ("us10y_pct", "dxy", "cfets_cny_fixing", "cfets_fixing_date")}
                 | {"dfii10_pct": self.gold["dfii10_live_pct"]},
@@ -438,6 +439,23 @@ class EquityWorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("重复的 us_stock 日报", result.stdout)
         self.assertIn("已逾期", result.stdout)
+
+    def test_new_edition_requires_an_explicit_data_caveats_array(self):
+        self.advance("2026-11-28_1800")
+        del self.state["data_caveats"]
+        self.save()
+        historical = self.lint("--precheck", "--strict")
+        self.assertEqual(historical.returncode, 0, historical.stdout + historical.stderr)
+
+        self.advance("2026-11-29_0730")
+        missing = self.lint("--precheck", "--strict")
+        self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
+        self.assertIn("缺少 data_caveats 数组", missing.stdout)
+
+        self.state["data_caveats"] = []
+        self.save()
+        current = self.lint("--precheck", "--strict")
+        self.assertEqual(current.returncode, 0, current.stdout + current.stderr)
 
     def test_calendar_rejects_duplicate_market_and_bad_revision(self):
         self.state["calendar_overrides"][0]["markets_affected"].append("us_stock")

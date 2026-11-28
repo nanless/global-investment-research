@@ -2319,8 +2319,16 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                         target.write_text("Fixture manuscript or source data\n", encoding="utf-8")
                 source = review["sources"]["real_yield"][0]
                 fact = "财政部发布的实际利率按当日交易口径核验。"
+                calculation = "同口径利率相差 0.07 个百分点，即 7 个基点。"
                 inference = "如果实际利率继续上行，久期风险可能扩大。"
-                (sandbox / gold_daily).write_text(f"{fact} [实际利率原始数据]({source})\n{inference}\n", encoding="utf-8")
+                (sandbox / gold_daily).write_text(
+                    f"{fact} [实际利率原始数据]({source})\n{calculation}\n{inference}\n", encoding="utf-8",
+                )
+                policy_path = review_evidence.POLICY_CALENDAR_PATH
+                brief = {
+                    "id": "treasury-rates", "headline": fact, "source_url": source, "home_featured": True,
+                }
+                (sandbox / policy_path).write_text(json.dumps({"policy_briefs": [brief]}), encoding="utf-8")
                 candidate = psd.inspect_state_dbs(sandbox, "review-candidate")
                 rsi_run["review_closure"].update(
                     candidate_sha256=candidate["candidate_sha256"],
@@ -2331,11 +2339,16 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                 )
                 checks = rsi_run["review_closure"]["checks"]
                 checks["cross_track"]["files"] = ["gold/data_snapshot.json", review_evidence.STATE_PATH]
+                checks["primary_sources"]["files"].append(policy_path)
                 checks["primary_sources"]["source_urls"] = review["sources"]["real_yield"]
                 checks["primary_sources"]["claims"] = [{
                     "file": gold_daily, "excerpt": excerpt, "kind": kind, "source_file": gold_daily,
                     "source_url": source, "verification": "核查实际利率表的当日数据。",
-                } for excerpt, kind in ((fact, "fact"), (inference, "inference"))]
+                } for excerpt, kind in ((fact, "fact"), (calculation, "calculation"), (inference, "inference"))]
+                checks["primary_sources"]["claims"].append({
+                    "file": policy_path, "source_file": policy_path, "policy_brief_id": brief["id"],
+                    "excerpt": fact, "kind": "fact", "source_url": source, "verification": "核查实际利率表的当日数据。",
+                })
                 for track, patch_path in (
                     ("gold", "gold/daily/_rsi_patch.json"), ("equity", "equity/state/_rsi_patch.json"),
                 ):

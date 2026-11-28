@@ -35,6 +35,7 @@ CONVERGED_CUTOVER = ("2026-11-26", "1800", 1)
 INTERNAL_LEAK_CUTOVER = ("2026-11-26", "0730", 1)
 EDITORIAL_DEPTH_CUTOVER = ("2026-11-27", "0730", 1)
 EFFR_PROVENANCE_CUTOVER = ("2026-11-28", "1130", 1)
+CAVEAT_SCHEDULE_CUTOVER = ("2026-11-28", "1800")
 
 _SHFE_0230_RE = re.compile(r"(?<!\d)02:30(?!\d)")
 _SHFE_NON_GOLD_METAL_RE = re.compile(
@@ -644,17 +645,23 @@ def validate_snapshot_file(
             )
 
     _check_institutional_snapshot(snap, label, errors)
-    if is_daily and "data_caveats" in snap:
-        _validate_data_caveats(snap.get("data_caveats"), label, errors)
+    if is_daily:
+        edition = _edition_key(snap.get("edition_id"))
+        validate_schedule = edition is not None and edition[:2] > CAVEAT_SCHEDULE_CUTOVER
+        if "data_caveats" in snap or validate_schedule:
+            _validate_data_caveats(snap.get("data_caveats"), label, errors, edition=edition)
     return snap
 
 
-def _validate_data_caveats(caveats: object, label: str, errors: list[str]) -> None:
+def _validate_data_caveats(
+    caveats: object, label: str, errors: list[str], *, edition: tuple[str, str, int] | None = None,
+) -> None:
     """Validate structured data_caveats array and ensure zero internal engineering leaks."""
     if not isinstance(caveats, list):
         errors.append(f"[Gate 5 信息缺口结构错] {label}: data_caveats 须为数组")
         return
     req_fields = ("id", "market", "category", "severity", "item", "detail", "impact", "next_review")
+    validate_schedule = edition is not None and edition[:2] > CAVEAT_SCHEDULE_CUTOVER
     seen_ids: set[str] = set()
     for idx, entry in enumerate(caveats):
         if not isinstance(entry, dict):
@@ -669,6 +676,15 @@ def _validate_data_caveats(caveats: object, label: str, errors: list[str]) -> No
             if cid in seen_ids:
                 errors.append(f"[Gate 5 信息缺口重复] {label}: data_caveats id '{cid}' 重复")
             seen_ids.add(cid)
+        if validate_schedule:
+            assert edition is not None
+            if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", cid) is None or cid != entry.get("id"):
+                errors.append(f"[Gate 5 信息缺口标识错] {label}: data_caveats[{idx}].id 须为稳定的小写编号")
+            next_review = _edition_key(entry.get("next_review"))
+            if next_review is None or next_review[1] not in ("0730", "1130", "1800") or next_review[2] != 1:
+                errors.append(f"[Gate 5 信息缺口班次错] {label}: data_caveats[{idx}].next_review 须为有效的计划班次")
+            elif next_review[:2] <= edition[:2]:
+                errors.append(f"[Gate 5 信息缺口已到期] {label}: data_caveats[{idx}] 须复核后结清或登记后续班次")
         cat = str(entry.get("category", "")).strip()
         if cat and cat not in _CAVEAT_ALLOWED_CATEGORIES:
             errors.append(f"[Gate 5 信息缺口枚举错] {label}: data_caveats[{idx}].category={cat!r} 非法")

@@ -19,7 +19,16 @@ class ReviewEvidenceTest(unittest.TestCase):
         self.us_daily = "equity/daily/2026-11-29_0730_us_stock.md"
         self.verified_source = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"
         self.excerpt = "美国财政部在官方利率表上公布当日收益率。"
+        self.calculation = "同口径的前后两个收益率相差 7 个基点。"
         self.inference = "若利率继续上行，久期风险可能扩大。"
+        self.policy_briefs = [
+            {"id": "rates", "headline": '报告使用 "上一交易日" 的同口径收益率。',
+             "source_url": self.verified_source, "home_featured": True},
+            {"id": "fed", "headline": "纽约联储公布上一工作日的有效联邦基金利率。",
+             "source_url": "https://www.newyorkfed.org/markets/reference-rates/effr", "home_featured": True},
+            {"id": "unfeatured", "headline": "其他资讯只在相关市场页显示。",
+             "source_url": self.verified_source, "home_featured": False},
+        ]
         paths = {
             market: f"daily/2026-11-27_1800_{market}_r2.md" for market in review_evidence.MARKETS
         }
@@ -28,7 +37,8 @@ class ReviewEvidenceTest(unittest.TestCase):
         for path in (*review_evidence.FIXED_PATHS, self.gold_daily, *(f"equity/{p}" for p in paths.values())):
             self.write(path, "Fixture content\n")
         for path in (self.gold_daily, self.us_daily):
-            self.write(path, f"{self.excerpt} [利率表]({self.verified_source})\n{self.inference}\n")
+            self.write(path, f"{self.excerpt} [利率表]({self.verified_source})\n{self.calculation}\n{self.inference}\n")
+        self.write(review_evidence.POLICY_CALENDAR_PATH, json.dumps({"policy_briefs": self.policy_briefs}))
         self.write(review_evidence.STATE_PATH, json.dumps({
             "edition_id": self.edition, "markets": {
                 market: {"latest_daily": path} for market, path in paths.items()
@@ -50,15 +60,25 @@ class ReviewEvidenceTest(unittest.TestCase):
             for check in review_evidence.CHECK_IDS
         }
         checks["cross_track"]["files"] = ["gold/data_snapshot.json", review_evidence.STATE_PATH]
-        checks["primary_sources"].update({
-            "files": [self.gold_daily, self.us_daily],
-            "source_urls": [self.verified_source],
-            "claims": [{
+        claims = [
+            {
                 "file": path, "excerpt": excerpt, "kind": kind, "source_file": path,
                 "source_url": self.verified_source, "verification": "核对发布日期与对应交易日。",
-            } for path in (self.gold_daily, self.us_daily) for kind, excerpt in (
-                ("fact", self.excerpt), ("inference", self.inference),
-            )],
+            }
+            for path in (self.gold_daily, self.us_daily)
+            for kind, excerpt in (
+                ("fact", self.excerpt), ("calculation", self.calculation), ("inference", self.inference),
+            )
+        ]
+        claims.extend({
+            "file": review_evidence.POLICY_CALENDAR_PATH, "source_file": review_evidence.POLICY_CALENDAR_PATH,
+            "excerpt": brief["headline"], "policy_brief_id": brief["id"], "kind": "fact",
+            "source_url": brief["source_url"], "verification": "核对发布时点和原公告的统计范围。",
+        } for brief in self.policy_briefs if brief["home_featured"])
+        checks["primary_sources"].update({
+            "files": [self.gold_daily, self.us_daily, review_evidence.POLICY_CALENDAR_PATH],
+            "source_urls": list(dict.fromkeys(claim["source_url"] for claim in claims)),
+            "claims": claims,
         })
         return {
             "run_id": self.edition,
@@ -143,10 +163,11 @@ class ReviewEvidenceTest(unittest.TestCase):
                     self.validate(closure, candidate)
 
         closure = self.receipt(candidate)["review_closure"]
-        closure["checks"]["primary_sources"]["claims"].pop()
-        with self.assertRaisesRegex(ValueError, "an observed fact or calculation and an inference"):
+        claims = closure["checks"]["primary_sources"]["claims"]
+        claims[:] = [entry for entry in claims if not (entry["file"] == self.us_daily and entry["kind"] == "calculation")]
+        with self.assertRaisesRegex(ValueError, "must review a fact, calculation and inference"):
             self.validate(closure, candidate)
-        closure["checks"]["primary_sources"]["claims"].pop()
+        claims[:] = [entry for entry in claims if entry["file"] != self.us_daily]
         with self.assertRaisesRegex(ValueError, "missing claims for current manuscripts"):
             self.validate(closure, candidate)
 
@@ -159,6 +180,187 @@ class ReviewEvidenceTest(unittest.TestCase):
         candidate = self.inspect()
         with self.assertRaisesRegex(ValueError, "excerpt does not match"):
             self.validate(self.receipt(candidate)["review_closure"], candidate)
+
+    def test_featured_policy_claims_are_required_and_belong_to_the_same_record(self):
+        candidate = self.inspect()
+        self.assertEqual(candidate["featured_policy_briefs"], [
+            {"id": brief["id"], "headline": brief["headline"], "source_urls": [brief["source_url"]]}
+            for brief in self.policy_briefs[:2]
+        ])
+        self.validate(self.receipt(candidate)["review_closure"], candidate)
+
+        closure = self.receipt(candidate)["review_closure"]
+        claims = closure["checks"]["primary_sources"]["claims"]
+        claims[-1]["source_url"] = self.verified_source
+        with self.assertRaisesRegex(ValueError, "source URL does not belong to policy brief fed"):
+            self.validate(closure, candidate)
+
+        closure = self.receipt(candidate)["review_closure"]
+        claims = closure["checks"]["primary_sources"]["claims"]
+        claims[-1]["excerpt"] = self.policy_briefs[0]["headline"]
+        with self.assertRaisesRegex(ValueError, "headline or summary of its policy_brief_id"):
+            self.validate(closure, candidate)
+
+        closure = self.receipt(candidate)["review_closure"]
+        claims = closure["checks"]["primary_sources"]["claims"]
+        claims[-1]["kind"] = "inference"
+        with self.assertRaisesRegex(ValueError, "missing facts for featured policy briefs: fed"):
+            self.validate(closure, candidate)
+
+    def test_one_excerpt_cannot_count_as_two_types_with_different_urls(self):
+        source2 = self.policy_briefs[1]["source_url"]
+        gold = self.root / self.gold_daily
+        self.write(self.gold_daily, gold.read_text() + f"[辅助行情]({source2})\n")
+        candidate = self.inspect()
+        for excerpt in (self.excerpt, self.excerpt[:-1], self.excerpt[2:-2]):
+            with self.subTest(excerpt=excerpt):
+                closure = self.receipt(candidate)["review_closure"]
+                calculation = closure["checks"]["primary_sources"]["claims"][1]
+                calculation.update(excerpt=excerpt, source_url=source2)
+                with self.assertRaisesRegex(ValueError, "same claim excerpt as multiple kinds"):
+                    self.validate(closure, candidate)
+
+    def test_distinct_claim_excerpts_can_share_part_of_their_text(self):
+        self.excerpt = "已公布的当日收益率使用相同统计口径。"
+        self.calculation = "使用相同统计口径复算后，二者相差七个基点。"
+        for rel in (self.gold_daily, self.us_daily):
+            self.write(rel, f"{self.excerpt} [利率表]({self.verified_source})\n{self.calculation}\n{self.inference}\n")
+        candidate = self.inspect()
+        self.validate(self.receipt(candidate)["review_closure"], candidate)
+
+    def test_markdown_source_must_be_a_renderable_link_target(self):
+        source2 = self.policy_briefs[1]["source_url"]
+        for markup in (
+            f"[同时提到 {self.verified_source} 的链接]({source2})",
+            f"`[原始利率]({self.verified_source})`",
+            f"[原始利率]`分隔内容`({self.verified_source})",
+            f"<code>[原始利率]({self.verified_source})</code>",
+            f"<strong>[原始利率]({self.verified_source})</strong>",
+            f"<{self.verified_source}>",
+            f"原始文件 {self.verified_source}",
+        ):
+            with self.subTest(markup=markup):
+                self.write(self.gold_daily, f"{self.excerpt} {markup}\n{self.calculation}\n{self.inference}\n")
+                candidate = self.inspect()
+                with self.assertRaisesRegex(ValueError, "does not match a citation link target"):
+                    self.validate(self.receipt(candidate)["review_closure"], candidate)
+
+    def test_backtick_code_uses_the_same_boundaries_as_the_portal(self):
+        for rel in (self.gold_daily, self.us_daily):
+            previous = (self.root / rel).read_text(encoding="utf-8")
+            with self.subTest(rel=rel):
+                self.write(rel, f"{self.excerpt}\n    ```text\n[利率表]({self.verified_source})\n\t```\n"
+                                f"{self.calculation}\n{self.inference}\n")
+                candidate = self.inspect()
+                with self.assertRaisesRegex(ValueError, "does not match a citation link target"):
+                    self.validate(self.receipt(candidate)["review_closure"], candidate)
+                self.write(rel, "````text\n示例代码\n```end\n" + previous)
+                candidate = self.inspect()
+                self.validate(self.receipt(candidate)["review_closure"], candidate)
+            self.write(rel, previous)
+
+    def test_historical_slot_revisions_keep_the_original_receipt_contract(self):
+        candidate = self.inspect()
+        closure = self.receipt(candidate)["review_closure"]
+        primary = closure["checks"]["primary_sources"]
+        primary["claims"] = [
+            entry for entry in primary["claims"] if entry["file"] in (self.gold_daily, self.us_daily)
+            and entry["kind"] != "calculation"
+        ]
+        primary["source_urls"] = [self.verified_source]
+        for edition in ("2026-11-28_1800", "2026-11-28_1800_r2"):
+            with self.subTest(edition=edition):
+                legacy_candidate = {**candidate, "edition_id": edition}
+                self.validate(closure, legacy_candidate)
+
+    def test_backfill_recheck_is_required_before_ingestion_and_on_exact_commit(self):
+        def git(*args):
+            return subprocess.check_output(
+                ["git", "-c", "user.name=Review Test", "-c", "user.email=review@example.invalid", *args],
+                cwd=self.root, text=True,
+            ).strip()
+
+        previous = "2026-11-28_1800"
+        gold_path = review_evidence.BACKFILL_STATE_PATHS["gold"]
+        equity_path = review_evidence.STATE_PATH
+        current_equity = json.loads((self.root / equity_path).read_bytes())
+        self.write(gold_path, json.dumps({"edition_id": previous, "data_caveats": [
+            {"id": "overnight_rates", "market": "gold", "item": "等待利率原表", "next_review": "2026-11-30_1800"},
+        ]}))
+        self.write(equity_path, json.dumps({**current_equity, "edition_id": previous, "pending_backfills": [
+            {"market": "us_stock", "item": "等待融资数据", "due_session": "2026-11-30_1800"},
+        ]}))
+        git("init", "-q")
+        git("add", "gold", "equity")
+        git("commit", "-qm", "Previous edition with pending source data")
+        base = git("rev-parse", "HEAD")
+
+        self.write(gold_path, json.dumps({"edition_id": self.edition, "data_caveats": []}))
+        self.write(equity_path, json.dumps({**current_equity, "pending_backfills": [
+            {"market": "us_stock", "item": "等待融资数据", "due_session": "2026-11-30_1800"},
+        ]}))
+        candidate = self.inspect()
+        self.assertEqual(candidate["previous_backfills"]["gold"][0]["id"], "overnight_rates")
+        self.assertTrue(candidate["previous_backfills"]["equity"][0]["id"].startswith("legacy-"))
+
+        missing = self.receipt(candidate)
+        self.write(self.patch, json.dumps(missing))
+        with self.assertRaisesRegex(ValueError, "overnight_rates disappeared"):
+            patch_state_dbs.append_gold_rsi(self.root)
+        self.assertEqual(json.loads((self.root / self.metrics).read_bytes())["runs"], [])
+
+        # A real commit with a valid candidate digest but missing closure must still fail.
+        equity_metrics = "equity/state/rsi_metrics.json"
+        for key in (self.metrics, equity_metrics):
+            self.write(key, json.dumps({"score_dimensions": self.dimensions, "runs": [missing]}))
+        git("add", "gold", "equity")
+        git("commit", "-qm", "Incorrectly dropped a pending backfill")
+        rejected = git("rev-parse", "HEAD")
+        with patch.object(edition_run, "ROOT", self.root):
+            with self.assertRaisesRegex(ValueError, "overnight_rates disappeared"):
+                edition_run.check_edition_reviews(self.edition, sha=rejected, base_sha=base)
+
+        closed = self.receipt(candidate)
+        closed["review_closure"]["backfill_rechecks"] = [{
+            "kind": "data_caveats", "id": "overnight_rates", "status": "resolved",
+            "source_url": self.verified_source, "note": "已核对上一个交易日的完整利率原表。",
+        }]
+        self.write(self.metrics, json.dumps({"score_dimensions": self.dimensions, "runs": [closed]}))
+        git("add", self.metrics)
+        git("commit", "-qm", "Record the verified disposition")
+        accepted = git("rev-parse", "HEAD")
+        with patch.object(edition_run, "ROOT", self.root):
+            edition_run.check_edition_reviews(self.edition, sha=accepted, base_sha=base)
+
+    def test_backfill_carry_and_roll_forward_preserve_market_identifier_and_evidence(self):
+        legacy_edition = "2026-11-28_1800"
+        row = {"market": "us_stock", "item": "等待融资数据", "due_session": self.edition}
+        previous = json.dumps({"edition_id": legacy_edition, "pending_backfills": [row]}).encode()
+        prior_id = next(iter(review_evidence.previous_backfills(self.edition, "equity", previous).values()))["id"]
+        evidence = {"kind": "pending_backfills", "id": prior_id, "status": "still_pending",
+                    "source_url": self.verified_source, "note": "原始网页仍未公布该交易日的完整数据。"}
+
+        def verify(current_rows, decision=None, baseline=previous):
+            closure = {"backfill_rechecks": [decision]} if decision else {}
+            current = json.dumps({"edition_id": self.edition, "pending_backfills": current_rows}).encode()
+            review_evidence.validate_backfill_rechecks(closure, self.edition, "equity", baseline, current)
+
+        deferred = dict(row, due_session="2026-11-29_1130")
+        with self.assertRaisesRegex(ValueError, "requires a still_pending recheck"):
+            verify([deferred])
+        verify([deferred], evidence)
+        verify([dict(deferred, id=prior_id, item="补查原始融资公告")], evidence)
+        with self.assertRaisesRegex(ValueError, "cannot change market"):
+            verify([dict(deferred, id=prior_id, market="hk_stock")], evidence)
+        with self.assertRaisesRegex(ValueError, "specific public HTTPS evidence"):
+            verify([deferred], dict(evidence, source_url="https://home.treasury.gov/"))
+        with self.assertRaisesRegex(ValueError, "slot after the current edition"):
+            verify([row], evidence)
+        with self.assertRaisesRegex(ValueError, "remain open after a resolved recheck"):
+            verify([deferred], dict(evidence, status="resolved"))
+        future = json.dumps({"edition_id": legacy_edition, "pending_backfills": [deferred]}).encode()
+        verify([deferred], baseline=future)
+        self.assertEqual(review_evidence.previous_backfills("2026-11-28_1800_r2", "gold", b"legacy history"), {})
 
     def test_publication_review_gate_reads_the_exact_commit_and_rejects_changed_candidate(self):
         receipt = self.receipt(self.inspect())

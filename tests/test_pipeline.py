@@ -106,6 +106,47 @@ class EditionRunTest(unittest.TestCase):
         deploy.assert_called_once_with(sha, "example/project", 180)
         self.assertEqual(edition_run.status(self.runs)[0]["status"], "complete")
 
+    def test_complete_can_be_retried_after_the_receipt_was_committed(self):
+        token = self.reach_publish()
+        sha = self.committed_edition()
+        url = "https://example.invalid/actions/runs/1"
+        edition_run.record_push(token, sha=sha, repository="example/project")
+        with patch.object(edition_run, "verify_pages", return_value=url) as deploy:
+            with self.runs:
+                self.assertEqual(edition_run.complete(self.runs, token), url)
+            completed_row = edition_run.status(self.runs)[0]
+            with self.runs:
+                self.assertEqual(edition_run.complete(self.runs, token), url)
+            self.assertEqual(edition_run.status(self.runs)[0], completed_row)
+        deploy.assert_called_once_with(sha, "example/project", 180)
+
+    def test_parallel_completion_returns_the_recorded_exact_proof(self):
+        token = self.reach_publish()
+        sha = self.committed_edition()
+        url = "https://example.invalid/actions/runs/1"
+        edition_run.record_push(token, sha=sha, repository="example/project")
+
+        for stale_probe in (False, True):
+            with self.subTest(stale_probe=stale_probe):
+                with self.runs:
+                    self.runs.execute("UPDATE publications SET deployed_sha = NULL WHERE token = ?", (token,))
+                    self.runs.execute("UPDATE runs SET status = 'running', outcome = '' WHERE token = ?", (token,))
+
+                def finish_in_another_connection(*_args):
+                    other = edition_run.open_runs()
+                    try:
+                        with other, patch.object(edition_run, "verify_pages", return_value=url):
+                            self.assertEqual(edition_run.complete(other, token), url)
+                    finally:
+                        other.close()
+                    if stale_probe:
+                        raise edition_run.DeploymentPending("Temporary transport timeout")
+                    return "https://example.invalid/actions/runs/2"
+
+                with patch.object(edition_run, "verify_pages", side_effect=finish_in_another_connection), self.runs:
+                    self.assertEqual(edition_run.complete(self.runs, token), url)
+                self.assertEqual(edition_run.status(self.runs)[0]["outcome"], f"{sha} {url}")
+
     def test_candidate_preserves_the_actual_gold_ledger_history(self):
         originals = {}
         for relative in edition_run.GOLD_HISTORY_LEDGERS:
@@ -239,6 +280,35 @@ class EditionRunTest(unittest.TestCase):
             self.assertEqual(edition_run.main(), 1)
         self.assertIn("must preserve every prior nonblank line", stderr.getvalue())
         self.assertEqual(edition_run.status(self.runs), [])
+
+    def test_scheduled_entry_keeps_prior_completion_when_recovery_outlasts_its_window(self):
+        token = self.reach_publish()
+        sha = self.committed_edition()
+        edition_run.record_push(token, sha=sha, repository="example/project")
+
+        class Clock(datetime):
+            current = datetime(2026, 11, 27, 13, 30, tzinfo=edition_run.BEIJING)
+
+            @classmethod
+            def now(cls, tz=None):
+                return cls.current if tz is None else cls.current.astimezone(tz)
+
+        def finish_previous_deployment(*_args):
+            Clock.current += timedelta(seconds=80)
+            return "https://example.invalid/actions/runs/1"
+
+        with (
+            patch.object(sys, "argv", ["edition_run.py", "begin", "--scheduled", "0730"]),
+            patch.object(edition_run, "datetime", Clock),
+            patch.object(edition_run, "verify_pages", side_effect=finish_previous_deployment),
+            redirect_stderr(StringIO()) as stderr,
+        ):
+            self.assertEqual(edition_run.main(), 1)
+        self.assertIn("Outside the Beijing run window for 0730", stderr.getvalue())
+        completed, = edition_run.status(self.runs)
+        self.assertEqual(completed["edition"], self.edition)
+        self.assertEqual(completed["status"], "complete")
+        self.assertEqual(completed["deployed_commit"], sha)
 
     def test_scheduled_phase_cannot_advance_after_a_rule_changes_in_the_worktree(self):
         token = edition_run.begin(self.runs, self.edition, "antigravity-1800")
@@ -569,6 +639,76 @@ class EditionRunTest(unittest.TestCase):
         ), patch.object(edition_run.time, "sleep"), patch.object(edition_run, "_pages_release_proof", return_value=None):
             url = edition_run.verify_pages(sha, "example/project", wait=10)
         self.assertEqual(url, ok_run["url"])
+
+    def test_actions_wait_does_not_consume_the_public_bytes_budget(self):
+        sha = "a" * 40
+        run = {"databaseId": 4, "headSha": sha, "headBranch": "main", "status": "completed", "url": "fixture"}
+        detail = {**run, "jobs": [{"name": edition_run.DEPLOY_JOB, "conclusion": "success"}]}
+        now = 0.0
+
+        def github(*args, **_kwargs):
+            nonlocal now
+            if args[:2] == ("run", "list"):
+                return [run]
+            now = 14.9
+            return detail
+
+        def live_release(*_args, timeout):
+            nonlocal now
+            if timeout < 30:
+                now = 15.0
+                raise TimeoutError("insufficient budget to download release assets")
+
+        with (
+            patch.object(edition_run.time, "monotonic", side_effect=lambda: now),
+            patch.object(edition_run, "_gh_json", side_effect=github),
+            patch.object(edition_run, "_pages_release_proof", return_value=(self.edition, {})),
+            patch.object(pages_release, "verify_release", side_effect=live_release) as verify,
+        ):
+            self.assertEqual(edition_run.verify_pages(sha, "example/project", wait=15), run["url"])
+        verify.assert_called_once_with(sha, self.edition, "example/project", {}, timeout=100)
+
+    def test_transient_public_pages_failure_retries_without_wasting_actions_queries(self):
+        sha = "a" * 40
+        run = {"databaseId": 4, "headSha": sha, "headBranch": "main", "status": "completed", "url": "fixture"}
+        detail = {**run, "jobs": [{"name": edition_run.DEPLOY_JOB, "conclusion": "success"}]}
+        now = 0.0
+
+        def sleep(seconds):
+            nonlocal now
+            now += seconds
+
+        with (
+            patch.object(edition_run.time, "monotonic", side_effect=lambda: now),
+            patch.object(edition_run.time, "sleep", side_effect=sleep),
+            patch.object(edition_run, "_gh_json", side_effect=[[run], detail]) as github,
+            patch.object(edition_run, "_pages_release_proof", return_value=(self.edition, {})),
+            patch.object(pages_release, "verify_release", side_effect=[OSError("CDN timeout"), None]) as verify,
+        ):
+            self.assertEqual(edition_run.verify_pages(sha, "example/project", wait=15), run["url"])
+        self.assertEqual(github.call_count, 2)
+        self.assertEqual([call.kwargs["timeout"] for call in verify.call_args_list], [100, 95])
+
+    def test_proxy_fallback_respects_the_remaining_actions_budget(self):
+        now = 0.0
+        commands = []
+
+        def run(cmd, *, env, timeout, **_kwargs):
+            nonlocal now
+            commands.append((bool(env.get("HTTPS_PROXY")), timeout))
+            if len(commands) == 1:
+                now = 12.0
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Proxy failed")
+            return subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        with (
+            patch.object(edition_run.time, "monotonic", side_effect=lambda: now),
+            patch.object(edition_run, "_clean_env", return_value={"HTTPS_PROXY": "http://127.0.0.1:7890"}),
+            patch.object(edition_run.shutil, "which", return_value="/usr/local/bin/gh"),
+            patch.object(edition_run.subprocess, "run", side_effect=run),
+        ):
+            self.assertEqual(edition_run._gh_json("run", "list", deadline=15), {})
+        self.assertEqual(commands, [(True, 15), (False, 3)])
 
     def test_verify_pages_keeps_malformed_actions_responses_pending(self):
         commit = "b" * 40
@@ -1062,7 +1202,7 @@ class OperationalRegressionTest(unittest.TestCase):
         all_caveats = build_site.collect_data_caveats(gold_snap, eq_state)
         self.assertEqual(all_caveats[0]["severity"], "high")
         self.assertEqual(all_caveats[0]["market"], "us-stock")
-        self.assertEqual(all_caveats[0]["due_label"], "预计 11/27 07:30 早报核销")
+        self.assertEqual(all_caveats[0]["due_label"], "计划于 11/27 07:30 早报复查")
         titles = [c["title"] for c in all_caveats]
         self.assertTrue(any("恐慌指数" in t for t in titles))
         self.assertTrue(any("两融终值" in t for t in titles))
@@ -1132,7 +1272,7 @@ class OperationalRegressionTest(unittest.TestCase):
         exc_item = by_id["pub_exc_a-share_source_outage"]
         self.assertEqual(exc_item["market"], "a-share")
         self.assertEqual(exc_item["severity"], "high")
-        self.assertEqual(exc_item["due_label"], "预计 11/27 07:30 早报核销")
+        self.assertEqual(exc_item["due_label"], "计划于 11/27 07:30 早报复查")
 
         joined = " ".join(f"{c['title']} {c['detail']} {c['impact']}" for c in caveats)
         for leak in (

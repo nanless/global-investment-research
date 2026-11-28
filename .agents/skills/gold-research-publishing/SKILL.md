@@ -56,7 +56,7 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 黄金早/午/晚与周末全班次同步执行仓库总作战手册 [master-research-and-sources-playbook.md](../equity-research-editorial-qa/references/master-research-and-sources-playbook.md)（尤其是支柱 6/7/11/12 与 Section 2–4）：
 - **黄金主刊机构级深度下限（`≥ 4,500–6,000` 字）与可视化优先**：单段 `≤ 220–240` 字仅为移动端清晰分块，绝不可据此缩成简报；正文须齐备 **油价下名义利率 vs `T10YIE` 盈亏平衡 vs 隐含 `DFII10` 对第 1 关的真实量化拆解**、**同分钟平价溢价与上金所 `Au(T+D)` 递延费方向切换（`空付多` ↔ `多付空`）法证**、**上期所金银前 20 具名席位多空归因**、**5 大央行定价对比表**、**国内 7 渠道金价与税费拆解表（建议配 `DAILY_VISUAL` `bar_compare` 价差阶梯图）**、COMEX 注册/合格库存 + COT + 央行购金背景、金矿股 vs 金饰股分化、BOJ/日元跨资产传导，以及**全量重要政策/地缘要闻（无数量上限入库 `#sec-market-news`，核心走完 5 环传导链）**；核心数字复读 `≤ 3 次`，四情景概率须独立于权益三市差异化推演且零反引号。
 - **信源白黑名单与截点漂移防线**：强制沿用 **`.gov.cn` 双路并查回退**、美股 `GLD`/`GDX` 白名单（严禁混用国内黄金 ETF T 日收盘价与 T-1 官方净值）、LME 17:00 同口径铜价、上期所夜盘 `02:30`/`01:00`/`23:00` 铁律与 **永久拉黑 `Barchart`**；若距启动超 **45 分钟**且 `18:30` 伦敦定盘、`20:00–21:00` SOFR/美宏观等预定事件已落地，必须执行增量补刷，严禁发出过期“待公布”内容。
-- **送检前强制清扫**：① 按 `next_review == 当班 edition_id` 清零 `data_snapshot.json.data_caveats` 到期挂账；② `18:00` 晚报跨快照与正文清扫午盘残迹；③ 核验主报告 5 大触发条件（含 60 日新高止损与尾部深熊线）并显式记入 `daily/AUDIT_LOG.md`。
+- **送检前强制清扫**：① 按原编号复查 `data_snapshot.json.data_caveats` 中本班到期及前序逾期的事项；② `18:00` 晚报跨快照与正文清扫午盘残迹；③ 核验主报告 5 大触发条件（含 60 日新高止损与尾部深熊线）并显式记入 `daily/AUDIT_LOG.md`。
 
 ---
 

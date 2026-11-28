@@ -725,6 +725,7 @@ class GoldWorkflowTests(unittest.TestCase):
             tier1_gate4_target_date="2026-11-27",
             vix_close=29.80,
             vix_10d_window_end="2026-11-27",
+            data_caveats=[],
         )
         within["vix_10d_session_closes"] = within["vix_10d_session_closes"][1:] + [
             {"date": "2026-11-27", "close": 29.80},

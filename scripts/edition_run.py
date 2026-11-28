@@ -52,6 +52,8 @@ LAST_EDITION_WITHOUT_REVIEW_CLOSURE = ("2026-11-25", 1800, 3)
 SHA_RE = re.compile(r"[a-f0-9]{40}")
 REPOSITORY_RE = re.compile(r"[\w.-]+/[\w.-]+", re.ASCII)
 DEPLOY_JOB = "Deploy to GitHub Pages"
+PAGES_ACTIONS_PROBE_SECONDS = 15
+PAGES_PUBLIC_VERIFY_SECONDS = 100
 _STRIPPED_ENV_VARS = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -274,6 +276,7 @@ def _publication(runs: sqlite3.Connection, token: str) -> sqlite3.Row | None:
 
 
 def scheduled_edition(slot: str) -> str:
+    """Resolve the slot by inclusive Beijing clock minutes, including 00:00 for the prior evening."""
     now = datetime.now(BEIJING)
     hhmm = now.strftime("%H%M")
     if slot == "0730":
@@ -417,6 +420,7 @@ def begin(
     *,
     reap_stale: bool = False,
     max_idle_hours: float = 2.0,
+    scheduled_slot: str | None = None,
 ) -> str:
     with _idle_publish_lock(), runs:
         base_sha = git_value("rev-parse", "HEAD")
@@ -426,6 +430,8 @@ def begin(
         runs.execute("BEGIN IMMEDIATE")
         if scheduled:
             _check_scheduled_floor(runs, edition, base_sha)
+        if scheduled_slot is not None and scheduled_edition(scheduled_slot) != edition:
+            raise ValueError(f"Scheduled edition {edition} changed while preparing to start. Run its own trigger.")
         if reap_stale:
             _reap_stale_unpushed_run(runs, edition, max_idle_hours=max_idle_hours)
         return _begin(runs, edition, source, base_sha=base_sha)
@@ -571,7 +577,9 @@ def _check_review_closure(review: dict, file: str, current: tuple[str, int, int]
             )
 
 
-def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = None) -> None:
+def check_edition_reviews(
+    edition: str, *, root: Path = ROOT, sha: str | None = None, base_sha: str | None = None,
+) -> None:
     current = _edition_key(edition)
     if current is None:
         raise ValueError(f"Invalid edition ID for blind review: {edition!r}.")
@@ -598,7 +606,7 @@ def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = 
         )
 
     candidate = None
-    for file in ("gold/daily/rsi_metrics.json", "equity/state/rsi_metrics.json"):
+    for track, file in (("gold", "gold/daily/rsi_metrics.json"), ("equity", "equity/state/rsi_metrics.json")):
         document = json.loads(read_candidate(file))
         reviews = document.get("runs") if isinstance(document, dict) else None
         matches = [
@@ -617,6 +625,12 @@ def check_edition_reviews(edition: str, *, root: Path = ROOT, sha: str | None = 
                 else:
                     candidate = review_evidence.working_snapshot(root, edition)
             review_evidence.validate_receipt(matches[0]["review_closure"], candidate, file, read=read_candidate)
+            if base_sha is not None and edition[:15] > review_evidence.LAST_LEGACY_BACKFILL_SLOT:
+                path = review_evidence.BACKFILL_STATE_PATHS[track]
+                review_evidence.validate_backfill_rechecks(
+                    matches[0]["review_closure"], edition, track,
+                    git_value("show", f"{base_sha}:{path}").encode("utf-8"), read_candidate(path),
+                )
 
 
 def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
@@ -635,7 +649,7 @@ def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
             if phase == "publish":
                 _check_edition_document(row["edition"], "equity/state/market_state.json")
                 _check_extended_equity_documents(row["edition"])
-                check_edition_reviews(row["edition"], root=ROOT)
+                check_edition_reviews(row["edition"], root=ROOT, base_sha=attempt["base_sha"] if attempt is not None else None)
 
     runs.execute("BEGIN IMMEDIATE")
     current = active_run(runs, token)
@@ -919,7 +933,7 @@ def _check_publication_candidate(runs: sqlite3.Connection, token: str, sha: str,
     _check_edition_document(row["edition"], "gold/data_snapshot.json", sha)
     _check_edition_document(row["edition"], "equity/state/market_state.json", sha)
     _check_extended_equity_documents(row["edition"], sha=sha, base_sha=attempt["base_sha"])
-    check_edition_reviews(row["edition"], sha=sha)
+    check_edition_reviews(row["edition"], sha=sha, base_sha=attempt["base_sha"])
     _check_gold_ledger_history(attempt["base_sha"], sha)
     receipt = _publication(runs, token)
     if receipt is not None and (receipt["sha"], receipt["repository"]) != (sha, repository):
@@ -941,7 +955,14 @@ def record_push(token: str, *, sha: str, repository: str) -> None:
         _record_phase_timestamp(runs, token, "pushed")
 
 
-def _gh_json(*args: str):
+def _gh_timeout(cmd: list[str], deadline: float | None) -> float:
+    timeout = 30.0 if deadline is None else min(30.0, deadline - time.monotonic())
+    if timeout <= 0:
+        raise subprocess.TimeoutExpired(cmd, 0)
+    return timeout
+
+
+def _gh_json(*args: str, deadline: float | None = None):
     gh = shutil.which("gh") or next(
         (str(p) for p in (Path("/opt/homebrew/bin/gh"), Path("/usr/local/bin/gh")) if p.is_file()), None,
     )
@@ -953,7 +974,9 @@ def _gh_json(*args: str):
     first_err = ""
     rc = 1
     try:
-        proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
+        proc = subprocess.run(
+            cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=_gh_timeout(cmd, deadline),
+        )
         if proc.returncode == 0:
             return json.loads(proc.stdout)
         first_err = (proc.stderr or proc.stdout or "").strip()
@@ -966,7 +989,8 @@ def _gh_json(*args: str):
     if has_proxy:
         # Retry once directly without proxy env vars if local proxy is stopped/refusing/failing TLS.
         retry = subprocess.run(
-            cmd, cwd=ROOT, env=_strip_proxy_env(env), capture_output=True, text=True, timeout=30
+            cmd, cwd=ROOT, env=_strip_proxy_env(env), capture_output=True, text=True,
+            timeout=_gh_timeout(cmd, deadline),
         )
         if retry.returncode == 0:
             return json.loads(retry.stdout)
@@ -978,10 +1002,10 @@ def _gh_json(*args: str):
     raise ValueError(f"gh {' '.join(args)} failed (exit {rc}): {first_err}")
 
 
-def _remote_main_head_sha(repository: str) -> str | None:
+def _remote_main_head_sha(repository: str, *, deadline: float | None = None) -> str | None:
     """Best-effort lookup of remote origin/main HEAD SHA via GitHub API."""
     try:
-        ref = _gh_json("api", f"repos/{repository}/git/ref/heads/main")
+        ref = _gh_json("api", f"repos/{repository}/git/ref/heads/main", deadline=deadline)
         head = ref.get("object", {}).get("sha") if isinstance(ref, dict) else None
         if isinstance(head, str) and SHA_RE.fullmatch(head):
             return head
@@ -1056,21 +1080,44 @@ def _pages_deploy_job(details, sha: str) -> str | None:
     return details["url"] if job["conclusion"] == "success" else None
 
 
+def _verify_public_pages(
+    sha: str, repository: str, proof: tuple[str, dict[str, str]], *, retry: bool,
+) -> None:
+    edition, hashes = proof
+    deadline = time.monotonic() + PAGES_PUBLIC_VERIFY_SECONDS
+    remaining = deadline - time.monotonic()
+    while True:
+        try:
+            pages_release.verify_release(sha, edition, repository, hashes, timeout=remaining)
+        except (OSError, ValueError) as exc:
+            remaining = deadline - time.monotonic()
+            if retry and remaining > 5:
+                time.sleep(5)
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    continue
+            raise DeploymentPending(
+                f"Pages verification is pending for {sha}: {exc}; rerun complete for this attempt."
+            ) from exc
+        else:
+            return
+
+
 def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
-    """Require the deploy job and, for stamped releases, verify public content bytes."""
+    """Wait for Actions, then verify stamped public bytes on a separate deadline."""
     if not SHA_RE.fullmatch(sha) or not REPOSITORY_RE.fullmatch(repository):
         raise ValueError("Invalid commit or repository for Pages verification.")
-    deadline = time.monotonic() + wait
-    proof: tuple[str, dict[str, str]] | None = None
+    deadline = time.monotonic() + (wait if wait > 0 else PAGES_ACTIONS_PROBE_SECONDS)
     while True:
         try:
             candidates = _gh_json(
                 "run", "list", "--repo", repository, "--workflow", "deploy-pages.yml", "--branch", "main",
                 "--commit", sha, "--json", "databaseId,headSha,headBranch,status,conclusion,url", "--limit", "10",
+                deadline=deadline,
             )
             runs, transient_err = _pages_run_summaries(candidates, sha)
         except (subprocess.SubprocessError, ValueError, OSError) as exc:
-            if time.monotonic() >= deadline:
+            if wait <= 0 or time.monotonic() >= deadline:
                 raise DeploymentPending(
                     f"Pages status check failed transiently for {sha}: {exc}; rerun complete for this attempt."
                 ) from exc
@@ -1086,31 +1133,24 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
                 details = _gh_json(
                     "run", "view", str(run["databaseId"]), "--repo", repository,
                     "--json", "headSha,headBranch,jobs,url",
+                    deadline=deadline,
                 )
                 success_url = _pages_deploy_job(details, sha)
             except (subprocess.SubprocessError, ValueError, OSError) as exc:
                 transient_err = exc
                 continue
             if success_url is not None:
-                if proof is None:
-                    proof = _pages_release_proof(sha)
+                proof = _pages_release_proof(sha)
                 if proof is None:
                     print("[NOTICE] Legacy Pages release verified by its Actions deploy job.", file=sys.stderr)
-                    return success_url
-                edition, hashes = proof
-                try:
-                    pages_release.verify_release(
-                        sha, edition, repository, hashes, timeout=15 if wait <= 0 else max(0.1, deadline - time.monotonic()),
-                    )
-                except (OSError, ValueError) as exc:
-                    transient_err = exc
-                    continue
+                else:
+                    _verify_public_pages(sha, repository, proof, retry=wait > 0)
                 return success_url
             if failed_url is None:
                 failed_url = run["url"]
 
         if completed and not has_pending and transient_err is None and failed_url is not None:
-            current_main = _remote_main_head_sha(repository)
+            current_main = _remote_main_head_sha(repository, deadline=deadline)
             if current_main is not None and current_main != sha:
                 raise ValueError(
                     f"Pages deploy job did not succeed for {sha} ({failed_url}), and remote origin/main has "
@@ -1120,7 +1160,7 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
             raise ValueError(
                 f"Pages deploy job did not succeed for {sha}: {failed_url}. Rerun the workflow, then complete."
             )
-        if time.monotonic() >= deadline:
+        if wait <= 0 or time.monotonic() >= deadline:
             if transient_err is not None:
                 raise DeploymentPending(
                     f"Pages verification is pending for {sha}: {transient_err}; rerun complete for this attempt."
@@ -1129,15 +1169,53 @@ def verify_pages(sha: str, repository: str, wait: int = 180) -> str:
         time.sleep(min(5, max(0, deadline - time.monotonic())))
 
 
-def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
-    _publishing_run(runs, token)
-    receipt = _publication(runs, token)
-    if receipt is None or not receipt["sha"] or not receipt["repository"]:
+def _completion_state(runs: sqlite3.Connection, token: str) -> sqlite3.Row:
+    """Read the run and its proof together so a concurrent completion cannot split the result."""
+    row = runs.execute("""
+        SELECT phase, status, outcome, sha, repository, deployed_sha
+        FROM runs LEFT JOIN publications USING(token) WHERE token = ?
+    """, (token,)).fetchone()
+    if row is None or row["status"] not in ("running", "complete"):
+        raise ValueError("This run token does not hold the current edition lock.")
+    if row["phase"] != "publish":
+        raise ValueError("The current edition is not in its publish phase.")
+    if not row["sha"] or not row["repository"]:
         raise ValueError("No verified push receipt for this edition. Finish the same publication first.")
+    return row
+
+
+def _completed_publication_url(row: sqlite3.Row) -> str | None:
+    if row["status"] != "complete":
+        return None
+    sha = row["sha"]
+    prefix = f"{sha} "
+    if row["deployed_sha"] != sha or not row["outcome"].startswith(prefix):
+        raise ValueError("This publication was completed with a different revision. Check the run status.")
+    url = row["outcome"][len(prefix):].strip()
+    if not url:
+        raise ValueError("The completed publication is missing its verification URL.")
+    return url
+
+
+def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
+    receipt = _completion_state(runs, token)
+    if recorded_url := _completed_publication_url(receipt):
+        return recorded_url
     sha, repository = receipt["sha"], receipt["repository"]
-    url = verify_pages(sha, repository, wait)
+    try:
+        url = verify_pages(sha, repository, wait)
+    except DeploymentPending:
+        current = _completion_state(runs, token)
+        if ((current["sha"], current["repository"]) == (sha, repository)
+                and (recorded_url := _completed_publication_url(current))):
+            return recorded_url
+        raise
     runs.execute("BEGIN IMMEDIATE")
-    _publishing_run(runs, token)
+    current = _completion_state(runs, token)
+    if (current["sha"], current["repository"]) != (sha, repository):
+        raise ValueError("The recorded publication changed during verification. Check the run status.")
+    if recorded_url := _completed_publication_url(current):
+        return recorded_url
     runs.execute("UPDATE publications SET deployed_sha = ? WHERE token = ?", (sha, token))
     runs.execute(
         "UPDATE runs SET status = 'complete', updated = ?, outcome = ? WHERE token = ?",
@@ -1280,7 +1358,7 @@ def complete_superseded(
         _check_edition_document(edition, "gold/data_snapshot.json", deployed_sha)
         _check_edition_document(edition, "equity/state/market_state.json", deployed_sha)
         _check_extended_equity_documents(edition, sha=deployed_sha, base_sha=base_sha)
-        check_edition_reviews(edition, sha=deployed_sha)
+        check_edition_reviews(edition, sha=deployed_sha, base_sha=base_sha)
         _check_gold_ledger_history(base_sha, deployed_sha)
 
         # 5. Refuse content mutations under gold/ or equity/ unless --allow-content-hotfix is explicitly set.
@@ -1297,7 +1375,7 @@ def complete_superseded(
                     f"({', '.join(content_changes[:5])}); pass --allow-content-hotfix only for an intentional content hotfix."
                 )
 
-        # 6. Verify GitHub Pages deployment succeeded for deployed_sha directly (wait=0).
+        # 6. Check the Actions result once, then verify the public files.
         url = verify_pages(deployed_sha, repository, wait=0)
 
         runs.execute("BEGIN IMMEDIATE")
@@ -1388,9 +1466,12 @@ def main() -> int:
             if args.command == "begin":
                 if args.scheduled:
                     edition = scheduled_edition(args.scheduled)
-                    if reconcile_previous_deployment(runs, wait=15):
+                    if reconcile_previous_deployment(runs, wait=PAGES_ACTIONS_PROBE_SECONDS):
                         runs.commit()
-                    token = begin(runs, edition, f"antigravity-{args.scheduled}", reap_stale=True)
+                    token = begin(
+                        runs, edition, f"antigravity-{args.scheduled}", reap_stale=True,
+                        scheduled_slot=args.scheduled,
+                    )
                     print(json.dumps({"edition_id": edition, "token": token}))
                 else:
                     print(begin(runs, args.edition))

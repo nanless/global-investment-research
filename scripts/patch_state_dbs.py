@@ -3005,6 +3005,12 @@ def append_rsi_metrics(
             entry["review_closure"], candidate, patch_label,
             read=lambda path: review_evidence.read_working_file(repo_root, path),
         )
+        baseline = review_evidence.read_working_backfill_baseline(repo_root, run_id, track)
+        if baseline is not None:
+            review_evidence.validate_backfill_rechecks(
+                entry["review_closure"], run_id, track, baseline,
+                review_evidence.read_working_file(repo_root, review_evidence.BACKFILL_STATE_PATHS[track]),
+            )
         if "superseded_reviews" in entry:
             raise ValueError(f"{patch_label} cannot supply its own superseded review history.")
 
@@ -3621,7 +3627,9 @@ def _inspect_state_dbs(repo_root: Path, target: str) -> dict[str, Any]:
         )
 
     if raw_target == "review-candidate":
-        return review_evidence.working_snapshot(repo_root)
+        candidate = review_evidence.working_snapshot(repo_root)
+        candidate["previous_backfills"] = review_evidence.inspect_previous_backfills(repo_root, candidate["edition_id"])
+        return candidate
 
     if raw_target == "channels":
         ma = _read_json_obj(_safe_repo_path(repo_root, "equity", "state", "multi_asset_channels.json"), "multi_asset_channels.json")

@@ -1181,7 +1181,10 @@ class _PolicyCalendarSectionParser(HTMLParser):
         self._pill_frames: list[tuple[int, list[str]]] = []
         self.tier_pill_texts: list[str] = []
         self.brief_links: dict[str, list[str]] = {}
+        self.repeated_briefs: set[str] = set()
+        self.brief_fields: dict[str, dict[str, list[str]]] = {}
         self._brief_id: str | None = None
+        self._brief_field: tuple[int, str, str, list[str]] | None = None
 
     def _on_open(self, tag: str, attrs: list[tuple[str, str | None]], self_closing: bool) -> None:
         if self.done:
@@ -1210,9 +1213,16 @@ class _PolicyCalendarSectionParser(HTMLParser):
         if self._skip_depth == 0:
             if t == "article" and (brief_id := attr_map.get("data-pcal-brief-id")):
                 self._brief_id = brief_id
+                if brief_id in self.brief_links:
+                    self.repeated_briefs.add(brief_id)
                 self.brief_links.setdefault(brief_id, [])
+                self.brief_fields.setdefault(brief_id, {})
             elif t == "a" and self._brief_id is not None and "mnews-src-link" in classes:
                 self.brief_links[self._brief_id].append(attr_map.get("href", ""))
+            elif (self._brief_id is not None and self._brief_field is None
+                    and not self_closing and t not in VOID_ELEMENTS
+                    and (field_name := attr_map.get("data-pcal-brief-field")) in {"attribution", "headline", "summary"}):
+                self._brief_field = len(self._tag_stack) + 1, self._brief_id, field_name, []
 
         if t in BLOCK_TEXT_TAGS and self._skip_depth == 0:
             self._text_chunks.append("\n")
@@ -1242,6 +1252,10 @@ class _PolicyCalendarSectionParser(HTMLParser):
                 while self._pill_frames and self._pill_frames[-1][0] > idx:
                     _, buf = self._pill_frames.pop()
                     self.tier_pill_texts.append(" ".join("".join(buf).split()))
+                if self._brief_field is not None and self._brief_field[0] > idx:
+                    _, brief_id, name, buf = self._brief_field
+                    self.brief_fields[brief_id].setdefault(name, []).append(" ".join("".join(buf).split()))
+                    self._brief_field = None
                 popped = self._tag_stack[idx:]
                 del self._tag_stack[idx:]
                 for pt in popped:
@@ -1257,6 +1271,8 @@ class _PolicyCalendarSectionParser(HTMLParser):
         self._text_chunks.append(data)
         for _, buf in self._pill_frames:
             buf.append(data)
+        if self._brief_field is not None:
+            self._brief_field[-1].append(data)
 
     def result(self) -> _PolicyCalendarSnapshot | None:
         if not self.found:
@@ -1283,6 +1299,8 @@ def _inspect_policy_calendar_section(raw_html: str) -> _PolicyCalendarSnapshot |
 def _check_published_policy_links(
     parsed: dict[str, ParsedHtml], policy: dict, errors: list[str],
 ) -> None:
+    from build_site import _policy_brief_display
+
     briefs = policy.get("policy_briefs")
     if not isinstance(briefs, list):
         return
@@ -1305,10 +1323,18 @@ def _check_published_policy_links(
         }
         if (page != "index.html" or 6 <= len(by_id) <= 9) and (extra := set(parser.brief_links) - by_id.keys()):
             errors.append(f"[S6] {page}: #{section} includes unrelated policy briefs {sorted(extra)!r}")
+        if parser.repeated_briefs:
+            errors.append(f"[S6] {page}: #{section} repeats policy briefs {sorted(parser.repeated_briefs)!r}")
         for brief_id, brief in by_id.items():
             links = policy_brief_links(brief)
             if parser.brief_links.get(brief_id) != links:
                 errors.append(f"[S6] {page}: #{section} source links differ from policy brief {brief_id!r}")
+            actual_fields = parser.brief_fields.get(brief_id)
+            if actual_fields is None:
+                continue
+            for name, expected in _policy_brief_display(brief).items():
+                if actual_fields.get(name) != [" ".join(expected.split())]:
+                    errors.append(f"[S6] {page}: #{section} {name} differs from policy brief {brief_id!r}")
 
 
 def _check_published_inventory(
