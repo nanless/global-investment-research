@@ -306,6 +306,16 @@ def _build_clean_fixture(
 
 
 class PatchStateDbsGuardsTests(unittest.TestCase):
+    def test_live_library_label_distinguishes_cutoff_date_from_weekend_edition(self):
+        self.assertEqual(
+            psd._live_edition_as_of_label("2026-11-28_1800", "2026-11-28T22:25:00+08:00"),
+            "2026年11月28日（周六）22:25 周末晚刊",
+        )
+        self.assertEqual(
+            psd._live_edition_as_of_label("2026-11-28_1800", "2026-11-29T00:00:00+08:00"),
+            "2026年11月29日（周日）00:00 周末晚刊",
+        )
+
     def test_live_production_etf_floor_preserves_historical_and_small_pools(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2243,7 +2253,7 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
             gold_obj.update(edition_id=mid_ed, as_of_short="2099-12-31 11:30")
             (sandbox / "gold/data_snapshot.json").write_text(json.dumps(gold_obj, ensure_ascii=False), encoding="utf-8")
             ms_obj = json.loads((sandbox / "equity/state/market_state.json").read_text(encoding="utf-8"))
-            ms_obj["edition_id"] = mid_ed
+            ms_obj.update(edition_id=mid_ed, as_of_cst="2099-12-31T11:30:00+08:00")
             (sandbox / "equity/state/market_state.json").write_text(json.dumps(ms_obj, ensure_ascii=False), encoding="utf-8")
 
             # 1. --apply with 1130 (preserves live Gold lock state so Gold unlock never breaks CI)

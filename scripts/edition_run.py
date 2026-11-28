@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from typing import Callable
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -35,8 +36,10 @@ EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\
 PHASES = ("research", "gold", "equity", "publish")
 GOLD_HISTORY_LEDGERS = ("gold/daily/AUDIT_LOG.md", "gold/daily/CHANGELOG.md")
 SCHEDULED_RUNTIME_PATHS = (
-    "scripts", "tests", ".github/workflows", "automations",
+    "scripts", "tests", ".github/workflows", "automations", "AGENTS.md", ".agents",
     ":(glob)gold/**/*.py", ":(glob)equity/**/*.py",
+    ":(glob)gold/**/AGENTS.md", ":(glob)equity/**/AGENTS.md",
+    "gold/daily/DAILY_FORMAT_SPEC.md", "equity/GEMINI.md", "equity/DAILY_REPORT_SPEC.md",
 )
 EXTENDED_EQUITY_STATE_FILES = (
     "equity/state/multi_asset_channels.json",
@@ -383,6 +386,17 @@ def _check_scheduled_floor(runs: sqlite3.Connection, edition: str, base_sha: str
         raise ValueError(f"Scheduled edition {edition} cannot go back before {label}.")
 
 
+def check_scheduled_runtime(git: Callable[..., str]) -> None:
+    """Keep a scheduled edition on the reviewed workflow and rule baseline."""
+    drift = git("--no-optional-locks", "status", "--short", "--untracked-files=all", "--", *SCHEDULED_RUNTIME_PATHS)
+    if drift:
+        examples = ", ".join(line.strip() for line in drift.splitlines()[:5])
+        raise ValueError(
+            "Scheduled edition cannot continue with uncommitted workflow or research code or publishing rules. "
+            f"Publish the maintenance baseline separately. Local changes: {examples}"
+        )
+
+
 def _check_scheduled_checkout(base_sha: str) -> None:
     """Catch worktree states that publication would reject after research has started."""
     try:
@@ -391,13 +405,7 @@ def _check_scheduled_checkout(base_sha: str) -> None:
         branch = ""
     if branch != "main":
         raise ValueError("Scheduled editions require branch main, the branch used for publication.")
-    drift = git_value("--no-optional-locks", "status", "--short", "--untracked-files=all", "--", *SCHEDULED_RUNTIME_PATHS)
-    if drift:
-        examples = ", ".join(line.strip() for line in drift.splitlines()[:5])
-        raise ValueError(
-            "Scheduled edition cannot start with uncommitted workflow or research code. "
-            f"Publish the maintenance baseline before running the task. Local changes: {examples}"
-        )
+    check_scheduled_runtime(git_value)
     with state_read_lock(ROOT):
         _check_gold_ledger_history(base_sha, None)
 
@@ -616,7 +624,9 @@ def advance(runs: sqlite3.Connection, token: str, phase: str) -> str:
     row = active_run(runs, token)
     if PHASES.index(phase) != PHASES.index(row["phase"]) + 1:
         raise ValueError(f"Cannot advance from {row['phase']} to {phase}.")
-    attempt = runs.execute("SELECT base_sha FROM attempts WHERE token = ?", (token,)).fetchone()
+    attempt = runs.execute("SELECT base_sha, source FROM attempts WHERE token = ?", (token,)).fetchone()
+    if attempt is not None and attempt["source"].startswith("antigravity-"):
+        check_scheduled_runtime(git_value)
     if phase in ("equity", "publish"):
         with state_read_lock(ROOT):
             _check_edition_document(row["edition"], "gold/data_snapshot.json")

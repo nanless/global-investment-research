@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import date
+from gzip import GzipFile
 import hashlib
 from http.client import HTTPException
 import json
@@ -18,6 +20,7 @@ import time
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
+from zlib import error as GzipError
 
 if __package__:
     from .fetch_kline_data import ALL_SHARDS_ORDER
@@ -162,33 +165,62 @@ def write_release(site: Path, commit: str, edition: str) -> None:
     (site / MANIFEST_PATH).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
+class _DeadlineReader:
+    """Apply the resource deadline to each network chunk requested by gzip."""
+
+    def __init__(self, response, deadline: float):
+        self.response = response
+        self.deadline = deadline
+
+    def read(self, size: int) -> bytes:
+        # gzip expects this call to fill `size` bytes unless the response ends.
+        data = bytearray()
+        while len(data) < size:
+            if time.monotonic() >= self.deadline:
+                raise TimeoutError("Timed out reading a public Pages resource.")
+            chunk = self.response.read1(size - len(data))
+            if not chunk:
+                break
+            data.extend(chunk)
+        return bytes(data)
+
+
 def _fetch(url: str, timeout: float) -> bytes:
     deadline = time.monotonic() + timeout
     request = Request(url, headers={
         "Cache-Control": "no-cache, no-store",
         "Pragma": "no-cache",
-        "Accept-Encoding": "identity",
+        "Accept-Encoding": "gzip",
     })
     try:
         with build_opener(_NoRedirect()).open(request, timeout=min(timeout, 8.0)) as response:
             if response.status != 200 or response.geturl() != url:
                 raise ValueError("Pages returned an unexpected URL or HTTP status.")
+            encoding = response.headers.get("Content-Encoding", "identity").strip().lower()
+            if encoding not in {"gzip", "identity"}:
+                raise ValueError("Pages returned an unsupported content encoding.")
+            # Hash the decoded resource and enforce the size limit even for highly compressed responses.
             content = bytearray()
-            while True:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Timed out reading a public Pages resource.")
-                chunk = response.read1(min(64 * 1024, MAX_RESOURCE_BYTES + 1 - len(content)))
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Timed out reading a public Pages resource.")
-                if not chunk:
-                    break
-                content.extend(chunk)
-                if len(content) > MAX_RESOURCE_BYTES:
-                    raise ValueError("Pages returned an oversized release resource.")
+            if encoding == "gzip":
+                body = GzipFile(fileobj=_DeadlineReader(response, deadline), mode="rb")
+            else:
+                body = nullcontext(response)
+            with body as stream:
+                while True:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("Timed out reading a public Pages resource.")
+                    chunk = stream.read1(min(64 * 1024, MAX_RESOURCE_BYTES + 1 - len(content)))
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("Timed out reading a public Pages resource.")
+                    if not chunk:
+                        break
+                    content.extend(chunk)
+                    if len(content) > MAX_RESOURCE_BYTES:
+                        raise ValueError("Pages returned an oversized release resource.")
             if not content:
                 raise ValueError("Pages returned an empty release resource.")
             return bytes(content)
-    except HTTPException as exc:
+    except (HTTPException, EOFError, GzipError) as exc:
         raise OSError("The Pages response was invalid or incomplete.") from exc
 
 

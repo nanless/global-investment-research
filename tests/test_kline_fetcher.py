@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from datetime import date
+from http.client import IncompleteRead
 import io
 import json
 import math
@@ -18,7 +19,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts import fetch_kline_data as fk
 from scripts import lint_site, state_transaction
@@ -282,6 +283,40 @@ class _FakeResponse:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         return None
+
+
+class TestHttpClient(unittest.TestCase):
+    def test_incomplete_response_is_retried_until_the_full_body_is_read(self):
+        partial = b"DATE,OPEN,HIGH,LOW,CLOSE\n11/27/2026,24.89"
+        full = partial + b",27.52,23.81,23.81\n"
+        truncated = _FakeResponse(partial)
+        opener = Mock(side_effect=[truncated, truncated, _FakeResponse(full)])
+        client = fk.RateLimitedHttpClient(retries=2, opener=opener)
+
+        with (
+            patch.object(truncated, "read", side_effect=IncompleteRead(partial)),
+            patch.object(fk.time, "sleep") as sleep,
+        ):
+            result = client.request_text("https://cdn.cboe.com/history.csv")
+
+        self.assertEqual(result, full.decode("utf-8"))
+        self.assertEqual(opener.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_incomplete_response_is_raised_after_retries_are_exhausted(self):
+        partial = b"DATE,OPEN,HIGH,LOW,CLOSE\n"
+        truncated = _FakeResponse(partial)
+        opener = Mock(return_value=truncated)
+        client = fk.RateLimitedHttpClient(retries=1, opener=opener)
+
+        with (
+            patch.object(truncated, "read", side_effect=IncompleteRead(partial, 20)),
+            patch.object(fk.time, "sleep"),
+            self.assertRaises(IncompleteRead),
+        ):
+            client.request_text("https://cdn.cboe.com/history.csv")
+
+        self.assertEqual(opener.call_count, 2)
 
 
 class TestCodeRouting(unittest.TestCase):
@@ -787,6 +822,55 @@ class TestSanityFiltersAndCacheMerge(unittest.TestCase):
         assert rec3 is not None
         self.assertFalse(rec3["stale"])
 
+    def test_older_response_preserves_the_newer_valid_cache(self):
+        spec = fk.build_core_specs()[0]
+        live = [["2026-11-26", 10, 12, 9, 11, 0]]
+        cached = {"provider": "previous", "bars": [["2026-11-27", 11, 13, 10, 12, 0]]}
+
+        record, failure = fk.merge_with_stale_cache(
+            spec, live, "upstream", None, cached, bars_limit=60, through_date=date(2026, 11, 28),
+        )
+
+        self.assertEqual(record["latest_date"], "2026-11-27")
+        self.assertEqual(record["latest_close"], 12)
+        self.assertEqual(record["provider"], "previous")
+        self.assertTrue(record["stale"])
+        self.assertTrue(failure["used_stale_cache"])
+        self.assertIn("2026-11-26", failure["reason"])
+        self.assertIn("2026-11-27", failure["reason"])
+
+    def test_same_day_revision_replaces_the_cached_candle(self):
+        spec = fk.build_core_specs()[0]
+        corrected = [["2026-11-27", 10, 13, 9, 12, 0]]
+        cached = {"provider": "previous", "bars": [["2026-11-27", 10, 13, 9, 11, 0]]}
+
+        record, failure = fk.merge_with_stale_cache(
+            spec, corrected, "upstream", None, cached, bars_limit=60, through_date=date(2026, 11, 28),
+        )
+
+        self.assertEqual(record["latest_close"], 12)
+        self.assertEqual(record["provider"], "upstream")
+        self.assertFalse(record["stale"])
+        self.assertIsNone(failure)
+
+    def test_later_invalid_cached_rows_do_not_block_a_valid_response(self):
+        spec = fk.build_core_specs()[0]
+        live = [["2026-11-27", 11, 13, 10, 12, 0]]
+        cached = {"provider": "previous", "bars": [
+            ["2026-11-26", 10, 12, 9, 11, 0],
+            ["2026-11-28", 11, 9, 13, 12, 0],
+            ["2026-11-29", 11, 13, 10, 12, 0],
+        ]}
+
+        record, failure = fk.merge_with_stale_cache(
+            spec, live, "upstream", None, cached, bars_limit=60, through_date=date(2026, 11, 28),
+        )
+
+        self.assertEqual(record["latest_date"], "2026-11-27")
+        self.assertEqual(record["provider"], "upstream")
+        self.assertFalse(record["stale"])
+        self.assertIsNone(failure)
+
 
 class TestOfflineEndToEndWorkflow(unittest.TestCase):
     def _build_mock_opener(self, *, fail_nvda: bool = False, fail_cnbc_gdaxi: bool = False):
@@ -940,7 +1024,7 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
                         ],
                     })
                 return _FakeResponse(json.dumps({
-                    "Dates": ["2026-11-24T00:00:00", "2026-11-25T00:00:00"],
+                    "Dates": ["2026-11-25T00:00:00", "2026-11-26T00:00:00"],
                     "Elements": elems,
                 }))
 
@@ -1109,7 +1193,7 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
             self.assertTrue(stocks_us["series"]["stk_NVDA"]["stale"])
             self.assertEqual(stocks_us["series"]["stk_NVDA"]["bars_count"], 2)
 
-            # Third run: simulate CNBC failure on .GDAXI -> falls back cleanly to ft_chartapi
+            # Third run: CNBC fails on .GDAXI, and FT has the latest cached trading day.
             http3 = fk.RateLimitedHttpClient(retries=0, opener=self._build_mock_opener(fail_cnbc_gdaxi=True))
             summary3 = fk.run_fetch(
                 scope="core",
@@ -1125,6 +1209,7 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
             self.assertEqual(summary3["failed_count"], 0)
             core_data = json.loads((out_dir / "core.json").read_text(encoding="utf-8"))
             self.assertEqual(core_data["series"]["idx_GDAXI"]["provider"], "ft_chartapi")
+            self.assertEqual(core_data["series"]["idx_GDAXI"]["latest_date"], "2026-11-26")
             self.assertFalse(core_data["series"]["idx_GDAXI"]["stale"])
 
 

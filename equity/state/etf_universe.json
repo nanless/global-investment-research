@@ -5221,7 +5221,7 @@
       "region": "global",
       "category": "黄金（红灯锁）",
       "tracking_index": "LBMA 伦敦实物金价",
-      "aum": "约 335.5 亿美元（2026-11-27 官净 $70.47，发行人全产品口径）",
+      "aum": "约 334.83 亿美元（2026-11-27 官净 $70.47，发行人全产品口径）",
       "fee_total_pct": "0.12%",
       "fee_num": 0.12,
       "liquidity": "S 级（伦交所美元计价）",
@@ -5247,7 +5247,7 @@
           "field": "aum",
           "source_url": "https://www.ishares.com/uk/individual/en/products/258441/ishares-physical-gold-etc-fund",
           "as_of": "2026-11-27",
-          "note": "贝莱德 iShares 产品页披露 2026-11-27 全产品净资产约 335.5 亿美元、官净 70.47 美元，产品自身并非 UCITS。"
+          "note": "贝莱德 iShares 产品页披露 2026-11-27 全产品净资产 33,482,717,053 美元（约 334.83 亿美元）及份额净值 70.47 美元。该爱尔兰注册实物黄金 ETC 并非 UCITS。"
         },
         {
           "field": "fee_total_pct",

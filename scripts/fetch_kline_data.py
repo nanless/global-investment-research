@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from http.client import IncompleteRead
 import io
 import json
 import math
@@ -1371,7 +1372,7 @@ class RateLimitedHttpClient:
                 # Do not retry deterministic client/not-implemented errors
                 if exc.code in (400, 401, 403, 404, 405, 501):
                     raise
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            except (urllib.error.URLError, TimeoutError, OSError, IncompleteRead) as exc:
                 last_err = exc
             if attempt < self.retries:
                 delay = 0.35 * (2**attempt) + random.uniform(0.05, 0.25)
@@ -1565,16 +1566,11 @@ def merge_with_stale_cache(
     bars_limit: int,
     through_date: date | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Merge live fetch result with stale cache on failure.
-
-    Returns (series_record_or_None, failure_entry_or_None).
-    """
-    if fetched_bars:
-        rec = build_series_record(spec, fetched_bars, provider=provider or "unknown", stale=False)
-        return rec, None
-
+    """Use valid cached bars when a live response fails or falls behind them."""
+    cached_bars = []
+    cached_provider = "cached"
     if cached_entry and isinstance(cached_entry.get("bars"), list) and cached_entry["bars"]:
-        sanitized = sanitize_bars(
+        cached_bars = sanitize_bars(
             cached_entry["bars"],
             bars_limit=bars_limit,
             decimals_override=spec.decimals_override,
@@ -1583,17 +1579,25 @@ def merge_with_stale_cache(
             allow_nonpositive=spec.allow_nonpositive,
             through_date=through_date,
         )
-        if sanitized:
-            cached_prov = str(cached_entry.get("provider", "cached"))
-            rec = build_series_record(spec, sanitized, provider=cached_prov, stale=True)
-            failure = {
-                "id": spec.id,
-                "code": spec.code,
-                "shard": spec.shard,
-                "reason": error_reason or "empty live response",
-                "used_stale_cache": True,
-            }
-            return rec, failure
+        cached_provider = str(cached_entry.get("provider", "cached"))
+
+    if fetched_bars and cached_bars and fetched_bars[-1][0] < cached_bars[-1][0]:
+        error_reason = f"live bars through {fetched_bars[-1][0]} predate cached bars through {cached_bars[-1][0]}"
+        fetched_bars = None
+    if fetched_bars:
+        rec = build_series_record(spec, fetched_bars, provider=provider or "unknown", stale=False)
+        return rec, None
+
+    if cached_bars:
+        rec = build_series_record(spec, cached_bars, provider=cached_provider, stale=True)
+        failure = {
+            "id": spec.id,
+            "code": spec.code,
+            "shard": spec.shard,
+            "reason": error_reason or "empty live response",
+            "used_stale_cache": True,
+        }
+        return rec, failure
 
     failure = {
         "id": spec.id,

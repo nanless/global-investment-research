@@ -353,6 +353,8 @@ def _publication_tree(
     explicit_stage: list[str] | None = None,
 ) -> tuple[str, bool]:
     _check_no_transient_patch_files(REPO_ROOT)
+    if automated:
+        edition_run.check_scheduled_runtime(lambda *args: _git(env, *args))
     scope = AUTOMATED_STAGE_PATHS if automated else CANONICAL_STAGE_PATHS
     staged = [p for p in _git(env, "diff", "--cached", "--name-only", "-z", "--no-renames").split("\0") if p]
     if explicit_stage and staged:
@@ -526,6 +528,14 @@ def _automated_push_needed(env: dict[str, str], commit: str, *, already_pushed: 
     outside = sorted({path for path in paths if path and not _scoped(path, AUTOMATED_STAGE_PATHS)})
     if outside:
         raise RuntimeError(f"Outgoing commits include paths outside automated publication scope: {', '.join(outside)}")
+    protected = _git(
+        env, "log", "--full-history", "--format=", "--name-only", "--no-renames", "--diff-merges=first-parent",
+        "-z", f"{remote}..{commit}", "--", *edition_run.SCHEDULED_RUNTIME_PATHS,
+    ).split("\0")
+    changed_runtime = sorted({path for path in protected if path})
+    if changed_runtime:
+        raise RuntimeError(f"Outgoing commits change protected automated publication paths: {', '.join(changed_runtime)}")
+    edition_run.check_scheduled_runtime(lambda *args: _git(env, *args))
     return True
 
 
@@ -684,6 +694,8 @@ def _prepare_commit(
     _validate_revision(tree, output, env, edition=edition)
     if tree == current_tree:
         return tree, output
+    if automated:
+        edition_run.check_scheduled_runtime(lambda *args: _git(env, *args))
     if (current_tree if automatic else tree) != _git(env, "write-tree").strip():
         raise RuntimeError("The staged tree changed during validation. Retry with the intended changes.")
     if automatic:

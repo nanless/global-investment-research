@@ -475,6 +475,17 @@ def _validate_iso_cst_timestamp(value: object, label: str) -> str:
     return val
 
 
+def _live_edition_as_of_label(edition_id: str, value: object) -> str:
+    as_of = datetime.fromisoformat(_validate_iso_cst_timestamp(value, "market_state.json.as_of_cst"))
+    scheduled = datetime.strptime(f"{edition_id[:15]}+0800", "%Y-%m-%d_%H%M%z")
+    if not -timedelta(minutes=5) <= as_of - scheduled <= timedelta(hours=6):
+        raise ValueError("market_state.json.as_of_cst must fall inside the Beijing window for the current edition.")
+    day_label = "一二三四五六日"[as_of.weekday()]
+    slot_label = {"0730": "早刊", "1130": "午刊", "1800": "晚刊"}[edition_id[11:15]]
+    weekend = "周末" if scheduled.weekday() >= 5 else ""
+    return f"{as_of.year}年{as_of.month}月{as_of.day}日（周{day_label}）{as_of:%H:%M} {weekend}{slot_label}"
+
+
 def _normalize_etf_code(code: object) -> str:
     raw = str(code or "").strip().upper()
     base = re.sub(r"\.(?:HK|L|SS|SZ|US)$", "", raw)
@@ -2371,6 +2382,17 @@ def apply_equity_patch(
     eu_stats: dict[str, Any] = {}
     if orig_eu is not None:
         merged_eu, eu_stats = _merge_etf_universe(orig_eu, patch_root, edition_id, as_of_date, errors=errors)
+
+    if enforce_live_contract:
+        market_as_of = market_state.get("as_of_cst") if market_state is not None else None
+        try:
+            as_of_label = _live_edition_as_of_label(edition_id, market_as_of)
+        except ValueError as exc:
+            errors.append(str(exc))
+        else:
+            for library in (merged_ma, merged_eu):
+                if library is not None:
+                    library["as_of_label"] = as_of_label
 
     merged_dd: dict[str, Any] | None = None
     dd_stats: dict[str, Any] = {}

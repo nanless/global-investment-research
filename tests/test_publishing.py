@@ -12,7 +12,7 @@ from scripts import install_sidecars, publish_site as publish
 
 
 class SidecarRuntimeTests(unittest.TestCase):
-    def test_turbo_cannot_override_the_terminal_sandbox_check(self):
+    def test_presets_with_the_terminal_sandbox_disabled_fail_the_runtime_check(self):
         sidecar_id = "test-sidecar"
         project_id = "test-project"
         folder_uri = "file:///repo"
@@ -29,7 +29,7 @@ class SidecarRuntimeTests(unittest.TestCase):
             "sidecar": {"sidecarId": sidecar_id},
             "projectResources": {"resources": [{"folderUri": folder_uri}]},
             "permissionGrants": {"permissionGrants": {"allow": []}},
-            "settings": {"sandboxMode": True, "permissionPreset": "AGENT_PERMISSION_PRESET_TURBO"},
+            "settings": {"sandboxMode": True},
         }
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -37,11 +37,13 @@ class SidecarRuntimeTests(unittest.TestCase):
             project_path = root / "projects" / f"{project_id}.json"
             project_path.parent.mkdir()
             registry_path.write_text(json.dumps(registry), encoding="utf-8")
-            project_path.write_text(json.dumps(project), encoding="utf-8")
-
-            problems = install_sidecars.check_registry(registry_path, rendered)
-            self.assertEqual(len(problems), 1)
-            self.assertIn("AGENT_PERMISSION_PRESET_TURBO", problems[0])
+            for preset in ("AGENT_PERMISSION_PRESET_TURBO", "AGENT_PERMISSION_PRESET_REQUEST_REVIEW"):
+                with self.subTest(preset=preset):
+                    project["settings"]["permissionPreset"] = preset
+                    project_path.write_text(json.dumps(project), encoding="utf-8")
+                    problems = install_sidecars.check_registry(registry_path, rendered)
+                    self.assertEqual(len(problems), 1)
+                    self.assertIn(preset, problems[0])
 
             project["settings"]["permissionPreset"] = "AGENT_PERMISSION_PRESET_DEFAULT"
             project_path.write_text(json.dumps(project), encoding="utf-8")
@@ -187,9 +189,15 @@ class WebPublicationRecoveryTests(unittest.TestCase):
 
     def test_automated_push_accepts_confirmed_ancestor_when_main_moves(self):
         base, sha, newer = "b" * 40, "a" * 40, "c" * 40
+
+        def git(_env, *args):
+            if args[0] == "log" and args[-1] == "--":
+                return "gold/data_snapshot.json\0equity/state/market_state.json\0"
+            return ""
+
         with patch.object(publish, "_fetch_remote_main", side_effect=[base, newer]), \
              patch.object(publish, "_is_ancestor", side_effect=[False, True, True]) as ancestor, \
-             patch.object(publish, "_git", return_value="gold/data_snapshot.json\0equity/state/market_state.json\0"), \
+             patch.object(publish, "_git", side_effect=git), \
              patch.object(publish, "_run", return_value=subprocess.CompletedProcess([], 0, "", "")) as push:
             publish._push_verified_commit({}, sha, automated=True)
         push.assert_called_once_with(["git", "push", "origin", f"{sha}:refs/heads/main"], {}, timeout=120)
@@ -320,6 +328,94 @@ class PublicationIsolationTests(unittest.TestCase):
             with patch.object(publish, "REPO_ROOT", root), \
                  patch.object(publish, "_fetch_remote_main", return_value=prior_to_edition):
                 self.assertTrue(publish._automated_push_needed(publish._clean_env(), candidate, already_pushed=False))
+
+    @staticmethod
+    def _publication_fixture_git(root):
+        def git(*args):
+            return subprocess.check_output(
+                ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+                cwd=root, text=True,
+            ).strip()
+
+        git("init", "-q")
+        (root / "baseline").write_text("committed\n", encoding="utf-8")
+        git("add", "baseline")
+        git("commit", "-qm", "Baseline")
+        return git
+
+    def test_automatic_candidate_rejects_protected_runtime_drift_only_for_tokenized_publication(self):
+        for path, tracked, staged in (
+            ("equity/lint_equity.py", True, False),
+            ("gold/daily/AGENTS.md", True, True),
+            ("equity/new_publish_helper.py", False, False),
+            ("equity/DAILY_REPORT_SPEC.md", False, True),
+            (".agents/skills/alternative/SKILL.md", False, False),
+        ):
+            with self.subTest(path=path), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                git = self._publication_fixture_git(root)
+                target = root / path
+                target.parent.mkdir(parents=True)
+                if tracked:
+                    target.write_text("original\n", encoding="utf-8")
+                    git("add", path)
+                    git("commit", "-qm", "Original rule or executable")
+                target.write_text("local maintenance\n", encoding="utf-8")
+                if staged:
+                    git("add", path)
+                with patch.object(publish, "REPO_ROOT", root):
+                    env = publish._clean_env()
+                    with self.assertRaisesRegex(ValueError, re.escape(path)):
+                        publish._publication_tree(env, root / "tokenized-index", automated=True)
+                    tree, _ = publish._publication_tree(env, root / "maintainer-index")
+                    self.assertEqual(git("diff", "--name-only", "HEAD", tree), path)
+
+    def test_automatic_candidate_accepts_reports_rsi_and_flagship_rollover(self):
+        files = {
+            "gold/daily/2026-12-01_0730_早报_黄金深度研报.md",
+            "gold/daily/RSI_PLAYBOOK.md",
+            "gold/market_calendar.json",
+            "equity/daily/2026-12-01_0730_a_share.md",
+            "equity/a_share_market_report_2026_12.md",
+            "equity/a_share_market_report_latest.md",
+            "equity/report_meta_a_share.json",
+            "equity/state/RSI_PLAYBOOK.md",
+        }
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            git = self._publication_fixture_git(root)
+            for name in files:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("scheduled output\n", encoding="utf-8")
+            with patch.object(publish, "REPO_ROOT", root):
+                tree, automatic = publish._publication_tree(publish._clean_env(), root / "tokenized-index", automated=True)
+            self.assertTrue(automatic)
+            self.assertEqual(set(git("-c", "core.quotePath=false", "diff", "--name-only", "HEAD", tree).splitlines()), files)
+            self.assertEqual(git("diff", "--cached", "--name-only"), "")
+
+    def test_automated_push_rejects_a_precommitted_protected_path_even_after_revert(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            git = self._publication_fixture_git(root)
+            target = root / "gold" / "lint_readability.py"
+            target.parent.mkdir()
+            target.write_text("original runtime\n", encoding="utf-8")
+            git("add", "gold")
+            git("commit", "-qm", "Runtime baseline")
+            base = git("rev-parse", "HEAD")
+            target.write_text("local runtime\n", encoding="utf-8")
+            git("commit", "-qam", "Protected path mixed in")
+            git("revert", "--no-edit", "HEAD")
+            (target.parent / "data_snapshot.json").write_text("{}", encoding="utf-8")
+            git("add", "gold")
+            git("commit", "-qm", "Scheduled output")
+            candidate = git("rev-parse", "HEAD")
+            self.assertEqual(git("diff", "--name-only", base, candidate), "gold/data_snapshot.json")
+
+            with patch.object(publish, "REPO_ROOT", root), patch.object(publish, "_fetch_remote_main", return_value=base):
+                with self.assertRaisesRegex(RuntimeError, "gold/lint_readability.py"):
+                    publish._automated_push_needed(publish._clean_env(), candidate, already_pushed=False)
 
     def test_check_tree_no_forbidden_files_blocks_binary_and_receipt_files(self):
         header = f"100644 blob {'a' * 40}\t"

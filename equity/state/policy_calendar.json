@@ -108,13 +108,13 @@
     },
     {
       "id": "cn_pboc_stability_dual_rules_qa_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "10:30",
+      "date_cst": "2026-11-27",
+      "time_cst": "18:00",
       "home_featured": true,
       "region": "CN",
       "category": "central_bank",
       "impact_tier": "P0",
-      "authority": "中国人民银行（公告〔2026〕第 30 号 · 令〔2026〕第 5 号）",
+      "authority": "中国人民银行（公告〔2026〕第 30 号）",
       "headline": "央行公布大额存单规则，个人认购起点调整自 2027 年 3 月 21 日施行",
       "summary": "人民银行公布新《大额存单管理办法》，自 2027 年 3 月 21 日起施行。个人认购起点不低于 10 万元，共九档标准期限。过渡期仍按现行制度和银行产品条款执行。",
       "affected_markets": [
@@ -175,15 +175,14 @@
     },
     {
       "id": "global_opec_42nd_brent_jan_roll_20261128",
-      "date_cst": "2026-11-28",
-      "time_cst": "11:00",
+      "date_cst": "2026-11-01",
       "home_featured": true,
       "region": "GLOBAL",
       "category": "geopolitics_energy",
       "impact_tier": "P0",
       "authority": "产油国联盟（OPEC+）· 国际能源交易所",
       "headline": "产油国联盟两场会议均排在 11 月 29 日，布油周一关注换月价差",
-      "summary": "产油国联盟已分别发布第 42 届部长级会议公告与七个自愿调整国家同日会议公告，两场会议均排定 11 月 29 日，具体时刻与产量安排以各自会后公报为准。布伦特原油 1 月合约周一到期，切换到 2 月合约时，比较前后两张合约的价格区分换月跳变和实际涨跌。",
+      "summary": "七个自愿调整产量的国家在 11 月 1 日公告中将下次会议排在 11 月 29 日。产油国联盟 6 月 7 日发布的部长会公报已列明，第 42 届部长级会议安排在同一天。开始时刻及最新产量安排以各自后续公报为准。布伦特原油 1 月合约的最后交易日为 11 月 30 日。",
       "affected_markets": [
         "us_stock",
         "gold",
@@ -192,9 +191,9 @@
         "hk_stock"
       ],
       "market_impact": "比较同一时刻的 1 月与 2 月合约价格，避免把切换报价基准引起的跳变当作油价本身下跌。分别跟踪第 42 届全会与七国自愿减产会公报。",
-      "source_url": "https://www.opec.org/pr-detail/605-7-june-2026.html",
+      "source_url": "https://www.opec.org/pr-detail/620-1-november-2026.html",
       "source_urls": [
-        "https://www.opec.org/pr-detail/620-1-november-2026.html",
+        "https://www.opec.org/pr-detail/605-7-june-2026.html",
         "https://www.ice.com/products/219/brent-crude-futures/expiry"
       ]
     },

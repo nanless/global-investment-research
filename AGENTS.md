@@ -160,7 +160,7 @@ global-investment-research/
    - 确立 **「30 秒红绿灯白话结论 → 10 万/1 万元钱包实算与三步怎么买 → 机构级 7 维硬核证据」** 三层结构；`DXY`/`COT`/`CDS`/`ERP`/`IRR` 等专业词移出“可不解释裸用”名单，首现配简短白话括注或交由站内术语浮窗解释；禁用居高临下说教口号，鼓励平等温和的「3 分钟速读结论」「关键词白话速查」；
    - 所有公开文件、K 线分片 JSON 与生成静态网页严禁出现本地绝对路径、密钥或内部工程/脚本/RSI 文件名（含 `fetch_kline_data.py`，由 `scripts/lint_site.py` Gate S3 严守）。
 5. **无人值守分级写盘、预授权绝对路径裸命令与三道严格门禁零容忍**：
-   - 定时无人值守任务常规禁 `edit_file`（**仅允许用 `edit_file` 定点修正 `equity/state/_edition_patch.json` 校验报错**）且严禁单轮并行打包 >2 个大型 `write_file`：中小 Markdown 与轻量快照一律使用 `write_file` 全量写盘；权益三大扩展大 JSON 与 `policy_calendar.json`、黄金历史双账本（`_ledger_patch.json` 须将 `<!-- GOLD_EDITION_CHANGELOG ... -->`/`<!-- GOLD_EDITION_REVIEW ... -->` 置于第 1 行）与跨月归档、权益审计账本、三市旗舰月初滚存与双轨 `rsi_metrics.json` 统一走预授权 `scripts/patch_state_dbs.py` 增量原子命令；全市场 K 线刷新统一走预授权 `scripts/fetch_kline_data.py --scope all`；所有命令行操作仅运行 `sidecar.json` 预授权的绝对路径裸命令（56 项无通配符精确授权）；
+   - 定时无人值守任务常规禁 `edit_file`（**仅允许用 `edit_file` 定点修正当班新建且尚未发布的日报 Markdown，或修复 `equity/state/_edition_patch.json` 校验报错**）且严禁单轮并行打包 >2 个大型 `write_file`：中小 Markdown 与轻量快照一律使用 `write_file` 全量写盘；权益三大扩展大 JSON 与 `policy_calendar.json`、黄金历史双账本（`_ledger_patch.json` 须将 `<!-- GOLD_EDITION_CHANGELOG ... -->`/`<!-- GOLD_EDITION_REVIEW ... -->` 置于第 1 行）与跨月归档、权益审计账本、三市旗舰月初滚存与双轨 `rsi_metrics.json` 统一走预授权 `scripts/patch_state_dbs.py` 增量原子命令；全市场 K 线刷新统一走预授权 `scripts/fetch_kline_data.py --scope all`；所有命令行操作仅运行 `sidecar.json` 预授权的绝对路径裸命令（56 项无通配符精确授权）；
    - 交付与发布前，以下**三道严格门禁必须全部退出码 `0`（`0 errors, 0 warnings`）**：
      - `python3 gold/lint_readability.py --strict gold/daily/<最新黄金日报>.md`
      - `python3 equity/lint_equity.py --strict`

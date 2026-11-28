@@ -1,3 +1,42 @@
+<!-- GOLD_EDITION_REVIEW {
+  "edition_id": "2026-11-28_1130_r2",
+  "as_of_short": "2026-11-28 12:00",
+  "note": "本次修订分别说明未来 48 小时与其后的周一美国市场时段，采用各自的历史报价重新核算每克参考平价，并将 11 月 25 日已公布的高收益债利差与 11 月 27 日美债汇率读数分开。 11 月 25 日 CCC 及以下利差 14.17%、高收益债整体 3.77%，两项在 11 月 26 日的原系列行持平。逐项换算以 31.1034768 克/金衡盎司、当期援用汇率 6.6541 为准。原版信号评分与预测回验账本按原期留存。信用利差原表：https://fred.stlouisfed.org/data/BAMLH0A3HYC、https://fred.stlouisfed.org/data/BAMLH0A0HYM2。",
+  "sources": {
+    "real_yield": [
+      "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv"
+    ],
+    "rate_spread": [
+      "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+      "https://markets.newyorkfed.org/api/rates/all/latest.json"
+    ],
+    "vix": [
+      "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+      "https://www.cboe.com/us/futures/market_statistics/settlement/csv?dt=2026-11-27"
+    ],
+    "ny_close": [
+      "https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/navhist-us-en-gld.xlsx",
+      "https://www.vaneck.com/us/en/investments/gold-miners-etf-gdx/",
+      "https://www.sge.com.cn/sjzx/quotation_daily_new",
+      "https://www.cmegroup.com/markets/metals/precious/gold.settlements.html"
+    ]
+  },
+  "forecast_review": {
+    "status": "none_due",
+    "note": "本 2026-11-28 11:30 周末午报时段无新增到期结案预判（累计保持 10 项计分：5 兑现 / 5 部分兑现 / 0 证伪，完全兑现率 50.0%、至少部分兑现 100.0%），新增 1 项周一四大行金条温和浮动与植田和男演讲联动追踪，并在既有追踪项追加 11/27 Cboe 官表、GLD 零流、Ag(T+D) 翻多付空与链上零缺口进展注记。",
+    "sources": [
+      "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+      "https://www.sge.com.cn/sjzx/quotation_daily_new"
+    ]
+  }
+} -->
+
+## 2026-11-28 11:30 周末午报勘误
+
+本次修订分别说明未来 48 小时与其后的周一美国市场时段，采用各自的历史报价重新核算每克参考平价，并将 11 月 25 日已公布的高收益债利差与 11 月 27 日美债汇率读数分开。 [CCC 及以下利差](https://fred.stlouisfed.org/data/BAMLH0A3HYC) · [高收益债整体利差](https://fred.stlouisfed.org/data/BAMLH0A0HYM2)
+
+---
+
 # 黄金研报体系·独立红队质检与法证审计账本（AUDIT_LOG）
 
 > **档案定位**：本文件专门收纳全部跨源数据消歧、版本迭代详细修订、病毒式谣言逐条证伪与一手官方数据库索引，与面向普通读者的主报告/早午报正文**物理分离**——既确保 100% 机构级透明溯源与自动化系统继承，又不污染读者的首屏阅读体验。

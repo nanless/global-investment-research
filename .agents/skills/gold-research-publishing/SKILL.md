@@ -24,7 +24,7 @@ description: Orchestrates the beginner-friendly, institutional-grade pure-web go
 
 ## 2. 端到端标准发刊 SOP（对应仓库 Step 0–5）
 
-1. **Step 1｜日历冷启动与惰性基线继承**：依系统 `+08:00` 时间与 `market_calendar.json` 判定班次（`0730`/`1130`/`1800`）/休市模式与冬夏令时；依次读 `RSI_PLAYBOOK.md`、`rsi_metrics.json`（近 5 条）、`SCORECARD.md`、`CHANGELOG.md`（前 150 行）、`data_snapshot.json`、`master_snapshot.json`（仅命中 5 阈值时全读主报告）及上期日报。定时任务常规禁 `edit_file`（仅允许用 `edit_file` 定点修正 `equity/state/_edition_patch.json` 校验报错）与未授权 shell 探测，严禁单轮并行打包 >2 个大型 `write_file`。
+1. **Step 1｜日历冷启动与惰性基线继承**：依系统 `+08:00` 时间与 `market_calendar.json` 判定班次（`0730`/`1130`/`1800`）/休市模式与冬夏令时；依次读 `RSI_PLAYBOOK.md`、`rsi_metrics.json`（近 5 条）、`SCORECARD.md`、`CHANGELOG.md`（前 150 行）、`data_snapshot.json`、`master_snapshot.json`（仅命中 5 阈值时全读主报告）及上期日报。定时任务常规禁 `edit_file`（仅允许用 `edit_file` 定点修正当班新建且尚未发布的日报 Markdown，或修复 `equity/state/_edition_patch.json` 校验报错）与未授权 shell 探测，严禁单轮并行打包 >2 个大型 `write_file`。
 2. **Step 2｜两阶段 10+1 调研与统一红队（单跑回退 5+1）**：并行子代理严控 `≤ 12 KB` 紧凑回执，严守美股 `GLD`/`GDX` 官收白名单、禁用 `Barchart` 远月滞后价、善用 `site:shfe.com.cn`/`site:lbma.org.uk` 定向补录与冬/夏令时核对（午报重点锁 `11:30 CST` 上金所/沪金早盘官收、`XAU × USD/CNY ÷ 31.1034768` 同刻溢价、四大行金条与品牌金店新牌价及 09:15/09:20/09:30 国内宏观；同步归集联储/央行购金/关税/地缘与人民币利率政策要闻及未来 14–30 天 P0/P1 财经与政策日历增量供 `equity/state/policy_calendar.json` 同步）；全部返回后启动红队复核四步灯、宏观官源盘口铁律（日本 CPI 直核 `stat.go.jp` 区分日央行版剔生鲜能源[权重 9162]与欧美版[权重 6959]；上期所夜盘严分 `02:30` 金银/`01:00` 有色/`23:00` 黑色化工；LME 严守 17:00 同盘口）、跨时区因果、跨资产传导链、48 小时双向催化、政策日历一手官源与统一税费口径。
 3. **Step 3｜双快照落盘、收敛主刊写作与无损头插**：
    - 先用 `write_file` 全量更新 `data_snapshot.json`（含 `index_matrix` 多锚点、无日期键 `cross_ratios`/`etf_cn`、纯中文 `data_caveats`、VIX 10 日表与核查台账：普通日 `provisional_close` 3 日内核销、节日 `pending` 4h 复查、`no_row_confirmed` 官告/CSV 自证，无有效窗口盘口时【含 `07:30` 与 `11:30` 处于美东非发布窗】`vix_live`/`vix_live_as_of` 同时留空）；

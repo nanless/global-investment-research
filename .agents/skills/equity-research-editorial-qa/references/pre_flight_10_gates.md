@@ -48,7 +48,7 @@
 - ☐ **跨项目黄金红灯互斥锁全载体达标（Gate C2 & Gate S6/S7）**：黄金红灯停期，Markdown、JSON、`state/market_state.json`（Gate C2 同步扫描）、**三大扩展数据库（`multi_asset_channels.json`/`etf_universe.json`【强制 `asset_class == "gold" <=> gold_locked=True`】/`deep_dossiers.json`）**、`state/policy_calendar.json`、交互 K 线技术诊断条、渲染后 SVG 与全站网页均零新买/补齐黄金指令，严禁将黄金/金矿股或 ETF（`518660`/`517520`/`02840`/`03081`/`IAUM`/`IGLN`/`NEM`/`601899`/`02899.HK`）标为绿色底座。
 
 ## 门禁 9｜三市六文件 + 三大扩展数据库与政策日历同期 `edition_id` 锁、兄弟/孪生同步与审计账本闭环
-一次标准发版常规禁 `edit_file`（**仅允许用 `edit_file` 定点修正 `equity/state/_edition_patch.json` 校验报错**）且严禁单轮并行打包 >2 个大型 `write_file`：中小 Markdown 与轻量状态文件（1–5 项）一律用 `write_file` 全量写盘；**第 6 项三大扩展大 JSON 及可选 `state/policy_calendar.json` 写嵌套补丁 `_edition_patch.json` 走 `scripts/patch_state_dbs.py --apply`（只读查库用 `--inspect <target>`，含 `policy-calendar`），第 7 项持续增长的 `state/audit_ledger.md` 强制写 3 键 `_audit_patch.json` 走 `--prepend-equity-audit` 无损头插（严禁全量重写），月初切换 `period_slug` 写 `_rollover_patch.json` 走 `--rollover-equity-month`（防 300s 超时）**：
+一次标准发版常规禁 `edit_file`（**仅允许用 `edit_file` 定点修正当班新建且尚未发布的日报 Markdown，或修复 `equity/state/_edition_patch.json` 校验报错**）且严禁单轮并行打包 >2 个大型 `write_file`：中小 Markdown 与轻量状态文件（1–5 项）一律用 `write_file` 全量写盘；**第 6 项三大扩展大 JSON 及可选 `state/policy_calendar.json` 写嵌套补丁 `_edition_patch.json` 走 `scripts/patch_state_dbs.py --apply`（只读查库用 `--inspect <target>`，含 `policy-calendar`），第 7 项持续增长的 `state/audit_ledger.md` 强制写 3 键 `_audit_patch.json` 走 `--prepend-equity-audit` 无损头插（严禁全量重写），月初切换 `period_slug` 写 `_rollover_patch.json` 走 `--rollover-equity-month`（防 300s 超时）**：
 1. ☐ `daily/YYYY-MM-DD_{0730,1130,1800}_{a_share,hk_stock,us_stock}.md`（或 `_r2`）
 2. ☐ `daily/INDEX.md`（刷新顶部 ≤4 列驾驶舱 + 100% 闭环总占比 + 最新行，仅纯网页/Markdown 链接，严禁离线附件链接；前刊勘误须联动更新）
 3. ☐ `daily/CHANGELOG.md`（纯读者中文观点演进，单条 ≤130 字）

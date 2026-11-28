@@ -240,6 +240,18 @@ class EditionRunTest(unittest.TestCase):
         self.assertIn("must preserve every prior nonblank line", stderr.getvalue())
         self.assertEqual(edition_run.status(self.runs), [])
 
+    def test_scheduled_phase_cannot_advance_after_a_rule_changes_in_the_worktree(self):
+        token = edition_run.begin(self.runs, self.edition, "antigravity-1800")
+        rule = self.root / "gold/daily/DAILY_FORMAT_SPEC.md"
+        rule.write_text("Local rule change\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "gold/daily/DAILY_FORMAT_SPEC.md"):
+            edition_run.advance(self.runs, token, "gold")
+        self.assertEqual(edition_run.active_run(self.runs, token)["phase"], "research")
+
+        rule.unlink()
+        self.assertEqual(edition_run.advance(self.runs, token, "gold"), "gold")
+
     def test_committed_source_snapshot_sets_scheduled_floor_without_local_run(self):
         snapshot = self.root / "gold/data_snapshot.json"
         snapshot.write_text('{"edition_id":"2026-11-28_0730_r2"}')
@@ -1741,6 +1753,7 @@ class OperationalRegressionTest(unittest.TestCase):
             )
             ms_obj = json.loads((sandbox / "equity/state/market_state.json").read_text(encoding="utf-8"))
             ms_obj["edition_id"] = next_ed
+            ms_obj["as_of_cst"] = "2099-12-31T23:55:00+08:00"
             (sandbox / "equity/state/market_state.json").write_text(
                 json.dumps(ms_obj, ensure_ascii=False), encoding="utf-8"
             )
@@ -1776,6 +1789,7 @@ class OperationalRegressionTest(unittest.TestCase):
                 "as_of_label": "2099-12-31 23:55 CST",
                 "gold_tier0_locked": live_gold_locked,
                 "multi_asset_channels": {
+                    "top_level_updates": {"as_of_label": "上一班渠道标签"},
                     "channels_patch": {
                         "reverse_repo": {
                             "beginner_one_liner": f"{rr_orig_liner}（测试更新：严禁新买黄金，优先活钱）",
@@ -1783,6 +1797,7 @@ class OperationalRegressionTest(unittest.TestCase):
                     }
                 },
                 "etf_universe": {
+                    "top_level_updates": {"as_of_label": "上一班 ETF 标签"},
                     "etfs_upsert": [
                         {"code": sample_etf_code, "premium_note": "平价复核通过"}
                     ]
@@ -1819,6 +1834,28 @@ class OperationalRegressionTest(unittest.TestCase):
             self.assertEqual(etf_after["edition_id"], next_ed)
             self.assertEqual(dos_after["edition_id"], next_ed)
             self.assertEqual(dos_after["dossiers"][sample_a_key]["updated_at"], "2099-12-31")
+            expected_library_label = "2099年12月31日（周四）23:55 晚刊"
+            self.assertEqual(ch_after["as_of_label"], expected_library_label)
+            self.assertEqual(etf_after["as_of_label"], expected_library_label)
+            self.assertEqual(
+                [row for row in etf_after["etfs"] if row["code"] != sample_etf_code],
+                [row for row in eu_seed["etfs"] if row["code"] != sample_etf_code],
+            )
+
+            written_paths = [sandbox / "equity/state" / name for name in (
+                "multi_asset_channels.json", "etf_universe.json", "deep_dossiers.json"
+            )]
+            before_bad_timestamp = [path.read_bytes() for path in written_paths]
+            market_path = sandbox / "equity/state/market_state.json"
+            for value in (None, "2099-12-31T23:55:00Z", "2099-12-31T12:00:00+08:00"):
+                with self.subTest(market_as_of=value):
+                    market_path.write_text(json.dumps(dict(ms_obj, as_of_cst=value)), encoding="utf-8")
+                    patch_path.write_text(json.dumps(good_patch), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, r"market_state\.json\.as_of_cst"):
+                        patch_state_dbs.apply_equity_patch(sandbox)
+                    self.assertEqual([path.read_bytes() for path in written_paths], before_bad_timestamp)
+                    self.assertTrue(patch_path.exists())
+            market_path.write_text(json.dumps(ms_obj), encoding="utf-8")
 
             # 2. Gold Tier-0 violation must abort with zero file mutation (explicitly lock snapshot for this subtest)
             before_bytes = (sandbox / "equity/state/multi_asset_channels.json").read_bytes()

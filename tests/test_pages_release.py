@@ -1,4 +1,6 @@
+from gzip import compress
 from http.client import BadStatusLine
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -8,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from urllib.parse import urlsplit
+from zlib import error as GzipError
 
 from scripts import pages_release
 
@@ -100,7 +103,7 @@ class PagesResourceTests(unittest.TestCase):
             clock += 0.4
             return b"x"
 
-        response = Mock(status=200)
+        response = Mock(status=200, headers={"Content-Encoding": "identity"})
         response.geturl.return_value = url
         response.read1.side_effect = next_chunk
         opener = Mock()
@@ -112,6 +115,66 @@ class PagesResourceTests(unittest.TestCase):
             with self.assertRaisesRegex(TimeoutError, "Timed out reading"):
                 pages_release._fetch(url, 1.0)
         self.assertEqual(response.read1.call_count, 3)
+
+    def test_fetch_decodes_gzip_to_the_original_resource_bytes(self):
+        url = "https://example.github.io/project/charts.html"
+        body = b"<!doctype html>" + bytes(range(256)) * 512
+        opener = self._gzip_opener(url, compress(body))
+        with patch.object(pages_release, "build_opener", return_value=opener):
+            self.assertEqual(pages_release._fetch(url, 8), body)
+        request = opener.open.call_args.args[0]
+        self.assertEqual(request.get_header("Accept-encoding"), "gzip")
+
+    def test_fetch_rejects_incomplete_or_invalid_compressed_data(self):
+        url = "https://example.github.io/project/charts.html"
+        compressed = compress(b"verified content")
+        invalid_deflate = compressed[:10] + b"\x07" + compressed[11:]
+        for payload, cause in ((compressed[:-5], EOFError), (invalid_deflate, GzipError)):
+            with self.subTest(cause=cause), patch.object(
+                pages_release, "build_opener", return_value=self._gzip_opener(url, payload),
+            ):
+                with self.assertRaisesRegex(OSError, "invalid or incomplete") as caught:
+                    pages_release._fetch(url, 8)
+                self.assertIsInstance(caught.exception.__cause__, cause)
+
+    def test_fetch_limits_decoded_gzip_size(self):
+        url = "https://example.github.io/project/charts.html"
+        opener = self._gzip_opener(url, compress(b"a" * 8192))
+        with patch.object(pages_release, "build_opener", return_value=opener), patch.object(
+            pages_release, "MAX_RESOURCE_BYTES", 64,
+        ):
+            with self.assertRaisesRegex(ValueError, "oversized"):
+                pages_release._fetch(url, 8)
+
+    def test_fetch_stops_reading_dripping_gzip_before_decompression_finishes(self):
+        url = "https://example.github.io/project/charts.html"
+        payload = BytesIO(compress(b"") * 30 + compress(b"late content"))
+        opener = self._gzip_opener(url, b"")
+        response = opener.open.return_value.__enter__.return_value
+        clock = 0.0
+
+        def receive(size):
+            nonlocal clock
+            clock += 0.2
+            return payload.read(min(size, 3))
+
+        response.read1.side_effect = receive
+        with patch.object(pages_release, "build_opener", return_value=opener), patch.object(
+            pages_release.time, "monotonic", side_effect=lambda: clock,
+        ):
+            with self.assertRaisesRegex(TimeoutError, "Timed out reading"):
+                pages_release._fetch(url, 1.0)
+        self.assertLessEqual(response.read1.call_count, 6)
+
+    @staticmethod
+    def _gzip_opener(url, payload):
+        response = Mock(status=200, headers={"Content-Encoding": "gzip"})
+        response.geturl.return_value = url
+        response.read1.side_effect = BytesIO(payload).read
+        opener = Mock()
+        opener.open.return_value.__enter__ = Mock(return_value=response)
+        opener.open.return_value.__exit__ = Mock(return_value=False)
+        return opener
 
     def test_latest_daily_and_double_reads_detect_a_mixed_publication(self):
         with tempfile.TemporaryDirectory() as tmp:

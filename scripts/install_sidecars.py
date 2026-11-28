@@ -56,6 +56,9 @@ RETIRED_IDS = frozenset({
     "daily-a-us-equity-research", "daily-a-us-equity-research-evening",
 })
 STALE_PREFIXES = ("gir-local-replay-",)
+UNSANDBOXED_PRESETS = frozenset({
+    "AGENT_PERMISSION_PRESET_REQUEST_REVIEW", "AGENT_PERMISSION_PRESET_TURBO",
+})
 
 
 def _is_stale_sidecar_id(sidecar_id: str) -> bool:
@@ -314,7 +317,8 @@ def check_registry(
                     or _string_list(project_grants.get("allow")) != sorted(expected["access_grants"])):
                 problems.append(f"{sidecar_id}: project identity, workspace or recorded allow rules differ")
             preset = settings.get("permissionPreset", "inherited policy")
-            if settings.get("sandboxMode") is not True or preset == "AGENT_PERMISSION_PRESET_TURBO":
+            if (not isinstance(preset, str) or settings.get("sandboxMode") is not True
+                    or preset in UNSANDBOXED_PRESETS):
                 message = (
                     f"{sidecar_id}: terminal sandbox is not verified as enabled under "
                     f"{preset}; "
