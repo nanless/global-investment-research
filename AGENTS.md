@@ -106,7 +106,7 @@ global-investment-research/
 | **`daily-global-investment-research-evening`** | **每日 `18:00`**<br>（`17:55–次日 00:00`） | **一体化晚报** | ① 黄金 `1800_晚报`（刷新 `gold/data_snapshot.json` SSOT 并严检） → ② **A 股 / 港股 / 美股全发收敛主刊（`main`，≥2 图）**；封账 A/港日终官收、中金所/南向/16:30 汇率与美股盘前及滞后盘后终盘，同步推进三大扩展库至当班 `edition_id`：晚班聚焦债券 ETF/逆回购日终利率、可转债与 REITs 日终估值、非金商品 ETF 收盘、场内 QDII 日终溢价与停牌公告及 4–6 只焦点股 7 维刷新 → ③ 统一 RSI 盲审 + K 线抓取 + 单次纯网页发布 |
 | **周六 / 周日** | **周末专项 / 周度校准** | **休市与深研轮换** | 周六 `07:30` 黄金周末专项主刊 + 美股周五复盘主刊（美股半日市发 `holiday_watch` ≥1 图，美股全休沿用旧稿）；**周六 `11:30` / `18:00` 与周日 `07:30` / `11:30` / `18:00` 三市默认沿用旧稿**，**仅周日 `18:00` 班执行全量周度校准**：更新 12 大渠道中低频项（大额存单、外币定存、储蓄保险、个人养老金、私募信托、租金对比）、全量核对 181+ 正交标注 ETF 费率规模、轮换精修 231 股池中的 **6–10 只核心龙头 7 维档案**并推进 `SCORECARD.md` 周频复盘 |
 
-> 每班启动必须执行 `python3 equity/lint_equity.py --plan <edition_id>` 获取具体市场、刊型（`main` / `holiday_watch`）与沿用安排。
+> 每班启动必须执行 `python3 equity/lint_equity.py --plan <edition_id>` 获取具体市场、刊型（`main` / `holiday_watch`）与沿用安排。此时核查黄金日历已核证并覆盖班次后至少 30 天，同班续跑也检查。沿用报告时，新班状态须保留旧行情的原始交易日，倒计时按新截点重算或改写为绝对日期。
 
 ---
 
@@ -114,7 +114,7 @@ global-investment-research/
 
 每次 `07:30`、`11:30` 或 `18:00` 一体化班次必须严格按以下顺序在同一会话内串行推进，严禁跳步或乱序：
 
-- **运行锁、单向时间窗、僵尸锁清理与维护者专属运维命令**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` / `--scheduled 1130` / `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `11:25–17:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**严格较早期号**（`0730 < 1130 < 1800`）、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。若历史已推送班次被后续提交覆盖，维护者可人工区分 **`complete-superseded`**（校验目标提交已是现网祖先且仅含授权文件变更后结案为 `complete`）与 **`close-superseded`**（将其标为 `failed` 并记录被后续提交替代的 `outcome` 以释锁）——**两项均为维护者专属手动运维命令，严禁纳入定时自动化 `automations/permissions.json` 白名单**。
+- **运行锁、单向时间窗、僵尸锁清理与维护者专属运维命令**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` / `--scheduled 1130` / `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `11:25–17:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾上一班。若仅存推送意图且同仓 `origin/main` 确认已接收准确提交，先补记凭证并验 Pages。无法确认时保留发布锁。随后自动清理**严格较早期号**（`0730 < 1130 < 1800`）、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。若历史已推送班次被后续提交覆盖，维护者可人工区分 **`complete-superseded`**（校验目标提交已是现网祖先且仅含授权文件变更后结案为 `complete`）与 **`close-superseded`**（将其标为 `failed` 并记录被后续提交替代的 `outcome` 以释锁）——**两项均为维护者专属手动运维命令，严禁纳入定时自动化 `automations/permissions.json` 白名单**。
 - **期号交接与三库同期锁**：当班黄金快照、黄金日报 `DAILY_META`、权益状态、新权益稿 `DAILY_META_JSON`、三大扩展数据库（`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）与 `equity/state/policy_calendar.json` 记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。休市沿用旧稿时保留旧稿期号与时间，状态、政策日历与三大数据库仍刷新至当班期号。
 
 1. **Step 0｜双轨 RSI 经验库冷启动**：
@@ -133,7 +133,7 @@ global-investment-research/
    - 运行：`python3 equity/lint_equity.py --strict`（必须 `0 errors, 0 warnings`）。
 7. **Step 5｜统一 RSI 盲审闭环（5 项真核验）+ 480+ 交互 K 线刷新 + 单次纯网页门户发布**：
    - 先用 `scripts/patch_state_dbs.py --inspect review-candidate` 取得候选期号、稿件与数据文件清单和摘要。启动 **1 路独立只读 `research` 盲审子代理**，按两轨各 6 维 `/30` 打分（第 4 维聚焦**纯网页视觉清晰度、SVG 零碰撞与小白 3 分钟可读性**）、预判验真并执行 **5 项真核验**。晚于 `2026-11-28_1130` 的双轨回执应写入 `candidate_sha256` 和逐项核验的文件与结果。官源项逐条绑定当班新稿的原句、事实或推论类型、原始出处和实查结果，具体字段沿用 [定时提示词](automations/unified-edition.prompt.md)。修稿后须重新获取摘要并复审，发布前重新核对实际文件。用 `scripts/patch_state_dbs.py --append-gold-rsi` 与 `--append-equity-rsi` 无损入账，并更新两份 `RSI_PLAYBOOK.md`。已解决、待外部数据和已披露限制分别登记 `resolved`、`deferred_data`、`disclosed_caveat`。未解决硬错或回执与候选版本不一致时停止发布。
-   - 从 2026 年 11 月 29 日起，逐篇核对事实、复算与推论，按 `--inspect review-candidate` 的 `published_policy_briefs` 逐张核对首页和四市最新日报简报的完整摘要与原始出处。候选摘要绑定所有可生成网页的日报；按 `changed_historical_manuscripts` 复审发生内容变动的历史日报。沿用上次发布的待补编号。同班修订也须对账；事项移除、改期或改写内容时，在对应轨的审稿回执登记原证和复查结果。未到期且原样承接的事项可沿用。新增事项填未来有效班次。流程字段以 `automations/unified-edition.prompt.md` 为准。
+   - 从 2026 年 11 月 29 日起，逐篇核对事实、复算与推论，按 `--inspect review-candidate` 的 `published_policy_briefs` 逐张核对首页和四市最新日报简报的完整摘要，主链接和每个补充出处均须留下对应核验。候选摘要绑定所有可生成网页的日报；按 `changed_historical_manuscripts` 复审发生内容变动的历史日报。沿用上次发布的待补编号。同班修订也须对账；事项移除、改期或改写内容时，在对应轨的审稿回执登记原证和复查结果。数据核销须匹配同一期已核验事实或计算的文件、原句和出处。未到期且原样承接的事项可沿用。新增事项填未来有效班次。流程字段以 `automations/unified-edition.prompt.md` 为准。
    - 复跑 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict`，随后运行 `python3 scripts/fetch_kline_data.py --scope all` 刷新全市场 480+ 标的静态分片 K 线至 `equity/state/klines/`，进入 `publish` 阶段运行 `python3 scripts/publish_site.py --edition-token <token>`（构建完整静态门户——含 `charts.html`、Layer 1 7 枚宏观气象与危机熔断条、Layer 2 对称 `3×2` 六大市场驾驶舱、我的钱包一键试算器、6 市场 K 线交互区、自选 `★`、27 对 A/H 矩阵、按 4 大执行角色分层的 12 渠道概览卡与独立 `channels/<id>.html`、181+ 正交标注 ETF 概览卡与 `channels`/`etfs`/`screener`/`guide`/`scorecard`/`archive`——通过 **S1–S7** 严检后单提交推送至 `origin/main`），最后运行 `python3 scripts/edition_run.py complete <token>` 验证 GitHub Pages 实际部署成功即闭环。
 
 ---

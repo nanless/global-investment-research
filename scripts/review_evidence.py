@@ -160,7 +160,10 @@ def snapshot(
                 if brief.get("home_featured") is True:
                     featured_policy_briefs.append(details)
                 if _published_policy_brief(brief):
-                    published_policy_briefs.append({**details, "summary": brief.get("summary")})
+                    published_policy_briefs.append({
+                        **details, "summary": brief.get("summary"),
+                        **{field: brief[field] for field in ("authority", "date_cst", "time_cst") if field in brief},
+                    })
     encoded = json.dumps(digests, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {
         "edition_id": edition,
@@ -395,7 +398,32 @@ def validate_receipt(
     ):
         raise ValueError(f"{label} primary_sources check requires distinct public HTTPS source URLs.")
     _validate_claims(checks["primary_sources"], candidate, label, read)
+    if candidate["edition_id"][:15] > LAST_LEGACY_BACKFILL_SLOT:
+        _validate_resolved_backfill_evidence(closure, candidate, label)
     _validate_historical_review(closure, checks["primary_sources"], historical_changes, label)
+
+
+def _validate_resolved_backfill_evidence(closure: dict, candidate: dict, label: str) -> None:
+    rechecks = closure.get("backfill_rechecks", [])
+    if not isinstance(rechecks, list):
+        raise ValueError(f"{label} review_closure.backfill_rechecks must be an array.")
+    current_files = {STATE_PATH, *FIXED_PATHS, *candidate["current_manuscripts"]}
+    verified = {
+        (claim["file"], claim["excerpt"], claim["source_url"])
+        for claim in closure["checks"]["primary_sources"]["claims"]
+        if claim["kind"] in {"fact", "calculation"} and claim["file"] in current_files
+    }
+    for recheck in rechecks:
+        if not isinstance(recheck, dict):
+            raise ValueError(f"{label} review_closure.backfill_rechecks entries must be objects.")
+        if recheck.get("status") != "resolved":
+            continue
+        path, excerpt, source = (recheck.get(key) for key in ("file", "excerpt", "source_url"))
+        item = recheck.get("id")
+        if any(not isinstance(value, str) or not value.strip() for value in (path, excerpt, source)):
+            raise ValueError(f"{label} resolved backfill {item} requires its verified file and excerpt.")
+        if (path, excerpt, source) not in verified:
+            raise ValueError(f"{label} resolved backfill {item} must cite a verified fact or calculation with the same source.")
 
 
 def _validate_historical_review(closure: dict, primary_sources: dict, changes: Iterable[dict[str, str]], label: str) -> None:
@@ -443,6 +471,7 @@ def _validate_claims(
 
     policy_briefs = _policy_briefs(content(POLICY_CALENDAR_PATH)) if strict_claims else {}
     reviewed_briefs = set()
+    reviewed_policy_sources = set()
     reviewed_kinds: dict[str, set[str]] = {}
     reviewed_excerpts: dict[str, list[tuple[str, str]]] = {}
     used_sources = set()
@@ -467,12 +496,16 @@ def _validate_claims(
         if strict_claims and path == POLICY_CALENDAR_PATH:
             brief_id = entry.get("policy_brief_id")
             brief = policy_briefs.get(brief_id) if isinstance(brief_id, str) else None
-            if brief is None or source_path != path or excerpt not in (brief.get("headline"), brief.get("summary")):
+            if brief is None or source_path != path or not any(
+                isinstance(value, str) and excerpt in value for value in (brief.get("headline"), brief.get("summary"))
+            ):
                 raise ValueError(f"{where} must cite the headline or summary of its policy_brief_id in {path}.")
             if url not in policy_brief_links(brief):
                 raise ValueError(f"{where} source URL does not belong to policy brief {brief_id}.")
-            if kind == "fact" and excerpt == brief.get("summary"):
-                reviewed_briefs.add(brief_id)
+            if kind == "fact":
+                reviewed_policy_sources.add((brief_id, url))
+                if excerpt == brief.get("summary"):
+                    reviewed_briefs.add(brief_id)
         else:
             if excerpt != excerpt.strip() or len(excerpt.splitlines()) != 1:
                 raise ValueError(f"{where} excerpt does not match the reviewed file: {path}.")
@@ -517,9 +550,14 @@ def _validate_claims(
             raise ValueError(f"{label} primary_sources must review a fact, calculation and inference in {path}.")
         if not strict_claims and ("inference" not in kinds or not kinds.intersection({"fact", "calculation"})):
             raise ValueError(f"{label} primary_sources must review an observed fact or calculation and an inference in {path}.")
-    missing_briefs = {brief_id for brief_id, brief in policy_briefs.items() if _published_policy_brief(brief)} - reviewed_briefs
+    published_briefs = {brief_id: brief for brief_id, brief in policy_briefs.items() if _published_policy_brief(brief)}
+    missing_briefs = published_briefs.keys() - reviewed_briefs
     if missing_briefs:
         raise ValueError(f"{label} primary_sources missing summary facts for published policy briefs: {', '.join(sorted(missing_briefs))}.")
+    for brief_id, brief in published_briefs.items():
+        for url in policy_brief_links(brief):
+            if (brief_id, url) not in reviewed_policy_sources:
+                raise ValueError(f"{label} primary_sources has unverified published policy source for {brief_id}: {url}.")
     if used_sources != set(check["source_urls"]):
         raise ValueError(f"{label} primary_sources includes unused source URLs.")
 

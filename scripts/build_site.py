@@ -28,21 +28,30 @@ import tempfile
 import urllib.parse
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from math import isfinite
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 if __package__:
     from .ah_dividends import parse_exchange_closes, parse_pair
     from .inventory_evidence import ETF_FIELDS, STOCK_FIELDS, inventory_evidence, load_research_json
+    from .quote_sessions import (
+        CASH_INDEX_MARKETS, INDEX_CODE_ALIASES, INDEX_QUOTE_MARKETS,
+        closing_quote_available as _closing_quote_available, extract_iso_date as _extract_iso_date,
+        snapshot_quote_timing, valid_iso_date as _valid_iso_date,
+    )
     from .source_links import is_https_source, policy_brief_links
     from .state_transaction import state_read_lock
 else:
     from ah_dividends import parse_exchange_closes, parse_pair
     from inventory_evidence import ETF_FIELDS, STOCK_FIELDS, inventory_evidence, load_research_json
+    from quote_sessions import (
+        CASH_INDEX_MARKETS, INDEX_CODE_ALIASES, INDEX_QUOTE_MARKETS,
+        closing_quote_available as _closing_quote_available, extract_iso_date as _extract_iso_date,
+        snapshot_quote_timing, valid_iso_date as _valid_iso_date,
+    )
     from source_links import is_https_source, policy_brief_links
     from state_transaction import state_read_lock
 
@@ -4855,46 +4864,6 @@ _MULTI_INDEX_SPECS: dict[str, tuple[dict[str, Any], ...]] = {
 
 _SPECIAL_WITHHOLDING_CODES: frozenset[str] = frozenset({"00883.HK", "00941.HK", "00836.HK", "00291.HK", "00992.HK", "00267.HK"})
 
-# Regular local close or index dissemination cutoff. Declared holidays are checked separately.
-_CASH_QUOTE_SESSIONS = {
-    "a-share": ("Asia/Shanghai", time(15)),
-    "hk-stock": ("Asia/Hong_Kong", time(16, 10)),
-    "us-stock": ("America/New_York", time(16)),
-    "jp-stock": ("Asia/Tokyo", time(15, 30)),
-    # STOXX publishes DAX through 18:00 local time, after the Xetra closing auction.
-    "de-stock": ("Europe/Berlin", time(18)),
-    "euro-stock": ("Europe/Paris", time(18)),
-    "fr-stock": ("Europe/Paris", time(18, 5)),
-    "uk-stock": ("Europe/London", time(16, 35)),
-    "tw-stock": ("Asia/Taipei", time(13, 30)),
-    "kr-stock": ("Asia/Seoul", time(15, 30)),
-    "in-stock": ("Asia/Kolkata", time(15, 30)),
-}
-_INDEX_QUOTE_MARKETS = {
-    "idx_N225": "jp-stock", "idx_TOPIX": "jp-stock", "idx_GDAXI": "de-stock",
-    "idx_STOXX50E": "euro-stock", "idx_FCHI": "fr-stock", "idx_FTSE": "uk-stock",
-    "idx_TWII": "tw-stock", "idx_KS11": "kr-stock", "idx_NSEI": "in-stock",
-    "idx_932047": "a-share", "idx_sh000832": "a-share", "etf_511260": "a-share",
-    "etf_511090": "a-share", "etf_511360": "a-share", "etf_513800": "a-share", "etf_159561": "a-share",
-    "etf_IB01": "uk-stock", "etf_SGOV": "us-stock", "etf_TLT": "us-stock", "etf_XLRE": "us-stock",
-    "etf_VXUS": "us-stock",
-}
-_INDEX_CODE_ALIASES = {
-    "idx_GDAXI": "GDAXI", "idx_STOXX50E": "STOXX50E", "idx_FCHI": "FCHI",
-    "idx_KS11": "KS11", "idx_NSEI": "NSEI",
-}
-_QUOTE_CLOCK = re.compile(r"(?<![\d+-])([01]?\d|2[0-3])(:[0-5]\d(?::[0-5]\d)?(?:Z|[+-]\d{2}:?\d{2})?)(?![\d:])")
-
-
-def _valid_iso_date(raw: Any) -> str:
-    if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
-        return ""
-    try:
-        return date.fromisoformat(raw).isoformat()
-    except ValueError:
-        return ""
-
-
 def _kline_source_label(provider: Any) -> str:
     family = str(provider or "").lower().split("_", 1)[0]
     return {
@@ -4906,47 +4875,12 @@ def _kline_source_label(provider: Any) -> str:
     }.get(family, "日线来源待核")
 
 
-def _quote_status(stamp: str) -> str:
-    for pattern, label in (
-        (r"沿用|缓存", "沿用报价"), (r"官结|官方结算", "官结"), (r"午收|午盘|早盘收", "午盘"),
-        (r"官收|官方收盘|官方终盘", "官收"), (r"盘中|实盘", "盘中"),
-        (r"前收|收盘", "收盘参考"),
-    ):
-        if re.search(pattern, stamp):
-            return label
-    return "盘口待核"
-
-
 def _quote_provenance(row: dict[str, Any]) -> str:
     return " · ".join((
         row.get("quote_date") or "行情日待核",
         row.get("quote_status") or "盘口待核",
         row.get("quote_source") or "来源待核",
     ))
-
-
-def _quote_timestamp(stamp: str, observed_day: str) -> datetime | None:
-    if not observed_day:
-        return None
-    clock = _QUOTE_CLOCK.search(stamp)
-    if not clock:
-        return None
-    try:
-        observation = datetime.fromisoformat(f"{observed_day}T{clock[1].zfill(2)}{clock[2]}")
-    except ValueError:
-        return None
-    if observation.tzinfo is not None:
-        return observation
-    timezone_label = stamp[clock.end():].strip().upper()
-    if re.match(r"EDT\b", timezone_label):
-        return observation.replace(tzinfo=timezone(-timedelta(hours=4)))
-    if re.match(r"EST\b", timezone_label):
-        return observation.replace(tzinfo=timezone(-timedelta(hours=5)))
-    if re.match(r"ET\b|美东", timezone_label):
-        return observation.replace(tzinfo=ZoneInfo("America/New_York"))
-    if re.match(r"UTC\b|GMT\b", timezone_label):
-        return observation.replace(tzinfo=timezone.utc)
-    return observation.replace(tzinfo=timezone(timedelta(hours=8)))
 
 
 def _edition_quote_catalog(
@@ -4971,9 +4905,7 @@ def _resolve_multi_index_groups(
     cat_by_id = _edition_quote_catalog(kline_manifest, eq_state)
     cutoff = str(eq_state.get("as_of_cst") or "")
     cutoff_day = _valid_iso_date(cutoff[:10])
-    cutoff_time = _quote_timestamp(cutoff, cutoff_day)
     calendar = eq_state.get("calendar_overrides")
-    cash_index_markets = {"a_share": "a-share", "hk_stock": "hk-stock", "us_stock": "us-stock"}
     markets = eq_state.get("markets") or {}
     a_m = markets.get("a_share") or {}
     hk_m = markets.get("hk_stock") or {}
@@ -5048,11 +4980,11 @@ def _resolve_multi_index_groups(
         rows = []
         for rank, spec in enumerate(specs, start=1):
             sid = spec["id"]
-            stock_market = cash_index_markets.get(group) or _INDEX_QUOTE_MARKETS.get(sid)
+            stock_market = CASH_INDEX_MARKETS.get(group) or INDEX_QUOTE_MARKETS.get(sid)
             close_delay_minutes = 15 if sid == "idx_VIX" else 0
             override, source = (
                 overrides.get(sid.upper()) or overrides.get(spec["code"].upper())
-                or overrides.get(_INDEX_CODE_ALIASES.get(sid))
+                or overrides.get(INDEX_CODE_ALIASES.get(sid))
                 or overrides.get(spec["name"].upper()) or ({}, "")
             )
             value = _safe_float(override.get("value"))
@@ -5064,28 +4996,10 @@ def _resolve_multi_index_groups(
                 change = _safe_float(override.get("change_pct"))
                 if change is None:
                     change = _safe_float(override.get("chg_pct"))
-                stamp = str(override.get("as_of") or "")
-                raw_stamp_day = _extract_iso_date(stamp)
-                stamp_day = _valid_iso_date(raw_stamp_day)
-                observed_at = _quote_timestamp(stamp, stamp_day)
-                declared_day = override.get("quote_date") or override.get("observation_date")
-                observed_day = _valid_iso_date(declared_day) or stamp_day
-                invalid_date = (raw_stamp_day and not stamp_day) or (declared_day and not _valid_iso_date(declared_day))
-                invalid_clock = observed_at is None and re.search(r"(?<![\d+-])\d{1,2}:\d{2}", stamp)
-                if observed_at is not None and stock_market and not declared_day:
-                    observed_day = observed_at.astimezone(ZoneInfo(_CASH_QUOTE_SESSIONS[stock_market][0])).date().isoformat()
-                status = _quote_status(str(override.get("quote_status") or stamp))
-                is_close = status in ("官收", "收盘参考") or (observed_at is None and status == "盘口待核")
-                if (
-                    not invalid_date and not invalid_clock
-                    and (not cutoff_day or observed_day <= cutoff_day)
-                    and (observed_at is None or cutoff_time is None or observed_at <= cutoff_time)
-                    and (not (observed_day and cutoff_time and stock_market and is_close)
-                         or _closing_quote_available(
-                             observed_day, stock_market, observed_at.isoformat() if observed_at else cutoff, calendar,
-                             close_delay_minutes=close_delay_minutes,
-                         ))
-                ):
+                observed_day, status, error = snapshot_quote_timing(
+                    override, stock_market, cutoff, calendar, close_delay_minutes=close_delay_minutes,
+                )
+                if error is None:
                     if sid.startswith("rate_"):
                         previous = _safe_float(override.get("previous_value"))
                         change = _safe_float((value - previous) * 100) if previous is not None else None
@@ -9013,20 +8927,6 @@ _DOSSIER_NEGATED_RED_RE = re.compile(
 )
 
 
-def _extract_iso_date(raw: Any) -> str:
-    """Extract YYYY-MM-DD date string from ISO or Chinese date stamps."""
-    s = str(raw or "").strip()
-    if not s:
-        return ""
-    m_iso = re.search(r"(\d{4})-(\d{2})-(\d{2})", s)
-    if m_iso:
-        return f"{m_iso.group(1)}-{m_iso.group(2)}-{m_iso.group(3)}"
-    m_cn = re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", s)
-    if m_cn:
-        return f"{m_cn.group(1)}-{int(m_cn.group(2)):02d}-{int(m_cn.group(3)):02d}"
-    return ""
-
-
 def _extract_dossier_badge(
     action_etf: str,
     *,
@@ -9438,42 +9338,6 @@ def merge_stock_dossiers(
                     ah_lookup=ah_lookup,
                 )
     return stocks
-
-
-def _closing_quote_available(
-    observed: str, market: str, cutoff: str, calendar_overrides: list[dict] | None = None,
-    *,
-    close_delay_minutes: int = 0,
-) -> bool:
-    """Check a dated daily bar against the local cash session and declared holidays."""
-    try:
-        day = date.fromisoformat(observed)
-        stamp = datetime.fromisoformat(cutoff)
-    except (TypeError, ValueError):
-        return False
-    if day.weekday() >= 5:
-        return False
-
-    market_id = market.replace("-", "_")
-    holiday_types = {"partial_holiday", "long_holiday_start", "full_holiday", "full_holiday_and_rollover"}
-    session_rules = {
-        entry.get("type") for entry in calendar_overrides or []
-        if isinstance(entry, dict) and isinstance(entry.get("type"), str)
-        and isinstance(entry.get("markets_affected"), list) and market_id in entry["markets_affected"]
-        and (first := _valid_iso_date(entry.get("date_cst"))) and first <= observed
-        and observed <= _valid_iso_date(entry.get("end_date_cst", first))
-    }
-    if session_rules & holiday_types:
-        return False
-    if cutoff == cutoff[:10]:
-        return day <= stamp.date()
-    beijing = ZoneInfo("Asia/Shanghai")
-    zone_name, ordinary_close = _CASH_QUOTE_SESSIONS[market]
-    zone = ZoneInfo(zone_name)
-    half_day_closes = {"hk-stock": time(12, 10), "us-stock": time(13)}
-    close = half_day_closes.get(market, ordinary_close) if "half_day" in session_rules else ordinary_close
-    cutoff_at = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=beijing)
-    return datetime.combine(day, close, zone) + timedelta(minutes=close_delay_minutes) <= cutoff_at
 
 
 def _align_screener_quotes(

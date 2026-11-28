@@ -18,6 +18,7 @@ Independent Pre-Flight & Pure-Web Forensic Quality Linter for Global Equity Rese
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import redirect_stdout
 import importlib.util
 import json
 import re
@@ -1322,6 +1323,7 @@ def _check_release_snapshot(gold: dict, state: dict, targets: list[Path]) -> lis
         return ["Gate C1 失败：黄金与权益须声明同一有效 edition_id"]
     if any(parse_daily_sort_key(p)[:3] > edition_key for p in targets if not _detect_is_flagship(p)):
         errors.append("Gate C1 失败：日报场次晚于共享快照场次")
+    g_ts = None
     try:
         g_ts = datetime.strptime(gold["as_of_short"], "%Y-%m-%d %H:%M").replace(tzinfo=BEIJING)
         e_ts = datetime.fromisoformat(state["as_of_cst"])
@@ -1384,10 +1386,15 @@ def _check_release_snapshot(gold: dict, state: dict, targets: list[Path]) -> lis
         errors.append(f"Gate C1 失败：vix_live 跨轨数值缺失、非法或漂移 gold={gold_live} equity={equity_live}")
     fixing_date = gold.get("cfets_fixing_date")
     try:
-        if fixing_date != rates.get("cfets_fixing_date") or datetime.strptime(fixing_date, "%Y-%m-%d").date().isoformat() != fixing_date or fixing_date > edition_key[0]:
+        fixing_day = datetime.strptime(fixing_date, "%Y-%m-%d")
+        if fixing_date != rates.get("cfets_fixing_date") or fixing_day.date().isoformat() != fixing_date or fixing_date > edition_key[0]:
             raise ValueError
     except (TypeError, ValueError):
         errors.append("Gate C1 失败：CFETS 中间价日期须有效、跨轨一致且不晚于班次日期")
+    else:
+        if (edition_key[:2] > CAVEAT_SCHEDULE_CUTOVER and g_ts is not None
+                and fixing_day.replace(hour=9, minute=15, tzinfo=BEIJING) > g_ts):
+            errors.append("Gate C1 失败：黄金截点早于 CFETS 当日 09:15 发布，两轨须沿用已发布的前一交易日中间价")
 
     # Expanded Gold<->Equity SSOT mirror check for all shared numeric fields present in both JSONs
     us_mkt = state.get("markets", {}).get("us_stock") if isinstance(state.get("markets"), dict) else {}
@@ -3121,6 +3128,64 @@ def _is_num(val: object) -> bool:
         return False
 
 
+def _check_market_index_quotes(state: dict) -> list[str]:
+    """Check explicitly supplied index observations before they can reach any rendition."""
+    edition = parse_edition_id(state.get("edition_id"))
+    if edition is None or edition[:2] <= CAVEAT_SCHEDULE_CUTOVER:
+        return []
+    scripts_dir = str(BASE_DIR.parent / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from quote_sessions import CASH_INDEX_MARKETS, index_quote_market, snapshot_quote_timing
+
+    markets = state.get("markets")
+    markets = markets if isinstance(markets, dict) else {}
+    links = state.get("cross_market_linkages")
+    links = links if isinstance(links, dict) else {}
+    satellite = state.get("non_us_global_satellite")
+    satellites = satellite.get("markets") if isinstance(satellite, dict) else None
+    cutoff = str(state.get("as_of_cst") or "")
+    overrides = state.get("calendar_overrides")
+    groups = [(name, market.get("index_matrix")) for name, market in markets.items() if isinstance(market, dict)]
+    groups.append(("macro", links.get("macro_index_matrix")))
+    if isinstance(satellites, list):
+        groups.extend((f"satellite.{market.get('id')}", market.get("benchmarks"))
+                      for market in satellites if isinstance(market, dict))
+    errors = []
+    for group, rows in groups:
+        if not isinstance(rows, list):
+            continue
+        seen = set()
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            symbol = row.get("id") or row.get("kline_id") or row.get("code")
+            label = f"[Gate 4 行情时点错] {group} [{index}] {symbol or ''}".rstrip()
+            if isinstance(symbol, str) and symbol:
+                symbol_key = symbol.upper()
+                if symbol_key in seen:
+                    errors.append(f"{label} 同一清单中标的重复")
+                seen.add(symbol_key)
+            value = row.get("value")
+            if value is None:
+                value = row.get("close")
+            if value is None:
+                continue
+            market = index_quote_market(group, row)
+            if not _is_num(value) or (market and value <= 0):
+                errors.append(f"{label} 行情值非法")
+                continue
+            vix = str(symbol).upper() in ("IDX_VIX", "VIX")
+            observed_day, _, problem = snapshot_quote_timing(
+                row, market, cutoff, overrides, close_delay_minutes=15 if vix else 0,
+            )
+            if problem:
+                errors.append(f"{label} {problem}")
+            elif group in CASH_INDEX_MARKETS and not observed_day:
+                errors.append(f"{label} 须记录行情交易日；无可核行情则留空披露")
+    return errors
+
+
 def _check_market_state_math(state: dict) -> list[str]:
     """Gate G6: Deterministic quantitative math checks on equity/state/market_state.json."""
     errs: list[str] = []
@@ -3589,6 +3654,7 @@ def check_workspace_state(*, precheck: bool = False) -> tuple[list[str], list[st
                 errs.extend(_check_state_schedule(st))
                 errs.extend(_check_data_caveats(st, require_presence=require_full_ssot))
                 errs.extend(_check_ah_dividend_evidence(st))
+                errs.extend(_check_market_index_quotes(st))
                 errs.extend(_check_market_state_math(st))
                 errs.extend(_check_extended_cockpit_markets(st, require_presence=require_full_ssot))
         except json.JSONDecodeError as exc:
@@ -3703,6 +3769,19 @@ def main() -> None:
             if not isinstance(state, dict):
                 raise ValueError("权益状态须为 JSON 对象")
             plan, errors = edition_plan(args[1], state, calendar)
+            planned_key = parse_edition_id(plan.get("edition_id"))
+            previous_key = parse_edition_id(state.get("edition_id"))
+            if not errors and planned_key and (previous_key is None or planned_key[:2] >= previous_key[:2]):
+                gold_dir = str(BASE_DIR.parent / "gold")
+                sys.path.insert(0, gold_dir)
+                try:
+                    from edition_validation import vix_calendar
+
+                    scheduled = datetime.strptime(f"{planned_key[0]}_{planned_key[1]:04}", "%Y-%m-%d_%H%M")
+                    with redirect_stdout(sys.stderr):
+                        vix_calendar(calendar, scheduled.replace(tzinfo=BEIJING), errors)
+                finally:
+                    sys.path.remove(gold_dir)
         except (OSError, ValueError) as exc:
             sys.exit(f"无法生成出刊计划：{exc}")
         if errors:

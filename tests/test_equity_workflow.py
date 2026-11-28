@@ -17,8 +17,8 @@ import build_us_stock_pdf
 import pdf_common
 from build_daily import extract_daily_meta, load_optional_charts
 from lint_equity import (
-    MARKETS, _check_ah_dividend_evidence, _check_market_state_math, _check_playbook_retracted_claims,
-    _check_rsi_metrics, _scan_text_for_gold_buy,
+    MARKETS, _check_ah_dividend_evidence, _check_market_index_quotes, _check_market_state_math,
+    _check_playbook_retracted_claims, _check_release_snapshot, _check_rsi_metrics, _scan_text_for_gold_buy,
 )
 
 KPI_CARDS = [{"label": "数据", "val": "1", "sub": "测试"} for _ in range(4)]
@@ -55,6 +55,52 @@ class AhDividendPreflightTests(unittest.TestCase):
 
 
 class MarketComparisonTests(unittest.TestCase):
+    def test_prospective_equity_snapshot_rejects_unavailable_index_quotes(self):
+        state = {"edition_id": "2026-11-30_1130", "as_of_cst": "2026-11-30T11:45:00+08:00", "markets": {}}
+        scenarios = (
+            ("a_share", {"id": "idx_sh000001", "as_of": "2026-11-30 11:30 午收"}, None),
+            ("a_share", {"id": "idx_sh000001", "as_of": "2026-11-30 11:26 午收"}, "午盘收盘晚于"),
+            ("a_share", {"id": "idx_sh000001", "as_of": "2026-11-30 15:00 官收"}, "晚于本刊截点"),
+            ("a_share", {"id": "idx_sh000001", "as_of": "2026-11-30 11:35 官收"}, "日终收盘晚于"),
+            ("a_share", {"id": "idx_sh000001", "quote_date": "2026-11-29", "stale": True}, "无此市场"),
+            ("a_share", {"id": "idx_sh000001", "quote_date": "2026-11-30"}, "日终收盘晚于"),
+            ("a_share", {"id": "idx_sh000001"}, "须记录行情交易日"),
+            ("a_share", {"id": "idx_sh000001", "quote_date": "2026-11-27", "stale": True}, None),
+            ("hk_stock", {"id": "idx_hkHSI", "as_of": "2026-11-30 11:40 午盘前实盘"}, None),
+            ("hk_stock", {"id": "idx_hkHSI", "as_of": "2026-11-30 11:40 午收"}, "午盘收盘晚于"),
+            ("hk_stock", {"id": "idx_hkHSI", "quote_date": "2026-11-30", "quote_status": "盘中"}, "须记录有日期的观察时间"),
+            ("us_stock", {"code": "SPX", "as_of": "2026-11-30 09:30 EST 盘中"}, "晚于本刊截点"),
+        )
+        for group, quote, problem in scenarios:
+            with self.subTest(quote=quote):
+                state["markets"] = {group: {"index_matrix": [{"value": 100, **quote}]}}
+                errors = _check_market_index_quotes(state)
+                if problem:
+                    self.assertTrue(any(problem in error for error in errors), errors)
+                else:
+                    self.assertEqual(errors, [])
+
+        state["as_of_cst"] = "2026-11-30T16:08:30+08:00"
+        row = {"id": "idx_hkHSI", "value": 100, "as_of": "2026-11-30 16:08 官收"}
+        state["markets"] = {"hk_stock": {"index_matrix": [row]}}
+        self.assertEqual(_check_market_index_quotes(state), [])
+        row["as_of"] = "2026-11-30 16:07 官收"
+        self.assertIn("日终收盘晚于", _check_market_index_quotes(state)[0])
+        row["as_of"] = "2026-11-30 官收"
+        self.assertIn("日终收盘晚于", _check_market_index_quotes(state)[0])
+
+    def test_cfets_equity_mirror_requires_published_fixing_at_gold_cutoff(self):
+        gold = json.loads((ROOT / "gold/data_snapshot.json").read_bytes())
+        state = json.loads((ROOT / "equity/state/market_state.json").read_bytes())
+        gold.update(edition_id="2026-11-30_0730", as_of_short="2026-11-30 09:14", cfets_fixing_date="2026-11-30")
+        state.update(edition_id=gold["edition_id"], as_of_cst="2026-11-30T09:20:00+08:00")
+        mirror = state["markets"]["gold_mirror_readonly"]
+        mirror.update(edition_id=gold["edition_id"], as_of_short=gold["as_of_short"])
+        state["cross_market_linkages"]["rates_fx_chain"]["cfets_fixing_date"] = gold["cfets_fixing_date"]
+        self.assertTrue(any("早于 CFETS 当日 09:15" in error for error in _check_release_snapshot(gold, state, [])))
+        gold["as_of_short"] = mirror["as_of_short"] = "2026-11-30 09:15"
+        self.assertEqual(_check_release_snapshot(gold, state, []), [])
+
     def test_close_change_uses_the_declared_previous_value(self):
         observation = {"code": "VIX", "value": 23.81, "change_pct": -11.16, "previous_value": 26.8}
         state = {"markets": {"us_stock": {"index_matrix": [observation]}}}
@@ -86,11 +132,13 @@ class EquityWorkflowTests(unittest.TestCase):
         (equity / "daily/archive/2026-11").mkdir(parents=True)
         (equity / "state").mkdir()
         (self.root / "gold").mkdir()
+        for module in ("edition_validation.py", "chart_input.py"):
+            shutil.copy2(ROOT / "gold" / module, self.root / "gold" / module)
         for script in (ROOT / "equity").glob("*.py"):
             shutil.copy2(script, equity / script.name)
         scripts = self.root / "scripts"
         scripts.mkdir()
-        for module in ("source_links.py", "svg_geometry.py", "visual_widgets.py", "ah_dividends.py", "inventory_evidence.py"):
+        for module in ("source_links.py", "svg_geometry.py", "visual_widgets.py", "ah_dividends.py", "inventory_evidence.py", "quote_sessions.py"):
             shutil.copy2(ROOT / "scripts" / module, scripts / module)
         self.state_path = equity / "state/market_state.json"
         self.gold_path = self.root / "gold/data_snapshot.json"
@@ -131,8 +179,13 @@ class EquityWorkflowTests(unittest.TestCase):
             "tier_code": "Tier 1", "new_buy_allowed": True, "gates_passed": "4/4", "spot_ny_close_usd": 3500,
         }
         calendar = {
-            "timezone": "Asia/Shanghai", "as_of": "2026-11-25", "calendar_overrides": [{
+            "timezone": "Asia/Shanghai", "as_of": "2026-11-25",
+            "coverage": {"start_date": "2026-11-01", "end_date": "2027-06-30", "verified_on": "2026-11-25",
+                         "vix_schedule_source": "https://www.cboe.com/about/hours/us-options/"},
+            "vix_session_exceptions": {"2026-11-26": {"official_close_et": None, "windows_et": []}},
+            "calendar_overrides": [{
                 "id": "thanksgiving", "date": "2026-11-26", "end_date": "2026-11-26", "markets": ["US_EQUITY"],
+                "overlay_mode": "A",
                 "affected_editions": ["2026-11-26_1800", "2026-11-27_0730"], "trading_hours_bjt": {"US": "休市"},
             }],
         }
@@ -230,6 +283,20 @@ class EquityWorkflowTests(unittest.TestCase):
         result = self.lint("--precheck", "--strict")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("当班应复用旧刊", result.stdout)
+
+    def test_preflight_blocks_a_new_cash_quote_falsely_dated_on_a_closed_day(self):
+        self.advance("2026-11-29_1800")
+        quote = {"id": "idx_sh000001", "code": "000001", "value": 3600.0,
+                 "quote_date": "2026-11-29", "quote_status": "官收"}
+        self.state["markets"]["a_share"]["index_matrix"] = [quote]
+        self.save()
+        invalid = self.lint("--precheck", "--strict")
+        self.assertEqual(invalid.returncode, 1, invalid.stdout + invalid.stderr)
+        self.assertIn("该日无此市场的现金交易", invalid.stdout)
+        quote.update(quote_date="2026-11-27", stale=True)
+        self.save()
+        valid = self.lint("--precheck", "--strict")
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
 
     def test_required_reports_and_edition_types(self):
         self.advance("2026-11-26_1800")

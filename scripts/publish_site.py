@@ -425,20 +425,10 @@ def _git_dir(env: dict[str, str], *, common: bool = False) -> Path:
 
 
 def _remote_repository(url: str) -> str:
-    raw = url.strip()
-    patterns = (
-        # Standard or credentialed HTTPS URL on github.com
-        r"(?i:https://)(?:[^/@\s]+@)?(?i:github\.com)/([\w.-]+/[\w.-]+?)(?:\.git)?/?",
-        # ssh:// URL with github.com or custom GitHub SSH host alias (e.g. ssh://git@github-work/owner/repo.git)
-        r"(?i:ssh://)(?:[\w.-]+@)?(?i:github\.com|[\w.-]*github[\w.-]*)(?::\d+)?/([\w.-]+/[\w.-]+?)(?:\.git)?/?",
-        # SCP-style SSH with github.com or custom SSH host alias (e.g. git@github-work:owner/repo.git)
-        r"(?:[\w.-]+@)?(?i:github\.com|[\w.-]*github[\w.-]*):([\w.-]+/[\w.-]+?)(?:\.git)?/?",
-    )
-    for pattern in patterns:
-        match = re.fullmatch(pattern, raw, flags=re.ASCII)
-        if match:
-            return match[1]
-    raise RuntimeError("Publication requires an origin URL that identifies a github.com repository.")
+    try:
+        return edition_run.github_repository(url)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _validate_revision(

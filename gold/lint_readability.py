@@ -531,6 +531,9 @@ def validate_snapshot_file(
         fixing_dt = _parse_timestamp(f"{fixing_date} 00:00")
         if fixing_dt is None or (as_of is not None and fixing_dt.date() > as_of.date()):
             errors.append(f"[Gate 5 中间价日期非法] {label}: cfets_fixing_date 须为不晚于快照的交易日期")
+        elif (edition is not None and edition[:2] > CAVEAT_SCHEDULE_CUTOVER and as_of is not None
+              and fixing_dt.replace(hour=9, minute=15) > as_of):
+            errors.append(f"[Gate 5 中间价尚未发布] {label}: 截点早于该交易日北京时间 09:15，沿用已发布的上一交易日中间价")
         _snapshot_numbers(snap, label, errors, ("us10y_pct", "dfii10_live_pct", "dxy", "cfets_cny_fixing", "vix_close", "on_rrp_usd_m", "comex_copper_usd_lb"))
         new_rules = edition is not None and edition > LAST_LEGACY_EDITION
         schedule = None

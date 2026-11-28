@@ -1,4 +1,4 @@
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import date, datetime, timedelta, timezone
 import html
 from io import StringIO
@@ -439,6 +439,82 @@ class EditionRunTest(unittest.TestCase):
         self.assertEqual(url, "https://example.invalid/pages")
         deploy.assert_called_once_with(sha, "example/project", 0)
         self.assertEqual(edition_run.status(self.runs)[0]["status"], "complete")
+
+    def test_scheduled_entry_recovers_a_landed_commit_without_a_saved_push_receipt(self):
+        token = self.reach_publish("antigravity-1800")
+        sha = self.committed_edition()
+        repository = "example/project"
+        self.git("remote", "add", "origin", f"https://github.com/{repository}.git")
+        remote = self.root / ".git" / "fixture-origin.git"
+        self.git("init", "--bare", "-q", str(remote))
+        self.git("push", str(remote), "HEAD:refs/heads/main")
+        intent = edition_run.push_intent_path(edition_run.git_directory(), token)
+        intent.write_text(json.dumps({"edition": self.edition, "sha": sha, "repository": repository}))
+
+        def confirm_remote(name, *, deadline):
+            self.assertEqual(name, repository)
+            self.assertGreater(deadline, 0)
+            return self.git("ls-remote", str(remote), "refs/heads/main").split()[0]
+
+        scheduled = "2026-11-27_0730"
+        with (
+            patch.object(sys, "argv", ["edition_run.py", "begin", "--scheduled", "0730"]),
+            patch.object(edition_run, "scheduled_edition", return_value=scheduled),
+            patch.object(edition_run, "_remote_main_head_sha", side_effect=confirm_remote),
+            patch.object(edition_run, "verify_pages", return_value="https://example.invalid/pages") as deploy,
+            redirect_stdout(StringIO()) as stdout,
+        ):
+            self.assertEqual(edition_run.main(), 0)
+        response = json.loads(stdout.getvalue())
+        self.assertEqual(response["edition_id"], scheduled)
+        self.assertFalse(intent.exists())
+        deploy.assert_called_once_with(sha, repository, edition_run.PAGES_ACTIONS_PROBE_SECONDS)
+        latest, previous = edition_run.status(self.runs)
+        self.assertEqual((latest["edition"], latest["status"]), (scheduled, "running"))
+        self.assertEqual((previous["edition"], previous["status"], previous["deployed_commit"]),
+                         (self.edition, "complete", sha))
+
+    def test_unconfirmed_push_intent_stays_locked_and_pages_retry_uses_the_recovered_receipt(self):
+        token = self.reach_publish()
+        sha = self.committed_edition()
+        repository = "example/project"
+        self.git("remote", "add", "origin", f"git@github.com:{repository}.git")
+        intent = edition_run.push_intent_path(edition_run.git_directory(), token)
+        intent.write_text(json.dumps({"edition": self.edition, "sha": sha, "repository": "other/project"}))
+        with patch.object(edition_run, "_remote_main_head_sha") as probe:
+            with self.assertRaisesRegex(ValueError, "repository differs from origin"):
+                edition_run.reconcile_previous_deployment(self.runs)
+        probe.assert_not_called()
+        self.assertTrue(intent.is_file())
+        self.assertIsNone(edition_run.publication_commit(token))
+        intent.write_text(json.dumps({"edition": self.edition, "sha": sha, "repository": repository}))
+        for remote_head in (None, "a" * 40):
+            with (
+                self.subTest(remote_head=remote_head),
+                patch.object(edition_run, "_remote_main_head_sha", return_value=remote_head),
+                patch.object(edition_run, "verify_pages") as deploy,
+            ):
+                with self.assertRaisesRegex(edition_run.DeploymentPending, "Cannot confirm the saved push"):
+                    edition_run.reconcile_previous_deployment(self.runs)
+                deploy.assert_not_called()
+            self.assertTrue(intent.is_file())
+            self.assertIsNone(edition_run.publication_commit(token))
+
+        with (
+            patch.object(edition_run, "_remote_main_head_sha", return_value=sha),
+            patch.object(edition_run, "verify_pages", side_effect=edition_run.DeploymentPending("Contended public deployment")),
+            self.assertRaisesRegex(edition_run.DeploymentPending, "Contended public deployment"), self.runs,
+        ):
+            edition_run.reconcile_previous_deployment(self.runs)
+        self.assertEqual(edition_run.publication_commit(token), sha)
+        self.assertFalse(intent.exists())
+        self.assertEqual(edition_run.active_run(self.runs, token)["phase"], "publish")
+        with (
+            patch.object(edition_run, "_remote_main_head_sha") as probe,
+            patch.object(edition_run, "verify_pages", return_value="https://example.invalid/pages"), self.runs,
+        ):
+            self.assertEqual(edition_run.reconcile_previous_deployment(self.runs), "https://example.invalid/pages")
+        probe.assert_not_called()
 
     def test_new_actions_deployment_waits_for_public_pages_before_completing(self):
         token = self.reach_publish()

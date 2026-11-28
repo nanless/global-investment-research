@@ -26,6 +26,24 @@ from scripts import lint_site, state_transaction
 
 
 class TestCanonicalKlineUniverse(unittest.TestCase):
+    def test_matching_new_edition_id_does_not_validate_pre_cutoff_kline_files(self):
+        edition = "2026-11-29_0730"
+        with tempfile.TemporaryDirectory() as temp:
+            site = Path(temp)
+            folder = site / "assets/klines"
+            folder.mkdir(parents=True)
+            manifest = {
+                "edition_id": edition, "generated_at_cst": "2026-11-29T00:01:00+08:00",
+                "schema_version": fk.SCHEMA_VERSION, "catalog": [{"id": "fixture", "shard": "core"}],
+                "shards": {"core": "core.json"},
+            }
+            (folder / "manifest.json").write_text(json.dumps(manifest))
+            for cutoff, expect_failure in (("2026-11-29T07:55:00+08:00", True), ("2026-11-29T00:01+08:00", False)):
+                with self.subTest(cutoff=cutoff):
+                    errors = []
+                    lint_site.run_gate_s7(site, {}, errors, [], expected_edition=edition, expected_cutoff=cutoff)
+                    self.assertEqual(any("after the current edition's market cutoff" in issue for issue in errors), expect_failure)
+
     def test_duplicate_id_is_rejected_before_fetch(self):
         spec = fk.build_core_specs()[0]
         with patch.object(fk, "load_etf_specs", return_value=[spec]):
@@ -275,9 +293,13 @@ with (
 class _FakeResponse:
     def __init__(self, body: bytes | str) -> None:
         self._data = body.encode("utf-8") if isinstance(body, str) else body
+        self._offset = 0
+        self.headers = {}
 
-    def read(self) -> bytes:
-        return self._data
+    def read1(self, size: int) -> bytes:
+        chunk = self._data[self._offset:self._offset + size]
+        self._offset += len(chunk)
+        return chunk
 
     def __enter__(self) -> _FakeResponse:
         return self
@@ -295,7 +317,7 @@ class TestHttpClient(unittest.TestCase):
         client = fk.RateLimitedHttpClient(retries=2, opener=opener)
 
         with (
-            patch.object(truncated, "read", side_effect=IncompleteRead(partial)),
+            patch.object(truncated, "read1", side_effect=IncompleteRead(partial)),
             patch.object(fk.time, "sleep") as sleep,
         ):
             result = client.request_text("https://cdn.cboe.com/history.csv")
@@ -311,13 +333,61 @@ class TestHttpClient(unittest.TestCase):
         client = fk.RateLimitedHttpClient(retries=1, opener=opener)
 
         with (
-            patch.object(truncated, "read", side_effect=IncompleteRead(partial, 20)),
+            patch.object(truncated, "read1", side_effect=IncompleteRead(partial, 20)),
             patch.object(fk.time, "sleep"),
             self.assertRaises(IncompleteRead),
         ):
             client.request_text("https://cdn.cboe.com/history.csv")
 
         self.assertEqual(opener.call_count, 2)
+
+    def test_trickling_http_response_cannot_extend_the_attempt_budget(self):
+        response = _FakeResponse(b"")
+        client = fk.RateLimitedHttpClient(timeout=1, retries=0, opener=Mock(return_value=response))
+        with (
+            patch.object(response, "read1", side_effect=[b"x", b"y", b"z"]),
+            patch.object(fk.time, "monotonic", side_effect=[0.0, 0.0, 0.0, 0.4, 0.4, 1.1]),
+            self.assertRaises(TimeoutError),
+        ):
+            client.request_text("https://example.com/slow")
+
+    def test_refresh_budget_prevents_more_provider_calls(self):
+        opener = Mock()
+        client = fk.RateLimitedHttpClient(deadline=5, retries=2, opener=opener)
+        with patch.object(fk.time, "monotonic", return_value=5), self.assertRaises(TimeoutError):
+            client.request_text("https://example.com/late")
+        opener.assert_not_called()
+
+    def test_declared_length_must_match_the_bytes_arriving_in_chunks(self):
+        response = _FakeResponse(b"partial")
+        response.headers["Content-Length"] = "18"
+        client = fk.RateLimitedHttpClient(retries=0, opener=Mock(return_value=response))
+        with self.assertRaises(IncompleteRead):
+            client.request_text("https://example.com/data")
+
+    def test_ft_batch_outage_does_not_retry_every_instrument_serially(self):
+        fetcher = fk.KlineFetcher(Mock(), Mock())
+        with patch.object(fetcher, "_fetch_ft_elements", side_effect=TimeoutError) as fetch:
+            self.assertEqual(fetcher.prefetch_ft_ucits(list(fk.FT_UCITS_XID_MAP)), {})
+            fetch.assert_called_once()
+            fetch.reset_mock()
+            self.assertEqual(fetcher._get_ft_index_fallback(), {})
+            self.assertEqual(fetcher._get_ft_index_fallback(), {})
+            fetch.assert_called_once()
+
+    def test_cli_stops_a_stuck_worker_instead_of_waiting_for_socket_threads(self):
+        with tempfile.TemporaryDirectory() as temp:
+            worker = Path(temp) / "worker.py"
+            worker.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+            with (
+                patch.object(fk, "__file__", str(worker)),
+                patch.object(fk, "REFRESH_CLI_TIMEOUT_SEC", 0.25),
+                patch.object(fk.sys, "argv", [str(worker)]),
+                patch.dict(os.environ, {}, clear=True),
+                patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            ):
+                self.assertEqual(fk.run_cli(), 1)
+            self.assertIn("timed out", stderr.getvalue())
 
 
 class TestCodeRouting(unittest.TestCase):

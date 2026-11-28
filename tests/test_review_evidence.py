@@ -249,8 +249,50 @@ class ReviewEvidenceTest(unittest.TestCase):
         closure = self.receipt(candidate)["review_closure"]
         self.validate(closure, candidate)
         closure["checks"]["primary_sources"]["claims"][-3]["excerpt"] = self.policy_briefs[0]["summary"].splitlines()[0]
-        with self.assertRaisesRegex(ValueError, "headline or summary of its policy_brief_id"):
+        with self.assertRaisesRegex(ValueError, "missing summary facts for published policy briefs: rates"):
             self.validate(closure, candidate)
+
+    def test_every_published_policy_source_needs_its_own_fact_including_the_main_link(self):
+        extra = "https://www.federalreserve.gov/releases/h41/current/"
+        brief = self.policy_briefs[0]
+        brief["source_urls"] = [extra]
+        self.write(review_evidence.POLICY_CALENDAR_PATH, json.dumps({"policy_briefs": self.policy_briefs}))
+        candidate = self.inspect()
+        closure = self.receipt(candidate)["review_closure"]
+        with self.assertRaisesRegex(ValueError, r"unverified published policy source.*rates"):
+            self.validate(closure, candidate)
+
+        check = closure["checks"]["primary_sources"]
+        original = next(row for row in check["claims"] if row.get("policy_brief_id") == "rates")
+        extra_fact = dict(original, source_url=extra, excerpt="公布的已完成交易日利率")
+        check["source_urls"].append(extra)
+        check["claims"].append(extra_fact)
+        self.validate(closure, candidate)
+
+        # A full-summary receipt citing only the supplement must still review the main URL.
+        original["source_url"] = extra
+        with self.assertRaisesRegex(ValueError, r"unverified published policy source.*rates"):
+            self.validate(closure, candidate)
+
+    def test_resolved_backfill_must_link_the_exact_current_fact_and_source(self):
+        candidate = self.inspect()
+        closure = self.receipt(candidate)["review_closure"]
+        recheck = {
+            "kind": "data_caveats", "id": "overnight_rates", "status": "resolved",
+            "source_url": self.verified_source, "note": "已经核对待披露的原始利率表。",
+        }
+        closure["backfill_rechecks"] = [recheck]
+        with self.assertRaisesRegex(ValueError, "resolved backfill overnight_rates.*file and excerpt"):
+            self.validate(closure, candidate)
+
+        recheck.update(file=self.gold_daily, excerpt=self.inference)
+        with self.assertRaisesRegex(ValueError, "resolved backfill overnight_rates.*verified fact or calculation"):
+            self.validate(closure, candidate)
+        recheck.update(excerpt=self.excerpt, source_url=self.policy_briefs[1]["source_url"])
+        with self.assertRaisesRegex(ValueError, "resolved backfill overnight_rates.*verified fact or calculation"):
+            self.validate(closure, candidate)
+        recheck["source_url"] = self.verified_source
+        self.validate(closure, candidate)
 
     def test_distinct_claim_excerpts_can_share_part_of_their_text(self):
         self.excerpt = "已公布的当日收益率使用相同统计口径。"
@@ -367,6 +409,7 @@ class ReviewEvidenceTest(unittest.TestCase):
         closed["review_closure"]["backfill_rechecks"] = [{
             "kind": "data_caveats", "id": "overnight_rates", "status": "resolved",
             "source_url": self.verified_source, "note": "已核对上一个交易日的完整利率原表。",
+            "file": self.gold_daily, "excerpt": self.excerpt,
         }]
         self.write(self.metrics, json.dumps({"score_dimensions": self.dimensions, "runs": [closed]}))
         git("add", self.metrics)

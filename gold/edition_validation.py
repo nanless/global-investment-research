@@ -28,6 +28,7 @@ MAX_CALENDAR_VERIFIED_AGE = timedelta(days=90)
 VIX_DAILY_SOURCE = "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"
 DEFAULT_VIX_WINDOWS = ((time(3, 15), time(9, 25)), (time(9, 31), time(16, 15)))
 BASE_DAY = timedelta(days=1)
+EFFR_RELEASE_TIME = time(9)
 
 
 class VixSession(NamedTuple):
@@ -439,17 +440,20 @@ def check_effr_evidence(snap: dict, as_of: datetime, errors: list[str]) -> bool:
         or (url.hostname == "www.newyorkfed.org" and url.path.rstrip("/") == "/markets/reference-rates/effr")
         or (url.hostname == "markets.newyorkfed.org" and url.path.startswith("/api/rates/unsecured/effr/"))
     )
-    cutoff = as_of.replace(tzinfo=BEIJING)
+    cutoff = as_of.astimezone(BEIJING) if as_of.tzinfo is not None else as_of.replace(tzinfo=BEIJING)
     if observation is None or published is None or published > cutoff or not official_series:
         errors.append("[Gate 5 第二关有效基金利率证据错] 须记录观测交易日、截点前公布时间和联储 EFFR 序列")
         return False
-    release_day = published.astimezone(NEW_YORK).date()
+    release_et = published.astimezone(NEW_YORK)
+    release_day = release_et.date()
     if not _is_ny_fed_business_day(release_day) or observation != _previous_ny_fed_business_day(release_day):
         errors.append("[Gate 5 第二关有效基金利率证据错] 公布日须对应纽约联储上一个营业日的利率")
         return False
-    # Allow an intraday delay of the morning release up to the New York close.
+    if release_et.time() < EFFR_RELEASE_TIME:
+        errors.append("[Gate 5 第二关有效基金利率证据错] 公布时间早于美东 09:00 的常规发布点")
+        return False
     cutoff_et = cutoff.astimezone(NEW_YORK)
-    if _is_ny_fed_business_day(cutoff_et.date()) and cutoff_et.time() >= time(17):
+    if _is_ny_fed_business_day(cutoff_et.date()) and cutoff_et.time() >= EFFR_RELEASE_TIME:
         latest_completed_release_day = cutoff_et.date()
     else:
         latest_completed_release_day = _previous_ny_fed_business_day(cutoff_et.date())

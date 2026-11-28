@@ -39,6 +39,7 @@ import os
 from pathlib import Path
 import random
 import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -68,6 +69,9 @@ MAX_BARS = 240
 DEFAULT_WORKERS = 12
 HTTP_TIMEOUT_SEC = 12
 HTTP_RETRIES = 2
+REFRESH_NETWORK_BUDGET_SEC = 220
+REFRESH_CLI_TIMEOUT_SEC = 260
+MAX_PROVIDER_RESPONSE_BYTES = 8 * 1024 * 1024
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -1265,9 +1269,11 @@ class RateLimitedHttpClient:
         timeout: int = HTTP_TIMEOUT_SEC,
         retries: int = HTTP_RETRIES,
         opener: Callable[..., Any] | None = None,
+        deadline: float | None = None,
     ) -> None:
         self.timeout = timeout
         self.retries = retries
+        self.deadline = deadline
         self._opener = opener or urllib.request.urlopen
         self._semaphores: dict[str, threading.Semaphore] = {
             "tencent": threading.Semaphore(8),
@@ -1307,6 +1313,32 @@ class RateLimitedHttpClient:
             return "coinbase"
         return "default"
 
+    @staticmethod
+    def _time_left(deadline: float) -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("K-line provider request exceeded its time budget")
+        return remaining
+
+    def _read_response(self, response, deadline: float) -> bytes:
+        declared = response.headers.get("Content-Length")
+        expected = int(declared) if declared and re.fullmatch(r"[0-9]{1,10}", declared) else None
+        if declared is not None and (expected is None or expected > MAX_PROVIDER_RESPONSE_BYTES):
+            raise OSError("K-line provider response has an invalid or oversized Content-Length")
+        data = bytearray()
+        while True:
+            self._time_left(deadline)
+            chunk = response.read1(min(64 * 1024, MAX_PROVIDER_RESPONSE_BYTES + 1 - len(data)))
+            self._time_left(deadline)
+            if not chunk:
+                break
+            data.extend(chunk)
+            if len(data) > MAX_PROVIDER_RESPONSE_BYTES:
+                raise OSError("K-line provider response exceeds the maximum size")
+        if expected is not None and len(data) != expected:
+            raise IncompleteRead(bytes(data), max(0, expected - len(data)))
+        return bytes(data)
+
     def request_text(
         self,
         url: str,
@@ -1322,10 +1354,18 @@ class RateLimitedHttpClient:
         last_err: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                with sem:
+                queue_wait = self._time_left(self.deadline) if self.deadline is not None else None
+                if not sem.acquire(timeout=queue_wait):
+                    raise TimeoutError("K-line refresh exceeded its budget while waiting for a provider")
+                try:
+                    deadline = time.monotonic() + self.timeout
+                    if self.deadline is not None:
+                        deadline = min(deadline, self.deadline)
                     req = urllib.request.Request(url, data=data, headers=req_headers)
-                    with self._opener(req, timeout=self.timeout) as resp:
-                        raw = resp.read()
+                    with self._opener(req, timeout=self._time_left(deadline)) as resp:
+                        raw = self._read_response(resp, deadline)
+                finally:
+                    sem.release()
                 try:
                     return raw.decode(encoding)
                 except UnicodeDecodeError:
@@ -1339,6 +1379,8 @@ class RateLimitedHttpClient:
                 last_err = exc
             if attempt < self.retries:
                 delay = 0.35 * (2**attempt) + random.uniform(0.05, 0.25)
+                if self.deadline is not None and self._time_left(self.deadline) <= delay:
+                    break
                 time.sleep(delay)
         assert last_err is not None
         raise last_err
@@ -1662,7 +1704,7 @@ class KlineFetcher:
         try:
             parsed = self._fetch_ft_elements(base_codes, xid_map=FT_UCITS_XID_MAP)
         except Exception:
-            parsed = {}
+            return {}
         # Any ticker omitted due to multi-element date-length mismatch gets a 1-element exact-date fetch
         for bc in base_codes:
             if bc not in parsed and bc in FT_UCITS_XID_MAP:
@@ -1671,7 +1713,7 @@ class KlineFetcher:
                     if bc in single and single[bc]:
                         parsed[bc] = single[bc]
                 except Exception:
-                    pass
+                    break
         with self._batch_lock:
             self._ft_cache = parsed
         return parsed
@@ -1685,7 +1727,8 @@ class KlineFetcher:
             try:
                 parsed = self._fetch_ft_elements(keys, xid_map=FT_INDEX_XID_MAP)
             except Exception:
-                parsed = {}
+                self._ft_index_cache = {}
+                return self._ft_index_cache
             for k in keys:
                 if k not in parsed:
                     try:
@@ -1693,7 +1736,7 @@ class KlineFetcher:
                         if k in single and single[k]:
                             parsed[k] = single[k]
                     except Exception:
-                        pass
+                        break
             self._ft_index_cache = parsed
             return parsed
 
@@ -2269,7 +2312,7 @@ def run_fetch(
     }
     ref_year = int(eid[:4]) if len(eid) >= 4 and eid[:4].isdigit() else datetime.now(CST).year
 
-    http = http_client or RateLimitedHttpClient()
+    http = http_client or RateLimitedHttpClient(deadline=t0 + REFRESH_NETWORK_BUDGET_SEC)
     if us_suffix_cache_path is not None:
         resolved_cache_path = us_suffix_cache_path
         persist_suffix_cache = True
@@ -2282,24 +2325,22 @@ def run_fetch(
     us_cache = UsSuffixCache(resolved_cache_path)
     fetcher = KlineFetcher(http, us_cache, bars_limit=bars_limit, ref_year=ref_year)
 
-    # Batch pre-fetch Irish UCITS ETFs in a single FT POST if any are in scope
+    # Pre-fetch independent providers in parallel before dispatching individual instruments.
     ucits_bases = [s.provider_symbol for s in specs if s.kind == "ucits_ft"]
-    if ucits_bases:
-        fetcher.prefetch_ft_ucits(ucits_bases)
-
-    # Optional single batch restQuote pre-fetch for CNBC global & HK index T-0 live bars
     cnbc_syms = [s.provider_symbol for s in specs if s.kind == "cnbc_harmony"]
-    if cnbc_syms:
-        fetcher.prefetch_cnbc_quotes(cnbc_syms)
-
-    # Optional single batch hq.sinajs.cn pre-fetch for Sina FX T-0 live bars
     sina_fx_syms = [s.provider_symbol for s in specs if s.kind == "sina_fx"]
-    if sina_fx_syms:
-        fetcher.prefetch_sina_fx_quotes(sina_fx_syms)
-
-    # Batch pre-fetch Eastmoney China Government Bond yield table in a single GET
-    if any(s.kind == "eastmoney_cgb" for s in specs):
-        fetcher.prefetch_eastmoney_cgb()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        batches = []
+        if ucits_bases:
+            batches.append(pool.submit(fetcher.prefetch_ft_ucits, ucits_bases))
+        if cnbc_syms:
+            batches.append(pool.submit(fetcher.prefetch_cnbc_quotes, cnbc_syms))
+        if sina_fx_syms:
+            batches.append(pool.submit(fetcher.prefetch_sina_fx_quotes, sina_fx_syms))
+        if any(s.kind == "eastmoney_cgb" for s in specs):
+            batches.append(pool.submit(fetcher.prefetch_eastmoney_cgb))
+        for batch in batches:
+            batch.result()
 
     # Parallel fetch across all specs in scope
     fetched_results: dict[str, tuple[list[list[Any]], str | None, str | None]] = {}
@@ -2532,5 +2573,20 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if summary["promoted"] else 1
 
 
+def run_cli() -> int:
+    """Bound the shell command even if a provider stalls inside the HTTP library."""
+    worker_env = "GIR_KLINE_FETCH_WORKER"
+    if os.environ.pop(worker_env, None) == "1":
+        return main()
+    try:
+        return subprocess.run(
+            [sys.executable, __file__, *sys.argv[1:]],
+            env={**os.environ, worker_env: "1"}, timeout=REFRESH_CLI_TIMEOUT_SEC,
+        ).returncode
+    except subprocess.TimeoutExpired:
+        print(f"[FAIL] K-line refresh timed out after {REFRESH_CLI_TIMEOUT_SEC} seconds. Retry to recover any interrupted writes.", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_cli())

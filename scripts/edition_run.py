@@ -193,6 +193,20 @@ def git_value(*args: str) -> str:
     ).strip()
 
 
+def github_repository(url: str) -> str:
+    """Read a repository name from the GitHub URL forms used by Git."""
+    patterns = (
+        r"(?i:https://)(?:[^/@\s]+@)?(?i:github\.com)/([\w.-]+/[\w.-]+?)(?:\.git)?/?",
+        r"(?i:ssh://)(?:[\w.-]+@)?(?i:github\.com|[\w.-]*github[\w.-]*)(?::\d+)?/([\w.-]+/[\w.-]+?)(?:\.git)?/?",
+        r"(?:[\w.-]+@)?(?i:github\.com|[\w.-]*github[\w.-]*):([\w.-]+/[\w.-]+?)(?:\.git)?/?",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, url.strip(), flags=re.ASCII)
+        if match:
+            return match[1]
+    raise ValueError("Publication requires an origin URL that identifies a github.com repository.")
+
+
 def _git_object_exists(spec: str) -> bool:
     result = subprocess.run(
         ["git", "cat-file", "-e", spec],
@@ -968,8 +982,8 @@ def check_publication_candidate(token: str, *, sha: str, repository: str) -> Non
         _check_publication_candidate(runs, token, sha, repository)
 
 
-def record_push(token: str, *, sha: str, repository: str) -> None:
-    with closing(open_runs()) as runs, runs:
+def _record_push(runs: sqlite3.Connection, token: str, *, sha: str, repository: str) -> None:
+    with runs:
         runs.execute("BEGIN IMMEDIATE")
         _check_publication_candidate(runs, token, sha, repository)
         receipt = runs.execute(
@@ -979,6 +993,11 @@ def record_push(token: str, *, sha: str, repository: str) -> None:
         if receipt.rowcount:
             _record_phase_timestamp(runs, token, "pushed")
         runs.execute("UPDATE runs SET updated = ? WHERE token = ?", (utc_now(), token))
+
+
+def record_push(token: str, *, sha: str, repository: str) -> None:
+    with closing(open_runs()) as runs:
+        _record_push(runs, token, sha=sha, repository=repository)
 
 
 def _gh_timeout(cmd: list[str], deadline: float | None) -> float:
@@ -1251,13 +1270,51 @@ def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
     return url
 
 
+def _restore_unrecorded_push(runs: sqlite3.Connection, token: str, intent: Path) -> bool:
+    with _idle_publish_lock():
+        if _publication(runs, token) is not None:
+            return True
+        if not intent.is_file():
+            return False
+        active = _publishing_run(runs, token)
+        record = json.loads(intent.read_text(encoding="utf-8"))
+        sha = record.get("sha") if isinstance(record, dict) else None
+        repository = record.get("repository") if isinstance(record, dict) else None
+        if (not isinstance(sha, str) or not SHA_RE.fullmatch(sha)
+                or not isinstance(repository, str) or not REPOSITORY_RE.fullmatch(repository)
+                or record.get("edition") != active["edition"]):
+            raise ValueError(f"The saved push intent is invalid for {active['edition']} (attempt {token[:12]}).")
+        push_urls = git_value("remote", "get-url", "--push", "--all", "origin").splitlines()
+        origin = github_repository(git_value("remote", "get-url", "origin"))
+        if (len(push_urls) != 1 or github_repository(push_urls[0]).lower() != repository.lower()
+                or origin.lower() != repository.lower()):
+            raise ValueError(f"The saved push repository differs from origin for {active['edition']} (attempt {token[:12]}).")
+        head = _remote_main_head_sha(repository, deadline=time.monotonic() + PAGES_ACTIONS_PROBE_SECONDS)
+        if head != sha:
+            raise DeploymentPending(
+                f"Cannot confirm the saved push on origin/main for {active['edition']} (attempt {token[:12]}). "
+                "The publication lock remains active. Resume the same attempt or verify whether a later commit superseded it."
+            )
+        _record_push(runs, token, sha=sha, repository=repository)
+        try:
+            intent.unlink(missing_ok=True)
+        except OSError as exc:
+            print(f"[NOTICE] The push receipt was saved but the old intent could not be removed: {exc.strerror}.", file=sys.stderr)
+        print(f"[NOTICE] Recovered the confirmed push receipt for {active['edition']} at {sha[:12]}.", file=sys.stderr)
+        return True
+
+
 def reconcile_previous_deployment(runs: sqlite3.Connection, wait: int = 0) -> str | None:
     row = runs.execute("""
-        SELECT runs.token FROM runs JOIN publications USING(token)
-         WHERE runs.status = 'running' AND publications.sha IS NOT NULL
+        SELECT runs.token, publications.sha FROM runs LEFT JOIN publications USING(token)
+         WHERE runs.status = 'running' AND runs.phase = 'publish'
     """).fetchone()
     if row is None:
         return None
+    if row["sha"] is None:
+        intent = push_intent_path(git_directory(), row["token"])
+        if not _restore_unrecorded_push(runs, row["token"], intent):
+            return None
     return complete(runs, row["token"], wait=wait)
 
 

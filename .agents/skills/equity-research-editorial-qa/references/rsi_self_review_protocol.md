@@ -6,7 +6,7 @@
 
 ## 一、核心原则：安全、有界、可回滚、永不退化
 
-1. **冷启动先读经验（Step 0）**：每班次开始动笔前，必须先读取 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录，直接继承历史教训、一手源检索词雷达与 `next_run_watch`。
+1. **冷启动先读经验（Step 0）**：每班次开始动笔前，必须先读取 `state/RSI_PLAYBOOK.md`（≤180 行）与 `state/rsi_metrics.json` 最近 5 条记录，直接继承历史教训、一手源检索词雷达与 `next_run_watch`。发布前为每张公开政策简报核对完整摘要，并对全部实际展示的原始链接逐条登记。待补核销关联当班已核验的事实或计算、文件和同一出处。
 2. **源稿严检后启动发布前盲审（Step 5）**：先通过 `gold/lint_readability.py --strict` 与 `equity/lint_equity.py --strict` 验收全部候选源稿、21 张 SVG 参数与三大扩展数据库。等独立只读盲审返回后，修正本期所有已证实的错误并复验受影响轨道。发布前按 `resolved` / `deferred_data` / `disclosed_caveat` 闭环记录每项发现的处置结果。
 3. **防退化铁律**：只允许**加固门禁、消除 Bug、提炼更高杠杆规则**；**严禁**为凑“一次过”而删除红线禁词、调松字数/加粗/表宽/黄金锁门禁，或悄悄改写策略红线与宪法规则。
 

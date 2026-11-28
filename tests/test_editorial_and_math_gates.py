@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 from copy import deepcopy
 from datetime import datetime
+from io import StringIO
 import json
 from pathlib import Path
 import re
@@ -27,6 +29,38 @@ import lint_readability as gold_lint
 
 gold_daily = gold_lint._load_gold_module("build_daily", ROOT / "gold" / "build_daily.py")
 gold_master = gold_lint._load_gold_module("build_report", ROOT / "gold" / "build_report.py")
+
+
+class ScheduledCalendarPreflightTests(unittest.TestCase):
+    def test_cli_checks_coverage_and_verification_before_future_research(self):
+        calendar = {
+            "timezone": "Asia/Shanghai", "as_of": "2026-11-28", "calendar_overrides": [],
+            "vix_session_exceptions": {}, "coverage": {
+                "start_date": "2026-11-01", "end_date": "2027-06-30", "verified_on": "2026-11-26",
+                "vix_schedule_source": "https://www.cboe.com/about/hours/us-options/",
+            },
+        }
+        with TemporaryDirectory() as temp:
+            state_path = Path(temp) / "state.json"
+            calendar_path = Path(temp) / "calendar.json"
+            state_path.write_text(json.dumps({"edition_id": "2026-11-28_1800", "calendar_overrides": []}))
+            calendar_path.write_text(json.dumps(calendar))
+            with patch.object(eq_lint, "STATE_PATH", state_path), patch.object(eq_lint, "GOLD_CALENDAR_PATH", calendar_path):
+                with patch.object(sys, "argv", ["lint_equity.py", "--plan", "2026-11-29_0730"]), redirect_stdout(StringIO()) as output:
+                    eq_lint.main()
+                self.assertEqual(json.loads(output.getvalue())["edition_id"], "2026-11-29_0730")
+                for future in ("2027-03-01_0730", "2027-07-01_0730"):
+                    with self.subTest(future=future), patch.object(sys, "argv", ["lint_equity.py", "--plan", future]):
+                        with self.assertRaises(SystemExit) as result:
+                            eq_lint.main()
+                        self.assertIn("外置日历覆盖不足", str(result.exception.code))
+                calendar["coverage"]["end_date"] = "2026-12-28"
+                calendar_path.write_text(json.dumps(calendar))
+                state_path.write_text(json.dumps({"edition_id": "2026-11-29_0730", "calendar_overrides": []}))
+                with patch.object(sys, "argv", ["lint_equity.py", "--plan", "2026-11-29_0730"]):
+                    with self.assertRaises(SystemExit) as result:
+                        eq_lint.main()
+                self.assertIn("外置日历覆盖不足", str(result.exception.code))
 
 
 class ShortBondTaxTests(unittest.TestCase):

@@ -3491,6 +3491,7 @@ def run_gate_s6(
                         break
 
 
+S7_LAST_LEGACY_REFRESH_SLOT = "2026-11-28_1800"
 S7_FORBIDDEN_RAW_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:NaN|Infinity)(?![A-Za-z0-9_])|/Users/|C:\\",
 )
@@ -3573,6 +3574,7 @@ def run_gate_s7(
     warnings: list[str],
     *,
     expected_edition: str | None = None,
+    expected_cutoff: object = None,
     expected_specs: list[InstrumentSpec] | None = None,
 ) -> None:
     """Gate S7: K-Line shard integrity, multi-index priority ordering & charts.html integration."""
@@ -3654,6 +3656,13 @@ def run_gate_s7(
             or generated > datetime.now(CST) + timedelta(minutes=5)
         ):
             errors.append("[S7] K-line manifest must declare the supported schema and a valid Beijing-time generation timestamp")
+        if expected_edition[:15] > S7_LAST_LEGACY_REFRESH_SLOT:
+            try:
+                cutoff = datetime.fromisoformat(expected_cutoff)
+            except (TypeError, ValueError):
+                cutoff = None
+            if cutoff is None or cutoff.utcoffset() != timedelta(hours=8) or generated is None or generated < cutoff:
+                errors.append("[S7] K-line generation must be at or after the current edition's market cutoff")
         failures = manifest.get("partial_failures")
         catalog_rows = {
             row.get("id"): row
@@ -3985,6 +3994,7 @@ def _lint_site(site_dir: Path, *, strict: bool) -> int:
         run_gate_s7(
             site_dir, parsed_htmls, errors, warnings,
             expected_edition=market_edition, expected_specs=expected_specs,
+            expected_cutoff=market_state.get("as_of_cst") if market_state is not None else None,
         )
 
     mode = "STRICT" if strict else "STANDARD"

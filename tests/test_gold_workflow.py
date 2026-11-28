@@ -531,6 +531,45 @@ class GoldWorkflowTests(unittest.TestCase):
         rules.check_effr_evidence(snap, cutoff, errors)
         self.assertTrue(any("须核对最新已公布利率或披露发布延迟" in error for error in errors))
 
+    def test_effr_release_cannot_be_predeclared_or_silently_carried_after_ny_open(self):
+        snap = {
+            "edition_id": "2026-11-30_1800", "effr_observation_date": "2026-11-25",
+            "effr_published_at": "2026-11-27 22:02", "effr_source": "https://www.newyorkfed.org/markets/reference-rates/effr",
+        }
+        for cutoff, current in ((datetime(2026, 11, 30, 21, 59), True), (datetime(2026, 11, 30, 22), False)):
+            with self.subTest(cutoff=cutoff):
+                errors = []
+                self.assertIs(rules.check_effr_evidence(snap, cutoff, errors), current)
+                self.assertEqual(bool(errors), not current)
+
+        cutoff = datetime(2026, 11, 30, 22, 2)
+        late = {**snap, "data_caveats": [{"id": "effr_release_delayed", "market": "gold",
+                   "category": "delayed_official", "next_review": "2026-12-01_0730"}]}
+        errors = []
+        self.assertFalse(rules.check_effr_evidence(late, cutoff, errors))
+        self.assertEqual(errors, [])
+        for timestamp, valid in (("2026-11-30 20:00", False), ("2026-11-30 22:02", True)):
+            with self.subTest(timestamp=timestamp):
+                result = {**snap, "effr_observation_date": "2026-11-27", "effr_published_at": timestamp}
+                errors = []
+                self.assertIs(rules.check_effr_evidence(result, cutoff, errors), valid)
+                self.assertEqual(bool(errors), not valid)
+
+        summer = {**snap, "edition_id": "2027-06-21_1800", "effr_observation_date": "2027-06-18",
+                  "effr_published_at": "2027-06-21 21:00"}
+        errors = []
+        self.assertTrue(rules.check_effr_evidence(summer, datetime(2027, 6, 21, 21), errors))
+        self.assertEqual(errors, [])
+
+    def test_morning_snapshot_may_not_take_same_day_cfets_fixing_before_0915(self):
+        snap = _fixture()
+        snap.update(edition_id="2026-11-30_0730", cfets_fixing_date="2026-11-30", data_caveats=[])
+        for clock, denied in (("07:30", True), ("09:14", True), ("09:15", False)):
+            with self.subTest(clock=clock):
+                snap.update(as_of_short=f"2026-11-30 {clock}", as_of_bjt=f"2026-11-30 {clock}")
+                errors = self._validate(snap, validated_on=date(2026, 11, 30))
+                self.assertEqual(any("中间价尚未发布" in error for error in errors), denied, errors)
+
     def test_vix_daily_return_uses_the_same_official_close_series(self):
         snap = _fixture()
         snap.update(vix_change_pct=-11.16, vix_10d_session_closes=[
