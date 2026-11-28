@@ -40,6 +40,7 @@ POLICY_CALENDAR_PATH = EQUITY_STATE_DIR / "policy_calendar.json"
 EDITION_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(0730|1130|1800)(?:_r([2-9]|[1-9]\d+))?")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PERIOD_SLUG_RE = re.compile(r"^\d{4}_(0[1-9]|1[0-2])$")
+FLAGSHIP_CUTOFF_RE = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{4}年\d{1,2}月\d{1,2}日) +(\d{2}:\d{2})(?!\d)")
 ROLLOVER_MARKETS = ("a_share", "hk_stock", "us_stock")
 
 REQUIRED_MULTI_ASSET_CHANNELS = (
@@ -326,7 +327,7 @@ BANNED_INTERNAL_RE = re.compile(
     r"(?:\bV\d+\.\d+\b|Subagent|红队|法证|\bTier\s*[0-3]\b|\bSSOT\b|"
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
-    r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|svg_geometry\.py|"
+    r"edition_(?:run|plan|validation)\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|svg_geometry\.py|visual_widgets\.py|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
     r"edition-runs\.sqlite3|realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
@@ -396,6 +397,8 @@ ALLOWED_ROLLOVER_MARKET_KEYS = frozenset({
     "benchmark_time",
     "title",
     "subtitle",
+    "tag",
+    "as_of_short",
     "header_replacements",
 })
 ALLOWED_ARCHIVE_PATCH_KEYS = frozenset({
@@ -1425,8 +1428,8 @@ def _merge_policy_calendar(
 
             briefs_rep = sec.get("policy_briefs_replace")
             if briefs_rep is not None:
-                if not isinstance(briefs_rep, list) or not all(isinstance(b, dict) for b in briefs_rep):
-                    local_errors.append("policy_calendar.policy_briefs_replace must be a list of brief objects.")
+                if not isinstance(briefs_rep, list) or not briefs_rep or not all(isinstance(b, dict) for b in briefs_rep):
+                    local_errors.append("policy_calendar.policy_briefs_replace must be a non-empty list of brief objects.")
                 else:
                     pc["policy_briefs"] = copy.deepcopy(briefs_rep)
                     stats["briefs_replaced"] = len(briefs_rep)
@@ -1463,7 +1466,13 @@ def _merge_policy_calendar(
                             local_errors.append(f"policy_calendar.events_upsert[{eid_k!r}] must be an object.")
                             continue
                         merged_e = dict(entry)
-                        merged_e.setdefault("event_id", str(eid_k))
+                        if "event_id" not in merged_e:
+                            merged_e["event_id"] = str(eid_k)
+                        if not isinstance(merged_e.get("event_id"), str) or not merged_e["event_id"].strip():
+                            local_errors.append(
+                                f"policy_calendar.events_upsert[{eid_k!r}] must have a non-empty string 'event_id'."
+                            )
+                            continue
                         ups_list.append(merged_e)
                 else:
                     local_errors.append(
@@ -1565,8 +1574,8 @@ def _validate_policy_calendar(
         )
 
     briefs = pc.get("policy_briefs")
-    if not isinstance(briefs, list):
-        errs.append("policy_calendar.json: policy_briefs must be a list.")
+    if not isinstance(briefs, list) or not briefs:
+        errs.append("policy_calendar.json: policy_briefs must be a non-empty list.")
     else:
         seen_bids: set[str] = set()
         for idx, b in enumerate(briefs):
@@ -2694,17 +2703,27 @@ def prepend_gold_ledgers(
     orig_changelog = orig_changelog_bytes.decode("utf-8")
     orig_audit = orig_audit_bytes.decode("utf-8")
 
-    # Idempotency guard: reject duplicate edition_id in either ledger
-    existing_cl_ids = set(GOLD_CHANGELOG_MARKER_RE.findall(orig_changelog))
-    if edition_id in existing_cl_ids:
-        raise ValueError(f"gold/daily/CHANGELOG.md already contains GOLD_EDITION_CHANGELOG {edition_id}; refusing duplicate prepend.")
-    for raw_block in GOLD_REVIEW_BLOCK_RE.findall(orig_audit):
-        try:
-            obj = json.loads(raw_block)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj.get("edition_id") == edition_id:
-            raise ValueError(f"gold/daily/AUDIT_LOG.md already contains GOLD_EDITION_REVIEW for {edition_id}; refusing duplicate prepend.")
+    # Idempotency guard: reject duplicate edition_id across active AND archived gold ledgers
+    archive_dir = _safe_repo_path(repo_root, "gold", "daily", "archive")
+    cl_sources: list[tuple[str, str]] = [("gold/daily/CHANGELOG.md", orig_changelog)]
+    au_sources: list[tuple[str, str]] = [("gold/daily/AUDIT_LOG.md", orig_audit)]
+    if archive_dir.is_dir():
+        for arc_cl in sorted(archive_dir.glob("CHANGELOG_*.md")):
+            cl_sources.append((f"gold/daily/archive/{arc_cl.name}", arc_cl.read_text(encoding="utf-8")))
+        for arc_au in sorted(archive_dir.glob("AUDIT_LOG_*.md")):
+            au_sources.append((f"gold/daily/archive/{arc_au.name}", arc_au.read_text(encoding="utf-8")))
+    for src_label, src_text in cl_sources:
+        existing_cl_ids = set(GOLD_CHANGELOG_MARKER_RE.findall(src_text))
+        if edition_id in existing_cl_ids:
+            raise ValueError(f"{src_label} already contains GOLD_EDITION_CHANGELOG {edition_id}; refusing duplicate prepend.")
+    for src_label, src_text in au_sources:
+        for raw_block in GOLD_REVIEW_BLOCK_RE.findall(src_text):
+            try:
+                obj = json.loads(raw_block)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and obj.get("edition_id") == edition_id:
+                raise ValueError(f"{src_label} already contains GOLD_EDITION_REVIEW for {edition_id}; refusing duplicate prepend.")
 
     new_changelog = _insert_before_anchor(
         orig_changelog,
@@ -3193,9 +3212,26 @@ def rollover_equity_month(
         raise ValueError("_rollover_patch.json requires a non-empty string 'as_of_full'.")
     as_of_full = as_of_full_raw.strip()
     expected_prefix = new_slug.replace("_", "-")
-    if not as_of_full.startswith(expected_prefix):
+    new_year, new_month = int(new_slug[:4]), int(new_slug[5:7])
+    m_cutoff = FLAGSHIP_CUTOFF_RE.match(as_of_full)
+    cutoff_dt: datetime | None = None
+    if m_cutoff is not None:
+        try:
+            cutoff_dt = datetime.strptime(
+                f"{m_cutoff.group(1)} {m_cutoff.group(2)}",
+                "%Y年%m月%d日 %H:%M" if "年" in m_cutoff.group(1) else "%Y-%m-%d %H:%M",
+            )
+        except ValueError:
+            cutoff_dt = None
+    if cutoff_dt is None:
         raise ValueError(
-            f"_rollover_patch.json.as_of_full ({as_of_full!r}) must start with {expected_prefix!r}."
+            f"_rollover_patch.json.as_of_full ({as_of_full!r}) must match 'YYYY-MM-DD HH:MM' or "
+            f"'YYYY年MM月DD日 HH:MM' and start with {expected_prefix!r} (or '{new_year:04d}年{new_month:02d}月')."
+        )
+    if cutoff_dt.strftime("%Y_%m") != new_slug:
+        raise ValueError(
+            f"_rollover_patch.json.as_of_full ({as_of_full!r}) must start with {expected_prefix!r} "
+            f"(or '{new_year:04d}年{new_month:02d}月') matching new_period_slug {new_slug!r}."
         )
     if LOCAL_PATH_RE.search(as_of_full):
         raise ValueError("_rollover_patch.json.as_of_full leaks a local filesystem path.")
@@ -3207,7 +3243,6 @@ def rollover_equity_month(
     if type(yf_raw) not in (int, float) or not math.isfinite(yf_raw):
         raise ValueError(f"_rollover_patch.json.as_of_year_float must be a finite float, got {yf_raw!r}.")
     as_of_year_float = float(yf_raw)
-    new_year = int(new_slug[:4])
     if not (new_year <= as_of_year_float < new_year + 1.0):
         raise ValueError(
             f"_rollover_patch.json.as_of_year_float ({as_of_year_float}) does not match year {new_year}."
@@ -3340,11 +3375,11 @@ def rollover_equity_month(
 
         if top_benchmark_time is not None:
             new_meta["benchmark_time"] = top_benchmark_time
-        for auto_k in ("page_footer", "version"):
+        for auto_k in ("page_footer", "version", "tag"):
             if isinstance(new_meta.get(auto_k), str):
                 new_meta[auto_k] = _replace_period_in_text(new_meta[auto_k], prev_slug, new_slug)
 
-        for ov_k in ("version", "page_footer", "benchmark_time", "title", "subtitle"):
+        for ov_k in ("version", "page_footer", "benchmark_time", "title", "subtitle", "tag", "as_of_short"):
             if ov_k in m_cfg and m_cfg[ov_k] is not None:
                 ov_val = m_cfg[ov_k]
                 if not isinstance(ov_val, str) or not ov_val.strip():
@@ -3361,7 +3396,10 @@ def rollover_equity_month(
                     raise ValueError(
                         f"_rollover_patch.json.markets[{mkt!r}].{ov_k} leaks banned internal term(s): {sorted(set(ov_leaks))}"
                     )
-                new_meta[ov_k] = ov_clean
+                if ov_k == "as_of_short":
+                    new_meta["chart_live"]["as_of_short"] = ov_clean
+                else:
+                    new_meta[ov_k] = ov_clean
 
         new_md_bytes = new_md_text.encode("utf-8")
         new_meta_bytes = _serialize_json(new_meta)
@@ -3464,17 +3502,27 @@ def archive_gold_ledgers(
     orig_cl_text = orig_cl_bytes.decode("utf-8")
     orig_au_text = orig_au_bytes.decode("utf-8")
 
+    if not GOLD_CHANGELOG_MARKER_RE.search(orig_cl_text):
+        raise ValueError("gold/daily/CHANGELOG.md has no GOLD_EDITION_CHANGELOG entries to archive.")
+    if not GOLD_REVIEW_BLOCK_RE.search(orig_au_text):
+        raise ValueError("gold/daily/AUDIT_LOG.md has no GOLD_EDITION_REVIEW entries to archive.")
+
     cl_header = _extract_ledger_header(orig_cl_text, "gold/daily/CHANGELOG.md")
     au_header = _extract_ledger_header(orig_au_text, "gold/daily/AUDIT_LOG.md")
 
-    active_cl_text = (
-        f"{cl_header}\n\n---\n\n"
-        f"历史月度归档：[{period} 演化日志归档](archive/CHANGELOG_{period}.md)\n"
-    )
-    active_au_text = (
-        f"{au_header}\n\n---\n\n"
-        f"历史月度归档：[{period} 审计账本归档](archive/AUDIT_LOG_{period}.md)\n"
-    )
+    prior_cl_links = [
+        ln.strip() for ln in orig_cl_text.splitlines()
+        if ln.strip().startswith("历史月度归档：") and f"archive/CHANGELOG_{period}.md" not in ln
+    ]
+    prior_au_links = [
+        ln.strip() for ln in orig_au_text.splitlines()
+        if ln.strip().startswith("历史月度归档：") and f"archive/AUDIT_LOG_{period}.md" not in ln
+    ]
+    cl_archive_lines = [f"历史月度归档：[{period} 演化日志归档](archive/CHANGELOG_{period}.md)"] + prior_cl_links
+    au_archive_lines = [f"历史月度归档：[{period} 审计账本归档](archive/AUDIT_LOG_{period}.md)"] + prior_au_links
+
+    active_cl_text = f"{cl_header}\n\n---\n\n" + "\n".join(cl_archive_lines) + "\n"
+    active_au_text = f"{au_header}\n\n---\n\n" + "\n".join(au_archive_lines) + "\n"
     active_cl_bytes = active_cl_text.encode("utf-8")
     active_au_bytes = active_au_text.encode("utf-8")
 

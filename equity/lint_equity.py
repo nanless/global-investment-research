@@ -102,7 +102,14 @@ _ETF_ALLOWED_REGIONS = frozenset({
 _COCKPIT_ALLOWED_LAMPS = frozenset({"red", "yellow", "green"})
 _POLICY_CAL_ALLOWED_REGIONS = frozenset({"CN", "HK", "US", "EU", "UK", "JP", "GLOBAL"})
 POLICY_CAL_REGIONS = _POLICY_CAL_ALLOWED_REGIONS
-_BARE_IMPACT_TIER_RE = re.compile(r"(?<![A-Za-z0-9])P[0-2](?![A-Za-z0-9])")
+_BARE_IMPACT_TIER_RE = re.compile(r"(?<![A-Za-z0-9_])P[0-2](?![A-Za-z0-9_])")
+_VISUAL_WIDGETS_LEAK_RE = re.compile(r"(?<![A-Za-z0-9_-])visual_widgets\.py(?![A-Za-z0-9_])", re.IGNORECASE)
+_DAILY_VISUAL_OPEN_RE = re.compile(r"<!--\s*(DAILY_VISUA[A-Z0-9_]*)\b", re.IGNORECASE)
+_DAILY_VISUAL_BLOCK_RE = re.compile(r"<!--\s*DAILY_VISUAL\s*\{.*?\}\s*-->", re.DOTALL)
+_DAILY_VISUAL_STYLE_SKIP_KEYS = frozenset({
+    "type", "tone", "kind", "stance", "color", "unit", "id",
+    "accent", "fill", "text_color", "align", "anchor", "label_pos",
+})
 _POLICY_CAL_PROSE_SKIP_KEYS = frozenset({"impact_tier", "event_id", "brief_id", "id", "source_url"})
 _BARE_TENOR_RE = re.compile(r"(?<![A-Za-z0-9_.$€£¥￥])(?:1M|9M|2Y|3Y|5Y|10Y)(?![A-Za-z0-9_])")
 _POLICY_CAL_ALLOWED_CATEGORIES = frozenset({
@@ -251,17 +258,23 @@ _FLAGSHIP_CUTOFF_RE = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{4}年\d{1,2}月\d{1,2}�
 
 _CHART_PLACEHOLDER_RE = re.compile(r"<!--\s*CHART_[AHU]\d+\s*-->")
 _GOLD_ACTIVE_BUY_RE = re.compile(
-    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|建仓|吸纳)"
+    r"(?:(?:补齐|补足)\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?"
+    r"(?:(?:现货|实物|纸|积存)?(?:黄金|金仓|金矿股?|黄金股)|"
+    r"(?:518660|518880|518850|159934|159937|518800|517520|159562|02840|03081|"
+    r"(?<![A-Za-z])(?:GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ|NEM)(?![A-Za-z])))"
+    r"(?!\s*(?:免五|佣金|费率|折溢价|护栏|规则|口径|条款|说明|数据|披露|对比|清单|铁律|提示|警示|文档|基准|锚点))"
+    r"|(?:买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|配仓|建仓|吸纳|购入)"
     r"\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?"
     r"(?:(?:现货|实物|纸|积存)?(?:黄金|金仓|金矿股?|黄金股)|"
     r"(?:518660|518880|518850|159934|159937|518800|517520|159562|02840|03081|"
-    r"(?<![A-Za-z])(?:GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ)(?![A-Za-z])))",
+    r"(?<![A-Za-z])(?:GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ|NEM)(?![A-Za-z]))))",
     flags=re.IGNORECASE,
 )
 _GOLD_DEFER_GUARD_RE = re.compile(
-    r"(?:暂不|严禁|禁止|切忌|勿|停止|暂停|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|未在黄金红灯停期|不)"
-    r"(?:追高芯片[与或])?(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|直接|冲动|抢跑)*"
-    r"(?:(?:新买|买入|加仓|抄底|定投|配置|建仓|补齐|低吸|布局|上车)[/／、与或])?[\s“‘「\x22*_]*$"
+    r"(?:暂不|严禁|禁止|切忌|切勿|勿|停止|暂停|先别|别|不能|不可|不得|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|0%\s*(?:严禁|禁止|锁定)?|零配|未在黄金红灯停期|不)"
+    r"(?:追高芯片[与或])?(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|直接|冲动|抢跑|追高|凭感觉|猜底|盲目)*"
+    r"(?:(?:新买|买入|加仓|抄底|定投|配置|配仓|建仓|补齐|低吸|布局|上车)[/／、与及和或])?[\s“‘「\x22*_]*$"
+    r"|(?:严禁|禁止|不得|不可|切忌|切勿|勿|暂不|不要|别)(?:(?!但|可|应|须|宜|若|直接|立即|建议|推荐|放心|大胆)[^。！？；，,|]){0,16}(?:与|及|和|或|、|/|／)(?:抢跑|盲目|提前|追高|再|去|主动|新)*[\s“‘「\x22*_]*$"
     r"|(?:等到?|待).{0,14}(?:黄灯|绿灯|解锁)(?:亮起|确认)?(?:后)?(?:再|才)?(?:分批|择机|恢复|重启|再)*[\s“‘「\x22]*$"
     r"|(?:黄灯|绿灯|解锁|过四关|全部过关)(?:亮起|确认)?后(?:再|才)?(?:分批|择机|恢复|重启|再)*[\s“‘「\x22]*$"
     r"|(?:原稿曾建议|原稿曾考虑|过去曾建议|曾建议)[\s“‘「\x22]*$"
@@ -274,19 +287,23 @@ _GOLD_MINER_TICKERS_RE = re.compile(
 _CRYPTO_ACTIVE_BUY_RE = re.compile(
     r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|配仓|建仓|吸纳|购入|做多)"
     r"\s*(?:[0-9一二两三半成%–\-~约近超少量小批分批]*\s*)?"
-    r"(?:(?:现货|数字|虚拟|加密)?(?:比特币|以太坊|虚拟货币|加密货币|加密资产|稳定币)|"
+    r"(?:(?:现货|数字|虚拟|加密)?(?:比特币|以太坊|虚拟货币|加密货币|数字货币|加密资产|稳定币)|"
     r"(?<![A-Za-z0-9])(?:BTC|ETH|USDT|USDC|IBIT|FBTC)(?![A-Za-z0-9]))"
-    r"|\b(?:buy|add|accumulate|allocate(?:\s+to)?|dca\s+into)\s+(?:btc|bitcoin|eth|ethereum|crypto(?:currency)?)\b",
+    r"|\b(?:buy|add|accumulate|allocate(?:\s+to)?|dca\s+into)\s+(?:btc|bitcoin|eth|ethereum|usdt|crypto(?:currency)?)\b",
     flags=re.IGNORECASE,
 )
 _CRYPTO_NEGATION_GUARD_RE = re.compile(
-    r"(?:严禁|禁止|切忌|勿|不得|不可|不能|不宜|不要|绝不|决不|暂不|停止|拒绝|不允许|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
-    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相)*"
+    r"(?:严禁|禁止|切忌|切勿|不得|不可|绝不|决不|不允许)(?:(?!但|可|应|须|宜|若|直接|立即|建议|推荐|放心|大胆)[^。！？；，,|]){0,18}[\s“‘「\x22*_]*$"
+    r"|(?:暂不|停止|拒绝|勿|不能|不宜|不要|别|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
+    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相|可|得|准|要|会|宜|应|能)*"
     r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|低吸|布局|上车|交易|炒作|买卖|持有)[/／、与及和或])?[\s“‘「\x22*_]*$"
-    r"|(?:严禁|禁止|不得|切忌|不可|绝不)(?:[^。！？；，,|但可应须宜]{0,14})(?:与|及|和|或|、|/|／)[\s“‘「\x22*_]*$"
-    r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?)\s+(?:from\s+)?(?:buy|add|accumulat|allocat|dca|trad)[\w\s]{0,16}$",
+    r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?|forbid(?:den|s)?)\s+(?:from\s+)?[\w\s]{0,24}$",
     flags=re.IGNORECASE,
 )
+
+
+def _find_internal_leaks(text: str) -> list[str]:
+    return _BANNED_INTERNAL_RE.findall(text) + _VISUAL_WIDGETS_LEAK_RE.findall(text)
 _TEN_DOT_RE = re.compile(r"[●○]{10}")
 _PLAYBOOK_RETRACTED_RULES = (
     (
@@ -557,11 +574,102 @@ def _walk_json_strings(
     return out
 
 
+def _parse_daily_visual_directives(
+    md_text: str,
+    filename: str,
+    *,
+    validate_schema: bool = True,
+) -> tuple[list[tuple[int, dict]], list[str]]:
+    """Parse every <!-- DAILY_VISUAL ... --> directive, catching typos, unclosed tags, bad JSON, and schema errors."""
+    valid_specs: list[tuple[int, dict]] = []
+    errs: list[str] = []
+    visual_widgets_mod = None
+    if validate_schema:
+        scripts_path = BASE_DIR.parent / "scripts"
+        if scripts_path.is_dir() and str(scripts_path) not in sys.path:
+            sys.path.insert(0, str(scripts_path))
+        try:
+            import visual_widgets as visual_widgets_mod  # type: ignore[import-not-found]
+        except Exception as exc:
+            errs.append(f"Gate 3B 视觉图引擎导入失败 ({filename}): {exc}")
+            return valid_specs, errs
+
+    vis_idx = 0
+    for m_open in _DAILY_VISUAL_OPEN_RE.finditer(md_text):
+        tag_name = m_open.group(1)
+        line_no = md_text.count("\n", 0, m_open.start()) + 1
+        if tag_name != "DAILY_VISUAL":
+            errs.append(
+                f"Gate 3B 视觉图指令拼写错误 ({filename}:L{line_no}): <!-- {tag_name} ... --> 应为 DAILY_VISUAL"
+            )
+            continue
+        vis_idx += 1
+        end_pos = md_text.find("-->", m_open.end())
+        if end_pos == -1:
+            errs.append(
+                f"Gate 3B 视觉图指令未闭合 ({filename}:L{line_no}): <!-- DAILY_VISUAL#{vis_idx} 缺少结束符 -->"
+            )
+            continue
+        raw_payload = md_text[m_open.end() : end_pos]
+        if "<!--" in raw_payload:
+            errs.append(
+                f"Gate 3B 视觉图指令未闭合 ({filename}:L{line_no}): <!-- DAILY_VISUAL#{vis_idx} 在下一注释前缺少结束符 -->"
+            )
+            continue
+        payload_s = raw_payload.strip()
+        try:
+            spec = json.loads(payload_s)
+        except json.JSONDecodeError as exc:
+            errs.append(f"Gate 3B 视觉图 JSON 解析失败 ({filename}#DAILY_VISUAL#{vis_idx}): {exc}")
+            continue
+        if not isinstance(spec, dict):
+            errs.append(f"Gate 3B 视觉图结构错 ({filename}#DAILY_VISUAL#{vis_idx}): DAILY_VISUAL 须为 JSON 对象")
+            continue
+        if validate_schema and visual_widgets_mod is not None:
+            v_errs = visual_widgets_mod.validate_visual_spec(spec)
+            if v_errs:
+                for v_err in v_errs:
+                    errs.append(f"Gate 3B 视觉图结构错 ({filename}#DAILY_VISUAL#{vis_idx}): {v_err}")
+                continue
+        valid_specs.append((vis_idx, spec))
+    return valid_specs, errs
+
+
+def _check_bare_impact_tier_daily(filename: str, body: str, visual_specs: list[tuple[int, dict]]) -> list[str]:
+    """Reject raw internal priority tags (P0/P1/P2) in equity daily prose and DAILY_VISUAL visible JSON strings."""
+    errs: list[str] = []
+    prose_only = _DAILY_VISUAL_BLOCK_RE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
+    prose_only = re.sub(r"```.*?```", lambda m: "\n" * m.group(0).count("\n"), prose_only, flags=re.DOTALL)
+    for ln_no, ln in enumerate(prose_only.splitlines(), 1):
+        scan_ln = re.sub(r"`[^`]+`", "", ln)
+        scan_ln = re.sub(r"https?://[^\s)\]>]+", "", scan_ln)
+        m_tier = _BARE_IMPACT_TIER_RE.search(scan_ln)
+        if m_tier:
+            errs.append(
+                f"{filename}: Gate 3B (L{ln_no}) 正文禁止裸露内部优先级代号 {m_tier.group(0)!r}（请改用纯中文「重磅/重要/关注」）"
+            )
+    for vidx, spec in visual_specs:
+        for jpath, sval in _walk_json_strings(
+            spec, f"{filename}:DAILY_VISUAL#{vidx}", skip_keys=_DAILY_VISUAL_STYLE_SKIP_KEYS
+        ):
+            scan_val = re.sub(r"https?://[^\s)\]>]+", "", sval)
+            m_tier = _BARE_IMPACT_TIER_RE.search(scan_val)
+            if m_tier:
+                errs.append(
+                    f"Gate 3B 失败：{jpath} 禁止裸露内部优先级代号 {m_tier.group(0)!r}（请改用纯中文「重磅/重要/关注」）"
+                )
+    return errs
+
+
 def _check_gate_3b(md_text: str, path: Path, *, is_flagship: bool, meta: dict | None, market: str, state: dict | None) -> tuple[list[str], list[str]]:
     """Gate 3B: verdict length, cover title length, 10-dot probability sum, Appendix 2 count & delisted guard."""
     errs: list[str] = []
     warns: list[str] = []
     body = re.sub(r"<!--\s*DAILY_META_JSON\s*\{.*?\}\s*-->", "", md_text, flags=re.DOTALL)
+
+    vw_leaks = _VISUAL_WIDGETS_LEAK_RE.findall(body)
+    if vw_leaks:
+        errs.append(f"{path.name}: Gate 3B 禁止内部工程文件名泄露 -> {sorted(set(vw_leaks))}")
 
     # 1. Cover title length check
     if meta and meta.get("title"):
@@ -664,11 +772,22 @@ def _check_gate_3b(md_text: str, path: Path, *, is_flagship: bool, meta: dict | 
     if not is_flagship and sort_key >= ALL_MAIN_CUTOVER and DEEP_DOSSIERS_PATH.is_file():
         errs.extend(_check_daily_focus_table_vs_dossiers(body, path.name, market, edition_date=sort_key[0]))
 
-    # 8. Retracted-fact guard on flagship & post-cutover dailies + PBOC Doc 42 crypto firewall on dailies
+    # 8. Retracted-fact guard on flagship & post-cutover dailies + PBOC Doc 42 crypto firewall & bare P0/P1/P2 on dailies
     if is_flagship or sort_key >= ALL_MAIN_CUTOVER:
         errs.extend(_check_retracted_facts(path.name, body))
     if not is_flagship:
-        errs.extend(_scan_text_for_crypto_buy(path.name, md_text))
+        vis_specs, _ = _parse_daily_visual_directives(body, path.name, validate_schema=False)
+        errs.extend(_check_bare_impact_tier_daily(path.name, body, vis_specs))
+        body_no_vis = _DAILY_VISUAL_BLOCK_RE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
+        errs.extend(_scan_text_for_crypto_buy(path.name, body_no_vis))
+        for vidx, spec in vis_specs:
+            for jpath, sval in _walk_json_strings(
+                spec, f"{path.name}:DAILY_VISUAL#{vidx}", skip_keys=_DAILY_VISUAL_STYLE_SKIP_KEYS
+            ):
+                errs.extend(_scan_text_for_crypto_buy(jpath, sval))
+                vw_hits = _VISUAL_WIDGETS_LEAK_RE.findall(sval)
+                if vw_hits:
+                    errs.append(f"Gate 3B 失败：{jpath} 禁止内部工程文件名泄露 -> {sorted(set(vw_hits))}")
 
     # 9. Deterministic G2 / G3 / G5 / G7 / S2 & Phase D editorial depth gates (>= 2026-11-27_0730 dailies)
     if not is_flagship and sort_key[:2] >= EDITORIAL_DEPTH_CUTOVER[:2]:
@@ -933,8 +1052,9 @@ def _check_phase_d_editorial(body: str, filename: str, meta: dict | None) -> tup
 
     ed_type = str(meta.get("edition_type", "")).strip().lower() if isinstance(meta, dict) else ""
     if ed_type == "main" and len(body) > 1000:
-        bold_chars = sum(len(x) for x in re.findall(r"\*\*([^*]+)\*\*", body))
-        plain_chars = max(1, len(re.sub(r"\s+", "", body)))
+        bold_body = _DAILY_VISUAL_BLOCK_RE.sub("", body)
+        bold_chars = sum(len(x) for x in re.findall(r"\*\*([^*]+)\*\*", bold_body))
+        plain_chars = max(1, len(re.sub(r"\s+", "", bold_body)))
         bold_pct = (bold_chars / plain_chars) * 100.0
         if bold_pct < 4.5:
             warns.append(
@@ -1149,9 +1269,10 @@ def _check_daily_focus_table_vs_dossiers(
 def _scan_text_for_gold_buy(label: str, text: str) -> list[str]:
     found: list[str] = []
     for idx, ln in enumerate(text.splitlines(), 1):
+        clean_ln = re.sub(r"[*`]", "", ln)
         if any(
-            not _GOLD_DEFER_GUARD_RE.search(re.split(r"[。！？；，,、|]", ln[:action.start()])[-1])
-            for action in _GOLD_ACTIVE_BUY_RE.finditer(ln)
+            not _GOLD_DEFER_GUARD_RE.search(re.split(r"[。！？；，,、|]", clean_ln[:action.start()])[-1])
+            for action in _GOLD_ACTIVE_BUY_RE.finditer(clean_ln)
         ):
             found.append(
                 f"Gate C2 跨项目硬冲突 ({label}:L{idx})：黄金当前为红灯停（new_buy_allowed=false），"
@@ -1163,8 +1284,9 @@ def _scan_text_for_gold_buy(label: str, text: str) -> list[str]:
 def _scan_text_for_crypto_buy(label: str, text: str) -> list[str]:
     found: list[str] = []
     for idx, ln in enumerate(text.splitlines(), 1):
-        for action in _CRYPTO_ACTIVE_BUY_RE.finditer(ln):
-            prefix = re.split(r"[。！？；，,|]", ln[:action.start()])[-1]
+        clean_ln = re.sub(r"[*`]", "", ln)
+        for action in _CRYPTO_ACTIVE_BUY_RE.finditer(clean_ln):
+            prefix = re.split(r"[。！？；，,|]", clean_ln[:action.start()])[-1]
             if not _CRYPTO_NEGATION_GUARD_RE.search(prefix):
                 found.append(
                     f"Gate 4 失败 ({label}:L{idx})：违反央行银发〔2026〕42号合规红线，"
@@ -1426,8 +1548,16 @@ def _check_cross_project_gold(targets: list[Path], *, precheck: bool) -> tuple[l
     if gold_tier == "Tier 0" or gold_new_buy is False:
         for p in targets:
             txt = p.read_text(encoding="utf-8")
-            # Scan FULL file including DAILY_META_JSON so daily chart/KPI strings cannot bypass C2
-            errs.extend(_scan_text_for_gold_buy(p.name, txt))
+            # Scan FULL file including DAILY_META_JSON + decoded DAILY_VISUAL strings so unicode escapes/wrapping cannot bypass C2
+            txt_no_vis = _DAILY_VISUAL_BLOCK_RE.sub(lambda m: "\n" * m.group(0).count("\n"), txt)
+            errs.extend(_scan_text_for_gold_buy(p.name, txt_no_vis))
+            if not _detect_is_flagship(p):
+                vis_specs, _ = _parse_daily_visual_directives(txt, p.name, validate_schema=False)
+                for vidx, spec in vis_specs:
+                    for jpath, sval in _walk_json_strings(
+                        spec, f"{p.name}:DAILY_VISUAL#{vidx}", skip_keys=_DAILY_VISUAL_STYLE_SKIP_KEYS
+                    ):
+                        errs.extend(_scan_text_for_gold_buy(jpath, sval))
         idx_path = DAILY_DIR / "INDEX.md"
         if idx_path.exists():
             errs.extend(_scan_text_for_gold_buy(idx_path.name, idx_path.read_text(encoding="utf-8")))
@@ -1579,10 +1709,16 @@ def _load_equity_build_daily():
     return mod
 
 
-def _collect_rendered_svgs(targets: list[Path]) -> tuple[list[tuple[str, str]], list[str]]:
-    """Render all 21 flagship vector SVGs plus embedded charts for non-flagship daily targets."""
+def _collect_rendered_svgs(
+    targets: list[Path],
+    *,
+    render_errors: list[str] | None = None,
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Render all 21 flagship vector SVGs plus embedded charts for non-flagship daily targets.
+    Isolates per-file and per-directive DAILY_VISUAL render errors so one broken directive never aborts remaining checks."""
     svg_checks: list[tuple[str, str]] = []
     warns: list[str] = []
+    mod_d = None
     try:
         if str(BASE_DIR) not in sys.path:
             sys.path.insert(0, str(BASE_DIR))
@@ -1590,7 +1726,7 @@ def _collect_rendered_svgs(targets: list[Path]) -> tuple[list[tuple[str, str]], 
         import build_hk_stock_pdf as mod_h
         import build_us_stock_pdf as mod_u
         mod_d = _load_equity_build_daily()
-        svg_checks = [
+        svg_checks.extend([
             ("SVG:A1", mod_a.svg_chart_a1_cycles()),
             ("SVG:A2", mod_a.svg_chart_a2_split_and_futures()),
             ("SVG:A3", mod_a.svg_chart_a3_macro_k_split()),
@@ -1612,10 +1748,35 @@ def _collect_rendered_svgs(targets: list[Path]) -> tuple[list[tuple[str, str]], 
             ("SVG:U5", mod_u.svg_chart_u5_wall_street_forensic()),
             ("SVG:U6", mod_u.svg_chart_u6_sector_heatmap()),
             ("SVG:U7", mod_u.svg_chart_u7_stock_quadrant()),
-        ]
-        for p in targets:
-            if not _detect_is_flagship(p) and p.exists():
-                p_txt = p.read_text(encoding="utf-8")
+        ])
+    except Exception as exc:
+        warns.append(f"SVG 渲染预扫跳过: {exc}")
+
+    visual_widgets_mod = None
+    scripts_path = BASE_DIR.parent / "scripts"
+    if scripts_path.is_dir():
+        scripts_dir = str(scripts_path)
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        try:
+            import visual_widgets as visual_widgets_mod  # type: ignore[import-not-found]
+        except Exception as exc:
+            msg = f"Gate 3B 视觉图引擎导入失败: {exc}"
+            if render_errors is not None:
+                render_errors.append(msg)
+            else:
+                warns.append(msg)
+
+    for p in targets:
+        if _detect_is_flagship(p) or not p.exists():
+            continue
+        try:
+            p_txt = p.read_text(encoding="utf-8")
+        except OSError as exc:
+            warns.append(f"SVG 渲染预扫跳过 ({p.name}): {exc}")
+            continue
+        if mod_d is not None:
+            try:
                 d_meta, _ = _extract_meta(p_txt, p)
                 if d_meta:
                     d_charts = mod_d.load_optional_charts(_detect_market(p), meta_override=d_meta)
@@ -1623,16 +1784,24 @@ def _collect_rendered_svgs(targets: list[Path]) -> tuple[list[tuple[str, str]], 
                         tok_m = re.search(r"CHART_[A-Z0-9_]+", ck)
                         if tok_m and re.search(rf"<!--\s*{re.escape(tok_m.group(0))}\s*-->", p_txt):
                             svg_checks.append((f"{p.name}:{ck}", c_html))
-                if "DAILY_VISUAL" in p_txt:
-                    scripts_dir = str(BASE_DIR.parent / "scripts")
-                    if scripts_dir not in sys.path:
-                        sys.path.insert(0, scripts_dir)
-                    import visual_widgets  # type: ignore[import-not-found]
-                    _, visuals = visual_widgets.extract_visual_directives(p_txt)
-                    for idx, (_, v_html) in enumerate(visuals.items(), 1):
-                        svg_checks.append((f"{p.name}:DAILY_VISUAL#{idx}", v_html))
-    except Exception as exc:
-        warns.append(f"SVG 渲染预扫跳过: {exc}")
+            except Exception as exc:
+                msg = f"Gate 3B 标准图 SVG 渲染失败 ({p.name}): {exc}"
+                if render_errors is not None:
+                    render_errors.append(msg)
+                else:
+                    warns.append(msg)
+        if _DAILY_VISUAL_OPEN_RE.search(p_txt) and visual_widgets_mod is not None:
+            valid_specs, _ = _parse_daily_visual_directives(p_txt, p.name, validate_schema=True)
+            for idx, spec in valid_specs:
+                try:
+                    v_html = visual_widgets_mod.render_visual_chart(spec)
+                    svg_checks.append((f"{p.name}:DAILY_VISUAL#{idx}", v_html))
+                except Exception as exc:
+                    msg = f"Gate 3B 视觉图 SVG 渲染失败 ({p.name}#DAILY_VISUAL#{idx}): {exc}"
+                    if render_errors is not None:
+                        render_errors.append(msg)
+                    else:
+                        warns.append(msg)
     return svg_checks, warns
 
 
@@ -1647,24 +1816,17 @@ def _check_svg_geometry_all(targets: list[Path]) -> tuple[list[str], list[str]]:
         sys.path.insert(0, scripts_dir)
     try:
         from svg_geometry import check_svg_text_geometry
-        import visual_widgets  # type: ignore[import-not-found]
     except Exception as exc:
         return [f"Gate 3B SVG 几何检失败：无法导入 scripts/svg_geometry.py ({exc})"], []
 
-    # Validate DAILY_VISUAL directive JSON schema strictly on every daily markdown target
+    # Validate DAILY_VISUAL directive syntax, closure, JSON, and schema strictly on every daily markdown target
     for p in targets:
         if not _detect_is_flagship(p) and p.exists():
             p_txt = p.read_text(encoding="utf-8")
-            for idx, m_vis in enumerate(visual_widgets.DAILY_VISUAL_RE.finditer(p_txt), 1):
-                try:
-                    spec = json.loads(m_vis.group(1))
-                except json.JSONDecodeError as exc:
-                    errs.append(f"Gate 3B 视觉图 JSON 解析失败 ({p.name}#DAILY_VISUAL#{idx}): {exc}")
-                    continue
-                for v_err in visual_widgets.validate_visual_spec(spec):
-                    errs.append(f"Gate 3B 视觉图结构错 ({p.name}#DAILY_VISUAL#{idx}): {v_err}")
+            _, vis_errs = _parse_daily_visual_directives(p_txt, p.name, validate_schema=True)
+            errs.extend(vis_errs)
 
-    svg_checks, warns = _collect_rendered_svgs(targets)
+    svg_checks, warns = _collect_rendered_svgs(targets, render_errors=errs)
     for lbl, svg_html in svg_checks:
         for issue in check_svg_text_geometry(svg_html, label=lbl):
             errs.append(f"Gate 3B SVG 几何碰撞: {issue}")
@@ -1929,7 +2091,7 @@ def _check_data_caveats(state: dict | None, *, require_presence: bool) -> list[s
         for scan_k in ("item", "detail", "impact", "next_review"):
             sval = item.get(scan_k)
             if isinstance(sval, str):
-                hits = _BANNED_INTERNAL_RE.findall(sval)
+                hits = _find_internal_leaks(sval)
                 if hits:
                     errs.append(
                         f"Gate 4 失败：market_state.json data_caveats[{idx}].{scan_k} 泄露内部词: {sorted(set(hits))}"
@@ -2088,7 +2250,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                                 )
 
                 for jpath, sval in _walk_json_strings(ma, "multi_asset_channels.json"):
-                    hits = _BANNED_INTERNAL_RE.findall(sval)
+                    hits = _find_internal_leaks(sval)
                     if hits:
                         errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
                     errs.extend(_scan_text_for_crypto_buy(jpath, sval))
@@ -2256,7 +2418,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                                 f"Gate 4 失败：etf_universe.json counts_by_region ({cbr}) 与实表汇总 ({dict(reg_counter)}) 不一致"
                             )
                 for jpath, sval in _walk_json_strings(eu, "etf_universe.json"):
-                    hits = _BANNED_INTERNAL_RE.findall(sval)
+                    hits = _find_internal_leaks(sval)
                     if hits:
                         errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
                     errs.extend(_scan_text_for_crypto_buy(jpath, sval))
@@ -2425,7 +2587,7 @@ def _check_ssot_databases(state: dict | None) -> list[str]:
                                 continue
                             if _DOSSIER_RAW_MARKUP_RE.search(val):
                                 errs.append(f"Gate 4 失败：deep_dossiers.json[{key}].{dim} 残留原始 Markdown/HTML 标记")
-                            hits = _BANNED_INTERNAL_RE.findall(val)
+                            hits = _find_internal_leaks(val)
                             if hits:
                                 errs.append(f"Gate 4 失败：deep_dossiers.json[{key}].{dim} 泄露内部词: {sorted(set(hits))}")
                             errs.extend(_check_retracted_facts(f"deep_dossiers.json[{key}].{dim}", val))
@@ -2660,7 +2822,7 @@ def _check_policy_calendar(
     for jpath, sval in _walk_json_strings(pc, "policy_calendar.json", skip_keys=frozenset()):
         if _DOSSIER_RAW_MARKUP_RE.search(sval):
             errs.append(f"Gate 4 失败：{jpath} 残留原始 Markdown/HTML 标记")
-        hits = _BANNED_INTERNAL_RE.findall(sval)
+        hits = _find_internal_leaks(sval)
         if hits:
             errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
         if _LOCAL_PATH_RE.search(sval):
@@ -3008,7 +3170,7 @@ def _check_extended_cockpit_markets(state: dict | None, *, require_presence: boo
 
     def _scan_hygiene(obj: object, root_label: str) -> None:
         for jpath, sval in _walk_json_strings(obj, root_label):
-            hits = _BANNED_INTERNAL_RE.findall(sval)
+            hits = _find_internal_leaks(sval)
             if hits:
                 errs.append(f"Gate 4 失败：{jpath} 泄露内部词: {sorted(set(hits))}")
             errs.extend(_check_retracted_facts(jpath, sval))

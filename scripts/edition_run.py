@@ -47,6 +47,14 @@ _STRIPPED_ENV_VARS = (
     "GH_REPO",
     "GIT_TERMINAL_PROMPT",
 )
+_PROXY_ENV_VARS = (
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+)
 
 
 class DeploymentPending(ValueError):
@@ -61,6 +69,14 @@ def _clean_env() -> dict[str, str]:
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GH_PROMPT_DISABLED"] = "1"
     return env
+
+
+def _strip_proxy_env(env: dict[str, str]) -> dict[str, str]:
+    """Return a copy of env with HTTP/HTTPS/ALL proxy variables removed for direct fallback."""
+    cleaned = dict(env)
+    for key in _PROXY_ENV_VARS:
+        cleaned.pop(key, None)
+    return cleaned
 
 
 def utc_now() -> str:
@@ -821,9 +837,35 @@ def _gh_json(*args: str):
     )
     if gh is None:
         raise ValueError("GitHub CLI is required to verify Pages deployment.")
-    return json.loads(
-        subprocess.check_output([gh, *args], cwd=ROOT, env=_clean_env(), text=True, timeout=30)
-    )
+    cmd = [gh, *args]
+    env = _clean_env()
+    has_proxy = any(env.get(k) for k in _PROXY_ENV_VARS)
+    first_err = ""
+    rc = 1
+    try:
+        proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
+        if proc.returncode == 0:
+            return json.loads(proc.stdout)
+        first_err = (proc.stderr or proc.stdout or "").strip()
+        rc = proc.returncode
+    except subprocess.TimeoutExpired as exc:
+        if not has_proxy:
+            raise
+        first_err = f"timeout after {exc.timeout}s"
+        rc = 124
+    if has_proxy:
+        # Retry once directly without proxy env vars if local proxy is stopped/refusing/failing TLS.
+        retry = subprocess.run(
+            cmd, cwd=ROOT, env=_strip_proxy_env(env), capture_output=True, text=True, timeout=30
+        )
+        if retry.returncode == 0:
+            return json.loads(retry.stdout)
+        retry_err = (retry.stderr or retry.stdout or "").strip()
+        detail = retry_err or first_err
+        raise ValueError(
+            f"gh {' '.join(args)} failed (exit {retry.returncode}; direct retry after proxy failure): {detail}"
+        )
+    raise ValueError(f"gh {' '.join(args)} failed (exit {rc}): {first_err}")
 
 
 def _remote_main_head_sha(repository: str) -> str | None:
@@ -924,14 +966,14 @@ def complete(runs: sqlite3.Connection, token: str, wait: int = 180) -> str:
     return url
 
 
-def reconcile_previous_deployment(runs: sqlite3.Connection) -> str | None:
+def reconcile_previous_deployment(runs: sqlite3.Connection, wait: int = 0) -> str | None:
     row = runs.execute("""
         SELECT runs.token FROM runs JOIN publications USING(token)
          WHERE runs.status = 'running' AND publications.sha IS NOT NULL
     """).fetchone()
     if row is None:
         return None
-    return complete(runs, row["token"], wait=0)
+    return complete(runs, row["token"], wait=wait)
 
 
 def heartbeat(runs: sqlite3.Connection, token: str) -> str:
@@ -1165,7 +1207,7 @@ def main() -> int:
             if args.command == "begin":
                 if args.scheduled:
                     edition = scheduled_edition(args.scheduled)
-                    if reconcile_previous_deployment(runs):
+                    if reconcile_previous_deployment(runs, wait=15):
                         runs.commit()
                     token = begin(runs, edition, f"antigravity-{args.scheduled}", reap_stale=True)
                     print(json.dumps({"edition_id": edition, "token": token}))

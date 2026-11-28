@@ -827,5 +827,184 @@ class RolloverContrastAndGeometryRegressionTests(unittest.TestCase):
         self.assertTrue(any("SVG 文字重叠" in x for x in issues_ts), issues_ts)
 
 
+class Wave2TripleLinterComplianceTests(unittest.TestCase):
+    def test_gold_linter_bare_priority_tier0_buy_crypto_doc42_and_visual_widgets_leak(self):
+        # 1. Bare P0/P1/P2 caught in prose & DAILY_VISUAL, while P10 passes
+        errs_p: list[str] = []
+        gold_lint._scan_bare_impact_tier("正文", "这是 P0 重磅事件，华为 P10 机型不受影响。", errs_p)
+        self.assertTrue(any("P0" in e for e in errs_p), errs_p)
+        errs_p_ok: list[str] = []
+        gold_lint._scan_bare_impact_tier("正文", "华为 P10 机型与一级关键事件均无裸标签。", errs_p_ok)
+        self.assertEqual(errs_p_ok, [])
+
+        # 2. Bare 买入黄金 / 配置黄金 caught in prose AND DAILY_VISUAL under Tier 0; 严禁买入黄金 passes
+        snap_t0 = {"tier_code": "Tier 0", "new_buy_allowed": False}
+        directives_bad = {
+            "DAILY_VISUAL": [
+                {
+                    "type": "flow_chain",
+                    "title": "黄金传导",
+                    "steps": [
+                        {"step": "1", "title": "配置黄金", "metric": "518880", "desc": "逢低买入黄金"},
+                        {"step": "2", "title": "观察", "metric": "无", "desc": "正常"},
+                        {"step": "3", "title": "收尾", "metric": "无", "desc": "正常"},
+                    ],
+                }
+            ]
+        }
+        errs_g: list[str] = []
+        gold_lint._check_tier0_widget_prose(
+            directives_bad, snap_t0, errs_g, body_text="今日直接买入黄金应对波动。"
+        )
+        self.assertTrue(any("DAILY_VISUAL" in e for e in errs_g), errs_g)
+        self.assertTrue(any("正文" in e for e in errs_g), errs_g)
+
+        errs_g_ok: list[str] = []
+        gold_lint._check_tier0_widget_prose(
+            {
+                "DAILY_VISUAL": [
+                    {
+                        "type": "flow_chain",
+                        "title": "红灯风控",
+                        "steps": [
+                            {"step": "1", "title": "严禁买入黄金", "metric": "0%", "desc": "暂不配置黄金 518880"},
+                            {"step": "2", "title": "等四关", "metric": "2/4", "desc": "静待解锁"},
+                            {"step": "3", "title": "现金盾", "metric": "短债", "desc": "稳健收息"},
+                        ],
+                    }
+                ]
+            },
+            snap_t0,
+            errs_g_ok,
+            body_text="红灯停期严禁买入黄金与配置黄金。",
+        )
+        self.assertEqual(errs_g_ok, [])
+
+        # 3. Crypto Doc-42 firewall caught in prose & DAILY_VISUAL; 0% 严禁配仓 passes
+        errs_c: list[str] = []
+        gold_lint._scan_crypto_buy("正文", "建议买入 BTC 并配置比特币资产。", errs_c)
+        self.assertTrue(any("银发〔2026〕42号" in e for e in errs_c), errs_c)
+        errs_c_ok: list[str] = []
+        gold_lint._scan_crypto_buy("正文", "BTC 仅作流动性温度计，0% 严禁配仓比特币与买入 BTC。", errs_c_ok)
+        self.assertEqual(errs_c_ok, [])
+
+        # 4. visual_widgets.py caught by Gold internal leak regexes
+        self.assertIsNotNone(gold_lint.SCORECARD_BANNED_RE.search("脚本 visual_widgets.py"))
+        self.assertIsNotNone(gold_lint._INTERNAL_FILENAME_LEAK_RE.search("脚本 visual_widgets.py"))
+
+    def test_equity_linter_bare_priority_tier0_buy_crypto_doc42_bold_density_and_isolated_visual_errors(self):
+        with TemporaryDirectory() as tmp:
+            t = Path(tmp)
+            vis_bad = {
+                "type": "bar_compare",
+                "title": "P0 风险对比：建议买入 BTC 与配置黄金",
+                "items": [
+                    {"label": "错误项 visual_widgets.py", "value": 10},
+                    {"label": "对照项", "value": 5},
+                ],
+            }
+            bad_daily = t / "2026-11-28_1130_a_share.md"
+            bad_md = (
+                "# A 股测试日报\n\n"
+                "正文含 P1 裸优先级，且建议买入 BTC，同时买入黄金 518880，提及 visual_widgets.py。\n\n"
+                f"<!-- DAILY_VISUAL {json.dumps(vis_bad, ensure_ascii=False)} -->\n"
+            )
+            bad_daily.write_text(bad_md, encoding="utf-8")
+
+            # 1. Gate 3B catches bare P0/P1 in prose & DAILY_VISUAL, Crypto Doc-42, and visual_widgets.py leak
+            g3b_errs, _ = eq_lint._check_gate_3b(
+                bad_md, bad_daily, is_flagship=False, meta={"title": "A股测试日报"}, market="a_share", state={}
+            )
+            joined_3b = "\n".join(g3b_errs)
+            self.assertIn("'P1'", joined_3b)
+            self.assertIn("'P0'", joined_3b)
+            self.assertIn("银发〔2026〕42号", joined_3b)
+            self.assertIn("visual_widgets.py", joined_3b)
+
+            # Safe P10 + 0% 严禁配仓比特币 passes cleanly
+            safe_vis = {
+                "type": "bar_compare",
+                "title": "华为 P10 产业链对比",
+                "items": [
+                    {"label": "严禁配仓比特币", "value": 10},
+                    {"label": "严禁买入黄金", "value": 5},
+                ],
+            }
+            safe_md = (
+                "# A 股合规日报\n\n"
+                "华为 P10 销量平稳；遵照央行银发〔2026〕42号 0% 严禁配仓 BTC 与买入比特币；红灯停期严禁买入黄金。\n\n"
+                f"<!-- DAILY_VISUAL {json.dumps(safe_vis, ensure_ascii=False)} -->\n"
+            )
+            safe_daily = t / "2026-11-28_1130_hk_stock.md"
+            safe_daily.write_text(safe_md, encoding="utf-8")
+            g3b_safe, _ = eq_lint._check_gate_3b(
+                safe_md, safe_daily, is_flagship=False, meta={"title": "A股合规日报"}, market="hk_stock", state={}
+            )
+            self.assertFalse(any("优先级代号" in e or "银发〔2026〕42号" in e or "visual_widgets.py" in e for e in g3b_safe), g3b_safe)
+
+            # 2. Gate C2 Gold Tier-0 catches bare 买入黄金 / 配置黄金 in prose & DAILY_VISUAL; 严禁买入黄金 passes
+            gold_snap_p = t / "gold_snap.json"
+            gold_snap_p.write_text(
+                json.dumps(
+                    {
+                        "tier_code": "Tier 0",
+                        "new_buy_allowed": False,
+                        "edition_id": "2026-11-28_1130",
+                        "as_of_short": "2026-11-28 11:30",
+                        "spot_gold_ny_close_usd": 3652.11,
+                        "us10y_pct": 4.94,
+                        "brent_settle_usd": 90.0,
+                        "vix_close": 23.81,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            ms_p = t / "market_state.json"
+            ms_p.write_text(
+                json.dumps({"edition_id": "2026-11-28_1130", "as_of_cst": "2026-11-28T11:30:00+08:00"}),
+                encoding="utf-8",
+            )
+            with patch.multiple(
+                eq_lint,
+                GOLD_SNAPSHOT_PATH=gold_snap_p,
+                DAILY_DIR=t / "no_daily_dir",
+                STATE_PATH=ms_p,
+            ):
+                c2_bad, _ = eq_lint._check_cross_project_gold([bad_daily], precheck=True)
+                self.assertTrue(any("DAILY_VISUAL#1" in e for e in c2_bad), c2_bad)
+                self.assertTrue(any("2026-11-28_1130_a_share.md:L" in e for e in c2_bad), c2_bad)
+
+                c2_safe, _ = eq_lint._check_cross_project_gold([safe_daily], precheck=True)
+                self.assertEqual([e for e in c2_safe if "Gate C2" in e], [], c2_safe)
+
+            # 3. Bold density strips DAILY_VISUAL JSON so large visual blocks never depress bold_pct below 4.5%
+            huge_vis = {
+                "type": "bar_compare",
+                "title": "大体积图表",
+                "items": [{"label": f"项目名称填充文本{i:02d}" + "数据" * 20, "value": i + 1} for i in range(15)],
+            }
+            prose_bold = ("**核心结论锚点**：保持现金与高息防守底盘，严守仓位边界。\n" * 40)
+            body_with_vis = prose_bold + f"\n<!-- DAILY_VISUAL {json.dumps(huge_vis, ensure_ascii=False)} -->\n"
+            _, phase_d_warns = eq_lint._check_phase_d_editorial(body_with_vis, "2026-11-28_1130_a_share.md", {"edition_type": "main"})
+            self.assertFalse(any("加粗密度" in w for w in phase_d_warns), phase_d_warns)
+
+            # 4. Broken DAILY_VISUAL or typo in file 1 emits hard error WITHOUT aborting file 2 SVG check
+            broken_f = t / "2026-11-28_1130_us_stock.md"
+            broken_f.write_text(
+                "# 损坏指令测试\n\n<!-- DAILY_VISUA {\"type\":\"waterfall\"} -->\n<!-- DAILY_VISUAL {broken json} -->\n",
+                encoding="utf-8",
+            )
+            _, vis_errs = eq_lint._parse_daily_visual_directives(broken_f.read_text(encoding="utf-8"), broken_f.name)
+            self.assertTrue(any("拼写错误" in e for e in vis_errs), vis_errs)
+            self.assertTrue(any("JSON 解析失败" in e for e in vis_errs), vis_errs)
+
+            render_errs: list[str] = []
+            svgs, _ = eq_lint._collect_rendered_svgs([broken_f, safe_daily], render_errors=render_errs)
+            self.assertTrue(
+                any(lbl.startswith("2026-11-28_1130_hk_stock.md:DAILY_VISUAL#1") for lbl, _ in svgs),
+                [lbl for lbl, _ in svgs],
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

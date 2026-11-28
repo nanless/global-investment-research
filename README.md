@@ -73,7 +73,7 @@
 | 5 | 公募基金、银行理财与投顾 | `funds_wm` | 真净值理财（终结估值平滑）、纯债/固收+、多资产 ETF-FOF、持牌基金投顾与 2026 销售费改 |
 | 6 | 储蓄型商业保险 | `savings_insurance` | 增额终身寿险、养老年金、分红险（退保现金价值真实 IRR、实现率与前期退保损失穿透） |
 | 7 | 个人养老金与税优账户 | `tax_advantaged_accounts` | 1.2 万/年缴费抵税上限与领取 3% 税率边际盈亏线（边际税率 ≥20% 显著合算）、Y 份额与税优健康险 |
-| 8 | QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通 | `qdii_mrf` | **10 元起普惠跨境渠道（非高净值专属）**：场内高溢价临停预警与溢价-排队盈亏平衡；TA 账户按身份证跨三方合并 vs 官方直销 App/支付宝分轨；互挂 ETF 穿透双层费；美元现汇同占 SAFE 额度；MRF 累计份额避 20% 税（禁推停申 `968118`）；理财通 2.0；2026-08-07 LOF `2027-12-31` 退市线 |
+| 8 | QDII 跨境基金（场内溢价·直销与支付宝限购）、香港互认与理财通 | `qdii_mrf` | **10 元起普惠跨境渠道（非高净值专属）**：场内高溢价临停预警与溢价-排队盈亏平衡；TA 账户按身份证跨三方合并 vs 官方直销 App/支付宝分轨；互挂 ETF 穿透双层费；美元现汇同占 SAFE 额度；MRF 累计份额避 20% 税（禁推停申 `968118`、警示派息份额 `968001` 改选累计份额）；理财通 2.0；2026-08-07 LOF `2027-12-31` 退市线 |
 | 9 | 可转债 | `convertible_bonds` | 零门槛 T+0 全市场 `511380`（综合费率 0.20%/年）vs 投资级 AA+ `511180`（综合费率 0.30%/年）、个券权限、去刚兑违约排雷、强赎 Z 标识与到期税后净兑付比对 |
 | 10 | 公募 REITs 与不动产租金对比 | `c_reits` | 产权类（NOI/出租率/资本化率）vs 特许经营权类（含还本须看中债 IRR）、薄量限价与住宅租售比 |
 | 11 | 非黄金大宗商品与白银/铂钯 | `commodity_etfs` | 豆粕 `159985`（贴水正展期）/有色/能化期货 ETF、白银原油 LOF 溢价磨损与 2027 退市警报、铂钯合规渠道 |
@@ -115,7 +115,7 @@ flowchart TD
 
 | 质量防线 | 校验脚本与严格命令 | 覆盖门禁与核心拦截项（全部要求 `0 errors, 0 warnings`） |
 | :--- | :--- | :--- |
-| **防线 1：黄金源稿与双快照** | `gold/lint_readability.py --strict` | **Gates 0–5** + `edition_validation.py`：10 个 `DAILY_*` 组件 Schema 与导语信号/噪音计数校验、升级版三档词表与全篇零内部词/说教口号、感叹号与 13 煽动词、加粗 ≤14% 与零裸数字反引号、三班次（07:30/11:30/18:00）`[-5m, +6h]` 宽限与四关精确复算、外置日历、记分卡与 RSI ≤180 行 |
+| **防线 1：黄金源稿与双快照** | `gold/lint_readability.py --strict` | **Gates 0–5** + `edition_validation.py`：11 个 `DAILY_*` 组件（含 `DAILY_VISUAL`）Schema 与导语信号/噪音计数校验、升级版三档词表与全篇零内部词/说教口号、感叹号与 13 煽动词、加粗 ≤14% 与零裸数字反引号、三班次（07:30/11:30/18:00）`[-5m, +6h]` 宽限与四关精确复算、外置日历、记分卡与 RSI ≤180 行 |
 | **防线 2：全球权益、21 图与跨轨锁** | `equity/lint_equity.py --strict` | **Gates 0–5 / Gate 3B / Cross-Project Gates C1–C3**：21 张 SVG 演练零重叠与 `CHART_A2` 期货贴水正负符号校验、附表二与 231 股 `deep_dossiers.json` 100% 闭环、12 大渠道与 181+ 正交标注 ETF 完整性及跨库费率一致性（含 `511380` 0.20% vs `511180` 0.30%）、A/H 物理一致、3 项已证伪税费误导拦截、跨项目黄金 SSOT 6h 校验与红灯全载体互斥锁、期铜传导与 `INDEX.md` 零死链 |
 | **防线 3：纯网页静态站、几何与 K 线门禁** | `scripts/lint_site.py _site --strict` | **Gates S1–S7** + `scripts/svg_geometry.py`：HTML 结构与内部链接完整性、禁用任何离线二进制附件链接、全站（含所有 `.json`）零本地路径/密钥/内部工程词泄露、首页 7 枚宏观气象条 + 对称 `3×2` 六大市场驾驶舱 + 钱包试算 + 4 大执行角色 12 渠道概览卡 + 181+ ETF 概览卡强制核验、全站黄金红灯互斥锁、SVG 文本边界框几何零碰撞，以及 **Gate S7 全市场 480+ K 线分片与 `charts.html` 完整性校验** |
 
@@ -204,7 +204,7 @@ python3 scripts/realtime_monitor.py --print-launchd
 ### 3. 可选 Tier-2 大模型突发快解与门户 `#sec-policy-calendar` 联动
 
 - **可选 Tier-2 LLM 突发深度白话解读**：默认零外部依赖，仅用本地规则引擎与结构化模板生成 5 段式微信建议卡；若在本机环境变量中配置 **`GEMINI_API_KEY`** 或 **`OPENROUTER_API_KEY`**（按需二选一，不写入仓库）并通过 **`--enable-llm`**（或设置 **`GIR_MONITOR_LLM=1`**）开启，捕获重磅央行/财政/关税/地缘突发时自动追加深度白话拆解与双类人群建议，且出站仍强制经过黄金红灯锁与 `银发〔2026〕42号` 虚拟货币防火墙二次过滤。
-- **与首页 `#sec-policy-calendar` 及三班次日报的闭环联动**：三班次（`07:30` / `11:30` / `18:00` CST）经 `equity/state/_edition_patch.json` 的可选 `policy_calendar` 键把未来 **14–30 天**全球重要财经数据与政策议程同步写入 `equity/state/policy_calendar.json`——**向上**统一驱动门户首页 **[#sec-policy-calendar](https://nanless.github.io/global-investment-research/#sec-policy-calendar)** 交互日历卡与每篇黄金/A 股/港股/美股日报文内的 **「1–2 条政策/时政要闻深读 + 4 列未来 7–14 天全北京时间日历表」**（纯中文级别徽章，零裸 `P0`/`P1`）；**向下**实时喂给本机 `scripts/realtime_monitor.py`，在重大议息、通胀、关税、政治局/两会等窗口临近前主动微信提醒，实现「盘前日历预警 → 盘中异动推送 → 早/午/晚深度复盘」完整闭环。
+- **与首页 `#sec-policy-calendar` 及三班次日报的闭环联动**：三班次（`07:30` / `11:30` / `18:00` CST）经 `equity/state/_edition_patch.json` 的可选 `policy_calendar` 键把未来 **14–30 天**全球重要财经数据与政策议程同步写入 `equity/state/policy_calendar.json`——**向上**统一驱动门户首页 **[#sec-policy-calendar](https://nanless.github.io/global-investment-research/#sec-policy-calendar)** 交互日历卡与 **首页精选 6–9 条跨市场要闻 + 单市场页 `#sec-market-news` 无上限全量重要新闻雷达与每篇黄金/A 股/港股/美股日报文内 4 列未来 7–14 天全北京时间日历表**（纯中文级别徽章，零裸 `P0`/`P1`）；**向下**实时喂给本机 `scripts/realtime_monitor.py`，在重大议息、通胀、关税、政治局/两会等窗口临近前主动微信提醒，实现「盘前日历预警 → 盘中异动推送 → 早/午/晚深度复盘」完整闭环。
 
 ---
 
@@ -228,6 +228,7 @@ global-investment-research/
 │   ├── fetch_kline_data.py          # 480+ 标的静态分片 K 线零依赖抓取器（输出至 equity/state/klines/）
 │   ├── build_site.py                # 静态门户构建器（首页 7 枚宏观条与 3×2 六市驾驶舱/#sec-policy-calendar/charts.html/12 独立渠道页/181+ ETF 雷达/231 股/27 对 AH/钱包试算/新手指南/记分卡/档案）
 │   ├── svg_geometry.py              # SVG 矢量文本边界框解析与零碰撞/零越界几何校验引擎
+│   ├── visual_widgets.py            # 零依赖 DAILY_VISUAL 640px 矢量信息图引擎（waterfall / bar_compare / anchor_range / flow_chain）
 │   ├── patch_state_dbs.py           # 三库与 policy_calendar 原子合并、账本头插、双轨 RSI 无损追加、月初原子滚存/归档与 --inspect <target> 只读查库工具
 │   ├── lint_site.py                 # 静态站 S1–S7 法证、安全与 K 线分片严格门禁
 │   ├── publish_site.py / edition_run.py / install_sidecars.py

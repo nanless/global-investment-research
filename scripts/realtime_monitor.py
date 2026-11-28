@@ -25,6 +25,7 @@ import re
 import sqlite3
 import sys
 import time
+import traceback
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -47,10 +48,10 @@ USER_AGENT = "GlobalInvestmentResearch-Monitor/1.0 (https://github.com/nanless/g
 
 # Gold Tier-0 red-light active buy guard (aligned across linters & monitor; uses ASCII lookarounds so CJK+ASCII never bypasses)
 _GOLD_ASSETS_PAT = (
-    r"(?:黄金|金条|积存金|金矿|现货金|纸黄金|金仓|金饰|"
+    r"(?:黄金|金条|积存金|金矿|现货金|纸黄金|金仓|金饰|沪金|Au99\.99|Au\(T\+D\)|"
     r"518880|518850|518660|159937|159934|518800|517520|159562|"
     r"600547|601899|600489|600988|000975|02899|06181|01929|01818|01787|02099|"
-    r"(?<![A-Za-z0-9])(?:02840|03081|IGLN|GLDM|GLD|IAUM|IAU|GDXJ|GDX|NEM|AEM|gold|bullion)(?![A-Za-z0-9]))"
+    r"(?<![A-Za-z0-9])(?:XAU|GC|02840|03081|IGLN|GLDM|GLD|IAUM|IAU|GDXJ|GDX|NEM|AEM|gold|bullion)(?![A-Za-z0-9]))"
 )
 _GOLD_BUY_VERBS_CN = (
     r"(?:(?:立即|马上|抓紧|逢低|逢回调|分批|逐步|果断)\s*)?"
@@ -59,7 +60,7 @@ _GOLD_BUY_VERBS_CN = (
 _GOLD_ACTIVE_BUY_RE = re.compile(
     rf"{_GOLD_BUY_VERBS_CN}[^\n。；;！？!，,]{{0,14}}{_GOLD_ASSETS_PAT}"
     rf"|{_GOLD_ASSETS_PAT}[^\n。；;！？!，,]{{0,12}}(?:立即买|逢低买|抄底买|果断加仓|立刻补仓|开启定投|分批建仓|分批布局|低吸|布局良机|上车|买进|买入|加仓|做多)"
-    rf"|(?<![A-Za-z0-9])(?:buy|add|accumulate|allocate|dca|go\s+long)(?![A-Za-z0-9])[^\n.;!?,]{{0,24}}(?<![A-Za-z0-9])(?:gold|gld|gldm|iau|iaum|gdx|gdxj|igln|bullion)(?![A-Za-z0-9])",
+    rf"|(?<![A-Za-z0-9])(?:buy|add|accumulate|allocate|dca|go\s+long)(?![A-Za-z0-9])[^\n.;!?,]{{0,24}}(?<![A-Za-z0-9])(?:gold|xau|gc|gld|gldm|iau|iaum|gdx|gdxj|igln|bullion)(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 _GOLD_NEGATION_RE = re.compile(
@@ -99,7 +100,7 @@ _FOREIGN_CB_NEG = (
     "瑞士央行", "瑞典央行", "韩国央行", "印度央行", "巴西央行", "土耳其央行", "俄罗斯央行",
     "南非央行", "赞比亚央行", "印尼央行", "墨西哥央行", "泰国央行", "马来西亚央行", "菲律宾央行",
     "波兰央行", "捷克央行", "匈牙利央行", "以色列央行", "埃及央行", "尼日利亚央行", "美联储", "FOMC",
-    "ECB", "BOJ", "BOE", "RBA", "Federal Reserve",
+    "ECB", "BOJ", "Bank of England", "RBA", "Federal Reserve",
 )
 _NON_US_MACRO_NEG = ("德国", "欧元区", "英国", "日本", "法国", "意大利", "西班牙", "澳大利亚", "加拿大", "中国", "韩国", "印度")
 
@@ -109,7 +110,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="CN",
         label="A股政策市 · 顶层定调",
         authority_default=40,
-        keywords_pos=("政治局会议", "中央经济工作会议", "国务院常务会议", "国常会", "全国两会", "超常规逆周期", "适度宽松", "更加积极的财政", "国家发改委", "金融监管总局"),
+        keywords_pos=("政治局会议", "中央经济工作会议", "国务院常务会议", "国常会", "全国两会", "超常规逆周期", "适度宽松", "更加积极的财政", "一揽子增量政策", "发改委新闻发布会", "国家发改委增量政策", "金融监管总局稳市", "金融监管总局重磅", "险资入市", "长期资金入市"),
         keywords_neg=(),
         primary_anchors=("sh000001", "sh000300", "hf_CHA50CFD", "rt_hkHSTECH", "fx_susdcnh"),
         transmission_chain="A股顶层政策定调 → 富时A50/沪深300与中债10Y重定价 → 港股恒科与中资金融同步映射 → 铜/人民币情绪联动",
@@ -120,7 +121,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="CN",
         label="A股政策市 · 央行货币与流动性",
         authority_default=40,
-        keywords_pos=("中国人民银行", "中国央行", "央行降准", "央行降息", "全面降准", "定向降准", "LPR", "MLF", "买断式逆回购", "互换便利", "回购增持再贷款", "外汇风险准备金", "潘功胜", "PBOC"),
+        keywords_pos=("央行降准", "央行降息", "全面降准", "定向降准", "下调存款准备金率", "存款准备金率", "下调政策利率", "LPR", "MLF", "买断式逆回购", "互换便利", "回购增持再贷款", "外汇风险准备金", "央行货币政策委员会", "货币政策执行报告", "央行流动性支持", "央行购债", "潘功胜", "PBOC cuts", "PBOC lowers", "PBOC injects", "PBOC RRR", "PBOC rate"),
         keywords_neg=_FOREIGN_CB_NEG,
         primary_anchors=("sh000001", "sh511260", "sh511090", "fx_susdcnh", "rt_hkHSI"),
         transmission_chain="央行宽货币/流动性投放 → 短端资金与中债收益率下行 → A股成长与高息估值修复 → 港股离岸风险偏好回暖",
@@ -131,7 +132,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="CN",
         label="A股基本面 · 中国官方宏观与信贷数据",
         authority_default=34,
-        keywords_pos=("官方制造业PMI", "规上工业企业利润", "规模以上工业企业利润", "社会融资规模", "新增人民币贷款", "中国CPI", "中国PPI", "中国GDP", "M1同比", "M2同比", "国家统计局"),
+        keywords_pos=("官方制造业PMI", "制造业采购经理指数", "规上工业企业利润", "规模以上工业企业利润", "社会融资规模", "新增人民币贷款", "中国CPI", "中国PPI", "中国GDP", "社会消费品零售总额", "规模以上工业增加值", "M1同比", "M2同比", "China CPI", "China PPI", "China GDP", "China PMI"),
         keywords_neg=("美国CPI", "美国PPI", "德国", "欧元区"),
         primary_anchors=("sh000001", "sh000300", "rt_hkHSI", "rt_hkHSTECH", "hf_HG"),
         transmission_chain="中国宏观景气/信贷预期差 → 修正A股盈利与政策宽松预期 → 联动港股顺周期/科技与铜价",
@@ -142,8 +143,8 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="CN",
         label="A股政策市 · 财政发债与化债刺激",
         authority_default=36,
-        keywords_pos=("中国财政部", "财政部", "特别国债", "超长期特别国债", "地方债化债", "化债方案", "赤字率", "以旧换新", "消费补贴", "财政刺激", "增量财政"),
-        keywords_neg=("美国财政部", "美债拍卖", "U.S. Treasury"),
+        keywords_pos=("特别国债", "超长期特别国债", "地方债化债", "化债方案", "化债额度", "财政赤字率", "赤字率", "专项债额度", "新增专项债", "以旧换新", "消费补贴", "财政刺激", "增量财政", "积极财政政策", "更加积极的财政政策", "财政部发债", "财政部减税", "财政部降费", "财政部新闻发布会"),
+        keywords_neg=("美国财政部", "英国财政部", "法国财政部", "德国财政部", "日本财务省", "美债拍卖", "U.S. Treasury"),
         primary_anchors=("sh000300", "sh511090", "rt_hkHSI", "hf_HG"),
         transmission_chain="财政发债扩张 → 顺周期/基建/消费预期抬升 + 超长国债供给承压（长债回调） → 港股顺周期与工业金属共振",
         guardrail="超长债（如30年国债ETF 511090）对供给冲击波动堪比股票，财政超预期时慎防长债回撤。",
@@ -153,7 +154,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="CN",
         label="A股政策市 · 证监会与资本市场监管",
         authority_default=38,
-        keywords_pos=("中国证监会", "吴清", "融券新规", "暂停转融券", "融资保证金", "平准基金", "汇金增持", "中央汇金", "量化交易监管", "程序化交易", "退市新规", "分红新规", "印花税", "深化资本市场改革", "稳市机制"),
+        keywords_pos=("吴清", "融券新规", "暂停转融券", "转融券", "融资保证金", "平准基金", "类平准基金", "国家队入市", "汇金增持", "中央汇金", "量化交易监管", "程序化交易", "退市新规", "分红新规", "证券交易印花税", "调降印花税", "下调印花税", "印花税调整", "深化资本市场改革", "稳市机制", "资本市场重磅", "证监会重磅"),
         keywords_neg=("香港证监会", "SFC", "期货和期权注册", "期货注册", "期权注册", "首次公开发行股票注册", "公开发行公司债券", "公开发行可转债", "警示函", "行政处罚决定书", "任职资格"),
         primary_anchors=("sh000001", "sz399006", "sh000688", "hf_CHA50CFD"),
         transmission_chain="交易制度/杠杆/汇金护盘变动 → 直接改变A股微盘与双创筹码供需 → 映射港股券商与中概风偏",
@@ -164,8 +165,8 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="CN",
         label="中美经贸 · 关税与出口管制",
         authority_default=38,
-        keywords_pos=("加征关税", "301关税", "232关税", "122条款", "Section 122", "IEEPA", "31 CFR Part 851", "对外投资规则", "出口管制", "实体清单", "商务部反制", "tariff", "export control", "BIS", "USTR"),
-        keywords_neg=(),
+        keywords_pos=("加征关税", "301关税", "232关税", "122条款", "Section 122", "Section 301", "Section 232", "IEEPA", "31 CFR Part 851", "对外投资规则", "出口管制", "实体清单", "Entity List", "商务部反制", "tariff", "tariffs", "export control", "export controls", "BIS export", "BIS Entity List", "BIS chip", "BIS rule", "Bureau of Industry and Security", "USTR", "chip ban", "semiconductor restrictions"),
+        keywords_neg=("electricity tariff", "power tariff", "water tariff", "utility tariff", "bus tariff", "rail tariff", "telecom tariff", "roaming tariff", "Bank for International Settlements"),
         primary_anchors=("fx_susdcnh", "hf_CHA50CFD", "rt_hkHSTECH", "hf_NQ", "sh000688"),
         transmission_chain="关税/管制落地 → 离岸人民币(USD/CNH)与外贸/算力链重估 → 港股恒科/中概首当其冲 → 美股芯片与通胀预期联动",
         guardrail="严防单源外媒匿名放风误导，必核商务部/USTR/联邦公报原文及USD/CNH实盘反应。",
@@ -175,7 +176,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="HK",
         label="港股双卫星 · 港股通与红利税政策",
         authority_default=35,
-        keywords_pos=("港股通红利税", "港股红利税", "港股股息税", "港股红利所得税", "港股通扩容", "互联互通优化", "港交所改革", "香港证监会"),
+        keywords_pos=("港股通红利税", "港股红利税", "港股股息税", "港股红利所得税", "港股通扩容", "互联互通优化", "港股通纳入", "港交所改革", "港股通交易机制"),
         keywords_neg=(),
         primary_anchors=("rt_hkHSI", "rt_hkHSTECH", "sh000300"),
         transmission_chain="互联互通/红利税催化 → 港股高息央国企与AH深度折价股重估 → 港交所成交放量",
@@ -186,7 +187,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="HK",
         label="港股双卫星 · 联汇7.85与金管局流动性",
         authority_default=38,
-        keywords_pos=("香港金管局", "HKMA", "弱方兑换保证", "强方兑换保证", "银行体系总结余", "1个月HIBOR", "港元拆息", "联系汇率", "联汇7.85", "触及7.85"),
+        keywords_pos=("弱方兑换保证", "强方兑换保证", "银行体系总结余", "1个月HIBOR", "港元拆息", "联系汇率", "联汇7.85", "触及7.85", "金管局入市", "金管局承接港元", "金管局加息", "金管局降息", "HKMA intervenes", "HKMA intervention", "HKMA aggregate balance", "HKMA base rate", "HKMA buys HKD", "HKMA sells HKD", "weak-side convertibility", "strong-side convertibility", "Hong Kong dollar peg"),
         keywords_neg=(),
         primary_anchors=("rt_hkHSI", "rt_hkHSTECH", "fx_susdcnh"),
         transmission_chain="联汇触7.85→金管局收水压低总结余→HIBOR跳升→直接压制港股估值与地产/科技弹性",
@@ -197,8 +198,8 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="US",
         label="美股政策 · 美联储FOMC与利率预期",
         authority_default=40,
-        keywords_pos=("美联储", "FOMC", "鲍威尔", "Powell", "沃什", "Warsh", "联储点阵图", "美联储降息", "美联储加息", "美联储缩表", "Federal Reserve", "Fed rate", "Fed chair"),
-        keywords_neg=("中国人民银行", "中国央行", "欧洲央行", "ECB", "日本央行", "BOJ", "英国央行", "BOE", "澳洲联储", "赞比亚央行"),
+        keywords_pos=("美联储", "FOMC", "鲍威尔", "Jerome Powell", "Chair Powell", "Fed Chair Powell", "沃什", "Warsh", "联储点阵图", "美联储降息", "美联储加息", "美联储缩表", "Federal Reserve issues FOMC", "Federal Reserve FOMC", "Federal Reserve cuts", "Federal Reserve hikes", "Federal Reserve raises", "Federal Reserve lowers", "Federal Reserve holds", "Federal Reserve rate", "Federal Reserve emergency", "Fed rate", "Fed rates", "Fed chair", "Fed cuts", "Fed hikes", "Fed raises", "Fed pauses", "Fed holds", "Fed balance sheet", "Fed dot plot", "Fed minutes"),
+        keywords_neg=("中国人民银行", "中国央行", "欧洲央行", "ECB", "日本央行", "BOJ", "英国央行", "Bank of England", "澳洲联储", "赞比亚央行"),
         primary_anchors=("US10Y", "US2Y", "hf_ES", "hf_NQ", "DINIW", "hf_XAU"),
         transmission_chain="联储鹰鸽定调 → 美债2Y/10Y与实际利率重定价 → 美股纳指/标普估值 + 港股美元流动性 + 黄金利率压制",
         guardrail="决议声明与30分钟后主席发布会常现双向洗盘，严禁赌单边消息与亚盘薄量抢跑。",
@@ -208,7 +209,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="US",
         label="美股宏微 · 美国通胀与就业数据",
         authority_default=33,
-        keywords_pos=("美国CPI", "美国核心CPI", "美国PCE", "美国核心PCE", "美国非农", "非农就业", "美国失业率", "美国初请", "美国ISM", "美国GDP", "US CPI", "US PCE", "US GDP", "Nonfarm Payrolls", "Core PCE", "Initial Jobless", "U.S. unemployment"),
+        keywords_pos=("美国CPI", "美国核心CPI", "美国PCE", "美国核心PCE", "美国非农", "非农就业", "美国失业率", "美国初请", "美国ISM", "美国GDP", "US CPI", "U.S. CPI", "U.S. Core CPI", "Core CPI", "US PCE", "U.S. PCE", "U.S. Core PCE", "US GDP", "U.S. GDP", "US jobs", "U.S. jobs", "US payrolls", "U.S. payrolls", "U.S. inflation", "US ISM", "Nonfarm Payrolls", "Core PCE", "Initial Jobless", "U.S. unemployment"),
         keywords_neg=_NON_US_MACRO_NEG,
         primary_anchors=("US10Y", "US2Y", "hf_ES", "hf_NQ", "DINIW", "hf_XAU"),
         transmission_chain="美通胀/就业预期差 → 修正联储利率路径 → 美债收益率与美元剧震 → 传导至港股科技与黄金",
@@ -219,7 +220,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="US",
         label="美股政策 · 美债发债QRA与财政流动性",
         authority_default=35,
-        keywords_pos=("美国财政部", "美债发债计划", "季度再融资", "QRA", "美债拍卖", "拍卖尾部", "美国债务上限", "美国政府停摆", "临时拨款法案", "Treasury refunding", "TGA", "debt ceiling", "government shutdown"),
+        keywords_pos=("美国财政部", "美债发债计划", "季度再融资", "QRA", "美债拍卖", "拍卖尾部", "美国债务上限", "美国政府停摆", "临时拨款法案", "Treasury refunding", "Treasury auction", "Treasury General Account", "TGA balance", "TGA rebuild", "TGA cash", "TGA drawdown", "debt ceiling", "government shutdown"),
         keywords_neg=(),
         primary_anchors=("US10Y", "US30Y", "hf_ES", "b_VIX"),
         transmission_chain="美债供给/TGA抽水 → 长端美债收益率跳升（盯5.25%熔断线） → 挤压全球风险资产估值",
@@ -230,7 +231,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="GLOBAL",
         label="全球地缘与能源 · 原油供给冲击",
         authority_default=36,
-        keywords_pos=("OPEC+", "OPEC", "欧佩克", "霍尔木兹", "炼厂遇袭", "油田遇袭", "中东冲突升级", "油价暴涨", "原油减产", "原油增产", "产油国联盟", "Hormuz", "refinery attack", "sanctions on oil"),
+        keywords_pos=("OPEC+", "OPEC", "欧佩克", "霍尔木兹", "炼厂遇袭", "油田遇袭", "中东冲突升级", "油价暴涨", "原油减产", "原油增产", "产油国联盟", "Hormuz", "Strait of Hormuz", "refinery attack", "refinery attacks", "sanctions on oil", "oil sanctions"),
         keywords_neg=(),
         primary_anchors=("hf_OIL", "US10Y", "hf_XAU", "hf_ES", "b_VIX"),
         transmission_chain="原油供给冲击 → 再通胀预期推高美债10Y → 压制股市估值并收紧联储空间 → 黄金受避险与实际利率博弈",
@@ -241,7 +242,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="GLOBAL",
         label="全球央行 · 日欧利率与套息交易",
         authority_default=35,
-        keywords_pos=("日本央行", "BOJ", "植田和男", "日元干预", "欧洲央行", "ECB", "拉加德", "英国央行", "BOE", "Bank of Japan", "European Central Bank", "Bank of England", "套息交易", "carry trade"),
+        keywords_pos=("日本央行加息", "日本央行降息", "日本央行决议", "日本央行按兵不动", "日本央行干预", "日本央行行长", "日本央行利率", "日本央行缩表", "植田和男", "日元干预", "日本财务省干预", "欧洲央行加息", "欧洲央行降息", "欧洲央行决议", "欧洲央行按兵不动", "欧洲央行利率", "拉加德", "英国央行加息", "英国央行降息", "英国央行决议", "英国央行按兵不动", "英国央行利率", "BOJ rate", "BOJ hike", "BOJ cut", "BOJ decision", "BOJ policy", "BOJ monetary", "BOJ Governor", "Kazuo Ueda", "Bank of Japan rate", "Bank of Japan policy", "Bank of Japan monetary", "Bank of Japan hike", "Bank of Japan cut", "Bank of Japan decision", "ECB rate", "ECB hike", "ECB cut", "ECB hold", "ECB decision", "ECB monetary policy", "ECB Governing Council", "ECB policy", "Lagarde", "European Central Bank rate", "European Central Bank cuts", "European Central Bank hikes", "European Central Bank policy", "Bank of England rate", "Bank of England cuts", "Bank of England hikes", "Bank of England holds", "Bank of England MPC", "Bank of England monetary", "Bank of England decision", "BOE rate", "BOE MPC", "BOE cut", "BOE hike", "套息交易", "日元套息", "carry trade"),
         keywords_neg=(),
         primary_anchors=("fx_susdjpy", "US10Y", "hf_NQ", "rt_hkHSI"),
         transmission_chain="日央行加息/干预 → USD/JPY急跌触发日元套息平仓 → 全球高估值科技股与港美同步去杠杆",
@@ -253,7 +254,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         label="跨市场危机 · 3+1总熔断与信用冲击",
         authority_default=40,
         keywords_pos=("触发熔断", "市场熔断", "流动性危机", "私募信贷赎回", "高收益债违约", "信用利差飙升", "主权评级下调", "标普负面观察", "QDII停牌", "基金强制退市"),
-        keywords_neg=("ST", "*ST", "面值退市"),
+        keywords_neg=("*ST", "ST股", "面值退市", "退市整理期"),
         primary_anchors=("b_VIX", "US10Y", "fx_susdjpy", "hf_XAU", "hf_ES"),
         transmission_chain="波动率/信用/流动性总阀警报 → 跨资产相关性跃升 → 全市场现金与短久期国债为王",
         guardrail="3+1 危机熔断阀任一触发立即切入防守，严守红灯上限、不抄飞刀、不碰高溢价跨境基金。",
@@ -307,13 +308,17 @@ _RUMOR_CUE_RE = re.compile(
 _EXPLICIT_RUMOR_HARD_RE = re.compile(r"(?:小作文|网传|未经证实|传闻|\brumor\b|\bunconfirmed\b|\bunverified\b)", re.IGNORECASE)
 _ROUTINE_NOISE_RE = re.compile(
     r"(?:会见|访问|出席[^\n。；]{0,20}(?:开幕式|闭幕式|峰会|论坛|招待会)|致贺信|致贺电|慰问电|数字身份|"
-    r"编造传播[^\n。；]{0,20}误导性信息|警示函|行政处罚|立案调查|纪律处分|任职资格核准)",
+    r"编造传播[^\n。；]{0,20}误导性信息|警示函|行政处罚|立案调查|纪律处分|任职资格核准|"
+    r"纪念币|普通纪念币|纪念钞|汽柴油|成品油价格|生猪价格|彩票公益金|会计准则解释|"
+    r"向特定对象发行|境外发行上市备案|公开募集基础设施|仿冒网站|钓鱼网站|金融消费者权益保护|"
+    r"(?<![A-Za-z0-9])(?:enforcement\s+action|fraudulent\s+website|phishing|bogus\s+sms|working\s+paper|"
+    r"speech\s+calendar|application\s+approval|bank\s+merger\s+approval|opinion:|op-ed|podcast|newsletter)(?![A-Za-z0-9]))",
     re.IGNORECASE,
 )
 _HARD_CATALYST_OVERRIDE_RE = re.compile(
     r"(?:降准|降息|特别国债|超长期特别国债|平准基金|融资保证金|印花税|加征关税|301关税|232关税|122条款|"
     r"出口管制|实体清单|31 CFR Part 851|互换便利|回购增持再贷款|买断式逆回购|赤字率|化债方案|弱方兑换保证|联系汇率|"
-    r"(?<![A-Za-z0-9])(?:LPR|MLF|FOMC|QRA|Section 122|IEEPA|tariff|export control|rate cut|rate hike)(?![A-Za-z0-9]))",
+    r"(?<![A-Za-z0-9])(?:LPR|MLF|FOMC|QRA|Section 122|IEEPA|tariffs?|export controls?|rate cut|rate hike)(?![A-Za-z0-9]))",
     re.IGNORECASE,
 )
 _HK_TAX_TOPIC_RE = re.compile(r"(?:港股通红利税|港股红利税|港股股息税|港股红利所得税)")
@@ -388,6 +393,7 @@ class NewsItem:
     url: str = ""
     importance_flag: int = 0  # 0 normal, 1 highlighted/red
     is_official: bool = False
+    date_only: bool = False
 
 
 @dataclass
@@ -432,6 +438,7 @@ class ScoredSignal:
     escalation_tag: str = ""
     memo_md: str = ""
     interpreter_tier: str = "tier1_deterministic"
+    item_hashes: list[str] = field(default_factory=list)
 
 
 def _http_get_bytes(
@@ -482,6 +489,13 @@ def _parse_pubdate_ts(raw: str, fallback: float) -> float:
     return fallback
 
 
+_DATE_ONLY_RE = re.compile(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}$")
+
+
+def _is_date_only_str(raw: str) -> bool:
+    return bool(_DATE_ONLY_RE.fullmatch(str(raw or "").strip()))
+
+
 def parse_rss_xml(raw_bytes: bytes, source: str, *, is_official: bool, now_ts: float) -> list[NewsItem]:
     items: list[NewsItem] = []
     try:
@@ -494,7 +508,18 @@ def parse_rss_xml(raw_bytes: bytes, source: str, *, is_official: bool, now_ts: f
         link = (el.findtext("link") or "").strip()
         pub = el.findtext("pubDate") or el.findtext("{http://purl.org/dc/elements/1.1/}date") or ""
         if title:
-            items.append(NewsItem(source, title, desc[:500], _parse_pubdate_ts(pub, now_ts), link, 0, is_official))
+            items.append(
+                NewsItem(
+                    source,
+                    title,
+                    desc[:500],
+                    _parse_pubdate_ts(pub, now_ts),
+                    link,
+                    0,
+                    is_official,
+                    date_only=_is_date_only_str(pub),
+                )
+            )
     if not items:
         ns = {"a": "http://www.w3.org/2005/Atom"}
         for el in root.findall(".//a:entry", ns)[:20]:
@@ -504,7 +529,18 @@ def parse_rss_xml(raw_bytes: bytes, source: str, *, is_official: bool, now_ts: f
             link = (link_el.attrib.get("href", "") if link_el is not None else "").strip()
             pub = el.findtext("a:updated", default="", namespaces=ns) or el.findtext("a:published", default="", namespaces=ns)
             if title:
-                items.append(NewsItem(source, title, desc[:500], _parse_pubdate_ts(pub, now_ts), link, 0, is_official))
+                items.append(
+                    NewsItem(
+                        source,
+                        title,
+                        desc[:500],
+                        _parse_pubdate_ts(pub, now_ts),
+                        link,
+                        0,
+                        is_official,
+                        date_only=_is_date_only_str(pub),
+                    )
+                )
     return items
 
 
@@ -599,6 +635,7 @@ def parse_gov_cn_json(raw_bytes: bytes, source: str, now_ts: float) -> list[News
     rows = json.loads(raw_bytes.decode("utf-8", errors="replace"))
     if not isinstance(rows, list):
         return []
+    today_cst = datetime.fromtimestamp(now_ts, tz=CST).date()
     out: list[NewsItem] = []
     for r in rows[:15]:
         if not isinstance(r, dict):
@@ -606,17 +643,22 @@ def parse_gov_cn_json(raw_bytes: bytes, source: str, now_ts: float) -> list[News
         title = _strip_html(r.get("TITLE") or r.get("title") or "")
         if not title:
             continue
-        ts = _parse_pubdate_ts(str(r.get("DOCRELPUBTIME") or r.get("pubDate") or ""), now_ts)
+        pub_raw = str(r.get("DOCRELPUBTIME") or r.get("pubDate") or "").strip()
+        date_only = _is_date_only_str(pub_raw)
+        ts = _parse_pubdate_ts(pub_raw, now_ts)
+        if date_only and datetime.fromtimestamp(ts, tz=CST).date() == today_cst:
+            ts = now_ts
         url = str(r.get("URL") or r.get("link") or "").strip()
         if url.startswith("/"):
             url = f"https://www.gov.cn{url}"
-        out.append(NewsItem(source, title, title, ts, url, 1, True))
+        out.append(NewsItem(source, title, title, ts, url, 1, True, date_only=date_only))
     return out
 
 
 def parse_csrc_json(raw_bytes: bytes, now_ts: float) -> list[NewsItem]:
     data = json.loads(raw_bytes.decode("utf-8", errors="replace"))
     rows = (data.get("data") or {}).get("results") or []
+    today_cst = datetime.fromtimestamp(now_ts, tz=CST).date()
     out: list[NewsItem] = []
     for r in rows[:12]:
         if not isinstance(r, dict):
@@ -624,11 +666,15 @@ def parse_csrc_json(raw_bytes: bytes, now_ts: float) -> list[NewsItem]:
         title = _strip_html(r.get("title") or "")
         if not title:
             continue
-        ts = _parse_pubdate_ts(str(r.get("publishedTimeStr") or ""), now_ts)
+        pub_raw = str(r.get("publishedTimeStr") or "").strip()
+        date_only = _is_date_only_str(pub_raw)
+        ts = _parse_pubdate_ts(pub_raw, now_ts)
+        if date_only and datetime.fromtimestamp(ts, tz=CST).date() == today_cst:
+            ts = now_ts
         url = str(r.get("url") or "").strip()
         if url.startswith("//"):
             url = f"https:{url}"
-        out.append(NewsItem("csrc_json", title, title, ts, url, 1, True))
+        out.append(NewsItem("csrc_json", title, title, ts, url, 1, True, date_only=date_only))
     return out
 
 
@@ -793,15 +839,17 @@ def parse_html_anchors(raw_bytes: bytes, source: str, base_url: str, now_ts: flo
             parts = ds.split("-")
             ds_norm = f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
             item_ts = _parse_pubdate_ts(ds_norm, now_ts - 7200)
+            date_only = True
         else:
             item_ts = now_ts - 7200
+            date_only = False
         if href.startswith("/"):
             url = base_url.rstrip("/") + href
         elif href.startswith("http"):
             url = href
         else:
             url = base_url.rstrip("/") + "/" + href.lstrip("./")
-        out.append(NewsItem(source, title[:120], title[:500], item_ts, url, 1, True))
+        out.append(NewsItem(source, title[:120], title[:500], item_ts, url, 1, True, date_only=date_only))
         if len(out) >= 12:
             break
     return out
@@ -977,10 +1025,47 @@ def load_ssot_context(
     }
 
 
-def is_in_calendar_p0_window(events: list[dict[str, Any]], now_cst: datetime) -> bool:
-    """Return True if now_cst falls within monitor_window_min of a P0 catalyst event."""
+def _is_in_quiet_window(
+    now_cst: datetime, start_hhmm: str = "23:30", end_hhmm: str = "07:15"
+) -> bool:
+    """Return True if now_cst falls inside [start_hhmm, end_hhmm) CST (supports overnight wrap)."""
+    now_dt = now_cst.astimezone(CST) if now_cst.tzinfo else now_cst.replace(tzinfo=CST)
+    try:
+        s_h, s_m = (int(x) for x in start_hhmm.split(":"))
+        e_h, e_m = (int(x) for x in end_hhmm.split(":"))
+    except (ValueError, AttributeError):
+        s_h, s_m, e_h, e_m = 23, 30, 7, 15
+    cur = now_dt.hour * 60 + now_dt.minute
+    start = s_h * 60 + s_m
+    end = e_h * 60 + e_m
+    if start == end:
+        return False
+    if start < end:
+        return start <= cur < end
+    return cur >= start or cur < end
+
+
+def is_in_calendar_p0_window(
+    events: list[dict[str, Any]],
+    now_cst: datetime,
+    *,
+    quiet_enabled: bool = True,
+    quiet_start: str = "23:30",
+    quiet_end: str = "07:15",
+) -> bool:
+    """Return True if now_cst falls within monitor_window_min of a P0 catalyst event.
+
+    Exact-time HH:MM P0 events remain active 24/7 (including overnight quiet hours);
+    multi-day / all-day ("全天窗口"/"全天") P0 windows only activate during daytime/evening hours
+    so they never disable overnight quiet hours or force 180s overnight polling.
+    """
     now_dt = now_cst.astimezone(CST) if now_cst.tzinfo else now_cst.replace(tzinfo=CST)
     today_s = now_dt.strftime("%Y-%m-%d")
+    in_overnight = (
+        _is_in_quiet_window(now_dt, quiet_start, quiet_end)
+        if quiet_enabled
+        else _is_in_quiet_window(now_dt, "23:30", "07:15")
+    )
     for ev in events:
         if not isinstance(ev, dict) or str(ev.get("impact_tier") or "").upper() != "P0":
             continue
@@ -995,7 +1080,7 @@ def is_in_calendar_p0_window(events: list[dict[str, Any]], now_cst: datetime) ->
                     return True
             except ValueError:
                 pass
-        elif date_s <= today_s <= end_s:
+        elif date_s and date_s <= today_s <= end_s and not in_overnight:
             return True
     return False
 
@@ -1021,6 +1106,150 @@ def find_next_calendar_event(events: list[dict[str, Any]], region: str, now_cst:
     return pool[0] if pool else None
 
 
+def _is_holiday_closed(
+    region: str, now_dt: datetime, market_calendar: dict[str, Any] | None = None
+) -> bool:
+    """Return True if `region` has a full-day holiday closure on `now_dt` per market_calendar.json."""
+    if not isinstance(market_calendar, dict):
+        return False
+    hhmm = now_dt.hour * 60 + now_dt.minute
+    # For US/GLOBAL overnight CST sessions (00:00-05:00 CST), check previous calendar date
+    check_dt = (now_dt - timedelta(days=1)) if (region in ("US", "GLOBAL") and hhmm <= 300) else now_dt
+    day_str = check_dt.strftime("%Y-%m-%d")
+
+    # 1. Real gold/market_calendar.json schema: calendar_overrides
+    overrides = market_calendar.get("calendar_overrides")
+    if isinstance(overrides, list):
+        target_tokens = {
+            "CN": ("CN_A_SHARE", "CN_ALL", "A_SHARE", "SSE", "SZSE"),
+            "HK": ("HK_EQUITY", "HKEX", "HK_STOCK"),
+            "US": ("US_EQUITY", "NYSE", "NASDAQ", "US_BOND"),
+            "GLOBAL": ("COMEX_CME", "GLOBAL_GOLD", "UK_LSE_LBMA"),
+        }.get(region, ())
+        th_keys = {
+            "CN": ("cn_a_share", "cn_a_share_sge_shfe", "global_markets"),
+            "HK": ("hk_equity", "hkex", "us_eu_uk_hk_in", "global_markets"),
+            "US": ("us_equity", "us_equity_bond", "us_eu_uk_hk_in", "global_markets"),
+            "GLOBAL": ("global_markets", "cme_metals_electronic", "us_eu_uk_hk_in"),
+        }.get(region, ())
+        for ov in overrides:
+            if not isinstance(ov, dict):
+                continue
+            ov_mode = str(ov.get("overlay_mode") or "").upper()
+            if ov_mode == "NONE":
+                continue
+            start_d = str(ov.get("date") or "")
+            end_d = str(ov.get("end_date") or start_d)
+            if not (
+                re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_d)
+                and re.fullmatch(r"\d{4}-\d{2}-\d{2}", end_d)
+                and start_d <= day_str <= end_d
+            ):
+                continue
+            if ov_mode == "GLOBAL":
+                return True
+            mkts = [str(m).upper() for m in (ov.get("markets") or [])]
+            if target_tokens and not any(t in mkts for t in target_tokens):
+                continue
+            th = ov.get("trading_hours_bjt") if isinstance(ov.get("trading_hours_bjt"), dict) else {}
+            mkt_status = ""
+            for tk in th_keys:
+                if th.get(tk):
+                    mkt_status = str(th[tk])
+                    break
+            ev_txt = str(ov.get("event") or "")
+            # Half-day / early-close is still partially open; only full-day closures mark closed
+            if mkt_status:
+                if (
+                    "全天休市" in mkt_status
+                    or "法定休市" in mkt_status
+                    or mkt_status.strip() == "休市"
+                    or "无报价" in mkt_status
+                ) and ("半日" not in mkt_status and "提前" not in mkt_status):
+                    return True
+            elif ("休市" in ev_txt) and ("半日市" not in ev_txt and "提前收盘" not in ev_txt and "提前停盘" not in ev_txt):
+                if region != "GLOBAL":
+                    return True
+
+    # 2. Backward-compatible synthetic holiday/closure fixtures
+    holidays = market_calendar.get("holidays") or market_calendar.get("closures") or {}
+    if isinstance(holidays, dict):
+        reg_keys = {
+            "CN": ("cn", "a_share", "CN"),
+            "HK": ("hk", "hk_stock", "HK"),
+            "US": ("us", "us_stock", "US"),
+            "GLOBAL": ("global", "GLOBAL"),
+        }.get(region, ())
+        for rk in reg_keys:
+            entries = holidays.get(rk)
+            if isinstance(entries, dict) and day_str in entries:
+                return True
+            if isinstance(entries, list) and any(
+                (isinstance(e, str) and e == day_str) or (isinstance(e, dict) and e.get("date") == day_str)
+                for e in entries
+            ):
+                return True
+    elif isinstance(holidays, list):
+        for row in holidays:
+            if isinstance(row, dict) and row.get("date") == day_str:
+                mkts_s = str(row.get("market") or row.get("markets") or "").upper()
+                if region in mkts_s or (region == "CN" and "A_SHARE" in mkts_s):
+                    return True
+    return False
+
+
+def _symbol_to_region(sym: str) -> str:
+    """Map a live quote symbol to its trading-session region (CN / HK / US / GLOBAL)."""
+    if sym.startswith(("sh", "sz", "bj")):
+        return "CN"
+    if sym.startswith("rt_hk"):
+        return "HK"
+    if sym in ("US10Y", "US2Y", "US30Y", "b_VIX", "hf_ES", "hf_NQ") or sym.startswith("gb_"):
+        return "US"
+    return "GLOBAL"
+
+
+def _is_stale_closed_tick(
+    tick: QuoteTick,
+    region: str,
+    now_dt: datetime,
+    market_calendar: dict[str, Any] | None = None,
+) -> bool:
+    """Ignore stale prior-session close ticks on weekends, full-day holidays, or before market open."""
+    dt = now_dt.astimezone(CST) if now_dt.tzinfo else now_dt.replace(tzinfo=CST)
+    wd = dt.weekday()
+    hm = dt.hour * 60 + dt.minute
+
+    if _is_holiday_closed(region, dt, market_calendar):
+        return True
+
+    if region in ("CN", "HK"):
+        if wd >= 5:
+            return True
+        if hm < 9 * 60 + 15:
+            return True
+    else:
+        # Global/US weekend shutdown: Sat >= 06:30 CST through Mon < 05:55 CST
+        if (wd == 5 and hm >= 6 * 60 + 30) or wd == 6 or (wd == 0 and hm < 5 * 60 + 55):
+            return True
+
+    ts_raw = (tick.timestamp or "").strip()
+    m_d = re.match(r"^(\d{4})[-/](\d{2})[-/](\d{2})", ts_raw)
+    if m_d:
+        try:
+            t_day = datetime(int(m_d.group(1)), int(m_d.group(2)), int(m_d.group(3)), tzinfo=CST).date()
+            if region in ("CN", "HK"):
+                if t_day < dt.date():
+                    return True
+            else:
+                # US/global feeds may lag CST by 1 calendar day (~13h); reject ticks >= 2 days old
+                if t_day <= (dt.date() - timedelta(days=2)):
+                    return True
+        except ValueError:
+            pass
+    return False
+
+
 def is_region_market_open(
     region: str, now_cst: datetime, *, market_calendar: dict[str, Any] | None = None
 ) -> bool:
@@ -1028,58 +1257,9 @@ def is_region_market_open(
     dt = now_cst.astimezone(CST) if now_cst.tzinfo else now_cst.replace(tzinfo=CST)
     wd = dt.weekday()  # 0=Mon..6=Sun
     hhmm = dt.hour * 60 + dt.minute
-    # For US overnight CST sessions (00:00-05:00 CST), check previous calendar date as the US trading date
-    check_dt = (dt - timedelta(days=1)) if (region == "US" and hhmm <= 300) else dt
-    day_str = check_dt.strftime("%Y-%m-%d")
 
-    if isinstance(market_calendar, dict):
-        # 1. Real gold/market_calendar.json schema: calendar_overrides
-        overrides = market_calendar.get("calendar_overrides")
-        if isinstance(overrides, list):
-            target_tokens = {
-                "CN": ("CN_A_SHARE", "CN_ALL", "A_SHARE", "SSE", "SZSE"),
-                "HK": ("HK_EQUITY", "HKEX", "HK_STOCK"),
-                "US": ("US_EQUITY", "NYSE", "NASDAQ"),
-            }.get(region, ())
-            th_key = {"CN": "cn_a_share", "HK": "hk_equity", "US": "us_equity"}.get(region, "")
-            for ov in overrides:
-                if not isinstance(ov, dict):
-                    continue
-                if str(ov.get("overlay_mode") or "").upper() == "NONE":
-                    continue
-                start_d = str(ov.get("date") or "")
-                end_d = str(ov.get("end_date") or start_d)
-                if not (start_d and start_d <= day_str <= end_d):
-                    continue
-                mkts = [str(m).upper() for m in (ov.get("markets") or [])]
-                if target_tokens and not any(t in mkts for t in target_tokens):
-                    continue
-                th = ov.get("trading_hours_bjt") if isinstance(ov.get("trading_hours_bjt"), dict) else {}
-                mkt_status = str(th.get(th_key) or "")
-                ev_txt = str(ov.get("event") or "")
-                # Half-day / early-close is still partially open; only full-day closures mark closed
-                if mkt_status:
-                    if ("全天休市" in mkt_status or "法定休市" in mkt_status or mkt_status.strip() == "休市") and ("半日" not in mkt_status and "提前" not in mkt_status):
-                        return False
-                elif ("休市" in ev_txt) and ("半日市" not in ev_txt and "提前收盘" not in ev_txt):
-                    return False
-
-        # 2. Backward-compatible synthetic holiday/closure fixtures
-        holidays = market_calendar.get("holidays") or market_calendar.get("closures") or {}
-        if isinstance(holidays, dict):
-            reg_keys = {"CN": ("cn", "a_share", "CN"), "HK": ("hk", "hk_stock", "HK"), "US": ("us", "us_stock", "US")}.get(region, ())
-            for rk in reg_keys:
-                entries = holidays.get(rk)
-                if isinstance(entries, dict) and day_str in entries:
-                    return False
-                if isinstance(entries, list) and any((isinstance(e, str) and e == day_str) or (isinstance(e, dict) and e.get("date") == day_str) for e in entries):
-                    return False
-        elif isinstance(holidays, list):
-            for row in holidays:
-                if isinstance(row, dict) and row.get("date") == day_str:
-                    mkts_s = str(row.get("market") or row.get("markets") or "").upper()
-                    if region in mkts_s or (region == "CN" and "A_SHARE" in mkts_s):
-                        return False
+    if _is_holiday_closed(region, dt, market_calendar):
+        return False
 
     if region == "CN":
         return wd < 5 and ((570 <= hhmm <= 690) or (780 <= hhmm <= 900))
@@ -1091,9 +1271,8 @@ def is_region_market_open(
         if 1 <= wd <= 5 and hhmm <= 300:
             return True
         return False
-    if wd == 5 and hhmm >= 300:
-        return False
-    if wd == 6 and hhmm < 360:
+    # GLOBAL (CME/COMEX/FX): closed Sat >= 05:00 CST, all day Sun CST, and Mon < 06:00 CST
+    if (wd == 5 and hhmm >= 300) or wd == 6 or (wd == 0 and hhmm < 360):
         return False
     return True
 
@@ -1106,18 +1285,27 @@ def _kw_in_text(kw: str, text_low: str) -> bool:
     return k in text_low
 
 
-def match_policy_domain(text: str) -> PolicyDomainRule | None:
-    if _ROUTINE_NOISE_RE.search(text) and not _HARD_CATALYST_OVERRIDE_RE.search(text):
+def match_policy_domain(text: str, body: str = "") -> PolicyDomainRule | None:
+    """Match a policy domain rule. When body is passed separately from title (text),
+    evaluate keywords_neg against title whenever keywords_pos matched in title so cross-market
+    mentions in the article body never mutually kill valid policy headlines."""
+    title_str = str(text or "")
+    body_str = str(body or "")
+    full_str = f"{title_str} {body_str}".strip() if body_str else title_str
+    if _ROUTINE_NOISE_RE.search(full_str) and not _HARD_CATALYST_OVERRIDE_RE.search(full_str):
         return None
-    low = text.lower()
+    title_low = title_str.lower()
+    full_low = full_str.lower()
     best: tuple[int, int, PolicyDomainRule] | None = None
     for rule in POLICY_DOMAINS:
-        if any(_kw_in_text(neg, low) for neg in rule.keywords_neg):
+        title_hits = sum(1 for kw in rule.keywords_pos if _kw_in_text(kw, title_low))
+        total_hits = sum(1 for kw in rule.keywords_pos if _kw_in_text(kw, full_low)) if body_str else title_hits
+        if total_hits <= 0:
             continue
-        hits = sum(1 for kw in rule.keywords_pos if _kw_in_text(kw, low))
-        if hits <= 0:
+        neg_scope = title_low if (body_str and title_hits > 0) else full_low
+        if any(_kw_in_text(neg, neg_scope) for neg in rule.keywords_neg):
             continue
-        cand = (hits, rule.authority_default, rule)
+        cand = (total_hits, rule.authority_default, rule)
         if best is None or (cand[0], cand[1]) > (best[0], best[1]):
             best = cand
     return best[2] if best else None
@@ -1173,43 +1361,53 @@ def classify_and_score(
     now_ts = now_dt.timestamp()
 
     # Step 1: filter recent items matching a policy domain
-    matched: list[tuple[NewsItem, PolicyDomainRule, set[str]]] = []
+    matched: list[tuple[NewsItem, PolicyDomainRule, set[str], float]] = []
+    today_cst = now_dt.date()
     for it in items:
-        if (now_ts - it.published_ts) > max_age_sec:
+        eff_ts = it.published_ts
+        if it.date_only and datetime.fromtimestamp(it.published_ts, tz=CST).date() == today_cst:
+            # Date-only same-day official notices (e.g., pbc_news/mof_news) clamp to fetch time
+            # so they are never silently dropped after 03:00 CST by the 3h max_age_sec filter.
+            eff_ts = now_ts
+        if (now_ts - eff_ts) > max_age_sec:
             continue
-        full = f"{it.title} {it.body}"
-        rule = match_policy_domain(full)
+        rule = match_policy_domain(it.title, it.body)
         if rule is None:
             continue
-        matched.append((it, rule, _title_shingles(it.title)))
+        matched.append((it, rule, _title_shingles(it.title), eff_ts))
 
     # Step 2: cluster by same domain_id & 3-gram Jaccard >= 0.40 within 90 min
     clusters: list[dict[str, Any]] = []
-    for it, rule, sh in matched:
+    for it, rule, sh, eff_ts in matched:
         placed = False
         for cl in clusters:
             if cl["rule"].domain_id != rule.domain_id:
                 continue
-            if abs(it.published_ts - cl["latest_ts"]) > 5400:
+            if abs(eff_ts - cl["latest_ts"]) > 5400:
                 continue
             if _jaccard(sh, cl["shingles"]) >= 0.40:
-                cl["items"].append(it)
+                cl["items"].append((it, eff_ts))
                 cl["shingles"] |= sh
-                cl["latest_ts"] = max(cl["latest_ts"], it.published_ts)
+                cl["latest_ts"] = max(cl["latest_ts"], eff_ts)
                 placed = True
                 break
         if not placed:
-            clusters.append({"rule": rule, "items": [it], "shingles": set(sh), "latest_ts": it.published_ts})
+            clusters.append({"rule": rule, "items": [(it, eff_ts)], "shingles": set(sh), "latest_ts": eff_ts})
 
     signals: list[ScoredSignal] = []
     for cl in clusters:
         rule: PolicyDomainRule = cl["rule"]
-        cl_items: list[NewsItem] = cl["items"]
-        cl_items.sort(key=lambda x: (1 if x.is_official else 0, x.importance_flag, x.published_ts), reverse=True)
-        rep = cl_items[0]
+        cl_pairs: list[tuple[NewsItem, float]] = cl["items"]
+        cl_pairs.sort(key=lambda pair: (1 if pair[0].is_official else 0, pair[0].importance_flag, pair[1]), reverse=True)
+        cl_items: list[NewsItem] = [pair[0] for pair in cl_pairs]
+        rep, rep_ts = cl_pairs[0]
         unique_sources = sorted({it.source for it in cl_items})
         source_urls = [it.url for it in cl_items if it.url][:4]
         combined_text = " ".join(f"{it.title} {it.body}" for it in cl_items)
+        item_hashes = [
+            hashlib.sha256(f"{it.source}:{it.title}".encode("utf-8")).hexdigest()[:24]
+            for it in cl_items
+        ]
 
         is_official = any(it.is_official or _OFFICIAL_SOURCE_TIERS.get(it.source, (0, False))[1] for it in cl_items)
         has_rumor_cue = bool(_RUMOR_CUE_RE.search(combined_text))
@@ -1263,7 +1461,9 @@ def classify_and_score(
         primary_eq_pct: float | None = None
         for sym in rule.primary_anchors:
             tick = quotes.get(sym)
-            if tick is None:
+            if tick is None or _is_stale_closed_tick(
+                tick, _symbol_to_region(sym), now_dt, market_calendar=market_calendar
+            ):
                 continue
             z = _compute_anchor_z(sym, tick, vol_baselines)
             abs_z = abs(z)
@@ -1327,8 +1527,8 @@ def classify_and_score(
         score = max(0, min(100, int(raw_score)))
         severity = "P0" if score >= 82 else ("P1" if score >= 68 else ("P2" if score >= 50 else "SILENT"))
 
-        sig_id = hashlib.sha256(f"{rep.source}:{rep.title}:{int(rep.published_ts // 60)}".encode("utf-8")).hexdigest()[:16]
-        pub_cst = datetime.fromtimestamp(rep.published_ts, tz=CST).strftime("%Y-%m-%d %H:%M CST")
+        sig_id = hashlib.sha256(f"{rep.source}:{rep.title}:{int(rep_ts // 60)}".encode("utf-8")).hexdigest()[:16]
+        pub_cst = datetime.fromtimestamp(rep_ts, tz=CST).strftime("%Y-%m-%d %H:%M CST")
 
         signals.append(
             ScoredSignal(
@@ -1357,6 +1557,7 @@ def classify_and_score(
                 anchor_snapshots=anchor_snaps,
                 transmission_chain=rule.transmission_chain,
                 guardrail=rule.guardrail,
+                item_hashes=item_hashes,
             )
         )
 
@@ -1429,7 +1630,11 @@ def detect_upcoming_calendar_alerts(
 
 
 def detect_market_first_anomalies(
-    quotes: dict[str, QuoteTick], vol_baselines: dict[str, float], *, now_cst: datetime
+    quotes: dict[str, QuoteTick],
+    vol_baselines: dict[str, float],
+    *,
+    now_cst: datetime,
+    market_calendar: dict[str, Any] | None = None,
 ) -> list[ScoredSignal]:
     """Detect 3+1 crisis breakers & extreme >=3.2-sigma live price shocks independently of news."""
     now_dt = now_cst.astimezone(CST) if now_cst.tzinfo else now_cst.replace(tzinfo=CST)
@@ -1467,32 +1672,8 @@ def detect_market_first_anomalies(
             guardrail=guard,
         )
 
-    def _is_stale_closed_tick(tick: QuoteTick, region: str) -> bool:
-        """Ignore stale prior-session close ticks on weekends or before market open."""
-        wd = now_dt.weekday()
-        hm = now_dt.hour * 60 + now_dt.minute
-        if region in ("CN", "HK"):
-            if wd >= 5:
-                return True
-            if hm < 9 * 60 + 15:
-                return True
-        else:
-            # Global weekend shutdown: Sat >= 06:30 CST through Mon < 05:55 CST
-            if (wd == 5 and hm >= 6 * 60 + 30) or wd == 6 or (wd == 0 and hm < 5 * 60 + 55):
-                return True
-        ts_raw = (tick.timestamp or "").strip()
-        m_d = re.match(r"^(\d{4})[-/](\d{2})[-/](\d{2})", ts_raw)
-        if m_d and region in ("CN", "HK"):
-            try:
-                t_day = datetime(int(m_d.group(1)), int(m_d.group(2)), int(m_d.group(3)), tzinfo=CST).date()
-                if t_day < now_dt.date():
-                    return True
-            except ValueError:
-                pass
-        return False
-
     us10y = quotes.get("US10Y")
-    if us10y and not _is_stale_closed_tick(us10y, "US") and (us10y.last >= 5.25 or (us10y.change_bp is not None and abs(us10y.change_bp) >= 18.0)):
+    if us10y and not _is_stale_closed_tick(us10y, "US", now_dt, market_calendar=market_calendar) and (us10y.last >= 5.25 or (us10y.change_bp is not None and abs(us10y.change_bp) >= 18.0)):
         z = _compute_anchor_z("US10Y", us10y, vol_baselines)
         out.append(_make_breaker(
             "us10y_breaker", "US",
@@ -1504,7 +1685,7 @@ def detect_market_first_anomalies(
         ))
 
     vix = quotes.get("b_VIX")
-    if vix and not _is_stale_closed_tick(vix, "US") and (vix.last >= 45.0 or vix.change_pct >= 22.0):
+    if vix and not _is_stale_closed_tick(vix, "US", now_dt, market_calendar=market_calendar) and (vix.last >= 45.0 or vix.change_pct >= 22.0):
         z = _compute_anchor_z("b_VIX", vix, vol_baselines)
         out.append(_make_breaker(
             "vix_breaker", "US",
@@ -1516,7 +1697,7 @@ def detect_market_first_anomalies(
         ))
 
     usdjpy = quotes.get("fx_susdjpy")
-    if usdjpy and not _is_stale_closed_tick(usdjpy, "GLOBAL") and usdjpy.change_pct <= -2.5:
+    if usdjpy and not _is_stale_closed_tick(usdjpy, "GLOBAL", now_dt, market_calendar=market_calendar) and usdjpy.change_pct <= -2.5:
         z = _compute_anchor_z("fx_susdjpy", usdjpy, vol_baselines)
         out.append(_make_breaker(
             "usdjpy_carry_breaker", "GLOBAL",
@@ -1541,7 +1722,7 @@ def detect_market_first_anomalies(
     by_region: dict[str, list[tuple[float, str, str, QuoteTick]]] = {}
     for sym, reg, cname in watch_map:
         tick = quotes.get(sym)
-        if tick is None or abs(tick.change_pct) < 2.5 or _is_stale_closed_tick(tick, reg):
+        if tick is None or abs(tick.change_pct) < 2.5 or _is_stale_closed_tick(tick, reg, now_dt, market_calendar=market_calendar):
             continue
         z = _compute_anchor_z(sym, tick, vol_baselines)
         if abs(z) < 2.8:
@@ -1735,6 +1916,27 @@ class MonitorStateStore:
             self._conn.commit()
         return default_cluster_key, sorted(set(sources)), is_official
 
+    def unmark_seen_hashes(self, item_hashes: list[str]) -> int:
+        """Remove specific item hashes from seen_items so failed P0/P1 deliveries can be retried."""
+        if not item_hashes:
+            return 0
+        removed = 0
+        for h in item_hashes:
+            cur = self._conn.execute("DELETE FROM seen_items WHERE item_hash = ?", (h,))
+            removed += cur.rowcount or 0
+        self._conn.commit()
+        return removed
+
+    def failed_delivery_attempts(self, cluster_key: str, *, since_ts: float) -> int:
+        row = self._conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM signal_audit
+            WHERE cluster_key = ? AND action = 'delivery_failed' AND created_ts >= ?
+            """,
+            (cluster_key, since_ts),
+        ).fetchone()
+        return int(row["cnt"]) if row else 0
+
     def seen_items_count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS cnt FROM seen_items").fetchone()
         return int(row["cnt"]) if row else 0
@@ -1772,6 +1974,9 @@ class MonitorStateStore:
         cooldown_sec: int = 7200,
         domain_cooldown_sec: int = 1800,
         p1_daily_cap: int = 6,
+        quiet_enabled: bool = True,
+        quiet_start: str = "23:30",
+        quiet_end: str = "07:15",
     ) -> tuple[bool, str]:
         """Return (should_send, decision_reason). Mutates signal.escalation_tag on pierce."""
         if signal.severity == "SILENT":
@@ -1782,9 +1987,8 @@ class MonitorStateStore:
         now_dt = now_cst.astimezone(CST) if now_cst.tzinfo else now_cst.replace(tzinfo=CST)
         now_ts = now_dt.timestamp()
 
-        # Quiet hours 23:30-07:15 CST (P0 & calendar P0 window bypass)
-        hhmm = now_dt.hour * 60 + now_dt.minute
-        in_quiet = (hhmm >= 23 * 60 + 30) or (hhmm < 7 * 60 + 15)
+        # Quiet hours (defaults 23:30-07:15 CST, honors notify.json override; P0 & exact calendar P0 window bypass)
+        in_quiet = quiet_enabled and _is_in_quiet_window(now_dt, quiet_start, quiet_end)
         if in_quiet and signal.severity != "P0" and not in_calendar_p0_window:
             return False, "suppressed_quiet"
 
@@ -2106,6 +2310,7 @@ def render_launchd_plist(
     python_bin: str | None = None,
     enable_llm: bool = False,
     label: str = "com.global-investment-research.realtime-monitor",
+    env_vars: dict[str, str] | None = None,
 ) -> str:
     """Render a valid macOS LaunchAgent plist for background real-time monitoring."""
     py = python_bin or sys.executable or "/usr/bin/python3"
@@ -2119,28 +2324,47 @@ def render_launchd_plist(
     if enable_llm:
         args_xml.append("    <string>--enable-llm</string>")
     args_block = "\n".join(args_xml)
-    return "\n".join(
-        [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
-            '<plist version="1.0">',
-            "<dict>",
-            f"  <key>Label</key><string>{html.escape(label)}</string>",
-            "  <key>ProgramArguments</key>",
-            "  <array>",
-            args_block,
-            "  </array>",
-            f"  <key>WorkingDirectory</key><string>{html.escape(str(REPO_ROOT))}</string>",
-            "  <key>RunAtLoad</key><true/>",
-            "  <key>KeepAlive</key><true/>",
-            "  <key>ThrottleInterval</key><integer>30</integer>",
-            f"  <key>StandardOutPath</key><string>{html.escape(log_dir)}/monitor.out.log</string>",
-            f"  <key>StandardErrorPath</key><string>{html.escape(log_dir)}/monitor.err.log</string>",
-            "</dict>",
-            "</plist>",
-            "",
-        ]
-    )
+
+    # Propagate safe runtime & proxy vars (never secrets) so launchd matches interactive network reachability.
+    if env_vars is None:
+        effective_env: dict[str, str] = {"PYTHONUTF8": "1"}
+        for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"):
+            v = os.environ.get(k, "").strip()
+            if v:
+                effective_env[k] = v
+    else:
+        effective_env = {str(k): str(v) for k, v in env_vars.items() if str(k).strip()}
+
+    env_lines: list[str] = []
+    if effective_env:
+        env_lines.append("  <key>EnvironmentVariables</key>")
+        env_lines.append("  <dict>")
+        for k, v in sorted(effective_env.items()):
+            env_lines.append(f"    <key>{html.escape(k)}</key><string>{html.escape(v)}</string>")
+        env_lines.append("  </dict>")
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        "<dict>",
+        f"  <key>Label</key><string>{html.escape(label)}</string>",
+        "  <key>ProgramArguments</key>",
+        "  <array>",
+        args_block,
+        "  </array>",
+        f"  <key>WorkingDirectory</key><string>{html.escape(str(REPO_ROOT))}</string>",
+        *env_lines,
+        "  <key>RunAtLoad</key><true/>",
+        "  <key>KeepAlive</key><true/>",
+        "  <key>ThrottleInterval</key><integer>30</integer>",
+        f"  <key>StandardOutPath</key><string>{html.escape(log_dir)}/monitor.out.log</string>",
+        f"  <key>StandardErrorPath</key><string>{html.escape(log_dir)}/monitor.err.log</string>",
+        "</dict>",
+        "</plist>",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def run_doctor(*, notify_config_path: Path | None = None, state_db: Path | None = None) -> dict[str, Any]:
@@ -2170,7 +2394,13 @@ def run_doctor(*, notify_config_path: Path | None = None, state_db: Path | None 
             "hk_onshore_cap_pct": ssot["hk_onshore_cap_pct"],
             "us_cap_pct": ssot["us_cap_pct"],
             "policy_events_loaded": len(events),
-            "in_calendar_p0_window": is_in_calendar_p0_window(events, now_dt),
+            "in_calendar_p0_window": is_in_calendar_p0_window(
+                events,
+                now_dt,
+                quiet_enabled=cfg.quiet_enabled,
+                quiet_start=cfg.quiet_start,
+                quiet_end=cfg.quiet_end,
+            ),
         },
         "vol_baselines_loaded": len(vols),
         "feed_sources_count": len(FEED_SOURCES),
@@ -2200,10 +2430,25 @@ def run_once(
     else:
         now_dt = now_dt.astimezone(CST)
 
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import wechat_notify  # type: ignore
+
+    cfg = wechat_notify.load_notify_config(config_path=notify_config_path)
+    notifier = wechat_notify.Notifier(cfg, dry_run=dry_run, now_fn=lambda: now_dt)
+
     ssot = load_ssot_context()
     vol_baselines = load_vol_baselines()
     events = ssot.get("events") or []
-    in_p0_win = is_in_calendar_p0_window(events, now_dt)
+    mcal = ssot.get("market_calendar")
+    in_p0_win = is_in_calendar_p0_window(
+        events,
+        now_dt,
+        quiet_enabled=cfg.quiet_enabled,
+        quiet_start=cfg.quiet_start,
+        quiet_end=cfg.quiet_end,
+    )
 
     raw_items, feed_errors = poll_all_feeds(sources_filter=sources_filter, now_ts=now_dt.timestamp())
     quotes, quote_errors = poll_live_quotes()
@@ -2215,12 +2460,14 @@ def run_once(
         quotes,
         vol_baselines,
         now_cst=now_dt,
-        market_calendar=ssot.get("market_calendar"),
+        market_calendar=mcal,
         state_store=store,
         persist_clusters=not dry_run,
     )
     cal_signals = detect_upcoming_calendar_alerts(events, now_cst=now_dt)
-    market_signals = detect_market_first_anomalies(quotes, vol_baselines, now_cst=now_dt)
+    market_signals = detect_market_first_anomalies(
+        quotes, vol_baselines, now_cst=now_dt, market_calendar=mcal
+    )
     # Suppress regional shock_* duplicate if a P0/P1 news signal already covers that region in this cycle
     news_regions_hot = {s.region for s in news_signals if s.severity in ("P0", "P1")}
     filtered_market = [
@@ -2229,20 +2476,19 @@ def run_once(
     ]
     all_signals = sorted(news_signals + cal_signals + filtered_market, key=lambda s: s.score, reverse=True)
 
-    scripts_dir = str(Path(__file__).resolve().parent)
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
-    import wechat_notify  # type: ignore
-
-    cfg = wechat_notify.load_notify_config(config_path=notify_config_path)
-    notifier = wechat_notify.Notifier(cfg, dry_run=dry_run, now_fn=lambda: now_dt)
-
     dispatched: list[dict[str, Any]] = []
     suppressed: list[dict[str, Any]] = []
     domains_dispatched_p1: set[str] = set()
     cold_start_cap = 2
     for sig in all_signals:
-        should_send, reason = store.evaluate_dispatch(sig, now_dt, in_calendar_p0_window=in_p0_win)
+        should_send, reason = store.evaluate_dispatch(
+            sig,
+            now_dt,
+            in_calendar_p0_window=in_p0_win,
+            quiet_enabled=cfg.quiet_enabled,
+            quiet_start=cfg.quiet_start,
+            quiet_end=cfg.quiet_end,
+        )
         if should_send and cold_start_bootstrap and len(dispatched) >= cold_start_cap:
             should_send, reason = False, "suppressed_cold_start"
         if (
@@ -2274,7 +2520,18 @@ def run_once(
                 action = "delivery_failed"
             if not dry_run:
                 store.record_signal(sig, action, now_dt)
-            if sig.severity == "P1":
+                if (
+                    action == "delivery_failed"
+                    and sig.severity in ("P0", "P1")
+                    and sig.item_hashes
+                ):
+                    # Bounded retry (up to 3 attempts within 2h) so transient delivery failures never swallow alerts.
+                    attempts = store.failed_delivery_attempts(
+                        sig.cluster_key, since_ts=now_dt.timestamp() - 7200
+                    )
+                    if attempts < 3:
+                        store.unmark_seen_hashes(sig.item_hashes)
+            if sig.severity == "P1" and action in ("dispatched", "dry_run_dispatch"):
                 domains_dispatched_p1.add(sig.domain_id)
             dispatched.append(
                 {
@@ -2367,20 +2624,29 @@ def main(argv: list[str] | None = None) -> int:
         if args.daemon:
             while True:
                 now_dt = datetime.now(CST)
-                summary = run_once(
-                    store=store,
-                    dry_run=args.dry_run,
-                    enable_llm=enable_llm,
-                    sources_filter=src_filter,
-                    notify_config_path=args.notify_config,
-                    now_cst=now_dt,
-                )
-                print(json.dumps(summary, ensure_ascii=False), flush=True)
-                mcal_live = load_ssot_context().get("market_calendar")
-                in_active = summary["in_calendar_p0_window"] or any(
-                    is_region_market_open(r, now_dt, market_calendar=mcal_live) for r in ("CN", "HK", "US")
-                )
-                sleep_s = max(30, args.active_interval if in_active else args.quiet_interval)
+                try:
+                    summary = run_once(
+                        store=store,
+                        dry_run=args.dry_run,
+                        enable_llm=enable_llm,
+                        sources_filter=src_filter,
+                        notify_config_path=args.notify_config,
+                        now_cst=now_dt,
+                    )
+                    print(json.dumps(summary, ensure_ascii=False), flush=True)
+                    mcal_live = load_ssot_context().get("market_calendar")
+                    in_active = summary["in_calendar_p0_window"] or any(
+                        is_region_market_open(r, now_dt, market_calendar=mcal_live) for r in ("CN", "HK", "US")
+                    )
+                    sleep_s = max(30, args.active_interval if in_active else args.quiet_interval)
+                except Exception:
+                    print(
+                        f"[ERROR] realtime_monitor daemon cycle failed at {now_dt.isoformat(timespec='seconds')}:",
+                        file=sys.stderr,
+                    )
+                    traceback.print_exc(file=sys.stderr)
+                    sys.stderr.flush()
+                    sleep_s = max(30, min(60, args.active_interval))
                 time.sleep(sleep_s)
         else:
             summary = run_once(

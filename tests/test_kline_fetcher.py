@@ -865,5 +865,129 @@ class TestOfflineEndToEndWorkflow(unittest.TestCase):
             self.assertFalse(core_data["series"]["idx_GDAXI"]["stale"])
 
 
+class TestWave2KlineResilienceRegressions(unittest.TestCase):
+    def test_rate_dfii10_preserves_negative_real_yield_values(self) -> None:
+        core_map = {sp.id: sp for sp in fk.build_core_specs()}
+        dfii10 = core_map["rate_DFII10"]
+        self.assertTrue(dfii10.allow_nonpositive)
+        self.assertFalse(core_map["rate_US10Y"].allow_nonpositive)
+
+        csv_text = (
+            "Date,5 YR,7 YR,10 YR,20 YR,30 YR\n"
+            "11/27/2026,0.10,0.20,0.00,0.40,0.50\n"
+            "11/26/2026,-0.60,-0.55,-0.45,-0.10,0.15\n"
+            "11/25/2026,1.10,1.15,1.25,1.40,1.55\n"
+        )
+        # Default allow_nonpositive=False drops <= 0; allow_nonpositive=True preserves negative & zero yields
+        pos_only = fk.parse_treasury_csv(csv_text, "10 YR")
+        self.assertEqual(pos_only, [["2026-11-25", 1.25, 1.25, 1.25, 1.25, 0]])
+
+        with_neg = fk.parse_treasury_csv(csv_text, "10 YR", allow_nonpositive=True)
+        sanitized = fk.sanitize_bars(
+            with_neg,
+            decimals_override=dfii10.decimals_override,
+            force_no_volume=True,
+            allow_nonpositive=True,
+        )
+        self.assertEqual(
+            sanitized,
+            [
+                ["2026-11-25", 1.25, 1.25, 1.25, 1.25, 0],
+                ["2026-11-26", -0.45, -0.45, -0.45, -0.45, 0],
+                ["2026-11-27", 0.0, 0.0, 0.0, 0.0, 0],
+            ],
+        )
+
+        # Stale cache fallback also preserves negative real yields cleanly
+        rec, fail = fk.merge_with_stale_cache(
+            dfii10,
+            [],
+            None,
+            "simulated_timeout",
+            {"provider": "us_treasury_csv", "bars": sanitized},
+            bars_limit=150,
+        )
+        self.assertIsNotNone(rec)
+        self.assertIsNotNone(fail)
+        assert rec is not None
+        self.assertEqual([b[4] for b in rec["bars"]], [1.25, -0.45, 0.0])
+
+    def test_load_etf_specs_skips_otc_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            etf_path = Path(tmp) / "etf_universe.json"
+            etf_path.write_text(
+                json.dumps(
+                    {
+                        "etfs": [
+                            {"code": "008142", "name": "国泰黄金ETF联接A", "channel": "境内场外", "market": "gold"},
+                            {"code": "510300", "name": "华泰柏瑞沪深300ETF", "channel": "境内场内", "market": "a-share"},
+                            {"code": "513500", "name": "博时标普500ETF", "channel": "境内QDII", "market": "us-stock"},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            specs = fk.load_etf_specs(etf_path)
+            ids = [sp.id for sp in specs]
+            self.assertNotIn("etf_008142", ids)
+            self.assertEqual(ids, ["etf_510300", "etf_513500"])
+
+    def test_weekend_cnbc_quotes_rejected_and_usdhkd_parsed_via_sina_fx(self) -> None:
+        cnbc_payload = json.dumps(
+            {
+                "FormattedQuoteResult": {
+                    "FormattedQuote": [
+                        {
+                            "symbol": ".GDAXI",
+                            "last_time": "2026-11-28T10:00:00Z",  # Saturday -> MUST be rejected
+                            "open": "23000", "high": "23100", "low": "22900", "last": "23050",
+                        },
+                        {
+                            "symbol": ".N225",
+                            "last_time": "2026-11-29T05:00:00Z",  # Sunday -> MUST be rejected
+                            "open": "50000", "high": "50200", "low": "49900", "last": "50100",
+                        },
+                        {
+                            "symbol": ".FTSE",
+                            "last_time": "2026-11-27T16:30:00Z",  # Friday -> valid weekday
+                            "open": "9000", "high": "9050", "low": "8980", "last": "9025",
+                        },
+                    ]
+                }
+            }
+        )
+        parsed = fk.parse_cnbc_rest_quote(cnbc_payload)
+        self.assertNotIn(".GDAXI", parsed)
+        self.assertNotIn(".N225", parsed)
+        self.assertEqual(parsed[".FTSE"], ["2026-11-27", 9000.0, 9050.0, 8980.0, 9025.0, 0])
+
+        hist = [["2026-11-27", 9000.0, 9050.0, 8980.0, 9020.0, 12345.0]]
+        # Weekend bar rejected even when newer than last_hist_date
+        self.assertEqual(
+            fk.merge_cnbc_t0_quote(hist, ["2026-11-28", 9010.0, 9060.0, 8990.0, 9040.0, 0]),
+            hist,
+        )
+        self.assertEqual(
+            fk.merge_cnbc_t0_quote(hist, ["2026-11-29", 9010.0, 9060.0, 8990.0, 9040.0, 0]),
+            hist,
+        )
+        # Same-day weekday refresh replaces in place & preserves historical volume when T-0 vol=0
+        refreshed = fk.merge_cnbc_t0_quote(
+            hist,
+            ["2026-11-27", 9000.0, 9055.0, 8980.0, 9035.0, 0],
+            allow_same_day=True,
+        )
+        self.assertEqual(refreshed, [["2026-11-27", 9000.0, 9055.0, 8980.0, 9035.0, 12345.0]])
+
+        # fx_USDHKD parsed cleanly via parse_sina_fx_quotes, including fallback to parts[1] when parts[8] is empty/0
+        raw_fx = (
+            'var hq_str_fx_susdhkd="15:30:00,7.7812,7.7815,7.7805,12,7.7808,7.7830,7.7795,0.0000,美元兑港元,0.01,0.0007,0.0003,,7.85,7.75,,2026-11-27";\n'
+        )
+        fx_parsed = fk.parse_sina_fx_quotes(raw_fx)
+        self.assertIn("fx_susdhkd", fx_parsed)
+        self.assertEqual(fx_parsed["fx_susdhkd"], ["2026-11-27", 7.7808, 7.783, 7.7795, 7.7812, 0])
+
+
 if __name__ == "__main__":
     unittest.main()

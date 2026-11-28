@@ -33,6 +33,7 @@ global-investment-research/
 │   ├── fetch_kline_data.py          # 零第三方依赖全市场 480+ 标的静态分片 K 线抓取引擎（写入 equity/state/klines/*.json）
 │   ├── build_site.py                # 零第三方依赖生成双端响应式门户（首页驾驶舱/#sec-policy-calendar/charts.html/12 独立渠道页/ETF 雷达/231 股 7 维/27 对 AH 矩阵/钱包试算/新手指南/记分卡/档案）
 │   ├── svg_geometry.py              # SVG 矢量文本边界框解析与零碰撞/零越界几何校验引擎
+│   ├── visual_widgets.py            # 零依赖声明式 DAILY_VISUAL 640px 矢量信息图引擎（waterfall / bar_compare / anchor_range / flow_chain）
 │   ├── patch_state_dbs.py           # 权益三库与 policy_calendar.json 原子合并、双账本/审计无损头插、双轨 RSI 无损追加、月初原子滚存/归档与 --inspect <target> 查库工具（防 300s 超时）
 │   ├── lint_site.py                 # 7 道法证与安全门禁（S1–S7，--strict 零容忍，含 K 线分片与黄金红灯锁验收，禁用离线附件链接）
 │   ├── publish_site.py              # 源稿严检 -> 静态站构建严检 -> 限域提交推送（GitHub Pages 自动部署）
@@ -74,7 +75,7 @@ global-investment-research/
 ### 3.1 对称 `3×2` 六大市场驾驶舱与全球多指数优先级标准（严禁单指数播报）
 全站门户驾驶舱采用 **对称 `3×2` 六大市场格局（5 大核心市场 + 1 个统一非美全球卫星；仍保持黄金/A 股/港股/美股 4 条每日全主刊正文轨不变）**，日报封面 KPI、正文数据速查表与 `market_state.json` / `gold/data_snapshot.json` 的 `index_matrix` 数组，必须严格按机构终端优先级排序（`rank` 升序、读者可见纯中文 `tier_label`，严禁泄露 `Tier 0–3`）：
 - **核心 1 · 中国 A 股（政策驱动型核心市场 · 大盘为先，12 指数）**：**第 1 必须领衔上证指数（`000001`）** → 沪深 300（`000300`）→ 深证成指（`399001`）→ 中证 A500（`000510`）→ 上证 50（`000016`）→ 创业板指（`399006`）→ 科创 50（`000688`）→ 中证 500（`000905`）→ 中证 1000（`000852`）→ 中证红利（`000922`）→ 北证 50（`899050`）→ 中证转债（`000832`）；紧扣央行/财政/产业/监管政策市主线。
-- **核心 2 · 中国香港股市（5 基准 · 中国离岸折价腿，A 股政策基本面 + 美股流动性/政策双轨驱动卫星，非海外分散）**：恒生指数（`HSI`）→ 恒生科技（`HSTECH`）→ 恒生国企（`HSCEI`）→ 恒生综合（`HSCI`）+ 恒生 AH 溢价（`HSAHP`）。
+- **核心 2 · 中国香港股市（5 基准：`index_matrix` 4 项 + `hsahp_index` · 中国离岸折价腿，A 股政策基本面 + 美股流动性/政策双轨驱动卫星，非海外分散）**：恒生指数（`HSI`）→ 恒生科技（`HSTECH`）→ 恒生国企（`HSCEI`）→ 恒生综合（`HSCI`）+ 恒生 AH 溢价（`HSAHP`，存储于 `hsahp_index`）。
 - **核心 3 · 美国股市（联储/财政/关税与地缘政策驱动 · 8 基准 + 直达 QDII 申购入口 CTA）**：标普 500（`SPX`）→ 纳斯达克综合（`IXIC`）→ 纳斯达克 100（`NDX`）→ 道琼斯工业（`DJI`）→ 罗素 2000（`IWM`）→ 标普 500 等权（`RSP`）→ 费城半导体（`SOX`）→ VIX 恐慌指数。
 - **核心 4 · 债券/现金与中美利率（`rates_bonds_core`）**：中国国债 2Y/10Y/30Y、美债 2Y/10Y/30Y/TIPS、中美 10Y 利差、`GC001`/`DR001`、中证 REITs（`932047`/`932006`）与短融/长债基锚点。
 - **核心 5 · 黄金、大宗与宏观汇率（独立货币避险多锚点）**：伦敦现货金（`XAU`）→ COMEX 金（`GC`）→ 沪金主连（`AU0`）→ 上金所 `Au99.99`/`Au(T+D)` → 伦敦银/沪银 → 布伦特/WTI 原油、铜、美元指数（`DXY`）、`EURUSD`/`GBPUSD`/`USDHKD`/人民币/日元；**BTC 遵照央行 `银发〔2026〕42号` 中国大陆 0% 严禁配仓，仅作 Layer 1 只读全球流动性温度计**。
@@ -112,12 +113,12 @@ global-investment-research/
 每次 `07:30`、`11:30` 或 `18:00` 一体化班次必须严格按以下顺序在同一会话内串行推进，严禁跳步或乱序：
 
 - **运行锁、单向时间窗、僵尸锁清理与维护者专属运维命令**：定时入口运行 `scripts/edition_run.py begin --scheduled 0730` / `--scheduled 1130` / `--scheduled 1800`，**定时运行窗与单向截点宽限统一为 `[-5 分钟, +6 小时]`（`07:25–13:30` / `11:25–17:30` / `17:55–次日 00:00` CST；黄金截点须早于或同分钟于权益且跨轨差值 `0–6 小时`）**。`begin --scheduled` 会先尝试收尾已有推送凭据的班次，并自动清理**严格较早期号**（`0730 < 1130 < 1800`）、超 2 小时无进展且尚未进入推送的僵尸锁。收到 token 后才进入调研；依次登记 `gold`、`equity`、`publish`，有进展时用 `heartbeat` 刷新时间。若历史已推送班次被后续提交覆盖，维护者可人工区分 **`complete-superseded`**（校验目标提交已是现网祖先且仅含授权文件变更后结案为 `complete`）与 **`close-superseded`**（将其标为 `failed` 并记录被后续提交替代的 `outcome` 以释锁）——**两项均为维护者专属手动运维命令，严禁纳入定时自动化 `automations/permissions.json` 白名单**。
-- **期号交接与三库同期锁**：当班黄金快照、黄金日报 `DAILY_META`、权益状态、新权益稿 `DAILY_META_JSON` 以及三大扩展数据库（`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。休市沿用旧稿时保留旧稿期号与时间，状态与三大数据库仍刷新至当班期号。
+- **期号交接与三库同期锁**：当班黄金快照、黄金日报 `DAILY_META`、权益状态、新权益稿 `DAILY_META_JSON`、三大扩展数据库（`multi_asset_channels.json`、`etf_universe.json`、`deep_dossiers.json`）与 `equity/state/policy_calendar.json` 记录同一 `edition_id`。黄金日报同时记录与快照一致的 `as_of_short`。休市沿用旧稿时保留旧稿期号与时间，状态、政策日历与三大数据库仍刷新至当班期号。
 
 1. **Step 0｜双轨 RSI 经验库冷启动**：
    - 读取 `gold/daily/RSI_PLAYBOOK.md`（≤180 行）、`equity/state/RSI_PLAYBOOK.md`（≤180 行）及两轨 `rsi_metrics.json` 最近记录。
 2. **Step 1｜跨市场日历、基线快照与三大深研库冷启动**：
-   - 读取 `gold/market_calendar.json`、`gold/data_snapshot.json`、`gold/master_snapshot.json`、`equity/state/market_state.json`、`equity/state/multi_asset_channels.json`、`equity/state/etf_universe.json`、`equity/state/deep_dossiers.json`、两轨 `SCORECARD.md`、`gold/daily/CHANGELOG.md` 与 `equity/daily/INDEX.md`。
+   - 读取 `gold/market_calendar.json`、`gold/data_snapshot.json`、`gold/master_snapshot.json`、`equity/state/market_state.json`、`equity/state/multi_asset_channels.json`、`equity/state/etf_universe.json`、`equity/state/deep_dossiers.json`、`equity/state/policy_calendar.json`、两轨 `SCORECARD.md`、`gold/daily/CHANGELOG.md` 与 `equity/daily/INDEX.md`。
 3. **Step 2A｜共享 10 路并行 `research` 深度调研（10+1 架构）**：
    - 启动 **10 路只读 `research` 子代理**（每路回执严控 `≤ 12 KB` 紧凑表格防拖尾）：① 黄金与贵金属（午班锁 11:30 上金/沪金早盘与同刻溢价、银行金条/品牌金店牌价）、② 中国 A 股（全 12 优先指数且上证 #1 领衔）、③ 中国香港股市（5 基准 + `11:15` HIBOR）、④ 美国股市（8 基准）、⑤ 跨资产宏观汇率与大宗（含 Layer 1 7 枚宏观气象与危机熔断邻近条、中美 10Y 利差、非美全球卫星日/欧/台韩/印锚点、跨资产传导链与 48h 双向触发线）、⑥ 三地社区与谣言辟谣、**⑦A 境内稳健与税优 6 渠道专线**、**⑦B 境内外币/QDII与MRF（含直销 vs 代销限额分轨、TA 合并与 LOF 退市）/可转债/C-REITs/非金商品与白银铂钯/私募信托与打新反诈专线**、**⑧A 全市场 181+ 重点 ETF（正交标注 `asset_class` × `region` × 6 通道）分批溢价/停牌/规模/费率（含互挂穿透双层费）专线**、**⑧B 当班全部焦点股（约 16 只及周日 6–10 只全池轮换）7 维深研与近 24 小时官方公告硬扫雷专线**（必查沪深/港交所/SEC 近 24 小时折价配售、分红、管理层变动与信用评级观察，现价实算股息/估值并刷新 `updated_at`）。遇单项数据未发布或暂不可取时严禁编造、亦不阻塞发布，按规范挂账并写入纯读者中文 `data_caveats`。
 4. **Step 2B｜1 路统一发前红队对抗核验（10+1 架构）**：
@@ -151,7 +152,7 @@ global-investment-research/
      - **场内溢价 vs 场外排队盈亏平衡数学与代码核验铁律**：场外均匀分批建仓预期机会成本近似为 `0.5 × (N / 250) × r_excess`（`N = M / D` 为按日限额 `D` 建仓资金 `M` 所需交易日数，`r_excess` 为权益预期年化收益减现金泊车收益），量化证明场内溢价超过 `2%–3%` 即相当于提前透支数月至数年超额收益；**严禁默认每只场内 QDII ETF 均配有场外联接或凭相邻代码臆测**（必须逐只核查基金公司官方名录与币种代码，如核实无联接产品、区分美元 A 与人民币 C）。
    - **黄金联接 `008142` / `008143`**：依据 2026 公募销售费改（商品基参照债基），A 类申购上限 0.30%（1 折 0.03%，旧合同过渡期 0.06%）、运营费 0.20%/年；C 类销售服务费上限 0.20%/年且自 2027-01-01 起满 1 年“先收后返”免收，但长持 ≥1 年仍以 1 折 A 类（`008142`）更省；现行尚未完成整改的旧合同 `008143` 仍按 0.55%/年（含 0.35% 销服费）且满 30 天免赎回费（严禁误写 7 天免赎回）；
    - **可转债 ETF 费率区分**：全市场可转债 ETF **`511380`** 综合费率为 **0.20%/年**（管理 0.15%+托管 0.05%），而投资级上证可转债 ETF **`511180`** 综合费率为 **0.30%/年**（管理 0.25%+托管 0.05%），严禁跨库混写费率；
-   - **MRF 禁推停申基金**：严禁推荐已暂停申购的 `968118`；
+   - **MRF 禁推停申基金与受限代码护栏**：严禁推荐已暂停申购的 `968118`，须警示派息份额 `968001`（无刚性月现金流需求改选累计份额避 20% 股息税），并严禁列入已退市恒生银行 `00011`（用渣打 `02888` 替代）；
    - **二手大额存单**：多数国有大行禁止二次转让，且二手接盘单严禁直接提前支取（否则仅按原票面本金 + 活期计息致本金实亏）；
    - **债券 ETF 底层税负区分**：交易所公司债/科创债 ETF 底层债券付息环节仍扣 20% 税（区别于银行间市场的短融 ETF `511360` 等银行间标的）；
    - **离岸资产与跨境合规**：中国居民个人境外所得须依法按 20% 全球申报纳税（含 CRS 金融账户涉税信息自动交换透明合规）；香港挂牌的 `02840.HK` 底层为美国注册信托，计入非美居民 6 万美元美国遗产税应税范围，大额离岸黄金（黄灯解锁后）应改选爱尔兰 `IGLN.L` 或香港本土注册实物金 `03081.HK`。

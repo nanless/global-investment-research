@@ -2219,18 +2219,260 @@ class TestCLIAndOperationalGuarantees(unittest.TestCase):
         s_trim = rm.enforce_safety_gates("重仓户可分批减仓黄金并严守红灯", ssot, append_footer=False)
         self.assertEqual(s_trim, "重仓户可分批减仓黄金并严守红灯")
 
-        # P1: Real gold/market_calendar.json calendar_overrides honored for US/HK/CN holidays
-        mcal = ssot["market_calendar"]
+        # P1: Self-contained synthetic market_calendar fixture (immune to live calendar start_date rollover)
+        synth_mcal = {
+            "schema_version": "1.0",
+            "timezone": "Asia/Shanghai",
+            "calendar_overrides": [
+                {
+                    "id": "us_thanksgiving_synth",
+                    "date": "2026-11-26",
+                    "end_date": "2026-11-26",
+                    "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+                    "event": "美国感恩节全天休市",
+                    "overlay_mode": "A",
+                    "trading_hours_bjt": {"us_equity": "全天休市", "us_bond": "全天休市"},
+                },
+                {
+                    "id": "us_black_friday_synth",
+                    "date": "2026-11-27",
+                    "end_date": "2026-11-27",
+                    "markets": ["US_EQUITY", "US_BOND", "COMEX_CME"],
+                    "event": "美国黑色星期五提前收盘（半日市）",
+                    "overlay_mode": "A",
+                    "trading_hours_bjt": {"us_equity": "提前收盘半日市"},
+                },
+                {
+                    "id": "christmas_2026_synth",
+                    "date": "2026-12-25",
+                    "end_date": "2026-12-25",
+                    "markets": ["HK_EQUITY", "US_EQUITY", "US_BOND"],
+                    "event": "圣诞节全天休市",
+                    "overlay_mode": "A",
+                    "trading_hours_bjt": {"hk_equity": "全天休市", "us_equity": "全天休市"},
+                },
+                {
+                    "id": "cn_spring_festival_synth",
+                    "date": "2027-02-08",
+                    "end_date": "2027-02-12",
+                    "markets": ["CN_A_SHARE"],
+                    "event": "中国春节法定休市",
+                    "overlay_mode": "B",
+                    "trading_hours_bjt": {"cn_a_share": "法定休市"},
+                },
+            ],
+        }
+        # Live market_calendar schema smoke check (never tied to historical dates that roll off)
+        self.assertIsInstance(ssot.get("market_calendar"), dict)
+        self.assertIsInstance(ssot["market_calendar"].get("calendar_overrides"), list)
+
         # US Thanksgiving 2026-11-26 (23:00 CST & next-day 01:00 CST overnight session) -> CLOSED
-        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 11, 26, 23, 0), market_calendar=mcal))
-        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 11, 27, 1, 0), market_calendar=mcal))
+        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 11, 26, 23, 0), market_calendar=synth_mcal))
+        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 11, 27, 1, 0), market_calendar=synth_mcal))
         # Black Friday 2026-11-27 is a half-day session (NOT full-day closed at 23:00 CST) -> OPEN
-        self.assertTrue(rm.is_region_market_open("US", _cst(2026, 11, 27, 23, 0), market_calendar=mcal))
+        self.assertTrue(rm.is_region_market_open("US", _cst(2026, 11, 27, 23, 0), market_calendar=synth_mcal))
         # Christmas 2026-12-25 -> HK & US CLOSED
-        self.assertFalse(rm.is_region_market_open("HK", _cst(2026, 12, 25, 10, 30), market_calendar=mcal))
-        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 12, 25, 23, 0), market_calendar=mcal))
+        self.assertFalse(rm.is_region_market_open("HK", _cst(2026, 12, 25, 10, 30), market_calendar=synth_mcal))
+        self.assertFalse(rm.is_region_market_open("US", _cst(2026, 12, 25, 23, 0), market_calendar=synth_mcal))
         # CN Spring Festival 2027-02-08 -> CN CLOSED
-        self.assertFalse(rm.is_region_market_open("CN", _cst(2027, 2, 8, 10, 30), market_calendar=mcal))
+        self.assertFalse(rm.is_region_market_open("CN", _cst(2027, 2, 8, 10, 30), market_calendar=synth_mcal))
+
+
+class TestWave2MonitorHardeningRegressions(unittest.TestCase):
+    def test_stale_closed_tick_suppressed_in_classify_and_score_weekend_and_holiday(self) -> None:
+        vol_baselines = {"sh000001": 1.0, "US10Y": 5.0, "hf_ES": 1.0}
+        # 1. Weekend (Saturday 2026-11-28 14:00 CST): stale Friday huge moves must NOT confirm news
+        sat_now = _cst(2026, 11, 28, 14, 0)
+        item_wknd = rm.NewsItem(
+            source="pbc_news",
+            title="央行宣布全面降准0.5个百分点",
+            body="释放长期流动性。",
+            published_ts=sat_now.timestamp() - 60,
+            url="https://www.pbc.gov.cn/1",
+            importance_flag=1,
+            is_official=True,
+        )
+        stale_quotes = {
+            "sh000001": _tick("sh000001", 3900.0, -4.8, timestamp="2026-11-27 15:00:00"),
+            "US10Y": _tick("US10Y", 5.30, 3.8, change_bp=22.0, is_yield=True, timestamp="2026-11-27 16:00:00"),
+            "hf_ES": _tick("hf_ES", 6800.0, -4.5, timestamp="2026-11-27 16:00:00"),
+        }
+        sigs_wknd = rm.classify_and_score([item_wknd], stale_quotes, vol_baselines, now_cst=sat_now)
+        self.assertEqual(len(sigs_wknd), 1)
+        self.assertEqual(sigs_wknd[0].max_z, 0.0)
+        self.assertEqual(sigs_wknd[0].anchor_snapshots, [])
+        self.assertEqual(
+            rm.detect_market_first_anomalies(stale_quotes, vol_baselines, now_cst=sat_now),
+            [],
+        )
+
+        # 2. Full-day US holiday (Thanksgiving Thu 2026-11-26 23:00 CST): US10Y / ES stale shocks suppressed
+        holiday_cal = {
+            "calendar_overrides": [
+                {
+                    "id": "us_holiday_test",
+                    "date": "2026-11-26",
+                    "end_date": "2026-11-26",
+                    "markets": ["US_EQUITY", "US_BOND"],
+                    "event": "美国感恩节全天休市",
+                    "overlay_mode": "A",
+                    "trading_hours_bjt": {"us_equity": "全天休市", "us_bond": "全天休市"},
+                }
+            ]
+        }
+        hol_now = _cst(2026, 11, 26, 23, 0)
+        item_hol = rm.NewsItem(
+            source="fed_rss",
+            title="Federal Reserve issues FOMC statement on policy rate",
+            body="FOMC policy rate decision.",
+            published_ts=hol_now.timestamp() - 60,
+            url="https://www.federalreserve.gov/1",
+            importance_flag=1,
+            is_official=True,
+        )
+        hol_quotes = {
+            "US10Y": _tick("US10Y", 5.32, 4.0, change_bp=24.0, is_yield=True, timestamp="2026-11-25 16:00:00"),
+            "hf_ES": _tick("hf_ES", 6750.0, -4.2, timestamp="2026-11-25 16:00:00"),
+        }
+        sigs_hol = rm.classify_and_score(
+            [item_hol], hol_quotes, vol_baselines, now_cst=hol_now, market_calendar=holiday_cal
+        )
+        self.assertEqual(len(sigs_hol), 1)
+        self.assertEqual(sigs_hol[0].max_z, 0.0)
+        self.assertEqual(sigs_hol[0].anchor_snapshots, [])
+        self.assertEqual(
+            rm.detect_market_first_anomalies(
+                hol_quotes, vol_baselines, now_cst=hol_now, market_calendar=holiday_cal
+            ),
+            [],
+        )
+
+    def test_sunday_global_is_closed_in_is_region_market_open(self) -> None:
+        self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 28, 5, 0)))   # Sat 05:00
+        self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 29, 12, 0)))  # Sun 12:00
+        self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 29, 23, 30))) # Sun 23:30
+        self.assertFalse(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 30, 5, 30)))  # Mon 05:30
+        self.assertTrue(rm.is_region_market_open("GLOBAL", _cst(2026, 11, 30, 6, 30)))   # Mon 06:30
+
+    def test_same_day_date_only_official_notice_survives_afternoon_while_prior_day_expires(self) -> None:
+        afternoon = _cst(2026, 11, 25, 14, 30)
+        today_midnight = _cst(2026, 11, 25, 0, 0).timestamp()
+        yesterday_midnight = _cst(2026, 11, 24, 0, 0).timestamp()
+
+        # 1. Direct NewsItem with date_only=True (same-day pbc_news) survives at 14:30 CST (> 3h after 00:00)
+        same_day = rm.NewsItem(
+            source="pbc_news",
+            title="央行宣布下调存款准备金率0.5个百分点",
+            body="释放长期流动性",
+            published_ts=today_midnight,
+            url="https://www.pbc.gov.cn/today",
+            importance_flag=1,
+            is_official=True,
+            date_only=True,
+        )
+        prior_day = rm.NewsItem(
+            source="pbc_news",
+            title="央行宣布下调存款准备金率0.25个百分点",
+            body="昨日公告",
+            published_ts=yesterday_midnight,
+            url="https://www.pbc.gov.cn/yesterday",
+            importance_flag=1,
+            is_official=True,
+            date_only=True,
+        )
+        sigs = rm.classify_and_score([same_day, prior_day], {}, {}, now_cst=afternoon)
+        self.assertEqual(len(sigs), 1)
+        self.assertIn("0.5个百分点", sigs[0].title)
+
+        # 2. parse_gov_cn_json also marks same-day date-only notices as fresh while leaving prior-day stale
+        gov_payload = json.dumps(
+            [
+                {"TITLE": "国务院常务会议部署一揽子增量政策", "DOCRELPUBTIME": "2026-11-25", "URL": "/yaowen/today.htm"},
+                {"TITLE": "国务院常务会议昨日旧闻", "DOCRELPUBTIME": "2026-11-24", "URL": "/yaowen/old.htm"},
+            ],
+            ensure_ascii=False,
+        ).encode("utf-8")
+        parsed_gov = rm.parse_gov_cn_json(gov_payload, "gov_yaowen", afternoon.timestamp())
+        gov_sigs = rm.classify_and_score(parsed_gov, {}, {}, now_cst=afternoon)
+        self.assertEqual(len(gov_sigs), 1)
+        self.assertIn("一揽子增量政策", gov_sigs[0].title)
+
+    def test_tightened_keywords_reject_false_positives_and_title_scope_keywords_neg(self) -> None:
+        # False positives MUST NOT match any policy domain
+        for noise in (
+            "京东方 BOE 公布柔性 OLED 面板产线最新进展",
+            "The Game Awards TGA 2026 年度最佳游戏提名揭晓",
+            "Wall St. edges higher in light holiday trading",
+            "St. Louis Fed working paper analyzes regional bank lending",
+        ):
+            with self.subTest(noise=noise):
+                self.assertIsNone(rm.match_policy_domain(noise), f"False positive matched: {noise!r}")
+
+        # True positives MUST match expected domains
+        r_tariff = rm.match_policy_domain("USTR announces new Section 301 tariffs on semiconductor imports")
+        self.assertIsNotNone(r_tariff)
+        assert r_tariff is not None
+        self.assertEqual(r_tariff.domain_id, "cn_tariff")
+
+        r_cpi = rm.match_policy_domain("U.S. CPI comes in hotter than expected in November")
+        self.assertIsNotNone(r_cpi)
+        assert r_cpi is not None
+        self.assertEqual(r_cpi.domain_id, "us_macro_data")
+
+        # Title-scoped keywords_neg: title matches us_fomc, body mentions foreign CBs -> MUST NOT kill match!
+        r_scoped = rm.match_policy_domain(
+            "美联储FOMC宣布下调基准利率25个基点",
+            "分析称市场亦关注中国人民银行、欧洲央行与日本央行后续货币政策动向。",
+        )
+        self.assertIsNotNone(r_scoped)
+        assert r_scoped is not None
+        self.assertEqual(r_scoped.domain_id, "us_fed_fomc")
+
+    def test_multiday_allday_p0_event_respects_quiet_hours_while_exact_time_stays_active(self) -> None:
+        allday_ev = [
+            {
+                "event_id": "cewc_2026",
+                "date_cst": "2026-12-10",
+                "end_date_cst": "2026-12-12",
+                "time_cst": "全天窗口",
+                "impact_tier": "P0",
+                "monitor_window_min": 60,
+            }
+        ]
+        # Overnight quiet hours (01:30 CST) -> multi-day 全天窗口 P0 MUST NOT wake quiet hours
+        self.assertFalse(rm.is_in_calendar_p0_window(allday_ev, _cst(2026, 12, 11, 1, 30)))
+        # Daytime (14:00 CST) -> active
+        self.assertTrue(rm.is_in_calendar_p0_window(allday_ev, _cst(2026, 12, 11, 14, 0)))
+
+        exact_ev = [
+            {
+                "event_id": "fomc_dec_2026",
+                "date_cst": "2026-12-10",
+                "end_date_cst": "2026-12-10",
+                "time_cst": "03:00",
+                "impact_tier": "P0",
+                "monitor_window_min": 60,
+            }
+        ]
+        # Exact HH:MM P0 event stays active even during overnight quiet hours (02:30 CST)
+        self.assertTrue(rm.is_in_calendar_p0_window(exact_ev, _cst(2026, 12, 10, 2, 30)))
+
+    def test_gold_tier0_lock_covers_shfe_sge_xau_gc_without_false_matching_gc001(self) -> None:
+        ssot = {"gold_locked": True, "gold_tier_code": "Tier 0", "gold_passed_gates": 2, "gold_total_gates": 4}
+        for bad in (
+            "建议逢低买入沪金主力合约",
+            "建议立即加仓Au99.99现货",
+            "建议顺势做多XAU现货黄金",
+            "Recommend to buy GC futures on dip",
+        ):
+            with self.subTest(bad=bad):
+                san = rm.enforce_safety_gates(bad, ssot, append_footer=False)
+                self.assertNotEqual(san, bad)
+                self.assertIn("严禁新买黄金", san)
+
+        # Reverse repo GC001 MUST NOT false-match GC gold futures!
+        ok_repo = "周四尾盘买入GC001国债逆回购锁定周末三天利息。"
+        self.assertEqual(rm.enforce_safety_gates(ok_repo, ssot, append_footer=False), ok_repo)
 
 
 if __name__ == "__main__":

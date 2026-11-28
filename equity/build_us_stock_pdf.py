@@ -162,9 +162,9 @@ def svg_chart_u1_crises_and_mas(meta_override: dict | None = None) -> str:
     spx_now = int(round(float(cl.get("spx", 7201))))
     spx_200d = int(round(float(cl.get("spx_200d", 7348))))
     spx_high = int(round(float(cl.get("spx_high", 7819))))
-    as_full = html_mod.escape(clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间"))))
-    cur_lbl = html_mod.escape(clean_svg_text(str(u1_nest.get("cur_lbl") or cl.get("u1_cur_lbl") or "11/24 官方收盘")))
-    cur_note = html_mod.escape(clean_svg_text(str(u1_nest.get("cur_note") or cl.get("u1_cur_note") or "反弹 +4.7%，仍压在年线下")))
+    as_full = clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间")))
+    cur_lbl = clean_svg_text(str(u1_nest.get("cur_lbl") or cl.get("u1_cur_lbl") or "11/24 官方收盘"))
+    cur_note = clean_svg_text(str(u1_nest.get("cur_note") or cl.get("u1_cur_note") or "反弹 +4.7%，仍压在年线下"))
     diff_200d = ((spx_now - spx_200d) / float(spx_200d)) * 100.0
     cur_dd = ((spx_now - spx_high) / float(spx_high)) * 100.0
     crises = [
@@ -261,8 +261,8 @@ def svg_chart_u2_storm_timeline(meta_override: dict | None = None) -> str:
     spx_now = int(round(float(cl.get("spx", 7201))))
     spx_200d = int(round(float(cl.get("spx_200d", 7348))))
     spx_high = int(round(float(cl.get("spx_high", 7819))))
-    as_full = html_mod.escape(clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间"))))
-    last_lbl = html_mod.escape(clean_svg_text(str(u2_nest.get("last_lbl") or cl.get("u2_last_lbl") or "11/24 回落")))
+    as_full = clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间")))
+    last_lbl = clean_svg_text(str(u2_nest.get("last_lbl") or cl.get("u2_last_lbl") or "11/24 回落"))
     zone_lbl = html_mod.escape(clean_svg_text(str(u2_nest.get("zone_label") or cl.get("u2_zone_label") or "11/24–25 震荡筑底")))
     diff_200d = ((spx_now - spx_200d) / float(spx_200d)) * 100.0
     cur_dd = ((spx_now - spx_high) / float(spx_high)) * 100.0
@@ -355,7 +355,7 @@ def svg_chart_u3_credit_split(meta_override: dict | None = None) -> str:
     """Chart U3: 100% Plain-Language Credit Split (Full u3 Override + Verified CCC ~18% & Blue Owl)"""
     cl = load_meta(meta_override).get("chart_live", {})
     u3_nest = cl.get("u3") if isinstance(cl.get("u3"), dict) else {}
-    as_full = html_mod.escape(clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间"))))
+    as_full = clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间")))
     calm = u3_nest.get("safe_items") or DEFAULT_U3_CALM
     cracks = u3_nest.get("risk_items") or DEFAULT_U3_CRACKS
 
@@ -417,10 +417,11 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
     """Chart U4: Beijing-Time Cross-Year Event Clock (Full Nested u4 Override + 12/12 13:00 CST Fix)"""
     cl = load_meta(meta_override).get("chart_live", {})
     u4_nest = cl.get("u4") if isinstance(cl.get("u4"), dict) else {}
-    as_full = html_mod.escape(clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间"))))
-    horizon = html_mod.escape(clean_svg_text(str(
+    as_full = clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间")))
+    horizon_raw = clean_svg_text(str(
         u4_nest.get("horizon") or cl.get("u4_horizon_label") or "2026 年 11 月下旬至 2027 年 1 月中旬"
-    )))
+    ))
+    horizon = html_mod.escape(horizon_raw)
     tier_s = html_mod.escape(clean_svg_text(str(cl.get("tier_short", "红灯防守期 (1 / 6 分)"))))
     zone = str(cl.get("us10y_zone", "high")).lower()
     line1 = html_mod.escape(clean_svg_text(str(cl.get("status_line1", "当前体检仅 1 / 6 分：美国 10 年国债利息高达 4.92%–4.94%（躺赚近 5%），标普反弹后仍压在年线（7,348）下方"))))
@@ -429,7 +430,7 @@ def svg_chart_u4_clock(meta_override: dict | None = None) -> str:
 
     title_u4 = _norm_chart_title(
         u4_nest.get("title") or cl.get("u4_title")
-        or f"{horizon}重磅事件密集，12 月 21 日后才是分批增配科技股的更佳窗口"
+        or f"{horizon_raw}重磅事件密集，12 月 21 日后才是分批增配科技股的更佳窗口"
     )
     sub_u4 = html_mod.escape(clean_svg_text(str(
         u4_nest.get("sub") or cl.get("u4_sub")
@@ -586,8 +587,9 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
     """Chart U6: Verified SSGA 11 GICS Sectors Daily Move vs 52W High Drawdown (Nested u6 + Unified Linear Scale)"""
     cl = load_meta(meta_override).get("chart_live", {})
     u6_nest = cl.get("u6") if isinstance(cl.get("u6"), dict) else {}
-    as_short = html_mod.escape(clean_svg_text(str(u6_nest.get("date_short") or cl.get("u6_date_short") or "11/24")))
-    as_full = html_mod.escape(clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间"))))
+    as_short_raw = clean_svg_text(str(u6_nest.get("date_short") or cl.get("u6_date_short") or "11/24"))
+    as_short = html_mod.escape(as_short_raw)
+    as_full = clean_svg_text(str(cl.get("as_of_full", "2026-11-25 13:30 北京时间")))
     sectors = u6_nest.get("sectors") or cl.get("sectors") or DEFAULT_U_SECTORS
     n = len(sectors)
     row_h = 24.0
@@ -660,7 +662,7 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
     )
     sub_u6 = html_mod.escape(clean_svg_text(str(
         u6_nest.get("sub") or cl.get("u6_sub")
-        or f"{as_short} 美股 11 只官方行业 ETF 对比（左：当日涨跌幅 ｜ 右：距离 52 周高点回撤幅度，橙红 = 伪防御拥挤警报）"
+        or f"{as_short_raw} 美股 11 只官方行业 ETF 对比（左：当日涨跌幅 ｜ 右：距离 52 周高点回撤幅度，橙红 = 伪防御拥挤警报）"
     )))
     takeaway = html_mod.escape(clean_svg_text(str(
         u6_nest.get("takeaway") or cl.get("u6_takeaway")
@@ -668,7 +670,7 @@ def svg_chart_u6_sector_heatmap(meta_override: dict | None = None) -> str:
     )))
     note_u6 = html_mod.escape(clean_svg_text(str(
         u6_nest.get("note") or cl.get("u6_note")
-        or f"数据口径：SSGA 11 只 Select Sector SPDR ETF {as_short} 官方收盘与 52 周高点回撤，截至 {as_full}。"
+        or f"数据口径：SSGA 11 只 Select Sector SPDR ETF {as_short_raw} 官方收盘与 52 周高点回撤，截至 {as_full}。"
     )))
 
     return f'''

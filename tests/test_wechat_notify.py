@@ -1520,6 +1520,71 @@ class TestCliSmoke(unittest.TestCase):
             self.assertTrue(wn._is_placeholder(tok), f"Expected placeholder rejected: {tok}")
         self.assertFalse(wn._is_placeholder("AT_realLiveToken99887766"))
 
+    def test_corrupt_dedupe_json_recovers_cleanly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tdir = Path(tmp)
+            cfg = _make_config(
+                tdir,
+                {"wecom_webhook": {"enabled": True, "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=TESTKEY99", "min_severity": "P2"}},
+            )
+            cfg.dedupe_path.write_text("{corrupt non-json payload!!!", encoding="utf-8")
+            notifier = wn.Notifier(cfg, dry_run=False, now_fn=lambda: _cst(2026, 11, 27, 14, 0))
+            msg = wn.AlertMessage(
+                title="损坏去重文件恢复测试",
+                body_md="正文内容",
+                severity="P1",
+                dedupe_key="recover_corrupt_dedupe_001",
+            )
+            with mock.patch("urllib.request.urlopen", return_value=_FakeHTTPResponse({"errcode": 0, "errmsg": "ok"})):
+                results = notifier.send(msg)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].status, "sent")
+            repaired = json.loads(cfg.dedupe_path.read_text(encoding="utf-8"))
+            self.assertIsInstance(repaired, dict)
+            self.assertIn("wecom_webhook:recover_corrupt_dedupe_001", repaired)
+
+    def test_serverchan_appends_msg_url_when_missing_and_avoids_duplication(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tdir = Path(tmp)
+            cfg = _make_config(
+                tdir,
+                {"serverchan": {"enabled": True, "sendkey": "SCT999888testkey", "min_severity": "P2"}},
+            )
+            notifier = wn.Notifier(cfg, dry_run=False, now_fn=lambda: _cst(2026, 11, 27, 14, 0))
+            captured_bodies: list[dict] = []
+
+            def _fake_open(req, timeout=15):
+                raw = req.data.decode("utf-8") if req.data else "{}"
+                captured_bodies.append(json.loads(raw))
+                return _FakeHTTPResponse({"code": 0, "message": "success"})
+
+            target_url = "https://nanless.github.io/global-investment-research/daily/a-share-latest.html"
+            with mock.patch("urllib.request.urlopen", side_effect=_fake_open):
+                res1 = notifier.send(
+                    wn.AlertMessage(
+                        title="附带链接测试一",
+                        body_md="市场跟踪快报正文",
+                        severity="P1",
+                        url=target_url,
+                        dedupe_key="sc_url_append_1",
+                    )
+                )
+                res2 = notifier.send(
+                    wn.AlertMessage(
+                        title="附带链接测试二",
+                        body_md=f"正文已含链接：{target_url}",
+                        severity="P1",
+                        url=target_url,
+                        dedupe_key="sc_url_append_2",
+                    )
+                )
+            self.assertEqual(res1[0].status, "sent")
+            self.assertEqual(res2[0].status, "sent")
+            self.assertEqual(len(captured_bodies), 2)
+            self.assertIn(f"详情链接：{target_url}", captured_bodies[0]["desp"])
+            self.assertEqual(captured_bodies[1]["desp"].count(target_url), 1)
+            self.assertNotIn("详情链接：", captured_bodies[1]["desp"])
+
 
 if __name__ == "__main__":
     unittest.main()

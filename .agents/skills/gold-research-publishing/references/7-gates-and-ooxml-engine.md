@@ -23,6 +23,7 @@
   - `DAILY_VERDICT` 限 `L0/L1/L2`、`badge` 禁用 `🟢`、含 `traffic_light/risk_line/数组 bullets`；新刊同步校验 `tier_code`/`new_buy_allowed`/`tier1_passed`；
   - `DAILY_SIGNAL_NOISE.signals/noises` 每项含 `head/body` 且 `signals ≤2`；`DAILY_PERSONA.cards` 含 `group/heading/数组 actions`；`DAILY_LAYER_BADGE.tone` 限 `deep`/`pro`；
   - `DAILY_CHART_TIMELINE` 拦截误写 `zones`（须 `highlight_zones`）、`points[].val` 为数字且 `y_min < y_max`；`DAILY_CHART_SWITCH` `checks==4`（含 `passed/name/line1/line2`，新刊加固定 `id` 顺序）且 `gauges` 含 `label/value_text/pct ∈ [0,100]`（拦截 `safe_pct`）；`DAILY_CHART_CROSS` `items[].label` 视觉宽 **`>9.5` 报 FAIL / `>9.0` 报 WARN（建议 `≤8.5`）**；
+  - `DAILY_VISUAL` 严格调用 `scripts/visual_widgets.py:validate_visual_spec()` 校验 4 大图型精确 JSON Schema（`waterfall` 须含 `bars` 2–8 项、`bar_compare` 须含 `items` ≥2 项、`anchor_range` 须含 `items` ≥1 项含有限数值 `current`/`anchor_low <= anchor_high`、`flow_chain` 须含 `steps` 3–6 项），任意缺键或非有限数值即报 FAIL；
 - 新刊同步校验三账本同期标记（`GOLD_EDITION_CHANGELOG`、`GOLD_EDITION_SCORECARD`、`GOLD_EDITION_REVIEW` 四关 HTTPS 证据与 `forecast_review`）。
 
 ### Gate 1：小白友好三档词汇、全篇零内部泄露与零原始 HTML（FAIL）
@@ -48,17 +49,20 @@
 ### Gate 3：彻底清除 Layer 0–1 平行打分（FAIL）
 - 使用 Unicode 安全正则 `(?<![0-9.])[0-6](?:\.[05])?\s*[/／]\s*6(?![0-9])`，同步拦截小数 `X.5/6`、整数 `X/6` 及全角 `／6`。
 
-### Gate 4：段落简洁度、加粗密度与裸数字反引号守卫（WARN）
-- Layer 0–1 自然段去除 Markdown 语法后可见字符数 `> 240` 字报 WARN；
-- **收敛新刊（`>= 2026-11-26_1800`）两项排版干净度预警**：
+### Gate 4 & Gate 4B：段落简洁度、加粗密度、确定性护栏与 SVG 几何零碰撞（WARN / FAIL）
+- **段落长度守卫（WARN）**：Layer 0–1 自然段去除 Markdown 语法后可见字符数 `> 240` 字报 WARN；**Layer 2 正文自然段写作目标 ≤220–250 字，Gate 4 硬警告线 `> 260` 字**（`>= 2026-11-27_0730` 日报强制执行）；
+- **收敛新刊（`>= 2026-11-26_1800`）两项排版干净度预警（WARN）**：
   - **加粗密度**：全文 `**...**` 加粗字符占正文去空白字符数 **`> 14.0%`** 报 WARN；
-  - **裸数字反引号**：使用 `_BARE_NUM_BACKTICK_RE` 拦截用反引号包裹非代码数字、金额、百分比或带单位数值（如 `` `$3,589` ``、`` `+0.96%` ``、`` `757.35 元/克` ``），仅放行证券/期货/基金代码（如 `` `518660` ``、`` `008142` ``、`` `GCZ26` ``、`` `au2702` ``）与代码块。
+  - **裸数字反引号**：使用 `_BARE_NUM_BACKTICK_RE` 拦截用反引号包裹非代码数字、金额、百分比或带单位数值（如 `` `$3,589` ``、`` `+0.96%` ``、`` `757.35 元/克` ``），仅放行证券/期货/基金代码（如 `` `518660` ``、`` `008142` ``、`` `GCZ26` ``、`` `au2702` ``）与代码块；
+- **Gate 4B 确定性业务护栏（`>= 2026-11-27_0730` 日报，FAIL）**：自动执行 5 项确定性代码校验（覆盖正文及全部组件文本）——钱包克重锚点复算（`_check_wallet_anchor_grams`）、上期所夜盘截点（`_check_shfe_night_close`）、四情景 10 点条总和与零反引号（`_check_scenario_10pt_and_dots`）、跨班次时态漂移（`_check_tense_drift`）及 `CCC` 深度垃圾债 vs 广义 `HY OAS` 信用利差消歧（`_check_credit_spread_ccc`）；
+- **Gate 4B SVG 矢量文本边界框零碰撞校验（FAIL）**：调用 `scripts/svg_geometry.py:check_svg_text_geometry()` 实时渲染并校验全部 **3 张日报标准 SVG 图（`DAILY_CHART_TIMELINE` / `DAILY_CHART_CROSS` / `DAILY_CHART_SWITCH`）+ 全部 `DAILY_VISUAL` 矢量信息图**（主报告则校验全部 7 张内置 SVG 图），任何文字重叠或越界即报错阻断。
 
 ### Gate 5：双快照算术、抗阻塞四关复算、部分过关拦截与全局治理
 - 含 `<!-- MASTER_BASELINE {...} -->` 的主报告自动校验 `master_snapshot.json` 且锁定 `as_of_short` 一致；日报校验 `data_snapshot.json`（均含 `edition_id`/`new_buy_allowed`/`cfets_fixing_date`/`tier1_gates[].id` 对称结构）；
 - 校验现货涨跌幅（`≤0.05`）、婚庆 1g/50g/百分比（`≤0.15`）、`tier1_gates` 长度 4 与求和、`tier_code`/`new_buy_allowed` 一致性、`a_class_tranche_split`、5 项 `cross_ratios`（检出 `cross_ratios_\d{4}` 报 WARN）、`etf_cn` 为对象、`institutional_targets` 同期限样本数与中位数复算；
 - **抗阻塞市场校验（`edition_validation.py`）**：`[-5 分钟, +6 小时]` 单向班次截点、4 小时节日 `pending` 复查、半日市 `provisional_close`、普通交易日 `provisional_close` **3 个自然日**核销、`no_row_confirmed` 支持 `*.cboe.com` 公告或 CSV `next_published_date > day`、30 分钟 VIX 盘中窗、四关固定 `id` 精确复算；
 - **部分过关开仓话术拦截（`PARTIAL_ENTRY_CLAIM_RE`）**：全篇（正文 + 组件，自动排除明确否定/反例语境）禁止宣称“通过 0–3 关即可转黄/开新仓”；
+- **导语信号/噪音条数一致性校验**：核对开篇导语中所述「X 条信号 / Y 条噪音」计数必须与 `DAILY_SIGNAL_NOISE.signals` 和 `DAILY_SIGNAL_NOISE.noises` 数组长度精确相等；
 - **当期正文与金店对齐放行（`_skip_domestic_brand_check`）**：核验正文含 `spot_gold_ny_close_rounded`；`data_caveats.category` 标准枚举为 `provisional_close`/`delayed_official`/`single_source`/`source_conflict`/`holiday_thin`/`publication_exception`，当处于中国内地 B 类休市或 `data_caveats` 含 `delayed_official`/`holiday_thin` 且明示金店/国内牌价/内盘/春节未开盘时，自动跳过 `brand_store_rmb` 与 `wedding_save_per_g_rmb` 对齐预警；
 - **全局治理校验**：`market_calendar.json` 覆盖硬底线 **30 天**（`<60 天` 输出 `[INFO]` 提示）、核证有效期 **90 天**；`daily/SCORECARD.md` 零内部工程/RSI/脚本文件名词（`SCORECARD_BANNED_RE`）；`daily/RSI_PLAYBOOK.md` **软限 180 行（WARN）/ 硬上限 200 行（FAIL）** 及 Tier B/C 边界声明；`daily/rsi_metrics.json` 6 维求和自洽。
 
@@ -78,6 +82,7 @@
 - **图 2（`DAILY_CHART_CROSS` · Back-to-Front 分层与动态网格刻度）**：
   - 严格按 **从后向前（back-to-front）** 顺序输出 SVG 图层：白底 → 行底纹 `stripes_svg` → 垂直网格刻度 `ticks_svg` → 资产名/条形/右标签 `rows_svg` → 零轴线 `x_zero` → 反向指标栏 `rev_svg`，避免网格线遮挡数据条或标签；
   - 刻度步长随 `cap_abs` 与实际正负最大涨跌幅自动选取 `2%` / `5%` / `10%`，且仅在实际负/正跨度与绘图区安全边界内绘制刻度线；
+- **通用矢量信息图（`DAILY_VISUAL` · `scripts/visual_widgets.py`）**：零依赖声明式 640px SVG 引擎，支持 **`waterfall`**（损益桥/净流动性瀑布）、**`bar_compare`**（多维横向对比/7 渠道金价阶梯）、**`anchor_range`**（现价 vs 安全锚标尺）与 **`flow_chain`**（3–6 步因果传导链）4 大图型，与图 1/2/3 一并纳入 Gate 0 Schema 校验与 Gate 4B `svg_geometry.py` 几何零碰撞验收；
 - **主报告 7 张内置矢量图动态渲染**：清除内部版本号与静态“今早”字样，图 2 月线蜡烛图动态读取 `monthly_candles` 低点与日期，图 3 历史教学案例保持常量冻结，图 4/图 7 动态读取 `mechanical_calendar` 与 `institutional_targets`。
 
 ---

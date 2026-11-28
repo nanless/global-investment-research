@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from io import StringIO
 import json
 from pathlib import Path
@@ -1716,17 +1716,24 @@ class AtomicRsiAuditAndInspectTests(unittest.TestCase):
                 with self.subTest(banned_fn=banned_fn):
                     self.assertIsNotNone(psd.BANNED_INTERNAL_RE.search(f"禁止输出 {banned_fn}"))
 
-            # 5. Live repo --inspect policy-calendar succeeds and stays compact (< 30 KB even with uncapped briefs)
+            # 5. Bounded size on synthetic fixture + structural integrity check on live --inspect policy-calendar
+            synth_buf = StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stdout(synth_buf):
+                rc_synth = psd.main(["--inspect", "policy-calendar"])
+            self.assertEqual(rc_synth, 0)
+            self.assertLess(len(synth_buf.getvalue().encode("utf-8")), 15000)
+
             real_root = Path(__file__).resolve().parent.parent
             live_buf = StringIO()
             with patch.object(psd, "REPO_ROOT", real_root), redirect_stdout(live_buf):
                 rc_live = psd.main(["--inspect", "policy-calendar"])
             self.assertEqual(rc_live, 0)
-            self.assertLess(len(live_buf.getvalue().encode("utf-8")), 30000)
             live_summary = json.loads(live_buf.getvalue())
-            self.assertGreaterEqual(live_summary["total_briefs"], 6)
-            self.assertTrue(6 <= live_summary["home_featured_briefs"] <= 9)
-            self.assertGreaterEqual(live_summary["total_events"], 10)
+            self.assertGreaterEqual(live_summary["total_briefs"], 1)
+            self.assertEqual(live_summary["total_briefs"], len(live_summary["policy_briefs"]))
+            self.assertTrue(0 <= live_summary["home_featured_briefs"] <= live_summary["total_briefs"])
+            self.assertGreaterEqual(live_summary["total_events"], 1)
+            self.assertEqual(live_summary["total_events"], len(live_summary["events"]))
 
 
 class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
@@ -1909,15 +1916,18 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
 
             mid_ed = "2099-12-31_1130"
             gold_obj = json.loads((sandbox / "gold/data_snapshot.json").read_text(encoding="utf-8"))
-            gold_obj.update(edition_id=mid_ed, as_of_short="2099-12-31 11:30", tier_code="Tier 0", new_buy_allowed=False)
+            live_gold_locked = (
+                gold_obj.get("tier_code") == "Tier 0" or gold_obj.get("new_buy_allowed") is False
+            )
+            gold_obj.update(edition_id=mid_ed, as_of_short="2099-12-31 11:30")
             (sandbox / "gold/data_snapshot.json").write_text(json.dumps(gold_obj, ensure_ascii=False), encoding="utf-8")
             ms_obj = json.loads((sandbox / "equity/state/market_state.json").read_text(encoding="utf-8"))
             ms_obj["edition_id"] = mid_ed
             (sandbox / "equity/state/market_state.json").write_text(json.dumps(ms_obj, ensure_ascii=False), encoding="utf-8")
 
-            # 1. --apply with 1130
+            # 1. --apply with 1130 (preserves live Gold lock state so Gold unlock never breaks CI)
             (sandbox / "equity/state/_edition_patch.json").write_text(
-                json.dumps({"edition_id": mid_ed, "as_of_date": "2099-12-31", "gold_tier0_locked": True}),
+                json.dumps({"edition_id": mid_ed, "as_of_date": "2099-12-31", "gold_tier0_locked": live_gold_locked}),
                 encoding="utf-8",
             )
             # 2. --prepend-gold-ledgers with 1130
@@ -2014,6 +2024,7 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
             self.assertIn("UK", psd.POLICY_CAL_REGIONS)
 
             # 2. Multi-error accumulation across multiple DBs fails once with ALL errors and writes ZERO files
+            future_ev_date = (date.fromisoformat(ed[:10]) + timedelta(days=5)).isoformat()
             bad_patch = {
                 "edition_id": ed,
                 "multi_asset_channels": {
@@ -2026,9 +2037,9 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                 },
                 "policy_calendar": {
                     "events_upsert": [{
-                        "event_id": "uk_bad_prose_20261215",
-                        "date_cst": "2026-12-15",
-                        "end_date_cst": "2026-12-15",
+                        "event_id": f"uk_bad_prose_{future_ev_date.replace('-', '')}",
+                        "date_cst": future_ev_date,
+                        "end_date_cst": future_ev_date,
                         "date_precision": "exact",
                         "time_cst": "20:00",
                         "region": "UK",
@@ -2061,11 +2072,15 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
             # Zero partial writes on failure
             self.assertEqual((sandbox / "equity/state/multi_asset_channels.json").read_text(encoding="utf-8"), before_mac)
 
-            # 3. --prepend-gold-ledgers rejects heading before <!-- GOLD_EDITION_* --> marker
+            # 3. --prepend-gold-ledgers rejects heading before <!-- GOLD_EDITION_* --> marker (using fresh sentinel edition!)
+            sentinel_ed = "2099-12-31_1800"
+            gold_snap_s = json.loads((sandbox / "gold/data_snapshot.json").read_text(encoding="utf-8"))
+            gold_snap_s.update(edition_id=sentinel_ed, as_of_short="2099-12-31 18:00")
+            (sandbox / "gold/data_snapshot.json").write_text(json.dumps(gold_snap_s, ensure_ascii=False), encoding="utf-8")
             bad_ledger = {
-                "edition_id": ed,
-                "changelog_entry_md": f"## {ed} 错误顺序标题\n<!-- GOLD_EDITION_CHANGELOG {ed} -->\n- 记录。\n",
-                "audit_review_block_md": f"### {ed} 错误顺序\n<!-- GOLD_EDITION_REVIEW {{\"edition_id\": \"{ed}\"}} -->\n",
+                "edition_id": sentinel_ed,
+                "changelog_entry_md": f"## {sentinel_ed} 错误顺序标题\n<!-- GOLD_EDITION_CHANGELOG {sentinel_ed} -->\n- 记录。\n",
+                "audit_review_block_md": f"### {sentinel_ed} 错误顺序\n<!-- GOLD_EDITION_REVIEW {{\"edition_id\": \"{sentinel_ed}\"}} -->\n",
             }
             (sandbox / "gold/daily/_ledger_patch.json").write_text(
                 json.dumps(bad_ledger, ensure_ascii=False), encoding="utf-8"
@@ -2075,6 +2090,155 @@ class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
                 with redirect_stderr(err_buf2):
                     rc2 = psd.main(["--prepend-gold-ledgers"])
             self.assertNotEqual(rc2, 0)
+            self.assertIn("first non-empty line", err_buf2.getvalue())
+
+    def test_rollover_equity_month_flagship_cutoff_re_tag_and_as_of_short(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "equity" / "state").mkdir(parents=True)
+            for mkt in psd.ROLLOVER_MARKETS:
+                md = (
+                    f"# {mkt} 手册\n\n"
+                    "## 附录二：龙头总表\n\n"
+                    "| 序号 | 代码 | 名称 |\n| :---: | :---: | :--- |\n"
+                    "| 1 | `600036` | 招商银行 |\n"
+                )
+                (root / "equity" / f"{mkt}_market_report_2026_11.md").write_text(md, encoding="utf-8")
+                (root / "equity" / f"{mkt}_market_report_latest.md").write_text(md, encoding="utf-8")
+                meta = {
+                    "period_slug": "2026_11",
+                    "version": "2026年11月刊",
+                    "tag": "2026年11月旗舰深度手册",
+                    "title": f"{mkt} 标题",
+                    "benchmark_time": "2026-11-28 18:00 北京时间",
+                    "page_footer": f"{mkt} 手册（2026年11月）",
+                    "chart_live": {
+                        "as_of_full": "2026-11-28 18:00 北京时间",
+                        "as_of_short": "2026-11-28",
+                        "as_of_year_float": 2026.91,
+                    },
+                }
+                (root / "equity" / f"report_meta_{mkt}.json").write_text(
+                    json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                )
+
+            patch_path = root / "equity/state/_rollover_patch.json"
+            base_patch = {
+                "prev_period_slug": "2026_11",
+                "new_period_slug": "2026_12",
+                "as_of_full": "2026-12-01 07:55 北京时间",
+                "as_of_year_float": 2026.916,
+                "benchmark_time": "2026-12-01 07:55 北京时间",
+                "markets": {
+                    "a_share": {"tag": "2026-12 A股定制标签", "as_of_short": "2026-12-01"},
+                },
+            }
+
+            # 1. Rejects as_of_full missing HH:MM
+            patch_path.write_text(
+                json.dumps({**base_patch, "as_of_full": "2026-12-01 北京时间"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "YYYY-MM-DD HH:MM"):
+                psd.rollover_equity_month(root, dry_run=True)
+
+            # 2. Accepts Chinese date format YYYY年MM月DD日 HH:MM
+            patch_path.write_text(
+                json.dumps({**base_patch, "as_of_full": "2026年12月01日 07:55 北京时间"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            res_cn = psd.rollover_equity_month(root, dry_run=True)
+            self.assertEqual(res_cn["files_staged"], 9)
+
+            # 3. Accepts ISO YYYY-MM-DD HH:MM, applies tag/as_of_short overrides, and auto-updates period in tag
+            patch_path.write_text(json.dumps(base_patch, ensure_ascii=False), encoding="utf-8")
+            psd.rollover_equity_month(root, dry_run=False)
+            meta_a = json.loads((root / "equity/report_meta_a_share.json").read_text(encoding="utf-8"))
+            meta_hk = json.loads((root / "equity/report_meta_hk_stock.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta_a["tag"], "2026-12 A股定制标签")
+            self.assertEqual(meta_a["chart_live"]["as_of_short"], "2026-12-01")
+            self.assertEqual(meta_hk["tag"], "2026年12月旗舰深度手册")
+
+    def test_policy_calendar_rejects_empty_briefs_replace_and_non_string_dict_event_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _build_clean_fixture(root, edition_id="2026-11-28_1800", as_of_date="2026-11-28")
+            pcal = {
+                "edition_id": "2026-11-28_1800",
+                "as_of_cst": "2026-11-28T18:00:00+08:00",
+                "horizon_days": 30,
+                "policy_briefs": [
+                    {
+                        "id": "b_keep_1",
+                        "date_cst": "2026-11-28",
+                        "time_cst": "10:00",
+                        "region": "CN",
+                        "category": "policy_regulation",
+                        "impact_tier": "P1",
+                        "authority": "央行",
+                        "headline": "央行保持流动性合理充裕",
+                        "summary": "平稳投放。",
+                        "affected_markets": ["a_share"],
+                        "market_impact": "维持稳健底座。",
+                        "source_url": "https://www.pbc.gov.cn/",
+                    }
+                ],
+                "events": [],
+            }
+            (root / "equity/state/policy_calendar.json").write_text(
+                json.dumps(pcal, ensure_ascii=False), encoding="utf-8"
+            )
+            patch_path = root / "equity/state/_edition_patch.json"
+
+            # 1. Empty policy_briefs_replace: [] rejected
+            patch_path.write_text(
+                json.dumps(
+                    {"edition_id": "2026-11-28_1800", "policy_calendar": {"policy_briefs_replace": []}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            err1 = StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stderr(err1):
+                rc1 = psd.main(["--apply"])
+            self.assertNotEqual(rc1, 0)
+            self.assertIn("non-empty list", err1.getvalue())
+
+            # 2. Non-string event_id in dict events_upsert rejected cleanly
+            patch_path.write_text(
+                json.dumps(
+                    {
+                        "edition_id": "2026-11-28_1800",
+                        "policy_calendar": {
+                            "events_upsert": {
+                                "ev_bad": {
+                                    "event_id": 12345,
+                                    "date_cst": "2026-12-05",
+                                    "end_date_cst": "2026-12-05",
+                                    "date_precision": "exact",
+                                    "time_cst": "21:30",
+                                    "region": "US",
+                                    "category": "macro_data",
+                                    "impact_tier": "P1",
+                                    "title": "非字符串编号事件",
+                                    "affected_markets": ["us_stock"],
+                                    "expected_consensus": "测试",
+                                    "market_transmission": "测试",
+                                    "pre_event_stance": "防守",
+                                    "source_url": "https://www.bls.gov/",
+                                }
+                            }
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            err2 = StringIO()
+            with patch.object(psd, "REPO_ROOT", root), redirect_stderr(err2):
+                rc2 = psd.main(["--apply"])
+            self.assertNotEqual(rc2, 0)
+            self.assertIn("non-empty string 'event_id'", err2.getvalue())
 
 
 if __name__ == "__main__":

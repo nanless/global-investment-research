@@ -103,7 +103,25 @@
 
 ---
 
-## 四、双端网页可读性与防漂移硬约束
+## 四、`DAILY_VISUAL` 通用零碰撞 640px 矢量信息图 JSON Schema 契约（`scripts/visual_widgets.py`）
+
+每篇三市主刊与守望刊除既有 `CHART_*` 标准市图外，须结合当日核心数据嵌入 **1–2 张 `<!-- DAILY_VISUAL { ...合法 JSON... } -->`** 通用矢量信息图（由 `scripts/visual_widgets.py` 渲染为 `viewBox="0 0 640 H"` 零碰撞 SVG，并由 `equity/lint_equity.py` Gate 3B 与 `gold/lint_readability.py` Gate 0/4B 严格调用 `validate_visual_spec()` 与 `scripts/svg_geometry.py` 校验，且须零内部工程词、零裸缩写/裸期限并严守黄金红灯互斥锁）。
+
+- **公共字段（4 大图型通用）**：
+  - 必填：`type`（`"waterfall"` \| `"bar_compare"` \| `"anchor_range"` \| `"flow_chain"`）、`title`（非空字符串）
+  - 可选：`subtitle`（副标题）、`takeaway`（渲染为底部「一图看懂：…」）、`note`（数据口径与来源脚注）
+- **4 大图型精确字段契约（特别警惕非对称键名：`bars` vs `items` vs `steps`；`waterfall.benchmark.value` vs `bar_compare.threshold.val`！）**：
+
+| `type` | 必填主数组键与长度 | 子项必填 / 可选字段（严格对齐 `scripts/visual_widgets.py`） | 图级可选字段 |
+| :--- | :--- | :--- | :--- |
+| **`waterfall`**<br>（损益桥/净流动性瀑布） | **`bars`**（**2–8 项**，禁误写 `items`） | 必填：`label` (`str`)、`value` (`number`)；<br>可选：`kind` (`"start"` \| `"add"` \| `"sub"` \| `"total"` \| `"compare"`，默认首项 `"start"` 其余 `"add"`)、`val_label` (`str`)、`tag` (`str`)、`color` (`"#RRGGBB"`) | `unit` (`str`)；<br>`benchmark`: `{"value": number, "label"?: str, "color"?: "#RRGGBB"}`（**注意用 `"value"`**） |
+| **`bar_compare`**<br>（多维横向柱状对比） | **`items`**（**≥ 2 项**） | 必填：`label` (`str`)、`value` (`number`)；<br>可选：`val_label` (`str`)、`tag` (`str`)、`color` (`"#RRGGBB"`)、`highlight` (`bool`) | `max_val` (`number`)、`min_val` (`number`)、`callout_badge` (`str`)；<br>`threshold`: `{"val": number, "label"?: str, "color"?: "#RRGGBB"}`（**注意用 `"val"`，不同于 `benchmark.value`！**） |
+| **`anchor_range`**<br>（焦点股现价 vs 安全锚尺） | **`items`**（**≥ 1 项**） | 必填：`name` (`str`)、`current` (`number`)、`anchor_low` (`number`)、`anchor_high` (`number`，要求 `anchor_low <= anchor_high`)；<br>可选：`code` (`str`)、`unit` (`str`)、`stance` (`"base"` \| `"lock"` \| `"watch"` \| `"avoid"`，默认 `"watch"`)、`stance_label` (`str`)、`gap_label` (`str`)、`hint` (`str`) | 仅公共字段（每行独立归一化标尺，绿带 = `[anchor_low, anchor_high]`，圆点 = `current`） |
+| **`flow_chain`**<br>（跨资产/政策因果传导链） | **`steps`**（**3–6 项**，禁误写 `nodes`/`items`） | 必填：`title` (`str`)；<br>可选：`step` (`str`，默认 `"第 N 环"`)、`metric` (`str`)、`desc` (`str`)、`tone` (`"red"` \| `"orange"` \| `"amber"` \| `"green"` \| `"teal"` \| `"blue"` \| `"slate"`，默认 `"blue"`) | 仅公共字段（≤ 3 步单行排布，4–6 步自动拆为 2 行并绘折线箭头） |
+
+---
+
+## 五、双端网页可读性与防漂移硬约束
 
 1. **字号与字体**：`viewBox="0 0 850 ..."` 内数据标签 `font-size` 统一保持 **`9.0`–`12.5`**，显式声明 `font-family="PingFang SC, Hiragino Sans GB, sans-serif"`；绝不在图内输出裸 ASCII 记号或未译生僻卖方词，手机端支持清晰缩放/横滑不缩字。
 2. **画家顺序与色彩伦理**：高亮背景矩形先于轴线与柱条绘制；红灯、预警、夜期盲窗或“待补核”灰卡严禁配绿徽章/绿柱（挂账统一 `#64748B` / `#F8FAFC`）；柱条采用无截断比例缩放（`U6` 强制统一 1:1 线性刻度，`H6` 动态全量不截断，`U5` 动态行高）；点位编码严格使用 Okabe-Ito 四形状（`g` 绿圆、`b` 蓝菱、`y` 琥珀三角、`r` 红圈叉）且与正文四色评级 100% 同步。

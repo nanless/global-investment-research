@@ -761,11 +761,13 @@
     if (opts.safeAnchor && isFiniteNum(opts.safeAnchor.low)) {
       const lo = Number(opts.safeAnchor.low);
       const hi = isFiniteNum(opts.safeAnchor.high) ? Number(opts.safeAnchor.high) : lo;
+      if (!(lo > 0 && hi > 0)) return null;
       return { low: Math.min(lo, hi), high: Math.max(lo, hi) };
     }
     if (isFiniteNum(opts.anchorLow)) {
       const lo = Number(opts.anchorLow);
       const hi = isFiniteNum(opts.anchorHigh) ? Number(opts.anchorHigh) : lo;
+      if (!(lo > 0 && hi > 0)) return null;
       return { low: Math.min(lo, hi), high: Math.max(lo, hi) };
     }
     return null;
@@ -852,6 +854,7 @@
       '<div class="kline-foot-note" data-kl="foot"></div>' +
       "</div>";
 
+    const widgetEl = containerEl.querySelector(".kline-widget");
     const diagEl = containerEl.querySelector('[data-kl="diag"]');
     const readoutEl = containerEl.querySelector('[data-kl="readout"]');
     const stageEl = containerEl.querySelector('[data-kl="stage"]');
@@ -899,6 +902,9 @@
       });
       if (colorBtn) {
         colorBtn.textContent = state.colorConv === "us" ? "绿涨红跌" : "红涨绿跌";
+      }
+      if (widgetEl) {
+        widgetEl.dataset.klColorMode = state.colorConv;
       }
     }
 
@@ -1041,6 +1047,9 @@
 
     function sizeCanvases() {
       const rect = stageEl.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
       const w = Math.max(240, Math.floor(rect.width));
       const h = Math.max(240, Math.floor(rect.height));
       const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -1084,6 +1093,7 @@
     function drawBase() {
       if (state.destroyed) return;
       const dims = sizeCanvases();
+      if (!dims) return;
       const w = dims.w;
       const h = dims.h;
       const dpr = dims.dpr;
@@ -1108,7 +1118,7 @@
       const mkt = (state.series && state.series.market) || (state.meta && state.meta.market) || "";
 
       const padL = 10;
-      const padR = w < 440 ? 60 : 68;
+      const padR = w < 440 ? 66 : 74;
       const padT = 14;
       const xAxisH = 22;
       const subGap = 14;
@@ -1172,8 +1182,14 @@
 
       if (!Number.isFinite(pMin) || !Number.isFinite(pMax)) return;
       if (pMax === pMin) {
-        pMax *= 1.02;
-        pMin *= 0.98;
+        if (pMax === 0) {
+          pMax = 1;
+          pMin = -1;
+        } else {
+          const padFlat = Math.abs(pMax) * 0.02;
+          pMax += padFlat;
+          pMin -= padFlat;
+        }
       }
       const pPad = (pMax - pMin) * 0.08;
       pMin -= pPad;
@@ -1211,7 +1227,7 @@
         ctx.stroke();
         if (Math.abs(y - yLast) >= 14) {
           ctx.fillStyle = pal.axisText;
-          ctx.fillText(fmtPrice(v, unit), padL + plotW + 6, y);
+          ctx.fillText(fmtPrice(v, unit), padL + plotW + 6, y, padR - 8);
         }
       }
 
@@ -1268,7 +1284,7 @@
         ctx.fillStyle = goldLocked ? pal.anchorLockStroke : pal.anchorStroke;
         ctx.textAlign = "left";
         ctx.textBaseline = "bottom";
-        ctx.fillText(pillText, padL + 6, Math.max(mainTop + 13, bandTop - 2));
+        ctx.fillText(pillText, padL + 6, Math.max(mainTop + 13, bandTop - 2), plotW - 10);
         ctx.restore();
       } else if (anchorOffscreenHint) {
         ctx.save();
@@ -1276,7 +1292,7 @@
         ctx.fillStyle = isGoldLockedEffective() ? pal.anchorLockStroke : pal.anchorStroke;
         ctx.textAlign = "left";
         ctx.textBaseline = "bottom";
-        ctx.fillText(anchorOffscreenHint, padL + 6, mainBot - 4);
+        ctx.fillText(anchorOffscreenHint, padL + 6, mainBot - 4, plotW - 10);
         ctx.restore();
       }
 
@@ -1368,7 +1384,7 @@
       ctx.font = '600 10px -apple-system, "SF Pro Display", sans-serif';
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText(fmtPrice(lastC, unit), padL + plotW + 5, yLast);
+      ctx.fillText(fmtPrice(lastC, unit), padL + plotW + 5, yLast, padR - 8);
       ctx.restore();
 
       // Sub-Panel Frame & Divider
@@ -1412,7 +1428,7 @@
         ctx.font = '10px -apple-system, "PingFang SC", sans-serif';
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(fmtVol(vMax, mkt), padL + plotW + 6, subTop + 2);
+        ctx.fillText(fmtVol(vMax, mkt), padL + plotW + 6, subTop + 2, padR - 8);
         const lastVol = state.bars[endIdx].v;
         subLabel = isFiniteNum(lastVol) && lastVol > 0 ? "VOL(5,10) " + fmtVol(lastVol, mkt) : "VOL(5,10) 待官收同步";
       } else if (sub === "MACD") {
@@ -1451,9 +1467,9 @@
         ctx.font = '10px -apple-system, "PingFang SC", sans-serif';
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(fmtNum(mAbs, mAxisDp), padL + plotW + 6, subTop + 2);
+        ctx.fillText(fmtNum(mAbs, mAxisDp), padL + plotW + 6, subTop + 2, padR - 8);
         ctx.textBaseline = "bottom";
-        ctx.fillText(fmtNum(-mAbs, mAxisDp), padL + plotW + 6, subBot - 2);
+        ctx.fillText(fmtNum(-mAbs, mAxisDp), padL + plotW + 6, subBot - 2, padR - 8);
         const mDifEnd = state.ind.macd.dif[endIdx];
         const mDeaEnd = state.ind.macd.dea[endIdx];
         const mBarEnd = state.ind.macd.hist[endIdx];
@@ -1561,7 +1577,7 @@
         ctx.font = '10px -apple-system, sans-serif';
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(fmtPrice(aMax, unit), padL + plotW + 6, subTop + 2);
+        ctx.fillText(fmtPrice(aMax, unit), padL + plotW + 6, subTop + 2, padR - 8);
         const curA = state.ind.atr14[endIdx];
         const atrPct = isFiniteNum(curA) && lastC > 0 ? "（日均振幅 ±" + ((curA / lastC) * 100).toFixed(2) + "%）" : "";
         subLabel = "ATR(14) " + fmtPrice(curA, unit) + atrPct;
@@ -1586,9 +1602,9 @@
         ctx.font = '10px -apple-system, sans-serif';
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText("+" + bAbs + "%", padL + plotW + 6, subTop + 2);
+        ctx.fillText("+" + bAbs + "%", padL + plotW + 6, subTop + 2, padR - 8);
         ctx.textBaseline = "bottom";
-        ctx.fillText("-" + bAbs + "%", padL + plotW + 6, subBot - 2);
+        ctx.fillText("-" + bAbs + "%", padL + plotW + 6, subBot - 2, padR - 8);
         const curB = state.ind.bias20[endIdx];
         subLabel = "BIAS(20) " + (isFiniteNum(curB) ? (curB >= 0 ? "+" : "") + curB.toFixed(2) + "%" : "—");
       }
@@ -1598,7 +1614,7 @@
       ctx.font = '600 10px -apple-system, "PingFang SC", sans-serif';
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      ctx.fillText(subLabel, padL + 4, subTop + 3);
+      ctx.fillText(subLabel, padL + 4, subTop + 3, plotW - 10);
 
       state.layout = {
         w: w,
@@ -1666,7 +1682,7 @@
         ctx.font = '600 10px -apple-system, "SF Pro Display", sans-serif';
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        ctx.fillText(fmtPrice(hoverPrice, L.unit), L.padL + L.plotW + 5, cy);
+        ctx.fillText(fmtPrice(hoverPrice, L.unit), L.padL + L.plotW + 5, cy, L.padR - 8);
       }
 
       // Date Axis Pill
@@ -1928,7 +1944,7 @@
       function (e) {
         if (!state.layout) return;
         if (touchMode === "pinch" && e.touches.length === 2) {
-          e.preventDefault();
+          if (e.cancelable) e.preventDefault();
           const dx = e.touches[0].clientX - e.touches[1].clientX;
           const dy = e.touches[0].clientY - e.touches[1].clientY;
           const dist = Math.hypot(dx, dy) || 1;
@@ -1936,6 +1952,9 @@
             zoomBy(pinchStartDist / dist, 0.5);
             pinchStartDist = dist;
           }
+          return;
+        }
+        if (touchMode === "pinch-end") {
           return;
         }
         if (e.touches.length === 1) {
@@ -1947,14 +1966,14 @@
             touchMode = Math.abs(dx) > Math.abs(dy) ? "pan" : "scroll";
           }
           if (touchMode === "scrub") {
-            e.preventDefault();
+            if (e.cancelable) e.preventDefault();
             const rect = baseCanvas.getBoundingClientRect();
             state.hoverIdx = idxFromClientX(t.clientX);
             state.hoverY = t.clientY - rect.top;
             drawOverlay();
             updateReadout(state.hoverIdx);
           } else if (touchMode === "pan") {
-            e.preventDefault();
+            if (e.cancelable) e.preventDefault();
             const shift = Math.round(-dx / state.layout.step);
             const next = Math.max(0, Math.min(state.bars.length - state.viewCount, touchOrigStart + shift));
             if (next !== state.viewStart) {
@@ -1969,6 +1988,12 @@
 
     baseCanvas.addEventListener("touchend", function (e) {
       window.clearTimeout(holdTimer);
+      if (e.touches && e.touches.length > 0) {
+        if (touchMode === "pinch") {
+          touchMode = "pinch-end";
+        }
+        return;
+      }
       if (touchMode === "none" && e.changedTouches && e.changedTouches.length === 1 && state.layout) {
         const t = e.changedTouches[0];
         const rect = baseCanvas.getBoundingClientRect();
@@ -2281,7 +2306,9 @@
       });
 
       groupBtns.forEach(function (b) {
-        b.classList.toggle("active", b.getAttribute("data-chart-group") === activeGroup && tokens.length === 0);
+        const isAct = b.getAttribute("data-chart-group") === activeGroup && tokens.length === 0;
+        b.classList.toggle("active", isAct);
+        b.setAttribute("aria-selected", isAct ? "true" : "false");
       });
       if (countEl) {
         countEl.textContent = "共 " + filtered.length + " 项标的";
@@ -2605,7 +2632,9 @@
       function activateSymbol(symId, targetTab) {
         if (targetTab) {
           tabBtns.forEach(function (b) {
-            b.classList.toggle("active", b.getAttribute("data-deck-tab") === targetTab);
+            const isAct = b.getAttribute("data-deck-tab") === targetTab;
+            b.classList.toggle("active", isAct);
+            b.setAttribute("aria-selected", isAct ? "true" : "false");
           });
           panels.forEach(function (p) {
             p.hidden = p.getAttribute("data-deck-panel") !== targetTab;

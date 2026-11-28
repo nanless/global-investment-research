@@ -29,8 +29,13 @@ def _resolve_archived_report(name: str = "2026-11-25_1800_晚报_黄金深度研
     ):
         if candidate.is_file():
             return candidate
+    archive_dir = GOLD / "daily" / "archive"
+    if archive_dir.is_dir():
+        matches = sorted(p for p in archive_dir.rglob(name) if p.is_file())
+        if matches:
+            return matches[0]
     raise FileNotFoundError(
-        f"Archived legacy gold report not found in daily/ or daily/archive/2026-11/: {name}"
+        f"Archived legacy gold report not found in daily/ or daily/archive/**: {name}"
     )
 
 

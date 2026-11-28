@@ -281,7 +281,7 @@ S3_INTERNAL_ENG_LEAK_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|fetch_kline_data\.py|"
+    r"chart_input\.py|install_sidecars\.py|patch_state_dbs\.py|svg_geometry\.py|visual_widgets\.py|fetch_kline_data\.py|"
     r"realtime_monitor\.py|wechat_notify\.py|"
     r"_edition_patch\.json|_ledger_patch\.json|_rsi_patch\.json|_audit_patch\.json|"
     r"_rollover_patch\.json|_archive_patch\.json|"
@@ -420,17 +420,17 @@ GOLD_ETF_FORBIDDEN_ROLES: tuple[str, ...] = (
     "建仓",
 )
 _GOLD_TARGET_RE_FRAG = (
-    r"(?:黄金(?:股|ETF|ETC|基金|积存金|金条)?|金仓|金矿股?|"
+    r"(?:(?:现货|实物|纸|积存)?(?:黄金(?:股|ETF|ETC|基金|积存金|金条)?|金仓|金矿股?)|"
     r"(?<![A-Za-z0-9])(?:518660|518880|518850|159934|159937|518800|517520|159562|"
-    r"02840(?:\.HK)?|03081(?:\.HK)?|01929(?:\.HK)?|06181(?:\.HK)?|"
+    r"008142|008143|02840(?:\.HK)?|03081(?:\.HK)?|01929(?:\.HK)?|06181(?:\.HK)?|"
     r"GLD|IAU|IAUM|GLDM|IGLN|GDX|GDXJ|NEM|FCX)(?![A-Za-z0-9]))"
 )
 GOLD_ACTIVE_BUY_RE = re.compile(
     rf"(?:趁急跌.{{0,12}}(?:补齐|买|低吸|布局|上车|定投|建仓).{{0,8}}{_GOLD_TARGET_RE_FRAG}|"
-    rf"(?:小批|分批|立刻|马上|立即|同步|今[日早晚]).{{0,8}}(?:补齐|补足|买入|买进|加仓|加配|建仓|配置|定投|抄底|低吸|布局|上车).{{0,8}}(?:[0-9一二两三半成%]*\s*)?{_GOLD_TARGET_RE_FRAG}|"
-    rf"(?:补齐|补足)\s*[0-9一二两三半成%]*\s*(?:黄金|金仓)|"
-    rf"(?:加配|逢低买|低吸|布局|上车|抄底|定投|建仓)\s*[0-9一二两三半成%]*\s*{_GOLD_TARGET_RE_FRAG}|"
-    rf"(?:立即|马上|现在|建议|可以|开启|启动).{{0,6}}(?:买入|买进|建仓|加仓|配置|定投|抄底|低吸|布局|上车).{{0,6}}{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:小批|分批|立刻|马上|立即|同步|今[日早晚]).{{0,8}}(?:补齐|补足|买入|买进|加仓|加配|建仓|配置|配仓|定投|抄底|低吸|布局|上车).{{0,8}}(?:[0-9一二两三半成%]*\s*)?{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:补齐|补足)\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?{_GOLD_TARGET_RE_FRAG}(?!\s*(?:免五|佣金|费率|折溢价|护栏|规则|口径|条款|说明|数据|披露|对比|清单|铁律|提示|警示|文档|基准|锚点))|"
+    rf"(?:买入|买进|新买|试买|加仓|加配|逢低买|低吸|布局|上车|抄底|定投|配置|配仓|建仓|吸纳|购入)\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?{_GOLD_TARGET_RE_FRAG}|"
+    rf"(?:立即|马上|现在|建议|可以|开启|启动).{{0,6}}(?:买|买入|买进|建仓|加仓|配置|配仓|定投|抄底|低吸|布局|上车).{{0,6}}{_GOLD_TARGET_RE_FRAG}|"
     r"\b(?:buy\s+gold|add\s+gold|accumulate\s+gold|dca\s+into\s+gold|buy\s+now[^\n]{0,20}gold)\b)",
     re.IGNORECASE,
 )
@@ -441,13 +441,32 @@ GOLD_CTA_BUY_RE = re.compile(
     re.IGNORECASE,
 )
 GOLD_DEFER_GUARD_RE = re.compile(
-    r"(?:暂不|严禁|禁止|切忌|勿|停止|先别|不能|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|暂停|无需|不)"
-    r"(?:现在|今天|今日|当下|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|进行|尝试|建议|允许|任何|新增|直接|冲动)*"
-    r"\s*(?:补|买|加|建|抄|配置|定投|低吸|布局|上车|开启|启动)"
+    r"(?:暂不|严禁|禁止|切忌|切勿|勿|停止|先别|别|不能|不可|不得|不宜|不要|别急着|拒绝|不考虑|不允许|不应|不会|暂停|无需|无须|0%\s*(?:严禁|禁止|锁定)?|零配|未在[^。！？；，,]{0,12}|不)"
+    r"(?:现在|今天|今日|当下|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|同步|进行|尝试|建议|允许|任何|新增|直接|冲动|抢跑|追高|凭感觉|猜底|盲目|提前)*"
+    r"\s*(?:补|买|加|建|抄|配置|配仓|定投|低吸|布局|上车|开启|启动|吸纳|购入)"
+    r"|(?:严禁|禁止|不得|不可|切忌|切勿|勿|暂不|不要|别)(?:(?!但|可|应|须|宜|若|直接|立即|建议|推荐|放心|大胆)[^。！？；，,|]){0,16}(?:与|及|和|或|、|/|／)(?:抢跑|盲目|提前|追高|再|去|主动|新)*\s*(?:补|买|加|建|抄|配置|配仓|定投|低吸|布局|上车|吸纳|购入)"
     r"|(?:待|等).{0,18}(?:黄灯|绿灯|解锁)|(?:黄灯|绿灯|解锁|过四关|全部过关)(?:亮起|确认)?后|"
     r"\b(?:do\s+not|never|should\s+not|must\s+not|hold\s+off|pause)\s+(?:buy|add|accumulat|dca)",
     re.IGNORECASE,
 )
+_CRYPTO_ACTIVE_BUY_RE = re.compile(
+    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|配仓|建仓|吸纳|购入|做多)"
+    r"\s*(?:[0-9一二两三半成%–\-~约近超少量小批分批]*\s*)?"
+    r"(?:(?:现货|数字|虚拟|加密)?(?:比特币|以太坊|虚拟货币|加密货币|数字货币|加密资产|稳定币)|"
+    r"(?<![A-Za-z0-9])(?:BTC|ETH|USDT|USDC|IBIT|FBTC)(?![A-Za-z0-9]))"
+    r"|\b(?:buy|add|accumulate|allocate(?:\s+to)?|dca\s+into)\s+(?:btc|bitcoin|eth|ethereum|usdt|crypto(?:currency)?)\b",
+    re.IGNORECASE,
+)
+_CRYPTO_NEGATION_GUARD_RE = re.compile(
+    r"(?:严禁|禁止|切忌|切勿|不得|不可|绝不|决不|不允许)(?:(?!但|可|应|须|宜|若|直接|立即|建议|推荐|放心|大胆)[^。！？；，,|]){0,18}[\s“‘「\"*_]*$"
+    r"|(?:暂不|停止|拒绝|勿|不能|不宜|不要|别|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
+    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相|可|得|准|要|会|宜|应|能)*"
+    r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|低吸|布局|上车|交易|炒作|买卖|持有)[/／、与及和或])?[\s“‘「\"*_]*$"
+    r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?|forbid(?:den|s)?)\s+(?:from\s+)?[\w\s]{0,24}$",
+    re.IGNORECASE,
+)
+CRYPTO_ACTIVE_BUY_RE = _CRYPTO_ACTIVE_BUY_RE
+CRYPTO_NEGATION_GUARD_RE = _CRYPTO_NEGATION_GUARD_RE
 GOLD_TIER0_LOCK_INDICATORS_RE = re.compile(
     r"(?:Tier\s*0|红灯停|暂不新买|新仓\s*0%|不新买|严禁新买|严禁抢跑|红灯防守)",
     re.IGNORECASE,
@@ -487,8 +506,8 @@ DOSSIER_BASE_NEG_RE = re.compile(r"(?:严禁|禁止|不可|不得|切勿|勿|不
 DOSSIER_URGENT_WARN_RE = re.compile(r"暂勿立即加仓|切勿.{0,12}追买")
 SCREENER_SUMMARY_WARN_RE = re.compile(r"配售|暂勿|切勿|严禁追高|抛压|回避|观望|不追|勿追")
 S6_A_FORBID_CURR_RE = re.compile(r"HK\$|\$|港元|美元", re.IGNORECASE)
-S6_HK_FORBID_CURR_RE = re.compile(r"(?<!HK)\$|美元", re.IGNORECASE)
-S6_US_FORBID_CURR_RE = re.compile(r"港元")
+S6_HK_FORBID_CURR_RE = re.compile(r"(?<!HK)\$|美元|¥|￥|人民币|(?<![港美欧日])元", re.IGNORECASE)
+S6_US_FORBID_CURR_RE = re.compile(r"HK\$|港元|¥|￥|人民币|(?<![美欧日])元", re.IGNORECASE)
 S6_PERMANENT_INVARIANTS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("4-digit .HK ticker (must be 5-digit zero-padded)", re.compile(r"(?<![0-9])\d{4}\.HK(?![A-Za-z0-9])")),
     ("lumped 008142/008143 (0.20%) fee claim", re.compile(r"008142\s*/\s*008143\s*[（(][^）)]{0,12}0\.20%")),
@@ -1129,7 +1148,7 @@ def _inspect_element_by_id(raw_html: str, target_id: str) -> _ElementSnapshot | 
     return parser.result()
 
 
-PCAL_RAW_TIER_RE = re.compile(r"(?<![A-Za-z0-9])P[012](?![A-Za-z0-9])")
+PCAL_RAW_TIER_RE = re.compile(r"(?<![A-Za-z0-9_])P[012](?![A-Za-z0-9_])")
 
 
 @dataclass
@@ -1519,6 +1538,7 @@ def _scan_embedded_json_payload(
     eng_hits = 0
     js_hits = 0
     gold_hits = 0
+    crypto_hits = 0
     restricted_hits = 0
 
     if check_eng:
@@ -1563,6 +1583,22 @@ def _scan_embedded_json_payload(
                         f"{m_rc.group(0)} without ±40-char warning -> {win!r}"
                     )
                     restricted_hits += 1
+                    break
+        if check_eng and crypto_hits < 5:
+            for raw_seg in re.split(r"[\n。！？；，,]+", val):
+                seg = " ".join(raw_seg.split())
+                if not seg:
+                    continue
+                for m_c in _CRYPTO_ACTIVE_BUY_RE.finditer(seg):
+                    if not _crypto_action_is_guarded(seg, m_c):
+                        win = seg[max(0, m_c.start() - 36) : min(len(seg), m_c.end() + 36)]
+                        errors.append(
+                            f"[{gate_tag}] {rel_path}: PBOC Doc 42 (银发〔2026〕42号) crypto firewall violation "
+                            f"in #{json_id} ({field_path}): {win!r}"
+                        )
+                        crypto_hits += 1
+                        break
+                if crypto_hits >= 5:
                     break
         if check_gold_tier0 and gold_hits < 5:
             for raw_seg in re.split(r"[\n。！？；，,]+", val):
@@ -1676,6 +1712,22 @@ def run_gate_s3(
                 errors.append(
                     f"[S3] {rel_path}: leaked internal engineering/tier/path term in public prose -> {snippet!r}"
                 )
+            m_pcal_tier = PCAL_RAW_TIER_RE.search(doc.visible_text)
+            if m_pcal_tier:
+                snippet = " ".join(
+                    doc.visible_text[max(0, m_pcal_tier.start() - 18) : min(len(doc.visible_text), m_pcal_tier.end() + 18)].split()
+                )
+                errors.append(
+                    f"[S3] {rel_path}: leaked raw internal priority tag ({m_pcal_tier.group(0)}) in visible HTML -> {snippet!r}"
+                )
+            else:
+                for svg_line in _extract_svg_joined_lines(doc.raw_text):
+                    m_svg_tier = PCAL_RAW_TIER_RE.search(svg_line)
+                    if m_svg_tier:
+                        errors.append(
+                            f"[S3] {rel_path}: leaked raw internal priority tag ({m_svg_tier.group(0)}) in SVG text -> {svg_line[:60]!r}"
+                        )
+                        break
 
         if doc.screener_json_raw is not None:
             _scan_embedded_json_payload(
@@ -2083,6 +2135,106 @@ def _is_gold_new_buy_blocked(gold_snap: dict | None, market_state: dict | None) 
     return False
 
 
+def _extract_svg_joined_lines(raw_html: str) -> list[str]:
+    """Join vertically-adjacent wrapped <text> lines inside each <svg> (e.g. visual_widgets _wrap_lines)
+    so phrases split across two <text> tags cannot evade Gold-lock, Crypto Doc-42, or P0/P1/P2 scans."""
+    joined: list[str] = []
+    for chunk in _SVG_RAW_BLOCK_RE.findall(raw_html or ""):
+        try:
+            root = ET.fromstring(chunk)
+        except ET.ParseError:
+            continue
+        items: list[tuple[float, float, str]] = []
+
+        def _walk(node: ET.Element, tx: float, ty: float) -> None:
+            tr = node.attrib.get("transform", "")
+            for tm in _SVG_TRANSLATE_RE.finditer(tr):
+                tx += float(tm.group(1))
+                if tm.group(2) is not None:
+                    ty += float(tm.group(2))
+            tag = node.tag.split("}")[-1].lower()
+            if tag == "text":
+                txt = " ".join("".join(node.itertext()).split())
+                if txt:
+                    try:
+                        x = float(node.attrib.get("x", "0")) + tx
+                        y = float(node.attrib.get("y", "0")) + ty
+                    except ValueError:
+                        x, y = tx, ty
+                    items.append((x, y, txt))
+                return
+            for ch in node:
+                _walk(ch, tx, ty)
+
+        _walk(root, 0.0, 0.0)
+        if len(items) < 2:
+            continue
+        grp: list[tuple[float, float, str]] = [items[0]]
+        for x, y, txt in items[1:]:
+            px, py, _ = grp[-1]
+            if abs(x - px) <= 2.5 and 0.0 <= (y - py) <= 18.0:
+                grp.append((x, y, txt))
+            else:
+                if len(grp) >= 2:
+                    joined.append("".join(t for _, _, t in grp))
+                grp = [(x, y, txt)]
+        if len(grp) >= 2:
+            joined.append("".join(t for _, _, t in grp))
+    return joined
+
+
+def _crypto_action_is_guarded(text: str, action: re.Match) -> bool:
+    """Return True only when an explicit negation/prohibition guards the crypto action in the same clause."""
+    before = re.split(r"[。！？；，,|\n]", text[: action.start()])[-1]
+    return bool(_CRYPTO_NEGATION_GUARD_RE.search(before))
+
+
+def _check_crypto_firewall(doc: ParsedHtml, errors: list[str], *, gate_tag: str = "S6") -> None:
+    """Enforce PBOC Doc 42 (银发〔2026〕42号) across visible HTML text, CTAs, and wrapped SVG <text> lines."""
+    page = doc.rel_path
+    hits = 0
+    for cta in doc.ctas:
+        for m in _CRYPTO_ACTIVE_BUY_RE.finditer(cta.text):
+            if not _crypto_action_is_guarded(cta.text, m):
+                errors.append(
+                    f"[{gate_tag}] {page}:{cta.lineno}: PBOC Doc 42 (银发〔2026〕42号) crypto firewall violation "
+                    f"in CTA <{cta.tag}>: {cta.text!r}"
+                )
+                hits += 1
+                break
+        if hits >= 5:
+            return
+    for raw_line in re.split(r"[\n。！？；，,]+", doc.visible_text):
+        line = " ".join(raw_line.split())
+        if not line:
+            continue
+        for m in _CRYPTO_ACTIVE_BUY_RE.finditer(line):
+            if not _crypto_action_is_guarded(line, m):
+                win = line[max(0, m.start() - 45) : min(len(line), m.end() + 45)]
+                errors.append(
+                    f"[{gate_tag}] {page}: PBOC Doc 42 (银发〔2026〕42号) crypto firewall violation "
+                    f"in visible text: {win!r}"
+                )
+                hits += 1
+                if hits >= 5:
+                    return
+    for svg_line in _extract_svg_joined_lines(doc.raw_text):
+        for raw_seg in re.split(r"[\n。！？；，,]+", svg_line):
+            seg = " ".join(raw_seg.split())
+            if not seg:
+                continue
+            for m in _CRYPTO_ACTIVE_BUY_RE.finditer(seg):
+                if not _crypto_action_is_guarded(seg, m):
+                    win = seg[max(0, m.start() - 45) : min(len(seg), m.end() + 45)]
+                    errors.append(
+                        f"[{gate_tag}] {page}: PBOC Doc 42 (银发〔2026〕42号) crypto firewall violation "
+                        f"in SVG text: {win!r}"
+                    )
+                    hits += 1
+                    if hits >= 5:
+                        return
+
+
 def _check_gold_tier0_mutex(doc: ParsedHtml, errors: list[str]) -> None:
     """Scan current public output, including text in embedded charts."""
     vis = doc.visible_text
@@ -2119,6 +2271,23 @@ def _check_gold_tier0_mutex(doc: ParsedHtml, errors: list[str]) -> None:
                 prose_hits += 1
                 if prose_hits >= 5:
                     return
+
+    # 4. Also scan joined wrapped <text> lines inside <svg> charts (closes wrapped SVG line-break bypass).
+    for svg_line in _extract_svg_joined_lines(doc.raw_text):
+        for raw_seg in re.split(r"[\n。！？；，,]+", svg_line):
+            seg = " ".join(raw_seg.split())
+            if not seg:
+                continue
+            for m in GOLD_ACTIVE_BUY_RE.finditer(seg):
+                if not _gold_action_is_guarded(seg, m):
+                    win = seg[max(0, m.start() - 45) : min(len(seg), m.end() + 45)]
+                    errors.append(
+                        f"[S6] {page}: Gold Tier 0 mutex violation — unguarded buy-gold directive "
+                        f"in wrapped SVG text: {win!r}"
+                    )
+                    prose_hits += 1
+                    if prose_hits >= 5:
+                        return
 
 
 def _gold_action_is_guarded(text: str, action: re.Match) -> bool:
@@ -2243,13 +2412,13 @@ def _validate_screener_json(
         elif mk == "hk-stock" and S6_HK_FORBID_CURR_RE.search(price_str):
             errors.append(
                 f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) currency violation — "
-                f"hk-stock price contains USD currency token: {price_str!r}"
+                f"hk-stock price contains non-HKD currency token: {price_str!r}"
             )
             bad_entries += 1
         elif mk == "us-stock" and S6_US_FORBID_CURR_RE.search(price_str):
             errors.append(
                 f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) currency violation — "
-                f"us-stock price contains HKD currency token: {price_str!r}"
+                f"us-stock price contains non-USD currency token: {price_str!r}"
             )
             bad_entries += 1
 
@@ -2304,8 +2473,9 @@ def _validate_screener_json(
                     )
                     bad_entries += 1
                     break
-            action_head = str(dossier.get("action_etf") or "").strip()[:60]
-            if action_head:
+            action_full = str(dossier.get("action_etf") or "").strip()
+            action_head = action_full[:60]
+            if action_full:
                 is_dossier_red = (
                     "🔴" in action_head
                     or (bool(DOSSIER_RED_AVOID_RE.search(action_head)) and not DOSSIER_RED_NEG_RE.search(action_head))
@@ -2326,14 +2496,17 @@ def _validate_screener_json(
                         f"card color='r' conflicts with dossier action_etf green-base ({action_head[:40]!r})"
                     )
                     bad_entries += 1
-                elif col_val == "g" and DOSSIER_URGENT_WARN_RE.search(action_head):
-                    card_sum = str(entry.get("summary") or "")
-                    if not SCREENER_SUMMARY_WARN_RE.search(card_sum):
-                        errors.append(
-                            f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) badge contradiction — "
-                            f"card color='g' omits urgent placement/chase-buy warning from dossier ({action_head[:40]!r})"
-                        )
-                        bad_entries += 1
+                elif col_val == "g":
+                    m_uw = DOSSIER_URGENT_WARN_RE.search(action_full)
+                    if m_uw:
+                        card_sum = str(entry.get("summary") or "")
+                        if not SCREENER_SUMMARY_WARN_RE.search(card_sum):
+                            uw_snip = action_full[max(0, m_uw.start() - 16) : min(len(action_full), m_uw.end() + 24)]
+                            errors.append(
+                                f"[S6] screener.html: #screener-data[{idx}] ({mk}/{code}) badge contradiction — "
+                                f"card color='g' omits urgent placement/chase-buy warning from dossier ({uw_snip!r})"
+                            )
+                            bad_entries += 1
 
         if bad_entries >= 10:
             break
@@ -2445,6 +2618,43 @@ def run_gate_s6(
                     errors.append(
                         f"[S6] index.html: missing live SGE Au(T+D) reading ({autd_vals})"
                     )
+
+        # 1b. P0-3 parity check: daily/gold-latest.html visual cockpit X/Y 关 count must match gold_snap tier1_passed/tier1_total.
+        gold_latest_doc = parsed_htmls.get(DAILY_GOLD_LATEST_PAGE)
+        if gold_latest_doc is not None:
+            exp_passed = gold_snap.get("tier1_passed")
+            exp_total = gold_snap.get("tier1_total")
+            if type(exp_passed) is int and type(exp_total) is int and exp_total > 0:
+                m_cockpit = re.search(
+                    r'<section\b[^>]*class="[^"]*\bdaily-visual-cockpit\b[^"]*"[^>]*>(.*?)</section>',
+                    gold_latest_doc.raw_text,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+                if m_cockpit:
+                    cockpit_html = m_cockpit.group(1)
+                    cockpit_vis = " ".join(re.sub(r"<[^>]+>", " ", cockpit_html).split())
+                    for m_gc in re.finditer(r"(?<!\d)(\d+)\s*[/／]\s*(\d+)\s*关", cockpit_vis):
+                        got_p, got_t = int(m_gc.group(1)), int(m_gc.group(2))
+                        if (got_p, got_t) != (exp_passed, exp_total):
+                            errors.append(
+                                f"[S6] {DAILY_GOLD_LATEST_PAGE}: visual cockpit gate count "
+                                f"'{got_p}/{got_t} 关' conflicts with gold/data_snapshot.json "
+                                f"({exp_passed}/{exp_total} 关)"
+                            )
+                    m_note = re.search(
+                        r'<div\b[^>]*class="[^"]*\bdvc-alloc-note\b[^"]*"[^>]*>(.*?)</div>',
+                        cockpit_html,
+                        flags=re.DOTALL | re.IGNORECASE,
+                    )
+                    if m_note:
+                        note_vis = " ".join(re.sub(r"<[^>]+>", " ", m_note.group(1)).split())
+                        if gold_snap.get("new_buy_allowed") is True and (
+                            "新仓严格 0%" in note_vis or "新仓 0%" in note_vis or "当前红灯" in note_vis
+                        ):
+                            errors.append(
+                                f"[S6] {DAILY_GOLD_LATEST_PAGE}: visual cockpit .dvc-alloc-note still shows "
+                                f"red-light 0% lock while gold/data_snapshot.json new_buy_allowed=True ({note_vis!r})"
+                            )
 
     # 2. Live A / HK / US benchmark indices, cockpit risk radar SSOT & screener JSON fidelity.
     if market_state is not None:
@@ -2592,13 +2802,18 @@ def run_gate_s6(
                     f"[S6] screener.html: static stock row count ({screener_doc.stock_row_count}) < 100 minimum floor"
                 )
 
-    # 2b. BTC compliance guard on index.html: any BTC/比特币 mention must carry read-only / onshore ban disclosure.
+    # 2b. BTC compliance guard on index.html + PBOC Doc 42 (银发〔2026〕42号) crypto active-buy firewall across rendered pages.
     if index_doc is not None and ("BTC" in index_doc.visible_text or "比特币" in index_doc.visible_text):
         if "境内禁交易" not in index_doc.visible_text and "仅作流动风向" not in index_doc.visible_text:
             errors.append(
                 "[S6] index.html: BTC/比特币 appears without required compliance guard "
                 "('境内禁交易' or '仅作流动风向')"
             )
+    for c_path, c_doc in sorted(parsed_htmls.items()):
+        m_dated_c = DAILY_DATED_RE.fullmatch(c_path)
+        if m_dated_c and (m_dated_c.group(2), int(m_dated_c.group(3)), int(m_dated_c.group(4) or 1)) < INTERNAL_LEAK_CUTOVER:
+            continue
+        _check_crypto_firewall(c_doc, errors, gate_tag="S6")
 
     # 2c. Production #card-nonus non-empty benchmark & ETF vehicle guard on index.html.
     if index_doc is not None and "card-nonus" in index_doc.ids:
@@ -3288,7 +3503,8 @@ def run_gate_s7(
                     errors.append(f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] non-finite OHLC {bar!r}")
                     bar_errors += 1
                     break
-                if float(c) <= 0 or float(h) < float(l):
+                allow_nonpositive = sym_id.startswith(("rate_", "spread_"))
+                if (not allow_nonpositive and float(c) <= 0) or float(h) < float(l):
                     errors.append(
                         f"[S7] assets/klines/{sfile}: {sym_id}[{bidx}] invalid OHLC invariant (close={c}, high={h}, low={l})"
                     )

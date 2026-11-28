@@ -80,7 +80,7 @@ SCORECARD_BANNED_RE = re.compile(
     r"build_(?:daily|report|site|a_share_pdf|hk_stock_pdf|us_stock_pdf|pdf)\.py|"
     r"publish_site\.py|lint_(?:readability|equity|site)\.py|pdf_common\.py|docx_embed\.py|"
     r"edition_run\.py|artifact_receipt\.py|edition_plan\.py|edition_validation\.py|"
-    r"chart_input\.py|install_sidecars\.py|svg_geometry\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|"
+    r"chart_input\.py|install_sidecars\.py|svg_geometry\.py|visual_widgets\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|"
     r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"63\s*路|红队|法证|\bGate\s*[0-6]\b)",
     flags=re.IGNORECASE,
@@ -91,7 +91,7 @@ _INTERNAL_FILENAME_LEAK_RE = re.compile(
     r"edition-runs\.sqlite3|realtime-monitor\.sqlite3|notify\.example\.json|notify\.json|"
     r"audit_ledger\.md|RSI_PLAYBOOK(?:\.md)?|rsi_metrics\.json|sidecar\.json|"
     r"permissions\.json|unified-edition\.prompt\.md|"
-    r"svg_geometry\.py|patch_state_dbs\.py|realtime_monitor\.py|wechat_notify\.py|_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
+    r"svg_geometry\.py|visual_widgets\.py|patch_state_dbs\.py|realtime_monitor\.py|wechat_notify\.py|_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_-]*\.py(?![A-Za-z0-9_])|"
     r"DAILY_FORMAT_SPEC\.md|DAILY_REPORT_SPEC\.md|"
     r"AGENTS\.md|GEMINI\.md|SKILL\.md|"
@@ -225,18 +225,49 @@ EDITION_ID_RE = re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{4})(?:_r([1-9]\d*))?")
 TIER_LABELS = ("红灯", "黄灯", "绿灯", "满格")
 GATE_COUNT_RE = re.compile(r"(?<!\d)([0-4])\s*[/／]\s*4(?!\d)")
 RED_LIGHT_CONFLICT_RE = re.compile(r"🟢|🟡|(?<!红)绿灯|黄灯|满格|允许新买|(?:新仓|新买|试仓)\s*[1-9]\d*(?:\.\d+)?\s*%")
+_BARE_IMPACT_TIER_RE = re.compile(r"(?<![A-Za-z0-9_])P[012](?![A-Za-z0-9_])")
+_GOLD_TARGET_PAT = (
+    r"(?:(?:现货|实物|纸|积存)?(?:黄金(?:股|ETF|ETC|基金|积存金|金条)?|金仓|金矿股?)|"
+    r"(?<![A-Za-z0-9])(?:518660|518880|518850|518800|159934|159937|517520|159562|"
+    r"008142|008143|02840(?:\.HK)?|03081(?:\.HK)?|3081|01929(?:\.HK)?|06181(?:\.HK)?|"
+    r"IGLN|GLD|IAU|IAUM|GLDM|GDX|GDXJ|NEM)(?![A-Za-z0-9]))"
+)
 _TIER0_PROSE_BUY_RE = re.compile(
     r"允许新买"
     r"|(?:新仓|新买|试仓)\s*[1-9]\d*(?:\.\d+)?\s*%"
-    r"|红灯期(?:(?!暂不|暂停|停止|严禁|禁止|不可|切忌|勿).){0,12}(?:开(?:半额|全额|自动)?(?:定投|扣款)|启(?:动)?(?:定投|扣款)|买入|新买|加仓|抄底|建仓|定投(?!预算|资金|额度|计划|暂存))"
-    r"|(?:立即|马上|今日|今天|现在|当下|直接|建议|宜|可以|可先?)\s*(?:买入|买进|新买|加仓|抄底|低吸|建仓|试买|定投)\s*[0-9一二两三半成%]*\s*(?:现货)?(?:黄金|金仓|金矿|黄金\s*ETF|518660|518880|518850|159934|159937|517520|159562|008142|008143|02840|3081|IGLN|GLD|IAUM|GLDM)",
+    r"|红灯期(?:(?!暂不|暂停|停止|严禁|禁止|不可|不得|切忌|切勿|勿|不买|不配).){0,12}(?:开(?:半额|全额|自动)?(?:定投|扣款)|启(?:动)?(?:定投|扣款)|买入|新买|加仓|抄底|建仓|定投(?!预算|资金|额度|计划|暂存))"
+    rf"|(?:补齐|补足)\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?{_GOLD_TARGET_PAT}(?!\s*(?:免五|佣金|费率|折溢价|护栏|规则|口径|条款|说明|数据|披露|对比|清单|铁律|提示|警示|文档|基准|锚点))"
+    rf"|(?:立即|马上|今日|今天|现在|当下|直接|建议|宜|可以|可先?|分批|小批|趁(?:急)?跌|一键|去|开始)\s*(?:买|买入|买进|新买|加仓|加配|抄底|逢低买|低吸|布局|上车|建仓|试买|定投|配置|配仓|吸纳|购入)\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?{_GOLD_TARGET_PAT}"
+    rf"|(?:买入|买进|新买|试买|加仓|加配|抄底|逢低买|低吸|布局|上车|建仓|定投|配置|配仓|吸纳|购入)\s*(?:[0-9一二两三半成%–\-~约近超]*\s*)?{_GOLD_TARGET_PAT}"
+    r"|\b(?:buy\s+gold|add\s+gold|accumulate\s+gold|dca\s+into\s+gold|buy\s+now[^\n]{0,20}gold)\b",
     flags=re.IGNORECASE,
 )
 _TIER0_PROSE_GUARD_RE = re.compile(
-    r"(?:暂不|严禁|禁止|切忌|勿|停止|先别|不能|不宜|不要|绝非|并非|不是|不|拒绝|不允许|不急于|无须|无需|停止|暂停|取消)"
-    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|直接|盲目|提前|在红灯期)*[\s“‘「\"*_]*$"
+    r"(?:暂不|严禁|禁止|切忌|切勿|勿|停止|先别|别|不能|不可|不得|不宜|不要|绝非|并非|不是|不|拒绝|不允许|不应|不会|不急于|无须|无需|暂停|取消|回避|远离|0%\s*(?:严禁|禁止|锁定)?|零配|未在[^。！？；，,]{0,12})"
+    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|直接|盲目|提前|冲动|抢跑|追高|凭感觉|猜底|在红灯期|在红灯停期|此时|此刻)*"
+    r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|补齐|低吸|布局|上车|追高)[/／、与及和或])?[\s“‘「\"*_]*$"
+    r"|(?:严禁|禁止|不得|不可|切忌|切勿|勿|暂不|不要|别)(?:(?!但|可|应|须|宜|若|直接|立即|建议|推荐|放心|大胆)[^。！？；，,|]){0,16}(?:与|及|和|或|、|/|／)(?:抢跑|盲目|提前|追高|再|去|主动|新)*[\s“‘「\"*_]*$"
     r"|(?:静?等|待|须等|需等|等到|四(?:关|项)(?:条件)?(?:全部|全)?(?:通过|过关|齐备|亮起?)|转(?:亮为?)?黄(?:灯)?|亮黄|黄/绿灯|绿灯|解锁).{0,26}(?:后|再|才)?[\s“‘「\"*_]*$"
     r"|(?:平滑换至|平换进|换仓至|切换至)[\s“‘「\"*_]*$"
+    r"|(?:原稿曾建议|原稿曾考虑|过去曾建议|曾建议)[\s“‘「\"*_]*$"
+    r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?|hold\s+off|pause)\s+(?:from\s+)?[\w\s]{0,18}$",
+    flags=re.IGNORECASE,
+)
+_CRYPTO_ACTIVE_BUY_RE = re.compile(
+    r"(?:补齐|补足|买入|买进|加仓|加配|抄底|逢低买|低吸|布局|上车|新买|买|定投|配置|配仓|建仓|吸纳|购入|做多)"
+    r"\s*(?:[0-9一二两三半成%–\-~约近超少量小批分批]*\s*)?"
+    r"(?:(?:现货|数字|虚拟|加密)?(?:比特币|以太坊|虚拟货币|加密货币|数字货币|加密资产|稳定币)|"
+    r"(?<![A-Za-z0-9])(?:BTC|ETH|USDT|USDC|IBIT|FBTC)(?![A-Za-z0-9]))"
+    r"|\b(?:buy|add|accumulate|allocate(?:\s+to)?|dca\s+into)\s+(?:btc|bitcoin|eth|ethereum|usdt|crypto(?:currency)?)\b",
+    flags=re.IGNORECASE,
+)
+_CRYPTO_NEGATION_GUARD_RE = re.compile(
+    r"(?:严禁|禁止|切忌|切勿|不得|不可|绝不|决不|不允许)(?:(?!但|可|应|须|宜|若|直接|立即|建议|推荐|放心|大胆)[^。！？；，,|]){0,18}[\s“‘「\"*_]*$"
+    r"|(?:暂不|停止|拒绝|勿|不能|不宜|不要|别|不应|不会|0%\s*(?:严禁|禁止)?|零配|不)"
+    r"(?:现在|今天|今日|当下|任何|立即|马上|急于|立刻|再|去|主动|新|分批|小批|继续|参与|涉及|尝试|建议|允许|新增|直接|盲目|变相|可|得|准|要|会|宜|应|能)*"
+    r"(?:(?:新买|买入|买进|加仓|抄底|定投|配置|配仓|建仓|低吸|布局|上车|交易|炒作|买卖|持有)[/／、与及和或])?[\s“‘「\"*_]*$"
+    r"|\b(?:do\s+not|never|must\s+not|should\s+not|prohibit(?:ed|s)?|ban(?:ned|s)?|forbid(?:den|s)?)\s+(?:from\s+)?[\w\s]{0,24}$",
+    flags=re.IGNORECASE,
 )
 _PARTIAL_ENTRY_PASS = r"(?:通过|满足|过)\s*(?:[0-3]\s*/\s*4(?!\d)\s*关?|[零一二两三0-3]\s*(?:道?关|项(?:条件)?))"
 _ENTRY_ACTION = r"(?:转(?:为)?黄(?:灯)?|亮黄灯|开(?:新)?仓|建仓|试仓|新买(?:入)?|试买|买入|动用首批)"
@@ -870,7 +901,13 @@ def _check_directive_item_counts(
             )
 
 
-def _check_daily_verdict(directives: dict[str, list[dict]], snap: dict, errors: list[str]) -> None:
+def _check_daily_verdict(
+    directives: dict[str, list[dict]],
+    snap: dict,
+    errors: list[str],
+    *,
+    body_text: str | None = None,
+) -> None:
     tier = snap.get("tier_code")
     passed = snap.get("tier1_passed")
     expected_checks = snap.get("tier1_gates")
@@ -916,22 +953,30 @@ def _check_daily_verdict(directives: dict[str, list[dict]], snap: dict, errors: 
             errors.append(f"[Gate 5 {source}口径冲突] 须显示 {expected_label} 与 {passed}/4")
         elif tier == "Tier 0" and RED_LIGHT_CONFLICT_RE.search(value):
             errors.append(f"[Gate 5 {source}动作冲突] 黄金处于红灯，不得标注开新仓")
-    _check_tier0_widget_prose(directives, snap, errors)
+    _check_tier0_widget_prose(directives, snap, errors, body_text=body_text)
 
 
 def _scan_tier0_prose(source: str, text: str, errors: list[str]) -> None:
-    plain = unicodedata.normalize("NFKC", html.unescape(re.sub(r"<[^>]+>", "", str(text))))
+    cleaned = re.sub(r"```.*?```", "", str(text), flags=re.DOTALL)
+    plain = unicodedata.normalize("NFKC", html.unescape(re.sub(r"<[^>]+>", "", cleaned)))
+    plain = re.sub(r"[*`]", "", plain)
     for clause in re.split(r"[。！？；\n]", plain):
         for m in _TIER0_PROSE_BUY_RE.finditer(clause):
             prefix = clause[:m.start()]
-            tail_seg = re.split(r"[，,、：:→]", prefix)[-1]
+            tail_seg = re.split(r"[，,、：:→|]", prefix)[-1]
             if _TIER0_PROSE_GUARD_RE.search(prefix) or _TIER0_PROSE_GUARD_RE.search(tail_seg):
                 continue
             errors.append(f"[Gate 5 {source}动作冲突] 黄金处于红灯停，严禁出现新买/定投开仓指令：{m.group(0)}")
 
 
-def _check_tier0_widget_prose(directives: dict[str, list[dict]], snap: dict, errors: list[str]) -> None:
-    """Extend Tier 0 red-light mutex checks to DAILY_VERDICT headline/bullets and DAILY_PERSONA actions."""
+def _check_tier0_widget_prose(
+    directives: dict[str, list[dict]],
+    snap: dict,
+    errors: list[str],
+    *,
+    body_text: str | None = None,
+) -> None:
+    """Extend Tier 0 red-light mutex checks across DAILY_VERDICT, DAILY_PERSONA, DAILY_VISUAL, other widgets, and daily prose."""
     if snap.get("tier_code") != "Tier 0" and snap.get("new_buy_allowed") is not False:
         return
     verdict = next(iter(directives.get("DAILY_VERDICT", [])), {})
@@ -941,14 +986,63 @@ def _check_tier0_widget_prose(directives: dict[str, list[dict]], snap: dict, err
         for idx, bullet in enumerate(verdict.get("bullets") or [], 1):
             if isinstance(bullet, str):
                 _scan_tier0_prose(f"DAILY_VERDICT.bullets[{idx}]", bullet, errors)
+        if isinstance(verdict.get("risk_line"), str):
+            _scan_tier0_prose("DAILY_VERDICT.risk_line", verdict["risk_line"], errors)
     for persona in directives.get("DAILY_PERSONA", []):
         for cidx, card in enumerate(persona.get("cards") or [], 1):
             if not isinstance(card, dict):
                 continue
             grp = str(card.get("group", "")).strip().upper()
+            if isinstance(card.get("heading"), str):
+                _scan_tier0_prose(f"DAILY_PERSONA.cards[{cidx}:{grp}].heading", card["heading"], errors)
             for aidx, act in enumerate(card.get("actions") or [], 1):
                 if isinstance(act, str):
                     _scan_tier0_prose(f"DAILY_PERSONA.cards[{cidx}:{grp}].actions[{aidx}]", act, errors)
+    for vidx, vcfg in enumerate(directives.get("DAILY_VISUAL", []), 1):
+        vlbl = f"DAILY_VISUAL#{vidx}" if len(directives.get("DAILY_VISUAL", [])) > 1 else "DAILY_VISUAL"
+        _scan_tier0_prose(vlbl, flatten_json_strings(vcfg, skip_style_keys=True), errors)
+    for wkind in (
+        "DAILY_META",
+        "DAILY_SIGNAL_NOISE",
+        "DAILY_CHART_TIMELINE",
+        "DAILY_CHART_SWITCH",
+        "DAILY_CHART_CROSS",
+        "DAILY_TRUST_BAR",
+        "DAILY_LAYER_BADGE",
+    ):
+        for widx, wcfg in enumerate(directives.get(wkind, []), 1):
+            wlbl = f"{wkind}#{widx}" if len(directives.get(wkind, [])) > 1 else wkind
+            _scan_tier0_prose(wlbl, flatten_json_strings(wcfg, skip_style_keys=True), errors)
+    if body_text:
+        _scan_tier0_prose("正文", body_text, errors)
+
+
+def _scan_crypto_buy(source: str, text: str, errors: list[str]) -> None:
+    """Enforce PBOC Doc 42 (银发〔2026〕42号): block active-buy recommendations for crypto assets."""
+    cleaned = re.sub(r"```.*?```", "", str(text), flags=re.DOTALL)
+    plain = unicodedata.normalize("NFKC", html.unescape(re.sub(r"<[^>]+>", "", cleaned)))
+    plain = re.sub(r"[*`]", "", plain)
+    for clause in re.split(r"[。！？；\n]", plain):
+        for m in _CRYPTO_ACTIVE_BUY_RE.finditer(clause):
+            tail_seg = re.split(r"[，,|]", clause[:m.start()])[-1]
+            if _CRYPTO_NEGATION_GUARD_RE.search(tail_seg):
+                continue
+            errors.append(
+                f"[Gate 5 虚拟货币合规红线] {source} 违反央行银发〔2026〕42号合规红线，"
+                f"严禁推荐买入/配置虚拟货币：{m.group(0)}"
+            )
+
+
+def _scan_bare_impact_tier(source: str, text: str, errors: list[str]) -> None:
+    """Reject bare internal priority tags (P0/P1/P2) in reader-facing prose and DAILY_VISUAL JSON strings."""
+    cleaned = re.sub(r"```.*?```", "", str(text), flags=re.DOTALL)
+    cleaned = re.sub(r"`[^`]+`", "", cleaned)
+    cleaned = re.sub(r"https?://[^\s)\]>]+", "", cleaned)
+    hits = sorted(set(_BARE_IMPACT_TIER_RE.findall(cleaned)))
+    if hits:
+        errors.append(
+            f"[Gate 1 内部优先级代号泄露] {source} 严禁裸露内部优先级代号 {', '.join(hits)}（请改用纯中文「重磅/重要/关注」）"
+        )
 
 
 def _check_partial_entry_claims(visible: str, widgets: list[tuple[str, str]], errors: list[str]) -> None:
@@ -1038,12 +1132,14 @@ def check_file(
     layer01_vis = _strip_comments_keep_lines(raw_l01)
     full_vis = _strip_comments_keep_lines(raw)
 
-    # Gate 0: Catch & Schema-validate ALL DAILY_* directives (including typos & malformed payloads!)
+    # Gate 0: Catch & Schema-validate ALL DAILY_* directives (including typos, unclosed & malformed payloads!)
     daily_meta: dict = {}
     directives: dict[str, list[dict]] = {}
     l01_widget_texts: list[tuple[str, str]] = []
     all_widget_texts: list[tuple[str, str]] = []
+    matched_directive_starts: set[int] = set()
     for m in ANY_DAILY_DIRECTIVE_RE.finditer(raw):
+        matched_directive_starts.add(m.start())
         kind, blob = m.group(1), m.group(2).strip()
         if kind not in KNOWN_DIRECTIVES:
             errors.append(f"[Gate 0 未知组件指令] 发现非法/拼写错误指令 <!-- {kind} -->")
@@ -1066,6 +1162,11 @@ def check_file(
         all_widget_texts.append((kind, flat))
         if m.start() < layer01_end or kind in ("DAILY_META", "DAILY_VERDICT", "DAILY_SIGNAL_NOISE"):
             l01_widget_texts.append((kind, flat))
+
+    for m_open in re.finditer(r"<!--\s*(DAILY_[A-Z0-9_]+)\b", raw):
+        if m_open.start() not in matched_directive_starts:
+            ln_no = raw.count("\n", 0, m_open.start()) + 1
+            errors.append(f"[Gate 0 指令未闭合] L{ln_no} 发现缺少结束符 --> 的指令 <!-- {m_open.group(1)} ...")
 
     if is_master or filename_edition:
         _check_report_structure(raw, directives, is_master=is_master, is_converged=is_converged, errors=errors)
@@ -1090,9 +1191,16 @@ def check_file(
         if not daily_snap or daily_snap.get("edition_id") != filename_edition or daily_meta.get("as_of_short") != daily_snap.get("as_of_short"):
             errors.append("[Gate 5 日报快照错刊] 文件名、DAILY_META 与 data_snapshot 的 edition_id/as_of_short 须一致")
         else:
-            _check_daily_verdict(directives, daily_snap, errors)
+            _check_daily_verdict(directives, daily_snap, errors, body_text=full_vis)
+    elif not is_master and filename_edition is None and daily_snap:
+        _check_tier0_widget_prose(directives, daily_snap, errors, body_text=full_vis)
     elif is_master and master_snap:
         _check_tier0_widget_prose(directives, master_snap, errors)
+
+    # PBOC Doc 42 (银发〔2026〕42号) crypto active-buy firewall across prose & all widgets (incl. DAILY_VISUAL)
+    _scan_crypto_buy("正文", full_vis, errors)
+    for kind, txt in all_widget_texts:
+        _scan_crypto_buy(kind, txt, errors)
 
     full_combined = full_vis + "\n" + "\n".join(t for _, t in all_widget_texts)
 
@@ -1104,6 +1212,12 @@ def check_file(
         bad = _find_banned_layer01_tokens(txt, is_converged=is_converged)
         if bad:
             errors.append(f"[Gate 1 组件术语逃逸] Layer 0–1 {kind} 出现禁止词条: {', '.join(bad)}")
+
+    # Full-document bare priority tag ban (P0/P1/P2) in prose & DAILY_VISUAL/widget visible text
+    if not is_master and (filename_key is None or filename_key >= INTERNAL_LEAK_CUTOVER):
+        _scan_bare_impact_tier("正文", full_vis, errors)
+        for kind, txt in all_widget_texts:
+            _scan_bare_impact_tier(kind, txt, errors)
 
     # Full-document condescending slogan ban (ALL layers + ALL widgets incl. DAILY_GLOSSARY for >= CONVERGED_CUTOVER)
     if is_converged:
@@ -1727,8 +1841,15 @@ def _check_svg_geometry(
                     svg_items.append((lbl, getattr(bd, fn_name)(cfg)))
                 except Exception as exc:
                     errors.append(f"[Gate 4 SVG 渲染错] {lbl}: {exc}")
+        validate_visual_fn = None
+        try:
+            from visual_widgets import validate_visual_spec as validate_visual_fn  # type: ignore[import-not-found]
+        except Exception:
+            validate_visual_fn = None
         for idx, cfg in enumerate(directives.get("DAILY_VISUAL", []), 1):
             lbl = f"DAILY_VISUAL#{idx}" if len(directives.get("DAILY_VISUAL", [])) > 1 else "DAILY_VISUAL"
+            if validate_visual_fn is not None and validate_visual_fn(cfg):
+                continue  # Already reported as [Gate 0 视觉图结构错]; avoid redundant render noise
             try:
                 svg_items.append((lbl, bd.render_widget("DAILY_VISUAL", cfg)))
             except Exception as exc:

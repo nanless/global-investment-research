@@ -220,7 +220,10 @@ def md_inline(text: str) -> str:
         return f"___CODE_{len(code_tokens)-1}___"
 
     def save_link(m):
-        lbl = html_vector_badges(m.group(1))
+        lbl_raw = m.group(1)
+        lbl_raw = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", lbl_raw)
+        lbl_raw = re.sub(r"(?<![A-Za-z0-9_])\*(?!\s|ST)([^*\n]+?)(?<!\s)\*(?![A-Za-z0-9_])", r"<em>\1</em>", lbl_raw)
+        lbl = html_vector_badges(lbl_raw)
         raw_href = html_mod.unescape(m.group(2)).strip()
         if raw_href.lower().startswith(("file:", "javascript:", "data:")):
             return lbl
@@ -298,6 +301,52 @@ def _wrap_svg_scrollable(chart_html: str) -> str:
     )
 
 
+_FENCE_OPEN_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
+_INLINE_OR_COMMENT_RE = re.compile(r"(`[^`\n]+`)|(<!--.*?-->)", re.DOTALL)
+
+
+def _strip_non_chart_comments(md_text: str, chart_keys: set[str]) -> str:
+    """Strip single- and multi-line HTML comments outside code blocks while keeping chart placeholders."""
+    segments: list[tuple[bool, str]] = []
+    buf: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in md_text.splitlines(keepends=True):
+        m = _FENCE_OPEN_RE.match(line)
+        if not in_fence:
+            if m:
+                if buf:
+                    segments.append((False, "".join(buf)))
+                    buf = []
+                in_fence = True
+                fence_char = m.group(1)[0]
+                fence_len = len(m.group(1))
+                buf.append(line)
+            else:
+                buf.append(line)
+        else:
+            buf.append(line)
+            st = line.strip()
+            if st and len(st) >= fence_len and set(st) == {fence_char}:
+                segments.append((True, "".join(buf)))
+                buf = []
+                in_fence = False
+    if buf:
+        segments.append((in_fence, "".join(buf)))
+
+    def _repl(m: re.Match[str]) -> str:
+        if m.group(1) is not None:
+            return m.group(1)
+        cmt = m.group(2)
+        return cmt if cmt.strip() in chart_keys else ""
+
+    out: list[str] = []
+    for is_code, chunk in segments:
+        out.append(chunk if is_code else _INLINE_OR_COMMENT_RE.sub(_repl, chunk))
+    return "".join(out)
+
+
 def render_md_body(
     md_text: str,
     charts: dict[str, str],
@@ -315,6 +364,7 @@ def render_md_body(
         md_text, visual_charts = visual_widgets.extract_visual_directives(md_text)
         merged_charts.update(visual_charts)
     charts = merged_charts
+    md_text = _strip_non_chart_comments(md_text, set(charts.keys()))
     lines = md_text.strip().splitlines()
     title = default_title
     html_out: list[str] = []
@@ -329,6 +379,7 @@ def render_md_body(
     callout_buf: list[str] = []
     in_code_block = False
     code_block_buf: list[str] = []
+    in_html_comment = False
     chart_counter = 0
     sec_counter = 0
     h2_counter = 0
@@ -448,12 +499,22 @@ def render_md_body(
         if stripped in charts:
             close_lists()
             close_table()
-            chart_counter += 1
-            rendered_chart = charts[stripped].replace("{{CHART_NUM}}", str(chart_counter))
+            raw_chart = charts[stripped]
+            if "{{CHART_NUM}}" in raw_chart:
+                chart_counter += 1
+                rendered_chart = raw_chart.replace("{{CHART_NUM}}", str(chart_counter))
+            else:
+                rendered_chart = raw_chart
             html_out.append(_wrap_svg_scrollable(rendered_chart))
             continue
 
-        if stripped.startswith("<!--") and stripped.endswith("-->"):
+        if in_html_comment:
+            if "-->" in stripped:
+                in_html_comment = False
+            continue
+        if stripped.startswith("<!--"):
+            if not stripped.endswith("-->"):
+                in_html_comment = True
             continue
 
         if not stripped or stripped == "---":
@@ -636,7 +697,7 @@ _BANNED_INTERNAL_RE = re.compile(
     r"build_(?:a_share_pdf|hk_stock_pdf|us_stock_pdf|daily|report|site|pdf)\.py|"
     r"publish_site\.py|pdf_common\.py|docx_embed\.py|lint_(?:equity|readability|site)\.py|"
     r"edition_(?:run|plan|validation)\.py|artifact_receipt\.py|chart_input\.py|install_sidecars\.py|"
-    r"svg_geometry\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|"
+    r"svg_geometry\.py|visual_widgets\.py|patch_state_dbs\.py|fetch_kline_data\.py|realtime_monitor\.py|wechat_notify\.py|"
     r"_(?:edition|ledger|rsi|audit|rollover|archive)_patch\.json|"
     r"DAILY_REPORT_SPEC\.md|DAILY_FORMAT_SPEC\.md|audit_ledger\.md|market_state\.json|"
     r"multi_asset_channels\.json|etf_universe\.json|deep_dossiers\.json|policy_calendar\.json|market_calendar\.json|"
@@ -719,6 +780,7 @@ def lint_markdown_report(
 
     meta_match = re.search(r"<!--\s*DAILY_META_JSON\s*\{.*?\}\s*-->", md_text, flags=re.DOTALL)
     body_no_meta = re.sub(r"<!--\s*DAILY_META_JSON\s*\{.*?\}\s*-->", "", md_text, flags=re.DOTALL)
+    body_prose = re.sub(r"<!--\s*DAILY_VISUAL\s*\{.*?\}\s*-->", "", body_no_meta, flags=re.DOTALL)
 
     if meta_match and md_text[meta_match.end() :].strip():
         warnings.append("DAILY_META_JSON 未置于文件最末尾（末尾仍有正文残留）")
@@ -772,14 +834,14 @@ def lint_markdown_report(
         if isinstance(cl, dict) and "us10y_zone" in cl and str(cl["us10y_zone"]).lower() not in ("low", "mid", "high"):
             errors.append(f"chart_live.us10y_zone 非法枚举值: {cl['us10y_zone']}")
 
-    bare_bt = _BARE_NUM_BACKTICK_RE.findall(body_no_meta)
+    bare_bt = _BARE_NUM_BACKTICK_RE.findall(body_prose)
     if bare_bt:
         warnings.append(f"裸数字/金额反引号 ({len(bare_bt)} 处): {bare_bt[:5]}")
 
-    jargon_hits = _RARE_JARGON_RE.findall(body_no_meta)
+    jargon_hits = _RARE_JARGON_RE.findall(body_prose)
     for _label, term_re, gloss_re, win in _TIER2_GLOSS_PATTERNS:
-        for m in term_re.finditer(body_no_meta):
-            ctx = body_no_meta[max(0, m.start() - win) : min(len(body_no_meta), m.end() + win)]
+        for m in term_re.finditer(body_prose):
+            ctx = body_prose[max(0, m.start() - win) : min(len(body_prose), m.end() + win)]
             if not gloss_re.search(ctx):
                 jargon_hits.append(m.group(0))
     if jargon_hits:
@@ -792,8 +854,8 @@ def lint_markdown_report(
         flags=re.DOTALL,
     )
 
-    bold_chars = sum(len(x) for x in re.findall(r"\*\*([^*]+)\*\*", body_no_meta))
-    plain_chars = max(1, len(re.sub(r"\s+", "", body_no_meta)))
+    bold_chars = sum(len(x) for x in re.findall(r"\*\*([^*]+)\*\*", body_prose))
+    plain_chars = max(1, len(re.sub(r"\s+", "", body_prose)))
     bold_pct = (bold_chars / plain_chars) * 100.0
     if bold_pct > 13.5:
         line_bold: list[tuple[int, int]] = []

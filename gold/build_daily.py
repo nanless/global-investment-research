@@ -16,6 +16,7 @@ import html
 import json
 import re
 import sys
+import unicodedata
 from math import fsum
 from pathlib import Path
 
@@ -46,6 +47,59 @@ _DOT_EMOJI_RE = re.compile(r"(⚪|🔴|🟡|🟢|🚨)\ufe0f?\s?")
 
 def esc(s: str) -> str:
     return html.escape(str(s), quote=True)
+
+
+def _svg_char_width_em(ch: str) -> float:
+    eaw = unicodedata.east_asian_width(ch)
+    if eaw in ("W", "F"):
+        return 1.0
+    if ch == " ":
+        return 0.28
+    if ch in "ilI.,:;|!'\"`":
+        return 0.30
+    if ch in "fjrt()-/\\[]{}·":
+        return 0.38
+    if ch in "MW":
+        return 0.82
+    if ch in "%@":
+        return 0.78
+    if ch == "—":
+        return 0.95
+    if ch == "–":
+        return 0.55
+    if "A" <= ch <= "Z":
+        return 0.64
+    if "0" <= ch <= "9":
+        return 0.56
+    if "a" <= ch <= "z":
+        return 0.52
+    if ch in "$+-=<>?~*^&#_":
+        return 0.56
+    if ord(ch) >= 0x2000:
+        return 0.75
+    return 0.55
+
+
+def _clip_svg_text_px(raw_text: str, max_px: float, font_size: float, *, bold: bool = False) -> str:
+    """Clip plain SVG label text to stay strictly within max_px (aligned with scripts/svg_geometry.py)."""
+    cleaned = EMOJI_STRIP_RE.sub("", str(raw_text or ""))
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).replace("： ", "：").strip()
+    if not cleaned:
+        return ""
+    scale = font_size * (1.04 if bold else 1.0)
+    if sum(_svg_char_width_em(ch) for ch in cleaned) * scale <= max_px:
+        return cleaned
+    ell_px = _svg_char_width_em("…") * scale
+    limit = max(scale * 1.2, max_px - ell_px - 0.5)
+    out: list[str] = []
+    acc = 0.0
+    for ch in cleaned:
+        w = _svg_char_width_em(ch) * scale
+        if acc + w > limit:
+            break
+        out.append(ch)
+        acc += w
+    return "".join(out).rstrip(" ，,；;·") + "…"
 
 
 def svg_esc(s: str) -> str:
@@ -1010,9 +1064,9 @@ def render_chart_cross(cfg: dict) -> str:
         y = round(top_pad + i * row_h, 1)
         pct = parsed_pcts[i]
         raw_lbl = str(it.get("label", ""))
-        lbl = svg_esc(raw_lbl)
-        tag = svg_esc(it.get("tag", ""))
-        val_str = svg_esc(it.get("pct_label") or f"{pct:+.2f}%")
+        lbl = svg_esc(_clip_svg_text_px(raw_lbl, x_label - 8.0, 10.8, bold=True))
+        raw_tag = str(it.get("tag", "")).strip()
+        raw_val_str = str(it.get("pct_label") or f"{pct:+.2f}%").strip()
         is_gold = _is_protagonist_gold(it)
         capped = abs(pct) > cap_abs
         eff_abs = cap_abs if capped else abs(pct)
@@ -1044,7 +1098,9 @@ def render_chart_cross(cfg: dict) -> str:
                 f'<line x1="{mx-4}" y1="{round(y+17,1)}" x2="{mx+1}" y2="{round(y+2,1)}" stroke="#ffffff" stroke-width="2.2"/>'
                 f'<line x1="{mx+1}" y1="{round(y+17,1)}" x2="{mx+6}" y2="{round(y+2,1)}" stroke="#ffffff" stroke-width="2.2"/>'
             )
-        label_full = f"{val_str} {tag}".strip()
+        avail_right_px = max(24.0, (vb_w - 6.0) - tx)
+        raw_full = f"{raw_val_str} {raw_tag}".strip()
+        label_full = svg_esc(_clip_svg_text_px(raw_full, avail_right_px, 10.5, bold=True))
         rows_svg += f'<text x="{tx}" y="{round(y+13.2,1)}" text-anchor="start" font-size="10.5" fill="{col}" font-weight="700">{label_full}</text>'
 
     rev_svg = ""
@@ -1117,6 +1173,49 @@ GENERIC_HTML_COMMENT_RE = re.compile(r"<!--(?!\s*CHART_[A-Z0-9_]+\s*-->).*?-->",
 CHART_KINDS = {"DAILY_CHART_TIMELINE", "DAILY_CHART_SWITCH", "DAILY_CHART_CROSS", "DAILY_VISUAL"}
 
 
+_FENCE_OPEN_RE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
+_INLINE_OR_DIRECTIVE_RE = re.compile(
+    r"(`[^`\n]+`)|<!--\s*(DAILY_[A-Z0-9_]+)\s*(.*?)\s*-->",
+    re.DOTALL,
+)
+_INLINE_OR_GENERIC_COMMENT_RE = re.compile(
+    r"(`[^`\n]+`)|<!--(?!\s*CHART_[A-Z0-9_]+\s*-->).*?-->",
+    re.DOTALL,
+)
+
+
+def _split_fenced_code_blocks(md_text: str) -> list[tuple[bool, str]]:
+    """Split Markdown into alternating (is_fenced_code, chunk) segments."""
+    segments: list[tuple[bool, str]] = []
+    buf: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in md_text.splitlines(keepends=True):
+        m = _FENCE_OPEN_RE.match(line)
+        if not in_fence:
+            if m:
+                if buf:
+                    segments.append((False, "".join(buf)))
+                    buf = []
+                in_fence = True
+                fence_char = m.group(1)[0]
+                fence_len = len(m.group(1))
+                buf.append(line)
+            else:
+                buf.append(line)
+        else:
+            buf.append(line)
+            stripped = line.strip()
+            if stripped and len(stripped) >= fence_len and set(stripped) == {fence_char}:
+                segments.append((True, "".join(buf)))
+                buf = []
+                in_fence = False
+    if buf:
+        segments.append((in_fence, "".join(buf)))
+    return segments
+
+
 def extract_directives(md_text: str) -> tuple[dict, str, dict]:
     meta = {}
     widgets = {}
@@ -1124,8 +1223,10 @@ def extract_directives(md_text: str) -> tuple[dict, str, dict]:
 
     def repl(m):
         nonlocal meta, counter
-        kind = m.group(1)
-        raw_json = m.group(2).strip()
+        if m.group(1) is not None:
+            return m.group(1)
+        kind = m.group(2)
+        raw_json = m.group(3).strip()
         if kind not in KNOWN_DIRECTIVES:
             raise ValueError(f"Unknown DAILY_* directive name: <!-- {kind} ... --> (possible typo)")
         if not raw_json.startswith("{") or not raw_json.endswith("}"):
@@ -1142,10 +1243,19 @@ def extract_directives(md_text: str) -> tuple[dict, str, dict]:
         widgets[tok] = (kind, data)
         return f"\n{tok}\n"
 
-    cleaned = COMMENT_RE.sub(repl, md_text)
-    # Strip any remaining ordinary HTML comments (e.g. MASTER_BASELINE, editorial notes) while keeping CHART_* hooks
-    cleaned = GENERIC_HTML_COMMENT_RE.sub("", cleaned)
-    return meta, cleaned, widgets
+    out_parts: list[str] = []
+    for is_code, chunk in _split_fenced_code_blocks(md_text):
+        if is_code:
+            out_parts.append(chunk)
+        else:
+            step1 = _INLINE_OR_DIRECTIVE_RE.sub(repl, chunk)
+            # Strip any remaining ordinary HTML comments outside inline backticks while keeping CHART_* hooks
+            step2 = _INLINE_OR_GENERIC_COMMENT_RE.sub(
+                lambda m: m.group(1) if m.group(1) is not None else "",
+                step1,
+            )
+            out_parts.append(step2)
+    return meta, "".join(out_parts), widgets
 
 
 def render_widget(kind: str, data: dict) -> str:

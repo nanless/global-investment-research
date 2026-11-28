@@ -48,12 +48,14 @@
     return root.getAttribute("data-theme") === "dark" ? "dark" : "light";
   }
 
-  function applyTheme(theme) {
+  function applyTheme(theme, persist) {
     const next = theme === "dark" ? "dark" : "light";
     root.setAttribute("data-theme", next);
-    try {
-      localStorage.setItem("gir_theme", next);
-    } catch (_) {}
+    if (persist) {
+      try {
+        localStorage.setItem("gir_theme", next);
+      } catch (_) {}
+    }
 
     const btn = document.getElementById("theme-toggle");
     if (btn) {
@@ -71,10 +73,27 @@
 
   const themeBtn = document.getElementById("theme-toggle");
   if (themeBtn) {
-    applyTheme(getTheme());
+    applyTheme(getTheme(), false);
     themeBtn.addEventListener("click", function () {
-      applyTheme(getTheme() === "dark" ? "light" : "dark");
+      applyTheme(getTheme() === "dark" ? "light" : "dark", true);
     });
+  }
+  if (window.matchMedia) {
+    const colorSchemeMq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSchemeChange = function (e) {
+      let saved = null;
+      try {
+        saved = localStorage.getItem("gir_theme");
+      } catch (_) {}
+      if (!saved) {
+        applyTheme(e.matches ? "dark" : "light", false);
+      }
+    };
+    if (typeof colorSchemeMq.addEventListener === "function") {
+      colorSchemeMq.addEventListener("change", onSchemeChange);
+    } else if (typeof colorSchemeMq.addListener === "function") {
+      colorSchemeMq.addListener(onSchemeChange);
+    }
   }
 
   /* ------------------------------------------------------------------------
@@ -714,6 +733,8 @@
     chartModalCanvas.innerHTML = "";
     const clone = svg.cloneNode(true);
     clone.removeAttribute("style");
+    clone.removeAttribute("width");
+    clone.removeAttribute("height");
     chartModalCanvas.appendChild(clone);
     applyChartZoom(100);
     if (chartModalStage) {
@@ -2673,9 +2694,11 @@
           }).join("") +
           "</div>";
         dossierBody.innerHTML =
-          '<div class="modal-tab-bar" role="tablist">' +
-          '<button type="button" class="modal-tab-btn' + (startTab === "dossier" ? " active" : "") + '" data-modal-tab="dossier">📋 7 维机构深研</button>' +
-          '<button type="button" class="modal-tab-btn' + (startTab === "kline" ? " active" : "") + '" data-modal-tab="kline">📈 互动 K 线与技术指标</button>' +
+          '<div class="modal-tab-bar">' +
+          '<div class="modal-tab-group" role="tablist" style="display:flex;gap:6px;flex-wrap:wrap;">' +
+          '<button type="button" role="tab" aria-selected="' + (startTab === "dossier" ? "true" : "false") + '" class="modal-tab-btn' + (startTab === "dossier" ? " active" : "") + '" data-modal-tab="dossier">📋 7 维机构深研</button>' +
+          '<button type="button" role="tab" aria-selected="' + (startTab === "kline" ? "true" : "false") + '" class="modal-tab-btn' + (startTab === "kline" ? " active" : "") + '" data-modal-tab="kline">📈 互动 K 线与技术指标</button>' +
+          "</div>" +
           '<a class="btn btn-sm modal-tab-ext" href="charts.html#sym=' + encodeURIComponent(klineSym) + '">全屏终端 ↗</a>' +
           "</div>" +
           '<div class="modal-tab-pane" data-modal-pane="dossier"' + (startTab === "kline" ? " hidden" : "") + ">" + dossierGridHtml + "</div>" +
@@ -2705,7 +2728,9 @@
             const target = tBtn.getAttribute("data-modal-tab");
             currentDossierTab = target === "kline" ? "kline" : "dossier";
             dossierBody.querySelectorAll("[data-modal-tab]").forEach(function (b) {
-              b.classList.toggle("active", b === tBtn);
+              const isAct = b === tBtn;
+              b.classList.toggle("active", isAct);
+              b.setAttribute("aria-selected", isAct ? "true" : "false");
             });
             dossierBody.querySelectorAll("[data-modal-pane]").forEach(function (p) {
               p.hidden = p.getAttribute("data-modal-pane") !== target;
@@ -2801,6 +2826,17 @@
       ahFilterBtns.forEach(function (b) {
         b.classList.toggle("active", (b.getAttribute("data-ah-filter") || "all") === ahFilter);
       });
+      document.querySelectorAll("[data-ah-sort]").forEach(function (th) {
+        const k = th.getAttribute("data-ah-sort");
+        const isAct = k === ahSortKey;
+        th.setAttribute("aria-sort", isAct ? (ahSortDir === 1 ? "ascending" : "descending") : "none");
+        th.setAttribute("data-sort-dir", isAct ? (ahSortDir === 1 ? "asc" : "desc") : "");
+        const btn = th.querySelector("button");
+        if (btn) {
+          const base = btn.textContent.replace(/\s*[⇅▲▼]\s*$/, "");
+          btn.textContent = base + " " + (isAct ? (ahSortDir === 1 ? "▲" : "▼") : "⇅");
+        }
+      });
       let rows = ahRowsAll.filter(function (r) {
         if (ahFilter === "a-cheaper") return isFiniteNum(r.ah_premium_pct) && r.ah_premium_pct < 0;
         if (ahFilter === "hk-connect-wins") return isFiniteNum(r.net_div_spread) && r.net_div_spread > 0;
@@ -2841,11 +2877,16 @@
         if (r.h_key) btns.push('<button type="button" class="dossier-btn" style="margin-left:0;" data-dossier-key="' + escHtml(r.h_key) + '">H 7维</button>');
         if (r.a_key) {
           btns.push('<button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(r.a_key) + '" data-open-tab="kline">📈 A股K线</button>');
-        } else if (r.a_code) {
-          btns.push('<a class="kline-quick-btn" href="charts.html#sym=' + encodeURIComponent("stk_" + r.a_code) + '">📈 A股K线</a>');
+        } else if (r.a_sym_id) {
+          btns.push('<a class="kline-quick-btn" href="charts.html#sym=' + encodeURIComponent(r.a_sym_id) + '">📈 A股K线</a>');
         }
         if (r.h_key) {
           btns.push('<button type="button" class="kline-quick-btn" data-dossier-key="' + escHtml(r.h_key) + '" data-open-tab="kline">📈 H股K线</button>');
+        } else if (r.h_sym_id) {
+          btns.push('<a class="kline-quick-btn" href="charts.html#sym=' + encodeURIComponent(r.h_sym_id) + '">📈 H股K线</a>');
+        }
+        if (btns.length === 0) {
+          btns.push('<span class="sec-sub">—</span>');
         }
         return {
           r: r,
@@ -2922,7 +2963,9 @@
     function setScreenerView(viewName, syncHash) {
       const isAh = viewName === "ah-matrix";
       scrViewBtns.forEach(function (b) {
-        b.classList.toggle("active", (b.getAttribute("data-scr-view") || "pool") === (isAh ? "ah-matrix" : "pool"));
+        const isAct = (b.getAttribute("data-scr-view") || "pool") === (isAh ? "ah-matrix" : "pool");
+        b.classList.toggle("active", isAct);
+        b.setAttribute("aria-selected", isAct ? "true" : "false");
       });
       scrSubnavLinks.forEach(function (a) {
         const href = a.getAttribute("href") || "";
@@ -3426,6 +3469,7 @@
   const chBucketBtns = Array.from(document.querySelectorAll("[data-ch-bucket]"));
   const chCatBtns = Array.from(document.querySelectorAll("[data-ch-cat]"));
   const chCount = document.getElementById("ch-count");
+  const chCountInitText = chCount ? chCount.textContent : "";
   let homeChActiveBar = document.getElementById("home-ch-active-bar");
   let chResetBtn = document.getElementById("ch-reset-empty");
   let chBucket = "all";
@@ -3520,7 +3564,11 @@
           chResetBtn.style.display = "";
         }
       } else {
-        chCount.textContent = "显示 " + shown + " / " + chCards.length + " 大合规个人投资渠道";
+        if (chBucket === "all" && chCat === "all" && chCountInitText) {
+          chCount.textContent = chCountInitText;
+        } else {
+          chCount.textContent = "显示 " + shown + " / " + chCards.length + " 大合规个人投资渠道";
+        }
         if (chResetBtn) {
           chResetBtn.hidden = true;
           chResetBtn.style.display = "none";
@@ -3776,9 +3824,11 @@
           "</div>";
 
         etfModalBody.innerHTML =
-          '<div class="modal-tab-bar" role="tablist">' +
-          '<button type="button" class="modal-tab-btn' + (startTab === "detail" ? " active" : "") + '" data-etf-modal-tab="detail">📋 详情与税费</button>' +
-          '<button type="button" class="modal-tab-btn' + (startTab === "kline" ? " active" : "") + '" data-etf-modal-tab="kline">📈 互动 K 线与技术指标</button>' +
+          '<div class="modal-tab-bar">' +
+          '<div class="modal-tab-group" role="tablist" style="display:flex;gap:6px;flex-wrap:wrap;">' +
+          '<button type="button" role="tab" aria-selected="' + (startTab === "detail" ? "true" : "false") + '" class="modal-tab-btn' + (startTab === "detail" ? " active" : "") + '" data-etf-modal-tab="detail">📋 详情与税费</button>' +
+          '<button type="button" role="tab" aria-selected="' + (startTab === "kline" ? "true" : "false") + '" class="modal-tab-btn' + (startTab === "kline" ? " active" : "") + '" data-etf-modal-tab="kline">📈 互动 K 线与技术指标</button>' +
+          "</div>" +
           '<a class="btn btn-sm modal-tab-ext" href="' + escHtml(basePrefix + "charts.html#sym=" + encodeURIComponent(klineSym)) + '">全屏终端 ↗</a>' +
           "</div>" +
           '<div class="modal-tab-pane" data-etf-modal-pane="detail"' + (startTab === "kline" ? " hidden" : "") + ">" + detailGridHtml + "</div>" +
@@ -3806,7 +3856,9 @@
             const target = tBtn.getAttribute("data-etf-modal-tab");
             currentEtfTab = target === "kline" ? "kline" : "detail";
             etfModalBody.querySelectorAll("[data-etf-modal-tab]").forEach(function (b) {
-              b.classList.toggle("active", b === tBtn);
+              const isAct = b === tBtn;
+              b.classList.toggle("active", isAct);
+              b.setAttribute("aria-selected", isAct ? "true" : "false");
             });
             etfModalBody.querySelectorAll("[data-etf-modal-pane]").forEach(function (p) {
               p.hidden = p.getAttribute("data-etf-modal-pane") !== target;
@@ -3872,7 +3924,18 @@
       if (chEtfTable) {
         chEtfTable.addEventListener("click", function (e) {
           const btn = e.target.closest("[data-etf-code]");
-          if (btn) openChEtfModal(btn.getAttribute("data-etf-code"), btn.getAttribute("data-open-tab") || "detail");
+          if (btn) {
+            openChEtfModal(btn.getAttribute("data-etf-code"), btn.getAttribute("data-open-tab") || "detail");
+            return;
+          }
+          if (!e.target.closest("button, a, input, select, label, .star-btn")) {
+            if (window.getSelection && String(window.getSelection()).trim()) return;
+            const tr = e.target.closest("tbody tr");
+            const rowBtn = tr ? tr.querySelector("[data-etf-code]") : null;
+            if (rowBtn) {
+              openChEtfModal(rowBtn.getAttribute("data-etf-code"), "detail");
+            }
+          }
         });
       }
     }
@@ -4587,14 +4650,32 @@
       return matched;
     }
 
+    function scrollToGuideTermHash() {
+      const raw = (window.location.hash || "").replace(/^#/, "").trim();
+      if (!/^term-/i.test(raw)) return;
+      const target = document.getElementById(raw);
+      if (target) {
+        window.requestAnimationFrame(function () {
+          if (typeof target.scrollIntoView === "function") {
+            target.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "center" });
+          } else {
+            const top = target.getBoundingClientRect().top + window.scrollY - getStickyOffset();
+            window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+          }
+        });
+      }
+    }
+
     const hadGuideHash = applyGuideHash();
     applyGuideFilter(hadGuideHash);
+    scrollToGuideTermHash();
     window.addEventListener("hashchange", function () {
       if (applyGuideHash()) {
         applyGuideFilter(true);
       } else if (/^#term-/i.test(window.location.hash || "")) {
         revealAllGuideCards();
         applyGuideFilter(false);
+        scrollToGuideTermHash();
       }
     });
   }
@@ -4649,7 +4730,8 @@
       let liqPct = prof.liquid;
       let stabPct = prof.stable + overflowEq;
       let multiPct = prof.multi;
-      let goldPct = goldAllowed ? Math.min(prof.goldSlot, 12) : 0;
+      const goldCap = isFiniteNum(wCfg.gold_cap_pct) ? Math.max(0, Math.min(15, wCfg.gold_cap_pct)) : 10;
+      let goldPct = goldAllowed ? Math.min(prof.goldSlot, goldCap) : 0;
 
       if (goldAllowed) {
         stabPct = Math.max(10, stabPct - goldPct);
@@ -4969,7 +5051,7 @@
         (onlyMajorEl && onlyMajorEl.getAttribute("data-pcal-tier")) ||
         "P0";
       const targetTierLow = String(targetTier).trim().toLowerCase();
-      const isDefaultView = activeRegion === "all" && !onlyTopTier && !show30d;
+      const isDefaultView = activeRegion === "all" && !onlyTopTier && (!toggle30dBtn || !show30d);
       let shown = 0;
       let totalVisBeforeFold = 0;
       let foldedCount = 0;
@@ -5101,12 +5183,22 @@
     if (!bar || !grid) return;
     const btns = Array.from(bar.querySelectorAll("[data-pcal-brief-filter]"));
     const cards = Array.from(grid.querySelectorAll(".pcal-brief-card"));
+    let emptyHint = document.getElementById("pcal-brief-empty");
+    if (!emptyHint) {
+      emptyHint = document.createElement("p");
+      emptyHint.id = "pcal-brief-empty";
+      emptyHint.className = "pcal-empty";
+      emptyHint.hidden = true;
+      emptyHint.textContent = "当前地区筛选下暂无精选要闻，点击「精选全部」查看全部核心时政。";
+      grid.insertAdjacentElement("afterend", emptyHint);
+    }
     function apply(reg) {
       btns.forEach(function (b) {
         const act = (b.getAttribute("data-pcal-brief-filter") || "all") === reg;
         b.classList.toggle("active", act);
         b.setAttribute("aria-pressed", act ? "true" : "false");
       });
+      let shown = 0;
       cards.forEach(function (c) {
         const cr = (c.getAttribute("data-pcal-brief-region") || "").toUpperCase();
         let ok = reg === "all";
@@ -5116,7 +5208,11 @@
           ok = cr === reg;
         }
         c.hidden = !ok;
+        if (ok) shown += 1;
       });
+      if (emptyHint) {
+        emptyHint.hidden = shown > 0;
+      }
     }
     btns.forEach(function (b) {
       b.addEventListener("click", function () {
@@ -5131,7 +5227,17 @@
     if (!sec) return;
     const btns = Array.from(sec.querySelectorAll("[data-mnews-filter]"));
     const cards = Array.from(sec.querySelectorAll(".mnews-card"));
+    const grid = sec.querySelector(".mnews-grid");
     const status = document.getElementById("mnews-count-status");
+    let emptyHint = document.getElementById("mnews-empty");
+    if (!emptyHint && grid) {
+      emptyHint = document.createElement("p");
+      emptyHint.id = "mnews-empty";
+      emptyHint.className = "pcal-empty";
+      emptyHint.hidden = true;
+      emptyHint.textContent = "当前筛选条件下暂无匹配新闻，点击「全部」查看本市场全部重要动态。";
+      grid.insertAdjacentElement("afterend", emptyHint);
+    }
     function apply(f) {
       btns.forEach(function (b) {
         const act = (b.getAttribute("data-mnews-filter") || "all") === f;
@@ -5150,6 +5256,9 @@
         status.textContent = f === "all"
           ? "全量收录 " + cards.length + " 条 · 无上限"
           : "筛选显示 " + shown + " / " + cards.length + " 条";
+      }
+      if (emptyHint) {
+        emptyHint.hidden = shown > 0;
       }
     }
     btns.forEach(function (b) {

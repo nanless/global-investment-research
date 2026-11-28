@@ -30,7 +30,7 @@
 
 ## 2. 阶段 2A：并行启动调研子代理（一体化 10 路主力 / 独立黄金 5 路回退）
 
-- **一体化 10+1 映射（日常主力）**：遵循 `<REPO_ROOT>/AGENTS.md` 第 4 节 Step 2A，一次并发启动 **共享 10 路 `research` 子代理**（容量不足时按平台支持并发数分组，仍严守 10 路独立分工）。下表明确「一体化 10 路主力」与「独立黄金 5 路单跑回退」的 1:1 映射关系：
+- **一体化 10+1 映射（日常主力）**：遵循 `<REPO_ROOT>/AGENTS.md` 第 5 节 Step 2A，一次并发启动 **共享 10 路 `research` 子代理**（容量不足时按平台支持并发数分组，仍严守 10 路独立分工）。下表明确「一体化 10 路主力」与「独立黄金 5 路单跑回退」的 1:1 映射关系：
 
 | 一体化 10 路主力（`07:30` / `11:30` / `18:00` 定时日常） | 独立黄金 5 路回退（单跑黄金轨） | 核心覆盖范围 |
 | :--- | :--- | :--- |
@@ -78,11 +78,11 @@
 
 **强制时机**：必须等阶段 2A 全部 **10 路（一体化主力）** 或全部 **5 路（独立黄金单跑）** `research` 子代理返回完毕后再启动统一红队。
 
-- **输入材料**：阶段 2A 全部汇总证据 + `market_calendar.json` + `master_snapshot.json`（惰性加载：仅命中 5 大更新阈值时才附全量主报告 MD）+ `data_snapshot.json` + `daily/SCORECARD.md` + `daily/CHANGELOG.md`（前 150 行）；一体化班次同步输入 `equity/state/{market_state,multi_asset_channels,etf_universe,deep_dossiers}.json`。
+- **输入材料**：阶段 2A 全部汇总证据 + `market_calendar.json` + `master_snapshot.json`（惰性加载：仅命中 5 大更新阈值时才附全量主报告 MD）+ `data_snapshot.json` + `daily/SCORECARD.md` + `daily/CHANGELOG.md`（前 150 行）；一体化班次同步输入 `equity/state/{market_state,multi_asset_channels,etf_universe,deep_dossiers,policy_calendar}.json`。
 - **核心核查项**：
   1. 逐项精确复算买金四步红绿灯（`real_yield`/`rate_spread`/`vix`/`ny_close`）及 VIX 十日窗口与 `vix_daily_row_checks`；
   2. 核验是否触发 `DFII10` 60 日收盘新高机械砍半硬止损线，或「布油 `< 80` 且 `DFII10 > 2.95%` 站稳 5 日」尾部深熊升级线；
-  3. **一体化班次额外必核**：双轨共享宏观基准与对称 `3×2` 六市场多指数优先级秩序（A 股上证 #1）100% 一致、黄金 `Tier 0`/`new_buy_allowed == false` 全载体互斥锁（含交互 K 线诊断与 `asset_class == "gold" <=> gold_locked=True`）、央行 `银发〔2026〕42号` 中国大陆 BTC 0% 严禁配仓只读防火墙、跨轨统一税费与 QDII 制度红线（`008142`/`008143`、TA 合并 vs 直销分轨、互挂双层穿透费、2027-12-31 LOF 退市、禁推 `968118`、二手存单禁二次转让、交易所公司债 ETF 底层 20% 扣税、中国居民 20% 离岸税与 CRS、`02840.HK` 美国遗产税）、4 角色层 12 大渠道与 181+ 正交标注 ETF 分类、焦点股 7 维实证、三大扩展库与 `policy_calendar.json` 同期 `edition_id` 锁及日报 7–14 天日历与 `#sec-policy-calendar` 逐项一致；
+  3. **一体化班次额外必核**：双轨共享宏观基准与对称 `3×2` 六市场多指数优先级秩序（A 股上证 #1）100% 一致、黄金 `Tier 0`/`new_buy_allowed == false` 全载体互斥锁（含交互 K 线诊断与 `asset_class == "gold" <=> gold_locked=True`）、央行 `银发〔2026〕42号` 中国大陆 BTC 0% 严禁配仓只读防火墙、跨轨统一税费与 QDII 制度红线（`008142`/`008143`、TA 合并 vs 直销分轨、互挂双层穿透费、2027-12-31 LOF 退市、禁推停申 `968118`、警示派息份额 `968001` 改选累计份额、禁列退市 `00011`、二手存单禁二次转让、交易所公司债 ETF 底层 20% 扣税、中国居民 20% 离岸税与 CRS、`02840.HK` 美国遗产税）、4 角色层 12 大渠道与 181+ 正交标注 ETF 分类、焦点股 7 维实证、三大扩展库与 `policy_calendar.json` 同期 `edition_id` 锁及日报 7–14 天日历与 `#sec-policy-calendar` 逐项一致；
   4. 逐条对抗旧结论、旧数字、跨源口径冲突、时区归因漏洞与小白三层白话清晰度，核查 `data_caveats` 无内部文件名泄露；
   5. **强制输出四张无情清单**：**【新增】** / **【更新】** / **【修正】**（标明是否改变核心买金建议）/ **【删除】**。
 
@@ -120,17 +120,18 @@
 每次研报通过 `lint_readability.py --strict`（一体化班次待 Step 4 权益与三大深研库亦通过 `lint_equity.py --strict`）后，启动 **1 路独立只读盲审 + 三层安全进化闭环**：
 
 ### 盲审子代理标准提示词（一体化联合盲审 / 独立黄金盲审）
-- **输入**：本刊完整路径（Markdown 源稿与 3 张矢量图参数）、本轮首次 `--strict` 是否一次过及报错列表、`daily/RSI_PLAYBOOK.md` 当前内容、`daily/rsi_metrics.json` 最近 5 条记录（含上期 `next_run_watch` 待验真预判）；一体化班次同步输入权益本刊与 `equity/state/` 账本及三大扩展数据库。
+- **输入**：本刊完整路径（Markdown 源稿、3 张标准矢量图参数与 1–2 张 `DAILY_VISUAL` 矢量信息图）、本轮首次 `--strict` 是否一次过及报错列表、`daily/RSI_PLAYBOOK.md` 当前内容、`daily/rsi_metrics.json` 最近 5 条记录（含上期 `next_run_watch` 待验真预判）；一体化班次同步输入权益本刊与 `equity/state/` 账本、三大扩展数据库及 `equity/state/policy_calendar.json`。
 - **任务**：
   1. **上期预判无情回验**：逐条核对上期 `next_run_watch` 与关键区间预判是 `hit` / `partial` / `miss`，指出偏差根因，绝不护短；
-  2. **6 维定量打分（每维 1–5 整数，总分 `/30`）**：
+  2. **5 项真核验强制闭环**：① 跨载体数字、4 点跨库传播、多指数秩序（A 股上证 #1）与黄金红灯锁；② 同刻平价溢价、`2Y−FF`、名义−`T10YIE`−隐含 `DFII10`、QDII 五铁律与受限代码 `968118`/`968001`/`00011` ±40 字避坑护栏；③ 机构深度字数、反重复读（`≤3×`）、分市场差异化 10 点条与零内部词/审计腔；④ `CHART_A2` 符号、跨库费率、`deep_dossiers.json` 对账与 18:00 晚班零午盘残留；⑤ 焦点股 24h 扫雷、官源四铁律、>45m 截点漂移守卫、首页 6–9 条（`home_featured`）与单市 `#sec-market-news` 无上限全量新闻官源真实性、`DAILY_VISUAL` 零碰撞及 7–14 天日历与 `policy_calendar.json` 逐项一致；
+  3. **6 维定量打分（每维 1–5 整数，总分 `/30`）**：
      - `data_freshness_and_zero_hallucination`（数据鲜活度、时点标明、`data_caveats` 透明度与休市诚实度）
      - `prior_forecast_calibration`（上期预判回验诚实度与框架演化质量）
      - `plain_language_and_strict_readability`（小白友好三层写作、`DXY`/`COT`/`CDS` 首现白话括注、全篇零内部词与说教口号泄露、加粗 ≤14% 与零裸数字反引号）
-     - `visual_layout_and_pagination`（JSON 兼容键名；评判升级为**纯网页视觉清晰度、SVG 零碰撞与小白 3 分钟可读性**：首屏 4 KPI 卡、`.sn-grid` 双栏自适应、图 1/2/3 零碰撞与双端美观度、30 秒结论→钱包实算→硬核证据层次清晰）
+     - `visual_layout_and_pagination`（JSON 兼容键名；评判升级为**纯网页视觉清晰度、SVG 零碰撞与小白 3 分钟可读性**：首屏 4 KPI 卡、`.sn-grid` 双栏自适应、图 1/2/3 与 `DAILY_VISUAL` 矢量信息图零碰撞及双端美观度、30 秒结论→钱包实算→硬核证据层次清晰）
      - `research_efficiency_and_source_quality`（一体化 10+1 / 独立 5+1 检索信噪比、高价值/失效信源发现）
      - `engine_and_guardrail_reliability`（脚本与 6 门禁有无暴露确定性小缺陷或漏网词）
-  3. **严格分级输出改进动作**：
+  4. **严格分级输出改进动作**：
      - **Tier A（1–3 条高杠杆规则）**：明确应新增进 `daily/RSI_PLAYBOOK.md` 的条款，并点名可合并/淘汰的旧条款（严格保持 **≤180 行**软限 / **200 行**硬上限）；
      - **Tier B（0–1 条确定性工程微调）**：仅当发现确凿、可复现、≤40 行的解析/渲染/门禁加固补丁时提出（可覆盖 `lint_readability.py`/`edition_validation.py`/`chart_input.py` 与 `DAILY_FORMAT_SPEC.md`，**禁止删禁词或放宽门禁**）；否则留空；
      - **Tier C（0–2 条待审批架构提案）**：涉及核心风控策略、红绿灯阈值、`<REPO_ROOT>/AGENTS.md`、`gold/AGENTS.md`、`<REPO_ROOT>/.agents/skills/`、`automations/` 或本地 `sidecar.json` 调整时仅提议，严禁自动改动；

@@ -192,6 +192,7 @@ class InstrumentSpec:
     force_no_volume: bool = False
     decimals_override: int | None = None
     price_divisor_if_gt: tuple[float, float] | None = None
+    allow_nonpositive: bool = False
 
 
 def build_core_specs() -> list[InstrumentSpec]:
@@ -266,7 +267,7 @@ def build_core_specs() -> list[InstrumentSpec]:
         InstrumentSpec("rate_US10Y", "US10Y", "美债10Y收益率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_nominal", "10 Yr", force_no_volume=True, decimals_override=2),
         InstrumentSpec("rate_US2Y", "US2Y", "美债2Y收益率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_nominal", "2 Yr", force_no_volume=True, decimals_override=2),
         InstrumentSpec("rate_US30Y", "US30Y", "美债30Y收益率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_nominal", "30 Yr", force_no_volume=True, decimals_override=2),
-        InstrumentSpec("rate_DFII10", "DFII10", "10Y TIPS实际利率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_real", "10 YR", force_no_volume=True, decimals_override=2),
+        InstrumentSpec("rate_DFII10", "DFII10", "10Y TIPS实际利率", "rates_reits", "债券与利率", "%", "%", "core", "treasury_real", "10 YR", force_no_volume=True, decimals_override=2, allow_nonpositive=True),
         InstrumentSpec("rate_CN2Y", "CN2Y", "中国2年期国债收益率", "rates_reits", "债券与利率", "%", "%", "core", "eastmoney_cgb", "EMM00588704", force_no_volume=True, decimals_override=4),
         InstrumentSpec("rate_CN10Y", "CN10Y", "中国10年期国债收益率", "rates_reits", "债券与利率", "%", "%", "core", "eastmoney_cgb", "EMM00166466", force_no_volume=True, decimals_override=4),
         InstrumentSpec("rate_CN30Y", "CN30Y", "中国30年期国债收益率", "rates_reits", "债券与利率", "%", "%", "core", "eastmoney_cgb", "EMM00166469", force_no_volume=True, decimals_override=4),
@@ -346,7 +347,10 @@ def load_etf_specs(etf_path: Path = ETF_UNIVERSE_PATH) -> list[InstrumentSpec]:
         currency, unit = ETF_CURRENCY_UNIT_BY_CHANNEL.get(channel, ("CNY", "元"))
         inst_id = f"etf_{code}"
 
-        if channel in ("境内场内", "境内场外", "境内QDII", "境内非QDII港股通"):
+        if channel == "境内场外":
+            # OTC mutual funds have no exchange OHLCV ticker; skip to avoid colliding with A-share stock codes.
+            continue
+        if channel in ("境内场内", "境内QDII", "境内非QDII港股通"):
             cn_sym = route_cn_symbol(code, is_index=False)
             kind = "bj_sina" if cn_sym.startswith("bj") else "cn_equity"
             specs.append(
@@ -602,13 +606,14 @@ def sanitize_bars(
     decimals_override: int | None = None,
     force_no_volume: bool = False,
     price_divisor_if_gt: tuple[float, float] | None = None,
+    allow_nonpositive: bool = False,
 ) -> list[list[Any]]:
     """Validate, deduplicate by ISO date, sort ascending, round, and slice to last N bars.
 
     Each input bar must already be ordered as [date_iso, open, high, low, close, volume].
-    Drops bars where close <= 0, open <= 0, high <= 0, low <= 0, raw high < low,
-    invalid date, or NaN/Inf. Clamps slight intraday envelope anomalies where
-    open/close lies outside [low, high] while raw high >= low.
+    Drops bars where close <= 0, open <= 0, high <= 0, low <= 0 (unless allow_nonpositive=True,
+    e.g. for TIPS real yields), raw high < low, invalid date, or NaN/Inf. Clamps slight
+    intraday envelope anomalies where open/close lies outside [low, high] while raw high >= low.
     """
     rows = normalize_bar_units(raw_bars, price_divisor_if_gt=price_divisor_if_gt)
     by_date: dict[str, list[Any]] = {}
@@ -625,7 +630,7 @@ def sanitize_bars(
         v = 0.0 if force_no_volume else (_to_float(row[5]) if len(row) > 5 else 0.0)
         if o is None or h is None or l is None or c is None:
             continue
-        if o <= 0 or h <= 0 or l <= 0 or c <= 0:
+        if not allow_nonpositive and (o <= 0 or h <= 0 or l <= 0 or c <= 0):
             continue
         if h < l:
             continue
@@ -905,6 +910,8 @@ def parse_sina_fx_quotes(raw_text: str) -> dict[str, list[Any]]:
         h = _to_float(parts[6])
         l = _to_float(parts[7])
         c = _to_float(parts[8])
+        if c is None or c <= 0:
+            c = _to_float(parts[1])
         if o is None or h is None or l is None or c is None:
             continue
         if o <= 0 or h <= 0 or l <= 0 or c <= 0 or h < l:
@@ -932,7 +939,12 @@ def parse_cboe_vix_csv(raw_text: str) -> list[list[Any]]:
     return out
 
 
-def parse_treasury_csv(raw_text: str, column_name: str) -> list[list[Any]]:
+def parse_treasury_csv(
+    raw_text: str,
+    column_name: str,
+    *,
+    allow_nonpositive: bool = False,
+) -> list[list[Any]]:
     """Parse US Treasury daily rates CSV for a specific tenor column.
 
     Synthesizes OHLC as [date, val, val, val, val, 0].
@@ -956,7 +968,7 @@ def parse_treasury_csv(raw_text: str, column_name: str) -> list[list[Any]]:
         if not date_s:
             continue
         val = _to_float(row.get(col_match))
-        if val is None or val <= 0:
+        if val is None or (not allow_nonpositive and val <= 0):
             continue
         out.append([date_s, val, val, val, val, 0])
     return out
@@ -1112,6 +1124,11 @@ def parse_cnbc_rest_quote(raw_text: str) -> dict[str, list[Any]]:
         date_iso = normalize_date_mmddyyyy(str(q.get("last_time") or ""))
         if not date_iso:
             continue
+        try:
+            if datetime.strptime(date_iso, "%Y-%m-%d").date().weekday() >= 5:
+                continue
+        except ValueError:
+            continue
         o = _to_float(q.get("open"))
         h = _to_float(q.get("high"))
         l = _to_float(q.get("low"))
@@ -1130,12 +1147,20 @@ def parse_cnbc_rest_quote(raw_text: str) -> dict[str, list[Any]]:
 def merge_cnbc_t0_quote(
     hist_bars: list[list[Any]],
     quote_bar: list[Any] | None,
+    *,
+    allow_same_day: bool = False,
 ) -> list[list[Any]]:
-    """Append CNBC restQuote T-0 bar ONLY when OHLC > 0, high >= low, and last_date > last_hist_date."""
+    """Splice live T-0 bar when OHLC > 0, high >= low, weekday date, and q_date > last_hist_date
+    (or q_date == last_hist_date when allow_same_day=True, refreshing in place and preserving volume)."""
     if not hist_bars or not quote_bar or len(quote_bar) < 5:
         return list(hist_bars)
     q_date = normalize_date_mmddyyyy(str(quote_bar[0]))
     if not q_date:
+        return list(hist_bars)
+    try:
+        if datetime.strptime(q_date, "%Y-%m-%d").date().weekday() >= 5:
+            return list(hist_bars)
+    except ValueError:
         return list(hist_bars)
     o = _to_float(quote_bar[1])
     h = _to_float(quote_bar[2])
@@ -1152,11 +1177,26 @@ def merge_cnbc_t0_quote(
     if not hist_dates:
         return list(hist_bars)
     last_hist_date = max(hist_dates)
-    if q_date <= last_hist_date:
+    if q_date < last_hist_date or (q_date == last_hist_date and not allow_same_day):
         return list(hist_bars)
     v = _to_float(quote_bar[5]) if len(quote_bar) > 5 else 0.0
     if v is None or v < 0:
         v = 0.0
+    if q_date == last_hist_date:
+        replaced = False
+        out: list[list[Any]] = []
+        for bar in hist_bars:
+            b_date = normalize_date_mmddyyyy(str(bar[0])) if isinstance(bar, (list, tuple)) and bar else None
+            if b_date == q_date and not replaced:
+                old_v = _to_float(bar[5]) if isinstance(bar, (list, tuple)) and len(bar) > 5 else 0.0
+                eff_v = old_v if (v == 0.0 and old_v is not None and old_v > 0) else v
+                out.append([q_date, o, h, l, c, eff_v])
+                replaced = True
+            elif b_date == q_date:
+                continue
+            else:
+                out.append(list(bar) if isinstance(bar, (list, tuple)) else bar)
+        return out
     return list(hist_bars) + [[q_date, o, h, l, c, v]]
 
 
@@ -1517,6 +1557,7 @@ def merge_with_stale_cache(
             decimals_override=spec.decimals_override,
             force_no_volume=spec.force_no_volume,
             price_divisor_if_gt=spec.price_divisor_if_gt,
+            allow_nonpositive=spec.allow_nonpositive,
         )
         if sanitized:
             cached_prov = str(cached_entry.get("provider", "cached"))
@@ -1569,6 +1610,7 @@ class KlineFetcher:
         self._batch_lock = threading.Lock()
         self._ft_index_lock = threading.Lock()
         self._cgb_lock = threading.Lock()
+        self._treasury_lock = threading.Lock()
 
     # --- Batch pre-fetchers ---
 
@@ -1703,42 +1745,58 @@ class KlineFetcher:
         except Exception:
             return ""
 
+    @staticmethod
+    def _count_treasury_csv_rows(raw_text: str) -> int:
+        if not raw_text or not raw_text.strip():
+            return 0
+        reader = csv.reader(io.StringIO(raw_text.lstrip("\ufeff")))
+        header = next(reader, None)
+        if not header:
+            return 0
+        count = 0
+        for row in reader:
+            if row and normalize_date_mmddyyyy(row[0]):
+                count += 1
+        return count
+
     def _get_treasury_csvs(self, curve_type: str) -> list[str]:
-        with self._batch_lock:
+        with self._treasury_lock:
             if curve_type == "nominal" and self._treasury_nom_cache is not None:
                 return self._treasury_nom_cache
             if curve_type == "real" and self._treasury_real_cache is not None:
                 return self._treasury_real_cache
 
-        api_type = (
-            "daily_treasury_yield_curve"
-            if curve_type == "nominal"
-            else "daily_treasury_real_yield_curve"
-        )
-        csvs: list[str] = []
-        row_count = 0
-        for year in (self.ref_year, self.ref_year - 1):
-            url = (
-                f"https://home.treasury.gov/resource-center/data-chart-center/"
-                f"interest-rates/daily-treasury-rates.csv/{year}/all"
-                f"?type={api_type}&field_tdr_date_value={year}&page&_format=csv"
+            api_type = (
+                "daily_treasury_yield_curve"
+                if curve_type == "nominal"
+                else "daily_treasury_real_yield_curve"
             )
-            try:
-                raw = self.http.request_text(url)
-                if raw.strip():
-                    csvs.append(raw)
-                    row_count += max(0, len(raw.splitlines()) - 1)
-            except Exception:
-                pass
-            if row_count >= self.bars_limit + 5:
-                break
+            csvs: list[str] = []
+            row_count = 0
+            for year in (self.ref_year, self.ref_year - 1):
+                url = (
+                    f"https://home.treasury.gov/resource-center/data-chart-center/"
+                    f"interest-rates/daily-treasury-rates.csv/{year}/all"
+                    f"?type={api_type}&field_tdr_date_value={year}&page&_format=csv"
+                )
+                try:
+                    raw = self.http.request_text(url)
+                    valid_rows = self._count_treasury_csv_rows(raw)
+                    if valid_rows > 0:
+                        csvs.append(raw)
+                        row_count += valid_rows
+                except Exception:
+                    pass
+                if row_count >= self.bars_limit + 5:
+                    break
 
-        with self._batch_lock:
-            if curve_type == "nominal":
-                self._treasury_nom_cache = csvs
-            else:
-                self._treasury_real_cache = csvs
-        return csvs
+            # Only cache non-empty valid CSV fetches so transient errors do not poison subsequent tenors
+            if csvs:
+                if curve_type == "nominal":
+                    self._treasury_nom_cache = csvs
+                else:
+                    self._treasury_real_cache = csvs
+            return csvs
 
     # --- Individual provider callers ---
 
@@ -1852,6 +1910,7 @@ class KlineFetcher:
                 decimals_override=spec.decimals_override,
                 force_no_volume=spec.force_no_volume,
                 price_divisor_if_gt=spec.price_divisor_if_gt,
+                allow_nonpositive=spec.allow_nonpositive,
             )
 
         kind = spec.kind
@@ -2046,7 +2105,7 @@ class KlineFetcher:
                 if hist_bars:
                     with self._batch_lock:
                         q_bar = self._sina_fx_quote_cache.get(spec.provider_symbol)
-                    bars = _clean(merge_cnbc_t0_quote(hist_bars, q_bar))
+                    bars = _clean(merge_cnbc_t0_quote(hist_bars, q_bar, allow_same_day=True))
                     if bars:
                         return bars, "sina_forex", None
                 errors.append("sina_forex:empty")
@@ -2058,7 +2117,13 @@ class KlineFetcher:
             csvs = self._get_treasury_csvs(curve)
             combined: list[list[Any]] = []
             for raw_csv in csvs:
-                combined.extend(parse_treasury_csv(raw_csv, spec.provider_symbol))
+                combined.extend(
+                    parse_treasury_csv(
+                        raw_csv,
+                        spec.provider_symbol,
+                        allow_nonpositive=spec.allow_nonpositive,
+                    )
+                )
             bars = _clean(combined)
             if bars:
                 return bars, "us_treasury_csv", None
@@ -2083,7 +2148,7 @@ class KlineFetcher:
                 if hist_bars:
                     with self._batch_lock:
                         q_bar = self._cnbc_quote_cache.get(spec.provider_symbol)
-                    merged = merge_cnbc_t0_quote(hist_bars, q_bar)
+                    merged = merge_cnbc_t0_quote(hist_bars, q_bar, allow_same_day=True)
                     bars = _clean(merged)
                     if bars:
                         return bars, "cnbc_harmony", None
@@ -2162,7 +2227,7 @@ def run_fetch(
     workers: int = DEFAULT_WORKERS,
     etf_path: Path = ETF_UNIVERSE_PATH,
     dossiers_path: Path = DEEP_DOSSIERS_PATH,
-    us_suffix_cache_path: Path = US_SUFFIX_CACHE_PATH,
+    us_suffix_cache_path: Path | None = None,
     http_client: RateLimitedHttpClient | None = None,
 ) -> dict[str, Any]:
     """Execute K-line fetch for the selected scope and atomically write shard + manifest JSONs."""
@@ -2189,7 +2254,16 @@ def run_fetch(
     }
 
     http = http_client or RateLimitedHttpClient()
-    us_cache = UsSuffixCache(us_suffix_cache_path)
+    if us_suffix_cache_path is not None:
+        resolved_cache_path = us_suffix_cache_path
+        persist_suffix_cache = True
+    else:
+        resolved_cache_path = US_SUFFIX_CACHE_PATH
+        try:
+            persist_suffix_cache = out_dir.resolve().is_relative_to(REPO_ROOT.resolve())
+        except OSError:
+            persist_suffix_cache = False
+    us_cache = UsSuffixCache(resolved_cache_path)
     fetcher = KlineFetcher(http, us_cache, bars_limit=bars_limit, ref_year=ref_year)
 
     # Batch pre-fetch Irish UCITS ETFs in a single FT POST if any are in scope
@@ -2222,7 +2296,8 @@ def run_fetch(
             except Exception as exc:
                 fetched_results[sp.id] = ([], None, f"unhandled:{type(exc).__name__}")
 
-    us_cache.save_if_dirty()
+    if persist_suffix_cache:
+        us_cache.save_if_dirty()
 
     # Merge with stale cache in canonical spec order
     shard_series: dict[str, dict[str, dict[str, Any]]] = {sh: {} for sh in target_shards}
@@ -2232,10 +2307,20 @@ def run_fetch(
 
     for sp in specs:
         bars, prov, err = fetched_results.get(sp.id, ([], None, "missing_result"))
-        if sp.optional_min_bars > 0 and len(bars) < sp.optional_min_bars:
-            omitted_optional.append(sp.id)
-            continue
         cached = existing_by_shard.get(sp.shard, {}).get(sp.id)
+        if sp.optional_min_bars > 0 and len(bars) < sp.optional_min_bars:
+            live_err = err or f"insufficient_bars:{len(bars)}<{sp.optional_min_bars}"
+            rec, failure = merge_with_stale_cache(
+                sp, [], None, live_err, cached, bars_limit=bars_limit
+            )
+            if rec is not None and rec["bars_count"] >= sp.optional_min_bars:
+                shard_series[sp.shard][sp.id] = rec
+                new_catalog_by_shard[sp.shard].append(catalog_entry_from_series(rec, sp.shard))
+                if failure is not None:
+                    new_failures_by_shard[sp.shard].append(failure)
+            else:
+                omitted_optional.append(sp.id)
+            continue
         rec, failure = merge_with_stale_cache(
             sp, bars, prov, err, cached, bars_limit=bars_limit
         )

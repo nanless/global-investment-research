@@ -50,7 +50,7 @@
 
 ---
 
-## 1. 10 个 `DAILY_*` 组件 JSON Schema 规范
+## 1. 11 个 `DAILY_*` 组件（含 `DAILY_VISUAL`）JSON Schema 规范
 
 所有组件必须以独立 HTML 注释块形式写在 Markdown 中：`<!-- DIRECTIVE_NAME { ...合法 JSON... } -->`。
 
@@ -115,6 +115,11 @@
 
 ### 1.8 `DAILY_CHART_TIMELINE`（图 1：走势折线矢量图）
 - **必填键（Gate 0）**：`points`（非空；禁止把 `highlight_zones` 误写为 `zones`）；数值经共享模块 `chart_input.py` 规范化（支持小数、千位逗号、百分值与 Unicode 负号，`y_min < y_max`，`highlight_zones` 索引须为整数）。
+- **子数组精确键名（防落盘键名报错）**：
+  - 顶层：`title`, `subtitle`, `note`, `y_min`, `y_max`, 可选 `y_ticks` (`[num]`), `unit_prefix`, `unit_suffix`；
+  - `points[]`：必填 `time` (`str`), `val` (`num`), `val_label` (`str`), `desc` (`str`), `color` (`"#hex"`), `label_pos` (`"above"|"below"`)，可选 `dx`/`dy` (`num`), `anchor` (`str`), `highlight` (`bool`)；
+  - `ref_lines[]`：必填 `val` (`num`), `label` (`str`), `color` (`"#hex"`), `align` (`"start"|"end"`), `dy` (`num`)，可选 `x` (`num`)；
+  - `highlight_zones[]`：`start_idx` (`int`), `end_idx` (`int`), `label` (`str`), `fill` (`"#hex"`), `text_color` (`"#hex"`)。
 - **渲染特性**：`viewBox="0 0 640 284"`（`vb_h=284`），标签采用半透明白底圆角胶囊 `_svg_label_pill()` + 2D 碰撞面积最小化避让算法。
 
 ### 1.9 `DAILY_CHART_CROSS`（图 2：1:1 真实线性跨资产分化条形图）
@@ -124,6 +129,15 @@
 ### 1.10 `DAILY_CHART_SWITCH`（图 3：历史水位尺 + 四步红绿灯体检仪）
 - **必填键（Gate 0）**：`gauges`（非空，`pct`/`threshold_pct ∈ [0, 100]`，禁误写 `safe_pct`）, `checks`（严格 4 项，每项含布尔 `passed` 及 `name`/`line1`/`line2`；新刊同时必填固定顺序 **`id`**：`"real_yield"`, `"rate_spread"`, `"vix"`, `"ny_close"`）。
 - **口径同步**：`status_line` 须含快照档位名称与 `X/4`；若设 `status_color` 须与档位色值（`#dc2626`/`#d97706`/`#16a34a`）严格一致；`checks[].passed` 顺序须与快照 `tier1_gates` 完全一致。
+
+### 1.11 `DAILY_VISUAL`（通用 640px 零碰撞矢量信息图 · `scripts/visual_widgets.py`）
+- **校验门禁（Gate 0 + Gate 4B）**：`lint_readability.py` 在 Gate 0 严格调用 `scripts/visual_widgets.py:validate_visual_spec()` 校核 JSON Schema，并在 Gate 4B 调用 `scripts/svg_geometry.py` 验收文本边界框零碰撞；每刊建议按数据特征嵌入 **1–2 张**（禁止裸缩写/裸期限与内部工程词，严格遵守黄金红灯锁）。
+- **公共字段**：必填 `type`（`"waterfall"` \| `"bar_compare"` \| `"anchor_range"` \| `"flow_chain"`）、`title`（非空字符串）；可选 `subtitle`、`takeaway`（底部「一图看懂」）、`note`。
+- **4 大图型精确键名（高度注意非对称键：`bars` vs `items` vs `steps`；`waterfall.benchmark.value` vs `bar_compare.threshold.val`！）**：
+  1. **`waterfall`（损益桥 / 净流动性瀑布）**：必填 `bars`（**2–8 项**，禁误写 `items`），每项 `{"label": str, "value": num, "kind"?: "start"|"add"|"sub"|"total"|"compare", "val_label"?: str, "tag"?: str, "color"?: "#RRGGBB"}`；可选 `unit` (`str`)、`benchmark`: `{"value": num, "label"?: str, "color"?: "#RRGGBB"}`（**注意用 `"value"`**）。
+  2. **`bar_compare`（多维横向柱状对比）**：必填 `items`（**≥ 2 项**），每项 `{"label": str, "value": num, "val_label"?: str, "tag"?: str, "color"?: "#RRGGBB", "highlight"?: bool}`；可选 `max_val` (`num`)、`min_val` (`num`)、`callout_badge` (`str`)、`threshold`: `{"val": num, "label"?: str, "color"?: "#RRGGBB"}`（**注意用 `"val"`，与 `waterfall.benchmark.value` 不同！**）。
+  3. **`anchor_range`（现价 vs 安全锚区间尺）**：必填 `items`（**≥ 1 项**），每项 `{"name": str, "code"?: str, "current": num, "anchor_low": num, "anchor_high": num, "unit"?: str, "stance"?: "base"|"lock"|"watch"|"avoid", "stance_label"?: str, "gap_label"?: str, "hint"?: str}`（要求 `anchor_low <= anchor_high` 且所有数值为有限非布尔数）。
+  4. **`flow_chain`（跨资产 / 政策因果传导链）**：必填 `steps`（**3–6 项**，禁误写 `nodes`/`items`），每项 `{"title": str, "step"?: str, "metric"?: str, "desc"?: str, "tone"?: "red"|"orange"|"amber"|"green"|"teal"|"blue"|"slate"}`。
 
 ---
 
@@ -145,7 +159,7 @@
 
 ## 3. 双快照数据域（`data_snapshot.json` & `master_snapshot.json`）、跨项目 SSOT 与 Gate 5 契约
 
-日报使用 `data_snapshot.json`（跨项目 SSOT 唯一写入源，Step 4 权益轨零延迟只读校验），主报告使用独立锁定的 `master_snapshot.json`（**对称结构**：同样补齐 `edition_id`、`new_buy_allowed`、`cfets_fixing_date` 及 `tier1_gates[].id`）。快照包含 11 大核心域：
+日报使用 `data_snapshot.json`（跨项目 SSOT 唯一写入源，Step 4 权益轨零延迟只读校验），主报告使用独立锁定的 `master_snapshot.json`（**对称结构**：同样补齐 `edition_id`、`new_buy_allowed`、`cfets_fixing_date` 及 `tier1_gates[].id`）。快照包含 12 大核心域：
 
 1. **班次、紧迫度与 SSOT 裁决元信息**：`edition_id`, `as_of_bjt`, `as_of_short`, `master_version`, `daily_alert_level` (`L0`/`L1`/`L2`), `daily_alert_label`, `tier_code` (`Tier 0`/`Tier 1`/`Tier 2`/`Tier 3`), **`new_buy_allowed` (bool，与 `tier_code != "Tier 0"` 强制一致)**, `tier_label`, `tier_status_sub`, `tier_cover_sub`, `tier1_passed`, `tier1_total`, `a_class_tranche_split` (`"30% + 45% + 25%"`)。
 2. **四步红绿灯明细 (`tier1_gates`)**：严格长度 4 的数组，新刊与主报告均按固定 `id` 顺序（`real_yield`, `rate_spread`, `vix`, `ny_close`），每项含 `id`, `name`, `passed` (bool), `reading`, `threshold`, `detail`。
@@ -181,6 +195,7 @@
 9. **四大央行与 12 大行样本汇总**：`fed_dec_hike_prob`/`ecb_`/`boe_`/`boj_`, `bank_2027_yearend_median_usd`, **`bank_2027_yearend_sample_count`**, `bank_2027_avg_median_usd`, **`bank_2027_avg_sample_count`**, `bank_2027_fx_median`；`institutional_targets` 每项含 `name`, `lo <= base <= hi`, `kind ∈ ("pt", "avg", "horizon", "stale")` 及可选 `annual_average_usd`，由 Gate 5 按同期限复算样本数与精确中位数。
 10. **中国零售渠道成本 (`rmb_channels`) 与无日期跨资产比值 (`cross_ratios`)**：`rmb_channels` 含 `etf_base_rmb`、`bank_accum_rmb`、`bank_bar_rmb`、`bank_bar_plus_craft_rmb`、`shuibei_nonmember_bar_rmb`、`shuibei_taxed_jewelry_rmb`、`brand_store_rmb`、`wedding_save_per_g_rmb`、`wedding_save_50g_rmb`、`wedding_save_pct`、`note`；跨资产比值唯一标准无日期键 `cross_ratios`（禁写遗留日期键 `cross_ratios_XXXX`）。
 11. **结构化图表数组与三大信任资产**：`monthly_candles`、`mechanical_calendar`、`trust_assets`。
+12. **多锚点优先级矩阵 (`index_matrix`)**：驱动门户 Layer 2 黄金市场卡与多锚点播报的有序数组（`id` 与 `equity/state/klines/` 核心基准对齐，按 `XAU` → `GC` → `AU0` → `Au99.99` → `XAG` → `AG0` 优先级排序）：`[{"id": "cmd_XAU"|"cmd_GC"|"cmd_AU0"|"cmd_Au9999"|"cmd_XAG"|"cmd_AG0", "code": str, "name": str, "value": num, "change_pct": num}]`。
 
 ### Gate 5 强制算术与逻辑复算契约（偏离即报 FAIL / WARN）
 1. 现货涨跌幅与四舍五入：`|spot_gold_ny_close_rounded - spot_gold_ny_close_usd| <= 0.5`；`|spot_gold_ny_change_pct - ((ny_close / prev_close) - 1) * 100| <= 0.05`；

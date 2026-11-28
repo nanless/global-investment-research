@@ -142,10 +142,24 @@ def _validate_secret_config_path(path: Path, *, allow_repo_dotenv: bool = False)
             )
 
 
+def _resolve_git_dir() -> Path:
+    """Resolve real .git directory cleanly in both normal repos and git worktrees."""
+    dot_git = REPO_ROOT / ".git"
+    if dot_git.is_dir():
+        return dot_git
+    if dot_git.is_file():
+        txt = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+        if txt.lower().startswith("gitdir:"):
+            raw = txt.split(":", 1)[1].strip()
+            p = Path(raw)
+            return p if p.is_absolute() else (REPO_ROOT / p).resolve()
+    return dot_git
+
+
 def _validate_state_output_path(path: Path, label: str) -> None:
     resolved = path.resolve()
     repo_res = REPO_ROOT.resolve()
-    git_dir = (repo_res / ".git").resolve()
+    git_dir = _resolve_git_dir().resolve()
     if resolved.is_relative_to(repo_res) and not resolved.is_relative_to(git_dir):
         raise ValueError(
             f"Refusing to write {label} inside repository working tree (use ~/.local/state or temp path): {resolved}"
@@ -243,6 +257,10 @@ def load_notify_config(
         if not isinstance(raw, dict):
             raise ValueError(f"Invalid JSON object in {file_path}")
         cfg.config_source = str(file_path)
+        if isinstance(raw.get("quiet_hours_start"), str) and _HHMM_RE.match(raw["quiet_hours_start"]):
+            cfg.quiet_start = raw["quiet_hours_start"]
+        if isinstance(raw.get("quiet_hours_end"), str) and _HHMM_RE.match(raw["quiet_hours_end"]):
+            cfg.quiet_end = raw["quiet_hours_end"]
         qh = raw.get("quiet_hours")
         if isinstance(qh, dict):
             cfg.quiet_enabled = bool(qh.get("enabled", True))
@@ -505,7 +523,10 @@ class Notifier:
             try:
                 fh.seek(0)
                 raw = fh.read().strip()
-                data = json.loads(raw) if raw else {}
+                try:
+                    data = json.loads(raw) if raw else {}
+                except json.JSONDecodeError:
+                    data = {}
                 if not isinstance(data, dict):
                     data = {}
                 # Prune entries >48h old
@@ -616,7 +637,10 @@ class Notifier:
             return out
 
         if provider == "serverchan":
-            chunks = chunk_text(msg.body_md if msg.body_md else msg.title, max_bytes=28000)
+            sc_body = msg.body_md if msg.body_md else msg.title
+            if msg.url and msg.url not in sc_body:
+                sc_body = f"{sc_body}\n\n详情链接：{msg.url}"
+            chunks = chunk_text(sc_body, max_bytes=28000)
             sendkey = str(pcfg["sendkey"]).strip()
             url = serverchan_endpoint(sendkey)
             sc_title = sanitize_serverchan_title(stamped_title)

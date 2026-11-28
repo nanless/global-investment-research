@@ -1411,10 +1411,11 @@ class OperationalRegressionTest(unittest.TestCase):
 
             next_ed = "2099-12-31_1800_r99"
             gold_obj = json.loads((sandbox / "gold/data_snapshot.json").read_text(encoding="utf-8"))
+            live_tier_code = gold_obj.get("tier_code")
+            live_new_buy = gold_obj.get("new_buy_allowed")
+            live_gold_locked = (live_tier_code == "Tier 0" or live_new_buy is False)
             gold_obj["edition_id"] = next_ed
             gold_obj["as_of_short"] = "2099-12-31 23:55"
-            gold_obj["tier_code"] = "Tier 0"
-            gold_obj["new_buy_allowed"] = False
             (sandbox / "gold/data_snapshot.json").write_text(
                 json.dumps(gold_obj, ensure_ascii=False), encoding="utf-8"
             )
@@ -1447,13 +1448,13 @@ class OperationalRegressionTest(unittest.TestCase):
                 ch["beginner_one_liner"] for ch in ma_seed["channels"] if ch["id"] == "reverse_repo"
             )
 
-            # 1. Dry-run & real apply
+            # 1. Dry-run & real apply (preserves live Gold lock state so Gold unlock never breaks CI)
             patch_path = sandbox / "equity/state/_edition_patch.json"
             good_patch = {
                 "edition_id": next_ed,
                 "as_of_date": "2099-12-31",
                 "as_of_label": "2099-12-31 23:55 CST",
-                "gold_tier0_locked": True,
+                "gold_tier0_locked": live_gold_locked,
                 "multi_asset_channels": {
                     "channels_patch": {
                         "reverse_repo": {
@@ -1499,8 +1500,12 @@ class OperationalRegressionTest(unittest.TestCase):
             self.assertEqual(dos_after["edition_id"], next_ed)
             self.assertEqual(dos_after["dossiers"][sample_a_key]["updated_at"], "2099-12-31")
 
-            # 2. Gold Tier-0 violation must abort with zero file mutation
+            # 2. Gold Tier-0 violation must abort with zero file mutation (explicitly lock snapshot for this subtest)
             before_bytes = (sandbox / "equity/state/multi_asset_channels.json").read_bytes()
+            gold_locked_snap = dict(gold_obj, tier_code="Tier 0", new_buy_allowed=False)
+            (sandbox / "gold/data_snapshot.json").write_text(
+                json.dumps(gold_locked_snap, ensure_ascii=False), encoding="utf-8"
+            )
             bad_patch = {
                 "edition_id": next_ed,
                 "as_of_date": "2099-12-31",
@@ -1512,11 +1517,17 @@ class OperationalRegressionTest(unittest.TestCase):
                 },
             }
             patch_path.write_text(json.dumps(bad_patch, ensure_ascii=False), encoding="utf-8")
-            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox):
+            bad_err = StringIO()
+            with patch.object(patch_state_dbs, "REPO_ROOT", sandbox), redirect_stderr(bad_err):
                 rc_bad = patch_state_dbs.main(["--apply"])
                 self.assertNotEqual(rc_bad, 0)
+            self.assertIn("518880", bad_err.getvalue())
             self.assertEqual((sandbox / "equity/state/multi_asset_channels.json").read_bytes(), before_bytes)
             patch_path.unlink()
+            # Restore live Gold lock state before subsequent subtests
+            (sandbox / "gold/data_snapshot.json").write_text(
+                json.dumps(gold_obj, ensure_ascii=False), encoding="utf-8"
+            )
 
             # 2b. Cross-DB fee mismatch (511180 0.20% vs 0.30% in etf_universe.json) must be rejected
             cb_ch = next(c for c in ch_after["channels"] if c["id"] == "convertible_bonds")
@@ -1529,7 +1540,7 @@ class OperationalRegressionTest(unittest.TestCase):
             fee_mismatch_patch = {
                 "edition_id": next_ed,
                 "as_of_date": "2099-12-31",
-                "gold_tier0_locked": True,
+                "gold_tier0_locked": live_gold_locked,
                 "multi_asset_channels": {
                     "channels_patch": {"convertible_bonds": cb_bad_upd}
                 },
@@ -1991,32 +2002,96 @@ class OperationalRegressionTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             tmp_snap = Path(temporary) / "data_snapshot.json"
-            snap = json.loads((repo / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
-            fixed_gates = [dict(g) for g in (snap.get("tier1_gates") or [])[:4]]
-            ny_close = float(snap["spot_gold_ny_close_usd"])
-            g1_pass = float(snap["dfii10_live_pct"]) <= 2.72
-            g2_pass = round((float(snap["us2y_pct"]) - float(snap["effr_pct"])) * 100.0, 2) <= 55.0
-            g_flags = (g1_pass, g2_pass, True, False)
-            for g, p_flag in zip(fixed_gates, g_flags):
-                g["passed"] = p_flag
-            passed_cnt = sum(1 for x in g_flags if x)
-            snap.update(
-                edition_id="2026-11-27_1130",
-                as_of_short="2026-11-27 11:30",
-                as_of_bjt="2026年11月27日（周五）11:30",
-                cfets_fixing_date="2026-11-27",
-                spot_gold_ny_close_date="2026-11-25",
-                tier1_gate4_threshold_usd=round(ny_close + 25.0, 2),
-                tier1_gate4_threshold_date="2026-11-24",
-                tier1_gate4_target_date="2026-11-25",
-                tier1_passed=passed_cnt,
-                tier1_total=4,
-                tier1_gates=fixed_gates,
-                vix_close=28.29,
-                vix_live=None,
-                vix_live_as_of=None,
-                vix_10d_window_end="2026-11-25",
-                vix_10d_session_closes=[
+            tmp_cal = Path(temporary) / "market_calendar.json"
+            # 100% self-contained synthetic snapshot + synthetic calendar (zero live-repo coupling)
+            synth_cal = {
+                "timezone": "Asia/Shanghai",
+                "coverage": {
+                    "start_date": "2026-11-01",
+                    "end_date": "2027-01-31",
+                    "verified_on": "2026-11-26",
+                    "vix_schedule_source": "https://www.cboe.com/about/hours/us-options/",
+                },
+                "calendar_overrides": [
+                    {
+                        "id": "thanksgiving_synth_2026",
+                        "date": "2026-11-26",
+                        "end_date": "2026-11-27",
+                        "markets": ["US_EQUITY"],
+                        "overlay_mode": "A",
+                    }
+                ],
+                "vix_session_exceptions": {
+                    "2026-11-26": {
+                        "windows_et": [],
+                        "official_close_et": None,
+                        "daily_row_check_after_et": "11:30",
+                    },
+                    "2026-11-27": {
+                        "windows_et": [["03:15", "09:25"], ["09:31", "13:00"]],
+                        "official_close_et": None,
+                        "daily_row_check_after_et": "13:15",
+                    },
+                },
+            }
+            tmp_cal.write_text(json.dumps(synth_cal, ensure_ascii=False), encoding="utf-8")
+
+            ny_close = 3588.78
+            snap = {
+                "edition_id": "2026-11-27_1130",
+                "as_of_short": "2026-11-27 11:30",
+                "as_of_bjt": "2026年11月27日（周五）11:30",
+                "tier_code": "Tier 0",
+                "new_buy_allowed": False,
+                "daily_alert_level": "L1",
+                "a_class_tranche_split": "30% + 45% + 25%",
+                "cfets_fixing_date": "2026-11-27",
+                "cfets_cny_fixing": 6.71,
+                "us10y_pct": 4.84,
+                "us2y_pct": 4.604,
+                "effr_pct": 3.88,
+                "spread_2y_ff_bp": 72.4,
+                "dfii10_fred_official_pct": 2.79,
+                "dfii10_live_pct": 2.79,
+                "dxy": 104.2,
+                "on_rrp_usd_m": 301.0,
+                "comex_copper_usd_lb": 5.36,
+                "spot_gold_ny_close_usd": ny_close,
+                "spot_gold_ny_close_rounded": 3589,
+                "spot_gold_prev_close_usd": 3635.24,
+                "spot_gold_ny_change_pct": round(((ny_close / 3635.24) - 1.0) * 100.0, 2),
+                "spot_gold_ny_close_date": "2026-11-25",
+                "tier1_gate4_threshold_usd": round(ny_close + 25.0, 2),
+                "tier1_gate4_threshold_date": "2026-11-24",
+                "tier1_gate4_target_date": "2026-11-25",
+                "wti_settle_usd": 80.0,
+                "brent_settle_usd": 90.0,
+                "spot_silver_usd": 41.0,
+                "spx_close": 7200.0,
+                "spot_platinum_usd": 1258.0,
+                "rmb_channels": {
+                    "brand_store_rmb": 1068.0,
+                    "bank_bar_plus_craft_rmb": 796.0,
+                    "wedding_save_per_g_rmb": 272.0,
+                    "wedding_save_50g_rmb": 13600.0,
+                    "wedding_save_pct": 25.47,
+                },
+                "institutional_targets": [
+                    {"name": "示例甲", "kind": "pt", "lo": 4300, "base": 4500, "hi": 4700},
+                    {"name": "示例乙", "kind": "avg", "lo": 4400, "base": 4600, "hi": 4800},
+                ],
+                "bank_2027_yearend_sample_count": 1,
+                "bank_2027_yearend_median_usd": 4500,
+                "bank_2027_avg_sample_count": 1,
+                "bank_2027_avg_median_usd": 4600,
+                "vix_close": 28.29,
+                "vix_live": None,
+                "vix_live_as_of": None,
+                "vix_10d_window_end": "2026-11-25",
+                "vix_10d_peak_close": 35.89,
+                "vix_10d_peak_date": "2026-11-20",
+                "vix_daily_source": gold_ev.VIX_DAILY_SOURCE,
+                "vix_10d_session_closes": [
                     {"date": "2026-11-12", "close": 21.05},
                     {"date": "2026-11-13", "close": 19.3},
                     {"date": "2026-11-16", "close": 22.91},
@@ -2028,26 +2103,40 @@ class OperationalRegressionTest(unittest.TestCase):
                     {"date": "2026-11-24", "close": 26.36},
                     {"date": "2026-11-25", "close": 28.29},
                 ],
-                vix_daily_row_checks={
+                "vix_daily_row_checks": {
                     "2026-11-25": {
                         "status": "published",
                         "checked_at": "2026-11-26 23:45",
-                        "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                        "source": gold_ev.VIX_DAILY_SOURCE,
                         "note": "synthetic 2026-11-27 11:30 fixture",
                     },
                     "2026-11-26": {
                         "status": "no_row_confirmed",
                         "checked_at": "2026-11-27 11:20",
-                        "source": "https://cdn-api.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                        "source": gold_ev.VIX_DAILY_SOURCE,
                         "confirmation_source": "https://www.cboe.com/about/hours/us-options/",
                         "note": "synthetic 2026-11-27 11:30 Thanksgiving no-row fixture",
                     },
                 },
-                index_matrix={"shcomp": {"close": 4012.5, "chg_pct": 0.42}},
-            )
+                "index_matrix": {"shcomp": {"close": 4012.5, "chg_pct": 0.42}},
+            }
+            snap["cross_ratios"] = {
+                name: snap["spot_gold_ny_close_usd"] / snap[denominator]
+                for name, (denominator, _) in gold_lint.RATIO_FIELDS.items()
+            }
+            g1_pass = float(snap["dfii10_fred_official_pct"]) <= 2.72
+            g2_pass = round((float(snap["us2y_pct"]) - float(snap["effr_pct"])) * 100.0, 2) <= 55.0
+            g_flags = (g1_pass, g2_pass, True, False)
+            snap["tier1_gates"] = [
+                {"id": gid, "passed": p_flag, "name": "条件", "reading": "读数", "threshold": "门槛", "detail": "证据"}
+                for gid, p_flag in zip(gold_ev.ENTRY_GATE_IDS, g_flags)
+            ]
+            snap["tier1_passed"] = sum(1 for x in g_flags if x)
+            snap["tier1_total"] = 4
+
             tmp_snap.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
             errs, warns = [], []
-            with patch.object(gold_lint, "DAILY_SNAPSHOT_PATH", tmp_snap):
+            with patch.multiple(gold_lint, DAILY_SNAPSHOT_PATH=tmp_snap, MARKET_CALENDAR_PATH=tmp_cal):
                 gold_lint.validate_snapshot_file(tmp_snap, errs, warns, validated_on=date(2026, 11, 27))
             self.assertEqual(errs, [])
             self.assertEqual(warns, [])
@@ -2151,6 +2240,84 @@ class OperationalRegressionTest(unittest.TestCase):
         # Does not duplicate when historical feed already has 2026-11-27
         merged_dup = fetch_kline_data.merge_cnbc_t0_quote(merged, parsed_q["fx_susdcnh"])
         self.assertEqual(len(merged_dup), 2)
+
+    def test_gh_json_retries_once_without_proxy_env_on_proxy_failure(self):
+        calls: list[dict[str, str]] = []
+
+        def _fake_run(cmd, cwd=None, env=None, capture_output=True, text=True, timeout=30):
+            calls.append(dict(env or {}))
+            if len(calls) == 1:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="proxyconnect tcp: connection refused")
+            return subprocess.CompletedProcess(cmd, 0, stdout='{"ok": true, "sha": "abc123"}', stderr="")
+
+        proxy_env = {
+            "PATH": "/usr/bin",
+            "http_proxy": "http://127.0.0.1:7890",
+            "https_proxy": "http://127.0.0.1:7890",
+            "ALL_PROXY": "socks5://127.0.0.1:7891",
+        }
+        with (
+            patch.object(edition_run.shutil, "which", return_value="/usr/local/bin/gh"),
+            patch.object(edition_run, "_clean_env", return_value=proxy_env),
+            patch.object(edition_run.subprocess, "run", side_effect=_fake_run),
+        ):
+            res = edition_run._gh_json("api", "repos/owner/repo")
+
+        self.assertEqual(res, {"ok": True, "sha": "abc123"})
+        self.assertEqual(len(calls), 2)
+        self.assertIn("https_proxy", calls[0])
+        for pk in edition_run._PROXY_ENV_VARS:
+            self.assertNotIn(pk, calls[1], f"Proxy env var {pk} was not stripped on direct retry")
+
+        # Also retries once on TimeoutExpired when proxy is active; fails clearly if retry fails
+        calls_fail: list[dict[str, str]] = []
+
+        def _fake_run_timeout(cmd, cwd=None, env=None, capture_output=True, text=True, timeout=30):
+            calls_fail.append(dict(env or {}))
+            if len(calls_fail) == 1:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="still unreachable")
+
+        with (
+            patch.object(edition_run.shutil, "which", return_value="/usr/local/bin/gh"),
+            patch.object(edition_run, "_clean_env", return_value=proxy_env),
+            patch.object(edition_run.subprocess, "run", side_effect=_fake_run_timeout),
+        ):
+            with self.assertRaisesRegex(ValueError, "direct retry after proxy failure"):
+                edition_run._gh_json("api", "repos/owner/repo")
+        self.assertEqual(len(calls_fail), 2)
+
+        # Without proxy vars, fails immediately on first error (no spurious retry)
+        calls_direct: list[int] = []
+
+        def _fake_run_no_proxy(cmd, cwd=None, env=None, capture_output=True, text=True, timeout=30):
+            calls_direct.append(1)
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="404 Not Found")
+
+        with (
+            patch.object(edition_run.shutil, "which", return_value="/usr/local/bin/gh"),
+            patch.object(edition_run, "_clean_env", return_value={"PATH": "/usr/bin"}),
+            patch.object(edition_run.subprocess, "run", side_effect=_fake_run_no_proxy),
+        ):
+            with self.assertRaisesRegex(ValueError, "404 Not Found"):
+                edition_run._gh_json("api", "repos/owner/repo")
+        self.assertEqual(len(calls_direct), 1)
+
+    def test_deploy_pages_workflow_scopes_concurrency_to_deploy_job(self):
+        wf_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "deploy-pages.yml"
+        lines = wf_path.read_text(encoding="utf-8").splitlines()
+        # Top-level (indent 0) MUST NOT declare concurrency: so PR builds & main builds are never mutually cancelled
+        top_level_concurrency = [ln for ln in lines if ln.startswith("concurrency:")]
+        self.assertEqual(top_level_concurrency, [], "deploy-pages.yml must NOT have top-level concurrency:")
+
+        # jobs.deploy MUST scope concurrency: group "pages" with cancel-in-progress: false
+        deploy_idx = next((i for i, ln in enumerate(lines) if ln.rstrip() == "  deploy:"), None)
+        self.assertIsNotNone(deploy_idx, "Missing jobs.deploy section in deploy-pages.yml")
+        assert deploy_idx is not None
+        deploy_block = "\n".join(lines[deploy_idx:])
+        self.assertIn("    concurrency:", deploy_block)
+        self.assertIn('group: "pages"', deploy_block)
+        self.assertIn("cancel-in-progress: false", deploy_block)
 
 
 if __name__ == "__main__":
