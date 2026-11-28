@@ -369,7 +369,11 @@ class DeterministicMathEditorialAndTenseGateTests(unittest.TestCase):
             self.assertFalse(any("利率恒等式冲突" in e for e in errs_tol), errs_tol)
 
             snap["dfii10_live_pct"] = 2.90  # 2.90 + 2.12 = 5.02 -> diff 0.17 > 0.08
+            snap["gdx_close_usd"] = 73.89
+            snap["gld_close_usd"] = 327.45
             snap["gdx_gld_ratio"] = 0.2500  # != 73.89 / 327.45
+            snap["spot_gold_ny_close_usd"] = 3588.78
+            snap["spot_gold_live_usd"] = 3567.32
             snap["spot_gold_live_change_pct"] = -1.50  # != ((3567.32/3588.78)-1)*100
             sp.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
             errs2, warns2 = [], []

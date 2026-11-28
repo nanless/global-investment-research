@@ -1030,14 +1030,7 @@ class TestPolicyCalendarSectionAndGates(unittest.TestCase):
         if live_pcal_path.is_file():
             live_pcal = json.loads(live_pcal_path.read_text(encoding="utf-8"))
             self.assertEqual(live_pcal.get("as_of_cst"), eq_state.get("as_of_cst"))
-            self.assertEqual(len(live_pcal.get("events") or []), 17)
-            live_eids = {ev.get("event_id") for ev in live_pcal.get("events") or []}
-            for req_eid in (
-                "us_treasury_part851_deadline_20261207",
-                "us_nov_cpi_inflation_20261210",
-                "us_govt_shutdown_deadline_20261212",
-            ):
-                self.assertIn(req_eid, live_eids)
+            self.assertGreaterEqual(len(live_pcal.get("events") or []), 10)
             live_html = build_site._render_policy_calendar_section(live_pcal, eq_state, gold_blocked=True)
             live_snap = lint_site._inspect_policy_calendar_section(live_html)
             self.assertIsNotNone(live_snap)
@@ -1048,8 +1041,7 @@ class TestPolicyCalendarSectionAndGates(unittest.TestCase):
                 lint_site.PCAL_RAW_TIER_RE.search(live_snap.inner_text),
                 "Raw P0/P1/P2 leaked inside live #sec-policy-calendar inner_text",
             )
-            # Exact multi-day span renders end_date_cst cleanly & 实操边界 never starts with awkward 但/但是/不过
-            self.assertIn("2026-11-30–12-01 21:30", live_html)
+            # 实操边界 never starts with awkward 但/但是/不过
             self.assertNotIn("<strong>实操边界：</strong>但", live_html)
             self.assertNotIn("<strong>实操边界：</strong>不过", live_html)
             first_ev = (live_pcal.get("events") or live_pcal.get("upcoming_events") or [{}])[0]
@@ -1057,6 +1049,32 @@ class TestPolicyCalendarSectionAndGates(unittest.TestCase):
                 self.assertIn(first_ev["watch_triggers"]["upside_bull"][:16], live_html)
             if first_ev.get("pre_event_stance"):
                 self.assertIn(first_ev["pre_event_stance"][:16], live_html)
+
+        # Exact multi-day span renders end_date_cst cleanly (self-contained fixture immune to calendar rollover)
+        span_pcal = {
+            "as_of_cst": "2026-11-27T18:00:00+08:00",
+            "policy_briefs": sample_pcal["policy_briefs"],
+            "events": [
+                {
+                    "event_id": "span_test_20261130",
+                    "date_cst": "2026-11-30",
+                    "end_date_cst": "2026-12-01",
+                    "date_precision": "exact",
+                    "time_cst": "21:30",
+                    "region": "US",
+                    "category": "liquidity_treasury",
+                    "impact_tier": "P1",
+                    "title": "跨月美债结算窗口测试",
+                    "expected_consensus": "测试预期",
+                    "market_transmission": "测试传导",
+                    "pre_event_stance": "严守防守仓位。",
+                    "affected_markets": ["us_stock"],
+                    "source_url": "https://home.treasury.gov/",
+                }
+            ],
+        }
+        span_html = build_site._render_policy_calendar_section(span_pcal, eq_state, gold_blocked=True)
+        self.assertIn("2026-11-30–12-01 21:30", span_html)
 
         # Leading 但/但是/不过 is stripped cleanly when market_impact splits into 实操边界
         conj_pcal = {

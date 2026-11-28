@@ -1992,10 +1992,26 @@ class OperationalRegressionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             tmp_snap = Path(temporary) / "data_snapshot.json"
             snap = json.loads((repo / "gold" / "data_snapshot.json").read_text(encoding="utf-8"))
+            fixed_gates = [dict(g) for g in (snap.get("tier1_gates") or [])[:4]]
+            ny_close = float(snap["spot_gold_ny_close_usd"])
+            g1_pass = float(snap["dfii10_live_pct"]) <= 2.72
+            g2_pass = round((float(snap["us2y_pct"]) - float(snap["effr_pct"])) * 100.0, 2) <= 55.0
+            g_flags = (g1_pass, g2_pass, True, False)
+            for g, p_flag in zip(fixed_gates, g_flags):
+                g["passed"] = p_flag
+            passed_cnt = sum(1 for x in g_flags if x)
             snap.update(
                 edition_id="2026-11-27_1130",
                 as_of_short="2026-11-27 11:30",
                 as_of_bjt="2026年11月27日（周五）11:30",
+                cfets_fixing_date="2026-11-27",
+                spot_gold_ny_close_date="2026-11-25",
+                tier1_gate4_threshold_usd=round(ny_close + 25.0, 2),
+                tier1_gate4_threshold_date="2026-11-24",
+                tier1_gate4_target_date="2026-11-25",
+                tier1_passed=passed_cnt,
+                tier1_total=4,
+                tier1_gates=fixed_gates,
                 vix_close=28.29,
                 vix_live=None,
                 vix_live_as_of=None,

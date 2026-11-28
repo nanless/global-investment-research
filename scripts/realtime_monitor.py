@@ -186,7 +186,7 @@ POLICY_DOMAINS: tuple[PolicyDomainRule, ...] = (
         region="HK",
         label="港股双卫星 · 联汇7.85与金管局流动性",
         authority_default=38,
-        keywords_pos=("香港金管局", "HKMA", "弱方兑换保证", "强方兑换保证", "银行体系总结余", "1个月HIBOR", "港元拆息", "联系汇率", "7.85"),
+        keywords_pos=("香港金管局", "HKMA", "弱方兑换保证", "强方兑换保证", "银行体系总结余", "1个月HIBOR", "港元拆息", "联系汇率", "联汇7.85", "触及7.85"),
         keywords_neg=(),
         primary_anchors=("rt_hkHSI", "rt_hkHSTECH", "fx_susdcnh"),
         transmission_chain="联汇触7.85→金管局收水压低总结余→HIBOR跳升→直接压制港股估值与地产/科技弹性",
@@ -1467,8 +1467,32 @@ def detect_market_first_anomalies(
             guardrail=guard,
         )
 
+    def _is_stale_closed_tick(tick: QuoteTick, region: str) -> bool:
+        """Ignore stale prior-session close ticks on weekends or before market open."""
+        wd = now_dt.weekday()
+        hm = now_dt.hour * 60 + now_dt.minute
+        if region in ("CN", "HK"):
+            if wd >= 5:
+                return True
+            if hm < 9 * 60 + 15:
+                return True
+        else:
+            # Global weekend shutdown: Sat >= 06:30 CST through Mon < 05:55 CST
+            if (wd == 5 and hm >= 6 * 60 + 30) or wd == 6 or (wd == 0 and hm < 5 * 60 + 55):
+                return True
+        ts_raw = (tick.timestamp or "").strip()
+        m_d = re.match(r"^(\d{4})[-/](\d{2})[-/](\d{2})", ts_raw)
+        if m_d and region in ("CN", "HK"):
+            try:
+                t_day = datetime(int(m_d.group(1)), int(m_d.group(2)), int(m_d.group(3)), tzinfo=CST).date()
+                if t_day < now_dt.date():
+                    return True
+            except ValueError:
+                pass
+        return False
+
     us10y = quotes.get("US10Y")
-    if us10y and (us10y.last >= 5.25 or (us10y.change_bp is not None and abs(us10y.change_bp) >= 18.0)):
+    if us10y and not _is_stale_closed_tick(us10y, "US") and (us10y.last >= 5.25 or (us10y.change_bp is not None and abs(us10y.change_bp) >= 18.0)):
         z = _compute_anchor_z("US10Y", us10y, vol_baselines)
         out.append(_make_breaker(
             "us10y_breaker", "US",
@@ -1480,7 +1504,7 @@ def detect_market_first_anomalies(
         ))
 
     vix = quotes.get("b_VIX")
-    if vix and (vix.last >= 45.0 or vix.change_pct >= 22.0):
+    if vix and not _is_stale_closed_tick(vix, "US") and (vix.last >= 45.0 or vix.change_pct >= 22.0):
         z = _compute_anchor_z("b_VIX", vix, vol_baselines)
         out.append(_make_breaker(
             "vix_breaker", "US",
@@ -1492,7 +1516,7 @@ def detect_market_first_anomalies(
         ))
 
     usdjpy = quotes.get("fx_susdjpy")
-    if usdjpy and usdjpy.change_pct <= -2.5:
+    if usdjpy and not _is_stale_closed_tick(usdjpy, "GLOBAL") and usdjpy.change_pct <= -2.5:
         z = _compute_anchor_z("fx_susdjpy", usdjpy, vol_baselines)
         out.append(_make_breaker(
             "usdjpy_carry_breaker", "GLOBAL",
@@ -1517,7 +1541,7 @@ def detect_market_first_anomalies(
     by_region: dict[str, list[tuple[float, str, str, QuoteTick]]] = {}
     for sym, reg, cname in watch_map:
         tick = quotes.get(sym)
-        if tick is None or abs(tick.change_pct) < 2.5:
+        if tick is None or abs(tick.change_pct) < 2.5 or _is_stale_closed_tick(tick, reg):
             continue
         z = _compute_anchor_z(sym, tick, vol_baselines)
         if abs(z) < 2.8:

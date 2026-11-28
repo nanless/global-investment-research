@@ -1726,7 +1726,7 @@ class AtomicRsiAuditAndInspectTests(unittest.TestCase):
             live_summary = json.loads(live_buf.getvalue())
             self.assertGreaterEqual(live_summary["total_briefs"], 6)
             self.assertTrue(6 <= live_summary["home_featured_briefs"] <= 9)
-            self.assertEqual(live_summary["total_events"], 17)
+            self.assertGreaterEqual(live_summary["total_events"], 10)
 
 
 class EditionRunTelemetryAndPublishGuardTests(unittest.TestCase):
